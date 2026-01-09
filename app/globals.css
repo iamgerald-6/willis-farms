@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-red: #C62828;
+  --brand-gray: #4B5563;
+  --brand-light: #F3F4F6;
+  --brand-dark: #111827;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  color: var(--brand-dark);
+  background: #ffffff;
+}
+
+::selection {
+  background: rgba(198, 40, 40, 0.15);
+}
+
+a {
+  text-underline-offset: 4px;
+}
