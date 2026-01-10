@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import { siteContent } from "@/content/siteContent";
 import { JsonLd } from "@/components/JsonLd";
 import { Analytics } from "@/components/Analytics";
