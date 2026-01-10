@@ -68,7 +68,7 @@ export default function HomePage() {
                 <Image
                   key={img}
                   src={img}
-                  alt=""
+                  alt="why us"
                   fill
                   className={`object-cover transition-opacity duration-1000 ${
                     idx === currentIndex ? "opacity-100" : "opacity-0"
@@ -118,7 +118,7 @@ export default function HomePage() {
                 <div className="flex justify-center">
                   <Image
                     src={r.image}
-                    alt=""
+                    alt="partners"
                     height={40}
                     width={100}
                     className={`transition-opacity duration-1000`}
