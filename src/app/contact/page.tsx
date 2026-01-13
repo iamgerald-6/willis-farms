@@ -122,8 +122,9 @@ export default function ContactPage({
         <section className="rounded-3xl bg-brand-light p-7 ring-1 ring-black/5">
           <p className="text-sm font-semibold text-brand-dark">Note</p>
           <p className="mt-2 text-sm leading-relaxed text-brand-gray">
-            This website does not list semen or AI services, and does not offer
-            retail/household pork sales.
+            Note: We do not provide semen or AI services on this website—those
+            services will be launched separately. However, we train farmers in
+            good and sustainable agricultural practices.
           </p>
         </section>
       </PageShell>

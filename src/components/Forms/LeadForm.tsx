@@ -114,7 +114,7 @@ export function LeadForm({ defaultType }: Props) {
                 : "text-brand-gray hover:bg-white/60"
             )}
           >
-            Pork (B2B)
+            Pork
           </button>
         </div>
       </div>
