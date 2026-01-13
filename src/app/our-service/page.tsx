@@ -45,15 +45,6 @@ export default function OperatingModelPage() {
         </section>
         <section className="space-y-6">
           <SectionHeading
-            eyebrow="Visual model"
-            title="Genetics → production → processing/cold chain → distribution"
-            subtitle="A simplified view of the operating model used to deliver consistent performance and reliable B2B supply."
-          />
-          <OperatingDiagram steps={o.steps} />
-        </section>
-
-        <section className="space-y-6">
-          <SectionHeading
             eyebrow="Operating principles"
             title="How we keep outcomes consistent"
             subtitle="We focus on the repeatable disciplines that reduce variability and risk."

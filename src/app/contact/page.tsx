@@ -17,7 +17,7 @@ export default function ContactPage({
 
   const whatsappHref = toWhatsAppHref(
     siteContent.contact.whatsappNumber,
-    "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork B2B)."
+    "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork)."
   );
 
   const c = siteContent.contact;
@@ -45,13 +45,13 @@ export default function ContactPage({
       </div>
       <PageShell
         title="Contact"
-        subtitle="For gilt inquiries/bookings and B2B premium pork supply inquiries. We typically respond within one business day."
+        subtitle="For gilt inquiries/bookings and premium pork supply inquiries. We typically respond within one business day."
       >
         <section className="space-y-6">
           <SectionHeading
             eyebrow="Get in touch"
             title="Submit a structured inquiry"
-            subtitle="Select Gilts or Pork (B2B) and provide the details required for a fast response."
+            subtitle="Select Gilts or Pork  and provide the details required for a fast response."
           />
           <LeadForm defaultType={defaultType} />
         </section>
@@ -123,7 +123,7 @@ export default function ContactPage({
           <p className="text-sm font-semibold text-brand-dark">Note</p>
           <p className="mt-2 text-sm leading-relaxed text-brand-gray">
             This website does not list semen or AI services, and does not offer
-            retail/household pork sales. All pork inquiries are B2B.
+            retail/household pork sales.
           </p>
         </section>
       </PageShell>

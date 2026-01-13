@@ -31,7 +31,10 @@ export function LeadForm({ defaultType }: Props) {
 
   const isPork = type === "pork";
 
-  const title = useMemo(() => (isPork ? "Request a pork supply quote" : "Request parent gilts"), [isPork]);
+  const title = useMemo(
+    () => (isPork ? "Request a pork supply quote" : "Request parent gilts"),
+    [isPork]
+  );
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -64,7 +67,9 @@ export function LeadForm({ defaultType }: Props) {
       }
 
       setStatus("success");
-      setMessage("Thank you. Your request has been received. We will respond within one business day.");
+      setMessage(
+        "Thank you. Your request has been received. We will respond within one business day."
+      );
       e.currentTarget.reset();
     } catch (err: any) {
       setStatus("error");
@@ -76,10 +81,13 @@ export function LeadForm({ defaultType }: Props) {
     <div className="rounded-3xl border border-black/5 bg-white p-7 shadow-soft">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-gray">Lead capture</p>
-          <h3 className="mt-1 text-xl font-extrabold text-brand-dark">{title}</h3>
+          {/* <p className="text-xs font-semibold uppercase tracking-wide text-brand-gray">Lead capture</p> */}
+          <h3 className="mt-1 text-xl font-extrabold text-brand-dark">
+            {title}
+          </h3>
           <p className="mt-2 text-sm text-brand-gray">
-            Your inquiry is routed to the correct team. Provide enough detail for a fast response.
+            Your inquiry is routed to the correct team. Provide enough detail
+            for a fast response.
           </p>
         </div>
 
@@ -89,7 +97,9 @@ export function LeadForm({ defaultType }: Props) {
             onClick={() => setType("gilts")}
             className={classNames(
               "rounded-xl px-4 py-2 text-sm font-semibold",
-              type === "gilts" ? "bg-white shadow-soft text-brand-dark" : "text-brand-gray hover:bg-white/60"
+              type === "gilts"
+                ? "bg-white shadow-soft text-brand-dark"
+                : "text-brand-gray hover:bg-white/60"
             )}
           >
             Gilts
@@ -99,7 +109,9 @@ export function LeadForm({ defaultType }: Props) {
             onClick={() => setType("pork")}
             className={classNames(
               "rounded-xl px-4 py-2 text-sm font-semibold",
-              type === "pork" ? "bg-white shadow-soft text-brand-dark" : "text-brand-gray hover:bg-white/60"
+              type === "pork"
+                ? "bg-white shadow-soft text-brand-dark"
+                : "text-brand-gray hover:bg-white/60"
             )}
           >
             Pork (B2B)
@@ -112,7 +124,10 @@ export function LeadForm({ defaultType }: Props) {
         <div className="hidden">
           <label className="text-sm font-medium text-brand-dark">
             Company Website
-            <input name="company_website" className="mt-1 w-full rounded-xl border border-black/10 px-4 py-3" />
+            <input
+              name="company_website"
+              className="mt-1 w-full rounded-xl border border-black/10 px-4 py-3"
+            />
           </label>
         </div>
 
@@ -127,9 +142,23 @@ export function LeadForm({ defaultType }: Props) {
 
         {!isPork && (
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label="Requested quantity" name="giltQuantity" placeholder="e.g., 10" required />
-            <Field label="Preferred delivery window" name="deliveryWindow" placeholder="e.g., next 4–6 weeks" required />
-            <Field label="Receiving farm readiness" name="biosecurityReadiness" placeholder="e.g., receiving pen ready" />
+            <Field
+              label="Requested quantity"
+              name="giltQuantity"
+              placeholder="e.g., 10"
+              required
+            />
+            <Field
+              label="Preferred delivery window"
+              name="deliveryWindow"
+              placeholder="e.g., next 4–6 weeks"
+              required
+            />
+            <Field
+              label="Receiving farm readiness"
+              name="biosecurityReadiness"
+              placeholder="e.g., receiving pen ready"
+            />
           </div>
         )}
 
@@ -140,13 +169,19 @@ export function LeadForm({ defaultType }: Props) {
                 label="Buyer type"
                 name="buyerType"
                 required
-                options={buyerTypes.map((v) => ({ value: v, label: toTitle(v) }))}
+                options={buyerTypes.map((v) => ({
+                  value: v,
+                  label: toTitle(v),
+                }))}
               />
               <Select
                 label="Preferred product format"
                 name="productFormat"
                 required
-                options={porkFormats.map((v) => ({ value: v, label: toTitle(v.replace("_", " ")) }))}
+                options={porkFormats.map((v) => ({
+                  value: v,
+                  label: toTitle(v.replace("_", " ")),
+                }))}
               />
             </div>
 
@@ -166,8 +201,17 @@ export function LeadForm({ defaultType }: Props) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Start date" name="startDate" placeholder="e.g., 15 Feb 2026" required />
-              <Field label="Delivery location" name="deliveryLocation" required />
+              <Field
+                label="Start date"
+                name="startDate"
+                placeholder="e.g., 15 Feb 2026"
+                required
+              />
+              <Field
+                label="Delivery location"
+                name="deliveryLocation"
+                required
+              />
               <Select
                 label="Cold-chain requirement"
                 name="coldChain"
@@ -185,7 +229,11 @@ export function LeadForm({ defaultType }: Props) {
           label="Notes / requirements"
           name="notes"
           textarea
-          placeholder={isPork ? "Any specifications, delivery constraints, or compliance requirements." : "Any farm context or questions we should address."}
+          placeholder={
+            isPork
+              ? "Any specifications, delivery constraints, or compliance requirements."
+              : "Any farm context or questions we should address."
+          }
         />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -203,7 +251,11 @@ export function LeadForm({ defaultType }: Props) {
           <p
             className={classNames(
               "text-sm",
-              status === "success" ? "text-green-700" : status === "error" ? "text-red-700" : "text-brand-gray"
+              status === "success"
+                ? "text-green-700"
+                : status === "error"
+                ? "text-red-700"
+                : "text-brand-gray"
             )}
             role="status"
             aria-live="polite"
@@ -233,7 +285,8 @@ function Field({
 }) {
   return (
     <label className="grid gap-1 text-sm font-medium text-brand-dark">
-      {label}{required ? " *" : ""}
+      {label}
+      {required ? " *" : ""}
       {textarea ? (
         <textarea
           name={name}
@@ -268,7 +321,8 @@ function Select({
 }) {
   return (
     <label className="grid gap-1 text-sm font-medium text-brand-dark">
-      {label}{required ? " *" : ""}
+      {label}
+      {required ? " *" : ""}
       <select
         name={name}
         required={required}

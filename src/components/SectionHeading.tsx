@@ -1,12 +1,11 @@
 import { ReactNode } from "react";
-
 export function SectionHeading({
   eyebrow,
   title,
   subtitle,
   right,
-  textColor = "text-brand-dark",
-  textColor2 = "text-brand-gray",
+  textColor = "text-brand-gray",
+  textColor2 = "text-brand-dark",
 }: {
   eyebrow?: string;
   title: string;
@@ -20,13 +19,13 @@ export function SectionHeading({
       <div>
         {eyebrow && (
           <p
-            className={`text-xs font-semibold uppercase tracking-wide ${textColor2}`}
+            className={`text-2xl font-extrabold uppercase tracking-wide ${textColor2}`}
           >
             {eyebrow}
           </p>
         )}
         <h2
-          className={`"mt-1 text-2xl font-extrabold tracking-tight ${textColor} sm:text-3xl  `}
+          className={`"mt-1 text-lg font-semibold tracking-tight ${textColor} sm:text-lg  `}
         >
           {title}
         </h2>

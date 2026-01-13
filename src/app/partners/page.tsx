@@ -16,14 +16,14 @@ export default function PartnersPage() {
         />
         <div className="grid gap-5 md:grid-cols-3">
           {p.roles.map((r) => (
-            <div key={r.name} className="rounded-3xl border border-black/5 bg-white p-7 shadow-soft">
+            <div
+              key={r.name}
+              className="rounded-3xl border border-black/5 bg-white p-7 shadow-soft"
+            >
               <p className="text-base font-bold text-brand-dark">{r.name}</p>
-              <p className="mt-2 text-sm leading-relaxed text-brand-gray">{r.body}</p>
-              <div className="mt-5 rounded-2xl bg-brand-light p-4 ring-1 ring-black/5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-brand-gray">Logo placeholder</p>
-                <p className="mt-1 text-sm font-semibold text-brand-dark">Add partner logo</p>
-                <p className="mt-1 text-xs text-brand-gray">Place image in /public/partners and update component as needed.</p>
-              </div>
+              <p className="mt-2 text-sm leading-relaxed text-brand-gray">
+                {r.body}
+              </p>
             </div>
           ))}
         </div>

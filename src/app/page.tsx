@@ -17,7 +17,7 @@ export default function HomePage() {
   const h = siteContent.home;
   const whatsappHref = toWhatsAppHref(
     siteContent.contact.whatsappNumber,
-    "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork B2B)."
+    "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork)."
   );
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -91,7 +91,7 @@ export default function HomePage() {
               <SectionHeading
                 eyebrow="Operating model"
                 title="How we operate"
-                subtitle="A practical, genetics-led value chain from disciplined production to reliable B2B supply."
+                subtitle="A practical, genetics-led value chain from disciplined production to reliable supply."
               />
 
               {/* Steps component */}
@@ -105,7 +105,7 @@ export default function HomePage() {
         <Container className="space-y-10 text-white">
           <SectionHeading
             eyebrow="Partners"
-            title="Powered by Axiom. Connected to the E-zootech network."
+            title="A member of the E-zootech Genetics network. Serving Ghana and West Africa with disciplined genetics and reliable supply."
             textColor="text-brand-light"
             textColor2="text-gray-200"
           />
@@ -158,9 +158,9 @@ export default function HomePage() {
             }
           />
           <LeadForm defaultType="gilts" />
-          <CTA
+          {/* <CTA
             title="Ready to proceed?"
-            body="Submit your request and we will confirm availability, scheduling, and documentation requirements. For B2B buyers, we can schedule a procurement call to align volumes and delivery cadence."
+            body="Submit your request and we will confirm availability, scheduling, and documentation requirements. For buyers, we can schedule a procurement call to align volumes and delivery cadence."
             primary={{
               label: "Request Gilts",
               href: "/contact?interest=gilts",
@@ -169,7 +169,7 @@ export default function HomePage() {
               label: "Request Supply Quote",
               href: "/contact?interest=pork",
             }}
-          />
+          /> */}
         </Container>
       </section>
     </>

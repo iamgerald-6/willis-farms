@@ -40,18 +40,29 @@ export default function BreedingStockPage() {
                   <li key={x}>{x}</li>
                 ))}
               </ul>
+              <div className="mt-6">
+                <a
+                  href={p.file}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-xl bg-red-600 px-6 py-3 text-sm font-semibold text-white hover:bg-red-700 transition"
+                >
+                  Download Brochure
+                </a>
+              </div>
             </div>
           ))}
         </div>
         <div className="rounded-3xl border border-black/5 bg-brand-light p-7">
           <p className="text-sm leading-relaxed text-brand-gray">
-            Note: We do not provide semen or AI services on this website. Those
-            services will be launched separately.
+            Note: We do not provide semen or AI services on this website—those
+            services will be launched separately. However, we train farmers in
+            good and sustainable agricultural practices.
           </p>
         </div>
       </section>
 
-      <section className="space-y-6">
+      {/* <section className="space-y-6">
         <SectionHeading
           eyebrow="How to buy"
           title={b.howToBuy.title}
@@ -70,7 +81,7 @@ export default function BreedingStockPage() {
             </div>
           ))}
         </div>
-      </section>
+      </section> */}
 
       <section className="space-y-6">
         <SectionHeading

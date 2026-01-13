@@ -8,6 +8,11 @@ import {
   Layers,
   Shield,
   CalendarCheck,
+  Users,
+  Leaf,
+  Heart,
+  CheckCircle,
+  Home,
 } from "lucide-react";
 export type NavItem = { label: string; href: string };
 
@@ -66,6 +71,51 @@ export const siteContent = {
       "Documented performance",
       "Reliable supply",
     ],
+
+    goals: [
+      {
+        title: "Animal Well-being",
+        description:
+          "Wills Farms is committed to the highest standards of animal care, ensuring animals are treated humanely and responsibly.",
+        icon: Heart,
+        color: "bg-red-100 text-red-600",
+      },
+      {
+        title: "Our People",
+        description:
+          "They are committed to providing meaningful employment for workers, creating a safe and supportive workplace, and respecting the rights of employees.",
+        icon: Users,
+        color: "bg-blue-100 text-blue-600",
+      },
+      {
+        title: "Environment",
+        description:
+          "The company focuses on environmental sustainability by protecting natural resources, reducing environmental impact, and supporting future generations.",
+        icon: Leaf,
+        color: "bg-green-100 text-green-600",
+      },
+      {
+        title: "Public Health",
+        description:
+          "They aim to produce safe agricultural products while minimizing risks to public health and ensuring responsible farming practices.",
+        icon: Shield,
+        color: "bg-yellow-100 text-yellow-600",
+      },
+      {
+        title: "Food Safety",
+        description:
+          "Wills Farms is committed to producing safe, high-quality food that meets required standards and is safe for consumption.",
+        icon: CheckCircle,
+        color: "bg-purple-100 text-purple-600",
+      },
+      {
+        title: "Our Community",
+        description:
+          "They support community growth and development by engaging with local communities and contributing positively to society and the economy.",
+        icon: Home,
+        color: "bg-pink-100 text-pink-600",
+      },
+    ],
     pillars: [
       {
         title: "Genetics discipline",
@@ -94,7 +144,7 @@ export const siteContent = {
       },
       {
         title: "Reliable supply",
-        body: "Operational discipline and planning to support predictable deliveries for farms and B2B buyers.",
+        body: "Operational discipline and planning to support predictable deliveries for farms.",
         icon: Truck,
       },
     ],
@@ -110,8 +160,8 @@ export const siteContent = {
         cta: "Request Gilts",
       },
       {
-        title: "Premium Pork (B2B)",
-        body: "B2B supply for slaughterhouses, bulk off-takers, supermarkets, hotels, restaurants, and institutions.",
+        title: "Premium Pork",
+        body: "We supply for slaughterhouses, bulk off-takers, supermarkets, hotels, restaurants, and institutions.",
         imagery: {
           src: "/images/b2b.jpg",
           alt: "breedStock",
@@ -132,9 +182,10 @@ export const siteContent = {
           src: "/images/c3b6.webp",
           alt: "cg36",
         },
+        file: "/brand/AXIOM_CG36_EN_DIG.pdf",
         bullets: [
           "Strong maternal performance with consistent litter size and good piglet survival rates",
-          "Verified health and vaccination status with full traceability from source farm",
+          "Verified health and vaccination status.",
           "Reliable growth efficiency and adaptability across different housing and feeding systems",
         ],
       },
@@ -144,10 +195,12 @@ export const siteContent = {
           src: "/images/adenia.webp",
           alt: "adenia",
         },
+        file: "/brand/AXIOM_ADENIA_EN_DIG.pdf",
+
         bullets: [
-          "Selected for high fertility, strong mothering ability, and uniform litter quality",
-          "Comprehensive health documentation with handling, acclimatization, and biosecurity guidance",
-          "Reliable supplier support with clear delivery terms, replacement policy, and post-delivery assistance",
+          "A balanced gilt combining fertility, maternal strength, and uniform piglet quality",
+          "Easy-to-manage sow with calm behaviour, clear heat signs, and consistent farrowing performance",
+          "Robust and long-lasting, producing fast-growing piglets with strong carcass quality",
         ],
       },
     ],
@@ -166,9 +219,9 @@ export const siteContent = {
     },
     documentationPack: [
       "Health & vaccination records (batch-specific where applicable)",
-      "Handling and acclimation guidance",
-      "Receiving-farm biosecurity requirements",
-      "Claims policy overview (scope and timelines)",
+      // "Handling and acclimation guidance",
+      // "Receiving-farm biosecurity requirements",
+      // "Claims policy overview (scope and timelines)",
       "Traceability identifiers and delivery documentation",
     ],
     faq: [
@@ -200,7 +253,7 @@ export const siteContent = {
     },
   },
   premiumPork: {
-    headline: "Premium Pork Supply (B2B Only)",
+    headline: "Premium Pork Supply",
     intro:
       "Wills Farms supplies premium pork to institutional and commercial buyers who require consistent supply, uniform quality, and disciplined hygiene and biosecurity practices.",
     segments: [
@@ -219,7 +272,7 @@ export const siteContent = {
       },
       {
         title: "Uniformity and quality-focused production practices",
-        body: "Our production processes ensure consistent quality across every batch, meeting premium B2B standards.",
+        body: "Our production processes ensure consistent quality across every batch, meeting premium pork standards.",
         icon: Layers,
       },
       {
@@ -285,7 +338,7 @@ export const siteContent = {
   services: {
     headline: "Our Services",
     intro:
-      "A genetics-led operating model designed to deliver consistent breeding stock performance and reliable B2B pork supply.",
+      "A genetics-led operating model designed to deliver consistent breeding stock performance and reliable pork supply.",
     steps: [
       {
         title: "Genetics discipline",
@@ -301,7 +354,7 @@ export const siteContent = {
       },
       {
         title: "Branded distribution",
-        body: "Supply to qualified B2B buyers through disciplined order and delivery processes.",
+        body: "Supply to qualified buyers through disciplined order and delivery processes.",
       },
     ],
   },
@@ -387,10 +440,9 @@ export const siteContent = {
   },
   seo: {
     siteUrl: "https://www.willsfarms.com", // Update after you set your live domain
-    title:
-      "Wills Farms Ltd | Breeding Stock (Parent Gilts) & Premium Pork (B2B)",
+    title: "Wills Farms Ltd | Breeding Stock (Parent Gilts) & Premium Pork",
     description:
-      "Wills Farms Ltd is a genetics-led, vertically integrated pork company powered by Axiom Genetics (France). We supply high-performance parent gilts and premium pork to B2B buyers with strict biosecurity and professional management systems.",
+      "Wills Farms Ltd is a genetics-led, vertically integrated pork company powered by Axiom Genetics (France). We supply high-performance parent gilts and premium pork to buyers with strict biosecurity and professional management systems.",
     ogImage: "/brand/willsfarms-logo.png",
   },
 } as const;

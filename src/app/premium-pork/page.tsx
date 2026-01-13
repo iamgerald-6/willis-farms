@@ -12,7 +12,7 @@ export default function PremiumPorkPage() {
     <PageShell title={p.headline} subtitle={p.intro}>
       <section className="space-y-6">
         <SectionHeading
-          eyebrow="B2B only"
+          eyebrow="Commercial Supply"
           title="For qualified commercial and institutional buyers"
           subtitle="We supply to business customers. This website does not offer retail or household sales."
         />
@@ -94,12 +94,10 @@ export default function PremiumPorkPage() {
             href="/contact?interest=pork"
             className="font-semibold text-brand-dark hover:underline"
           >
-            B2B inquiry form
+            commercial supply inquiry form.
           </Link>
-          .
         </p>
       </section>
-
       <CTA
         title="Request a supply quote or schedule a procurement call"
         body="Provide buyer type, volumes, preferred format, and delivery location. We will confirm availability and next steps."

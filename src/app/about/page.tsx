@@ -5,10 +5,20 @@ import { SectionHeading } from "@/components/SectionHeading";
 import { FeatureGrid } from "@/components/FeatureGrid";
 import { CTA } from "@/components/CTA";
 import { siteContent } from "@/content/siteContent";
-import { Dna, BadgeCheck, FileText, Settings } from "lucide-react";
+import {
+  Dna,
+  BadgeCheck,
+  FileText,
+  Settings,
+  Leaf,
+  Shield,
+  CheckCircle,
+  Zap,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, SVGProps } from "react";
+import Timeline from "@/components/Timeline";
 export default function AboutPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const images = [
@@ -16,7 +26,13 @@ export default function AboutPage() {
     "/images/whychooseus2.jpg",
     "/images/whychooseus3.jpg",
   ];
-  // Change image every 5 seconds
+  const goalsTimeline = siteContent.home.goals.map((goal) => ({
+    title: goal.title,
+    description: goal.description,
+    icon: React.createElement(goal.icon, { className: `h-5 w-5` }),
+    color: goal.color,
+  }));
+
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % images.length);
@@ -48,7 +64,7 @@ export default function AboutPage() {
       </div>
       <PageShell
         title="About Wills Farms"
-        subtitle="Wills Farms Ltd is a genetics-led, vertically integrated pork company powered by Axiom Genetics (France). We combine disciplined breeding, biosecurity-led operations, and professional management systems to serve farms and B2B buyers across Ghana and West Africa."
+        subtitle="Wills Farms Ltd is a genetics-led, vertically integrated pork company powered by Axiom Genetics (France). We combine disciplined breeding, biosecurity-led operations, and professional management systems to serve farms and buyers across Ghana and West Africa."
       >
         <section className="py-14">
           <div className="grid gap-10 lg:grid-cols-2 lg:items-start">
@@ -57,9 +73,18 @@ export default function AboutPage() {
               <SectionHeading
                 eyebrow="Our mission"
                 title="Raise performance and reliability in modern pork value chains"
-                subtitle="We focus on measurable outcomes: consistent breeding stock performance, disciplined health protection, and dependable supply for qualified B2B partners."
+                subtitle="At Wills Farms Ltd, we sustainably innovate to grow and deliver ethical, quality food for all."
               />
-
+              <SectionHeading
+                eyebrow="Our Vision"
+                title="Shaping the future of modern pork value chains"
+                subtitle="We Aspire to be a leading agribusiness group rooted in innovation sustainability."
+              />
+              <SectionHeading
+                eyebrow="Philosophy"
+                title="Guided by people, pigs, and the planet"
+                subtitle="People, Pigs and Planet."
+              />
               <div className="rounded-3xl border border-black/5 bg-brand-light p-7">
                 <p className="text-sm leading-relaxed text-brand-gray">
                   We operate with strict biosecurity and documented processes
@@ -69,14 +94,6 @@ export default function AboutPage() {
                   knowledge-sharing, and market reach.
                 </p>
               </div>
-
-              {/* Brochure as a button */}
-              <a
-                href={siteContent.brochure.href}
-                className="inline-block rounded-xl bg-red-600 px-6 py-3 text-sm font-semibold text-white hover:bg-red-700 transition"
-              >
-                Download Brochure
-              </a>
             </div>
 
             {/* RIGHT: Image */}
@@ -91,6 +108,109 @@ export default function AboutPage() {
           </div>
         </section>
 
+        <section className="py-20 bg-neutral-50">
+          <div className="container mx-auto px-6">
+            {/* Section Header */}
+            <SectionHeading
+              eyebrow="Core Values"
+              title="What guides everything we do"
+            />
+
+            {/* Image + Content */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:gap-16">
+              {/* Left Image */}
+              <div className="lg:w-1/2 mb-10 lg:mb-0 relative h-64 sm:h-80 lg:h-[500px] w-full rounded-3xl overflow-hidden">
+                <Image
+                  src="/images/coreVal.jpg"
+                  alt="Our mission illustration"
+                  fill
+                  className="object-cover"
+                />
+              </div>
+
+              {/* Right Content */}
+              <div className="lg:w-1/2 space-y-8">
+                {/* Sustainability */}
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+                    <Leaf className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold mb-1">
+                      Sustainability
+                    </h3>
+                    <p className="text-gray-600">
+                      We have a deep commitment to environmental stewardship,
+                      resource conservation, and sustainable agricultural
+                      practices.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Ethical Practices */}
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+                    <Shield className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold mb-1">
+                      Ethical Practices
+                    </h3>
+                    <p className="text-gray-600">
+                      The emphasis on ethics in our mission implies a strong
+                      value placed on integrity, transparency, fairness, and
+                      responsibility in all business operations and
+                      relationships.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quality Commitment */}
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center">
+                    <CheckCircle className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold mb-1">
+                      Quality Commitment
+                    </h3>
+                    <p className="text-gray-600">
+                      We strive to maintain high standards in food safety,
+                      nutrition, and taste — this is a fundamental value.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Innovation */}
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center">
+                    <Zap className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold mb-1">Innovation</h3>
+                    <p className="text-gray-600">
+                      We are committed to innovation. This value is central to
+                      our approach, encompassing a continuous pursuit of
+                      improvement, embracing new technologies, and finding
+                      creative solutions to challenges in agriculture and food
+                      production.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-20 bg-white">
+          <SectionHeading
+            eyebrow="Sustainability at Wills Farm Ltd"
+            title="Developed in Line with the We Care principles and goals"
+          />
+          <div className="mt-5">
+            <Timeline events={goalsTimeline} />
+          </div>
+        </section>
         <section className="space-y-6">
           <SectionHeading
             eyebrow="What defines us"

@@ -38,11 +38,11 @@ export function Hero({
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="text-center lg:text-left max-w-4xl"
           >
-            <div className="mb-5 flex flex-wrap gap-2 justify-center lg:justify-start">
+            {/* <div className="mb-5 flex flex-wrap gap-2 justify-center lg:justify-start">
               {proof.map((p) => (
                 <Badge key={p}>{p}</Badge>
               ))}
-            </div>
+            </div> */}
 
             <h1 className="text-3xl font-extrabold tracking-tight text-brand-light sm:text-5xl">
               {headline}
