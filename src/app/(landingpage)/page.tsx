@@ -6,8 +6,8 @@ import { SectionHeading } from "@/components/SectionHeading";
 import { ProductTiles } from "@/components/ProductTiles";
 import { FeatureGrid } from "@/components/FeatureGrid";
 import { OperatingDiagram } from "@/components/OperatingDiagram";
-import { Testimonials } from "@/components/Testimonials";
-import { CTA } from "@/components/CTA";
+// import { Testimonials } from "@/components/Testimonials";
+// import { CTA } from "@/components/CTA";
 import { LeadForm } from "@/components/Forms/LeadForm";
 import { toWhatsAppHref } from "@/lib/utils";
 import Image from "next/image";
@@ -137,7 +137,7 @@ export default function HomePage() {
             title="What buyers and farms say"
             // subtitle="Replace these placeholders with verified testimonials once you have written approvals."
           />
-          <Testimonials />
+          {/* <Testimonials /> */}
         </Container>
       </section>
 

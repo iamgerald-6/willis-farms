@@ -37,7 +37,7 @@ export const siteContent = {
   },
   contact: {
     locationAddress:
-      "EG-508-0449, Yaw Densu, Nsawam–Kotar Road, Eastern Region",
+      "EG-508-0449, Yaw Densu, Nsawam-Coaltar Road, Eastern Region",
     postalAddress: "WY 2662, Kwabenya, Accra",
     email: "info@willsfarms.com",
     phones: ["+233 268 379 722", "+233 204 247 407"],

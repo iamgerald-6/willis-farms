@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "./globals.css";
+import "../../app/globals.css";
 import { siteContent } from "@/content/siteContent";
 import { JsonLd } from "@/components/JsonLd";
 import { Analytics } from "@/components/Analytics";

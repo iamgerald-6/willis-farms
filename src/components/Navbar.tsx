@@ -8,13 +8,10 @@ import { classNames } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { Container } from "./Container";
 import { Button } from "./Button";
-
 export function Navbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
   const nav = useMemo(() => siteContent.nav, []);
-
   return (
     <header className="sticky top-0 z-50 border-b border-black/5 bg-white/85 backdrop-blur">
       <Container className="flex justify-between py-3">
@@ -30,9 +27,6 @@ export function Navbar() {
             height={38}
             priority
           />
-          {/* <span className="hidden text-sm font-semibold text-brand-gray md:inline">
-            {siteContent.affiliation.headline}
-          </span> */}
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex justify-center">
