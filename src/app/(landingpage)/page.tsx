@@ -130,16 +130,16 @@ export default function HomePage() {
         </Container>
       </section>
 
-      <section className="bg-brand-light py-14">
+      {/* <section className="bg-brand-light py-14">
         <Container className="space-y-10">
           <SectionHeading
             eyebrow="Proof"
             title="What buyers and farms say"
-            // subtitle="Replace these placeholders with verified testimonials once you have written approvals."
+            subtitle="Replace these placeholders with verified testimonials once you have written approvals."
           />
-          {/* <Testimonials /> */}
+          <Testimonials />
         </Container>
-      </section>
+      </section> */}
 
       <section className="bg-white py-14">
         <Container className="space-y-10">

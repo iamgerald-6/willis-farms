@@ -1,19 +1,25 @@
 // app/api/content/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-// import { Content } from "@/types";
-
-// Initialize Supabase server client
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function POST(req: NextRequest) {
   try {
+    // ✅ Move env + client INSIDE the function
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("Missing Supabase environment variables");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const body = await req.json();
 
-    // Destructure fields
     const {
       title,
       category,
@@ -27,7 +33,7 @@ export async function POST(req: NextRequest) {
       created_by,
     } = body;
 
-    // Manual validation for required fields
+    // ✅ Validation
     if (!title || !category || !description) {
       return NextResponse.json(
         { error: "Missing required fields: title, category, description" },
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Insert into Supabase
+    // ✅ Insert into Supabase
     const { data, error } = await supabase
       .from("content")
       .insert([
@@ -53,7 +59,7 @@ export async function POST(req: NextRequest) {
           created_by: created_by ?? null,
         },
       ])
-      .select(); // return inserted row
+      .select();
 
     if (error) {
       console.error("Supabase insert error:", error);
@@ -70,7 +76,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, content: data[0] });
+    return NextResponse.json({
+      success: true,
+      content: data[0],
+    });
   } catch (err) {
     console.error("Server error:", err);
     return NextResponse.json(
