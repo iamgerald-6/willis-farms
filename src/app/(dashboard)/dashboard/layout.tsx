@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <html>
       <head>
-        <link rel="icon" href="/brand/willsfarms-logo.png" />
+        <link rel="icon" href="/brand/logo.svg" />
         <title>Wills Farms Management</title>
       </head>
       <body>

@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "Wills Farms | Staff Portal",
   description: "Secure login to the Wills Farms management system.",
   icons: {
-    icon: "/brand/willsfarms-logo.png",
-    shortcut: "/brand/willsfarms-logo.png",
+    icon: "/brand/logo.svg",
+    shortcut: "/brand/logo.svg",
   },
 };
 

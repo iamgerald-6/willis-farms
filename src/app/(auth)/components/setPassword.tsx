@@ -10,45 +10,20 @@ export default function SetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ready, setReady] = useState(false); // show form only once auth state is resolved
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Supabase processes the invite/recovery token from the URL hash automatically.
-    // Wait for the auth state to settle, then decide what to show.
+    // On production, Supabase processes the invite token and clears the hash
+    // before this component mounts — so we can never rely on reading the hash.
+    // Instead, just show the form as soon as any auth event fires.
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "INITIAL_SESSION") {
-        // Check if this page was reached from an invite/recovery link (hash contains a token)
-        const hash = typeof window !== "undefined" ? window.location.hash : "";
-        const isTokenLink =
-          hash.includes("access_token") ||
-          hash.includes("type=invite") ||
-          hash.includes("type=recovery");
-
-        if (isTokenLink) {
-          // Supabase is processing the token — show the form
-          setReady(true);
-        } else {
-          // No invite token in URL — check if the user already has a session
-          supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-              // Already logged in: go straight to the dashboard
-              router.replace("/dashboard");
-            } else {
-              // Not logged in and no invite token — send to login
-              router.replace("/login");
-            }
-          });
-        }
-      }
-
-      if (event === "SIGNED_IN") {
-        // Token was processed; user is now signed in — show the set-password form
+      if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
         setReady(true);
       }
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [router]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
