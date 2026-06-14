@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-// ✅ Server-side only key
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { getSupabaseAdmin } from "@/lib/supabaseServer";
 
 export async function GET(req: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin();
+
+  if (!supabaseAdmin) {
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 }
+    );
+  }
+
   try {
     const { data, error } = await supabaseAdmin.from("users").select("*");
 
@@ -15,7 +18,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json([], { status: 400 });
     }
 
-    return NextResponse.json(data); // <-- return the array directly
+    return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json([], { status: 500 });
   }

@@ -1,0 +1,982 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabaseClient";
+import {
+  Search,
+  ChevronRight,
+  Award,
+  TrendingUp,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  User,
+  FileText,
+  Plus,
+} from "lucide-react";
+import api from "@/lib/api";
+import PromotionFormPage from "./component/promotionForm";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+// A completed promotion assessment (from promotions table)
+interface CompletedPromotion {
+  type: "completed";
+  id: number;
+  created_at: string;
+  appraisal_id: number;
+  employee_company_id: string;
+  employee_name: string;
+  current_grade: string;
+  current_job_title: string;
+  proposed_grade: string;
+  proposed_job_title: string;
+  immediate_supervisor: string;
+  reviewing_manager: string;
+  triggering_review: string;
+  tier_authorisation?: string;
+  section_unit?: string;
+  eligibility_checklist: Record<string, { answer: string; comment: string }>;
+  assessment_ratings: Record<string, { rating: number; comment: string }>;
+  final_decision: string;
+  decision_comments?: string;
+  conditions?: string;
+  submitted_by_grade: string;
+}
+
+// A pending promotion (from appraisals table — flagged ready but not yet assessed)
+interface PendingPromotion {
+  type: "pending";
+  id: number;
+  created_at: string;
+  company_id: string;
+  employee_name: string;
+  current_grade: string;
+  promotion_readiness: string;
+  submitted_by: string;
+}
+
+type PromotionItem = CompletedPromotion | PendingPromotion;
+
+// ─── Promotion Matrix ─────────────────────────────────────────────────────────
+const PROMOTION_MATRIX = [
+  {
+    from: "L1",
+    to: "L2",
+    timeGuide: "12–18 months",
+    readinessStandard: "Reliable junior technical performance",
+    requiredEvidence: [
+      "Skills log",
+      "Attendance",
+      "Conduct",
+      "Practical sign-off",
+      "Theory/practical pass",
+      "Supervisor recommendation",
+    ],
+    decisionMakers: [
+      "Senior Swine Technician",
+      "Herd Supervisor/Manager",
+      "Breeding Farm Manager",
+      "HR",
+    ],
+  },
+  {
+    from: "L2",
+    to: "L3",
+    timeGuide: "12–24 months",
+    readinessStandard:
+      "Advanced routine execution, AI certification, coaching capability",
+    requiredEvidence: [
+      "Advanced section sign-off",
+      "Lead-AI-operator certification",
+      "Records quality",
+      "Coaching evidence",
+      "Technical assessment",
+    ],
+    decisionMakers: [
+      "Herd Supervisor/Manager",
+      "Assistant Farm Manager",
+      "Breeding Farm Manager",
+      "HR",
+      "GM",
+    ],
+  },
+  {
+    from: "L3",
+    to: "L4",
+    timeGuide: "18–30 months",
+    readinessStandard: "Section-control readiness",
+    requiredEvidence: [
+      "Floor coordination evidence",
+      "Task follow-up",
+      "First-line checking",
+      "Staff guidance",
+      "Reproductive KPI contribution",
+    ],
+    decisionMakers: [
+      "Assistant Farm Manager – Breeding",
+      "Breeding Farm Manager",
+      "HR",
+      "GM",
+    ],
+  },
+  {
+    from: "L4",
+    to: "L5",
+    timeGuide: "18–36 months",
+    readinessStandard: "Multi-area supervisory capability",
+    requiredEvidence: [
+      "Section performance history",
+      "People supervision quality",
+      "Breeding KPI Library management",
+      "Reporting quality",
+    ],
+    decisionMakers: [
+      "Breeding Farm Manager",
+      "Operations/Production Manager",
+      "HR",
+      "GM",
+    ],
+  },
+  {
+    from: "L5",
+    to: "L6",
+    timeGuide: "24–36 months",
+    readinessStandard: "Full farm-management readiness",
+    requiredEvidence: [
+      "Multi-section control",
+      "Planning ability",
+      "People-management maturity",
+      "Reporting",
+      "Resource-control evidence",
+    ],
+    decisionMakers: ["Operations/Production Manager", "Executive Leadership"],
+  },
+  {
+    from: "L6",
+    to: "L7",
+    timeGuide: "Role-based",
+    readinessStandard: "Enterprise operational leadership readiness",
+    requiredEvidence: [
+      "Farm leadership results",
+      "Enterprise coordination",
+      "Strategic reporting",
+      "Leadership maturity",
+    ],
+    decisionMakers: ["CEO", "Executive Leadership"],
+  },
+];
+
+const GENERAL_CONDITIONS = [
+  "Satisfactory attendance",
+  "Acceptable conduct and discipline record",
+  "No serious unresolved disciplinary issue",
+  "No major biosecurity or tier-discipline breach",
+  "Satisfactory performance in current role, including reproductive KPI contribution where applicable",
+  "Four Quarterly Performance Reviews of the year showing readiness",
+  "Positive supervisor recommendation",
+  "Evidence of role readiness",
+  "Management approval",
+  "Available position / business need where applicable",
+];
+
+const DECISION_LABELS: Record<
+  string,
+  { label: string; color: string; icon: React.ReactNode }
+> = {
+  promote: {
+    label: "Promote",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    icon: <CheckCircle2 className="w-4 h-4" />,
+  },
+  promote_with_conditions: {
+    label: "Promote with Conditions",
+    color: "bg-blue-50 text-blue-700 border-blue-200",
+    icon: <CheckCircle2 className="w-4 h-4" />,
+  },
+  defer_pending_skills: {
+    label: "Defer Pending Skills Completion",
+    color: "bg-amber-50 text-amber-700 border-amber-200",
+    icon: <Clock className="w-4 h-4" />,
+  },
+  retain_with_improvement: {
+    label: "Retain with Improvement Plan",
+    color: "bg-orange-50 text-orange-700 border-orange-200",
+    icon: <AlertCircle className="w-4 h-4" />,
+  },
+  not_ready: {
+    label: "Not Promotion-Ready",
+    color: "bg-red-50 text-red-700 border-red-200",
+    icon: <XCircle className="w-4 h-4" />,
+  },
+};
+
+const RATING_LABELS: Record<number, string> = {
+  1: "Unsatisfactory",
+  2: "Below Expectation",
+  3: "Meets Expectation",
+  4: "Above Expectation",
+  5: "Excellent",
+};
+
+const RATING_COLORS: Record<number, string> = {
+  1: "bg-red-50 text-red-700",
+  2: "bg-orange-50 text-orange-700",
+  3: "bg-amber-50 text-amber-700",
+  4: "bg-green-50 text-green-700",
+  5: "bg-emerald-50 text-emerald-700",
+};
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function gradeNum(grade: string | null | undefined): number {
+  if (!grade) return 0;
+  const n = parseInt(grade.replace(/\D/g, ""), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+// ─── Promotion Card ───────────────────────────────────────────────────────────
+function PromotionCard({
+  item,
+  onClick,
+  selected,
+}: {
+  item: PromotionItem;
+  onClick: () => void;
+  selected: boolean;
+}) {
+  if (item.type === "pending") {
+    return (
+      <button
+        onClick={onClick}
+        className={`w-full text-left p-4 rounded-xl border-2 transition-all ${selected ? "border-[#1e3a5f] bg-blue-50/40" : "border-amber-100 bg-amber-50/30 hover:border-amber-300"}`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {item.employee_name}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {item.current_grade} · {formatDate(item.created_at)}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 self-start sm:self-auto shrink-0">
+            <Clock className="w-3 h-3" /> Awaiting Assessment
+          </span>
+        </div>
+      </button>
+    );
+  }
+
+  const decision = DECISION_LABELS[item.final_decision];
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left p-4 rounded-xl border-2 transition-all ${selected ? "border-[#1e3a5f] bg-blue-50/40" : "border-gray-100 bg-white hover:border-gray-300"}`}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">
+            {item.employee_name}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {item.current_grade} → {item.proposed_grade} ·{" "}
+            {formatDate(item.created_at)}
+          </p>
+        </div>
+        {decision && (
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border self-start sm:self-auto shrink-0 ${decision.color}`}
+          >
+            {decision.icon}
+            {decision.label}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ─── Completed Promotion Detail ───────────────────────────────────────────────
+function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
+  const decision = DECISION_LABELS[promotion.final_decision];
+  const matrixStep = PROMOTION_MATRIX.find(
+    (m) =>
+      m.from === promotion.current_grade && m.to === promotion.proposed_grade,
+  );
+
+  const avgRating = useMemo(() => {
+    const vals = Object.values(promotion.assessment_ratings)
+      .map((v) => v.rating)
+      .filter(Boolean);
+    if (!vals.length) return null;
+    return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+  }, [promotion.assessment_ratings]);
+
+  const eligibilityPassed = Object.values(
+    promotion.eligibility_checklist,
+  ).filter((v) => v.answer === "yes").length;
+  const eligibilityTotal = Object.values(
+    promotion.eligibility_checklist,
+  ).length;
+
+  return (
+    <div className="space-y-4 sm:space-y-5">
+      <div className="bg-[#1e3a5f] rounded-2xl p-4 sm:p-6 text-white">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-white/50 mb-1">
+              Promotion Assessment · {formatDate(promotion.created_at)}
+            </p>
+            <h2 className="text-xl sm:text-2xl font-bold truncate">
+              {promotion.employee_name}
+            </h2>
+            <p className="text-white/60 text-xs sm:text-sm mt-0.5 truncate">
+              {promotion.current_job_title || "No title"}
+            </p>
+            <div className="flex items-center gap-3 mt-3">
+              <span className="bg-white/10 text-white text-xs font-bold px-3 py-1 rounded-full">
+                {promotion.current_grade}
+              </span>
+              <TrendingUp className="w-4 h-4 text-white/40" />
+              <span className="bg-emerald-500/30 text-emerald-200 text-xs font-bold px-3 py-1 rounded-full">
+                {promotion.proposed_grade}
+              </span>
+            </div>
+          </div>
+          {avgRating && (
+            <div className="bg-white/10 rounded-xl px-4 py-2 sm:py-3 text-center self-start sm:self-auto min-w-[100px]">
+              <p className="text-[10px] sm:text-xs text-white/50 mb-0.5">
+                Assessment Avg
+              </p>
+              <p className="text-xl sm:text-2xl font-black text-white">
+                {avgRating}
+              </p>
+              <p className="text-white/30 text-[10px]">/ 5</p>
+            </div>
+          )}
+        </div>
+        {decision && (
+          <div
+            className={`mt-4 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 font-semibold text-xs sm:text-sm border ${decision.color}`}
+          >
+            <div className="flex items-center gap-1.5 shrink-0">
+              {decision.icon}
+              <span>Final Decision: {decision.label}</span>
+            </div>
+            {promotion.conditions && (
+              <span className="text-[11px] sm:text-xs font-normal sm:ml-2 opacity-80">
+                · Conditions: {promotion.conditions}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {matrixStep && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+          <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-red-500" />
+            Promotion Step — {matrixStep.from} → {matrixStep.to}
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
+                Minimum Time Guide
+              </p>
+              <p className="text-xs sm:text-sm font-bold text-gray-800">
+                {matrixStep.timeGuide}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
+                Core Readiness Standard
+              </p>
+              <p className="text-xs sm:text-sm text-gray-700">
+                {matrixStep.readinessStandard}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
+                Required Evidence
+              </p>
+              <ul className="space-y-1">
+                {matrixStep.requiredEvidence.map((e) => (
+                  <li
+                    key={e}
+                    className="text-xs text-gray-600 flex items-start gap-1.5"
+                  >
+                    <span className="w-1 h-1 rounded-full bg-gray-400 mt-1.5 shrink-0" />
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
+                Decision Makers
+              </p>
+              <ul className="space-y-1">
+                {matrixStep.decisionMakers.map((d) => (
+                  <li
+                    key={d}
+                    className="text-xs text-gray-600 flex items-start gap-1.5"
+                  >
+                    <span className="w-1 h-1 rounded-full bg-gray-400 mt-1.5 shrink-0" />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+        <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <User className="w-4 h-4 text-red-500" /> Employee Details
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {[
+            { label: "Current Grade", value: promotion.current_grade },
+            { label: "Proposed Grade", value: promotion.proposed_grade },
+            {
+              label: "Current Title",
+              value: promotion.current_job_title || "Not set",
+            },
+            { label: "Proposed Title", value: promotion.proposed_job_title },
+            { label: "Supervisor", value: promotion.immediate_supervisor },
+            { label: "Reviewing Manager", value: promotion.reviewing_manager },
+            { label: "Triggering Review", value: promotion.triggering_review },
+            {
+              label: "Tier Authorisation",
+              value: promotion.tier_authorisation || "—",
+            },
+            { label: "Section / Unit", value: promotion.section_unit || "—" },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
+                {label}
+              </p>
+              <p className="text-xs sm:text-sm text-gray-800 break-words">
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-red-500" /> Minimum
+            Eligibility Check
+          </h3>
+          <span
+            className={`text-xs px-3 py-1 rounded-full font-semibold border self-start sm:self-auto ${eligibilityPassed === eligibilityTotal ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
+          >
+            {eligibilityPassed} / {eligibilityTotal} passed
+          </span>
+        </div>
+        <div className="space-y-2">
+          {Object.entries(promotion.eligibility_checklist).map(([req, val]) => (
+            <div
+              key={req}
+              className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100"
+            >
+              <span className="text-xs sm:text-sm text-gray-700 flex-1">
+                {req}
+              </span>
+              <div className="flex items-center gap-3 shrink-0">
+                {val.comment && (
+                  <span className="text-xs text-gray-400 italic truncate max-w-[160px]">
+                    {val.comment}
+                  </span>
+                )}
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-full font-bold border ${val.answer === "yes" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : val.answer === "no" ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-100 text-gray-400 border-gray-200"}`}
+                >
+                  {val.answer === "yes"
+                    ? "Yes"
+                    : val.answer === "no"
+                      ? "No"
+                      : "—"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+        <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-red-500" /> Assessment by Core Area
+        </h3>
+        <div className="border border-gray-100 rounded-xl overflow-hidden">
+          <div className="flex justify-between px-4 py-2 bg-gray-50 text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            <span>Assessment Area</span>
+            <span>Rating</span>
+          </div>
+          {Object.entries(promotion.assessment_ratings).map(([area, val]) => (
+            <div
+              key={area}
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-t border-gray-50"
+            >
+              <div className="min-w-0 flex-1">
+                <span className="text-xs sm:text-sm text-gray-700">{area}</span>
+                {val.comment && (
+                  <p className="text-xs text-gray-400 italic mt-0.5">
+                    {val.comment}
+                  </p>
+                )}
+              </div>
+              {val.rating && (
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-full font-semibold self-start sm:self-auto shrink-0 ${RATING_COLORS[val.rating]}`}
+                >
+                  {val.rating} · {RATING_LABELS[val.rating]}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {promotion.decision_comments && (
+        <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
+          <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Decision Comments
+          </p>
+          <p className="text-xs sm:text-sm text-gray-700 leading-relaxed break-words">
+            {promotion.decision_comments}
+          </p>
+        </div>
+      )}
+
+      <p className="text-[10px] sm:text-xs text-gray-300 text-right pb-2">
+        Submitted {formatDate(promotion.created_at)}
+      </p>
+    </div>
+  );
+}
+
+// ─── Pending Detail ───────────────────────────────────────────────────────────
+function PendingDetail({
+  item,
+  onStartAssessment,
+}: {
+  item: PendingPromotion;
+  onStartAssessment: () => void;
+}) {
+  const matrixStep = PROMOTION_MATRIX.find(
+    (m) => m.from === item.current_grade,
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-[#1e3a5f] rounded-2xl p-5 text-white">
+        <p className="text-xs font-semibold uppercase tracking-widest text-white/50 mb-1">
+          Awaiting Promotion Assessment
+        </p>
+        <h2 className="text-xl font-bold">{item.employee_name}</h2>
+        <p className="text-white/60 text-sm mt-1">
+          Current Grade: {item.current_grade}
+        </p>
+        <p className="text-white/40 text-xs mt-1">
+          Appraisal submitted {formatDate(item.created_at)}
+        </p>
+        <div className="mt-4 bg-amber-500/20 border border-amber-400/30 rounded-lg px-3 py-2 text-xs text-amber-200 flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+          Flagged as ready for promotion assessment — no formal assessment has
+          been submitted yet.
+        </div>
+      </div>
+
+      {matrixStep && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+          <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-red-500" />
+            Next Step — {matrixStep.from} → {matrixStep.to}
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                Time Guide
+              </p>
+              <p className="text-sm font-bold text-gray-800">
+                {matrixStep.timeGuide}
+              </p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                Readiness Standard
+              </p>
+              <p className="text-xs text-gray-700">
+                {matrixStep.readinessStandard}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={onStartAssessment}
+        className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+      >
+        <Plus className="w-4 h-4" /> Start Promotion Assessment
+      </button>
+    </div>
+  );
+}
+
+// ─── General Conditions Panel ─────────────────────────────────────────────────
+function GeneralConditionsPanel() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-4 py-3.5 sm:px-5 sm:py-4 text-xs sm:text-sm font-bold text-gray-800"
+      >
+        <span className="flex items-center gap-2 text-left">
+          <Award className="w-4 h-4 text-red-500 shrink-0" /> General Promotion
+          Conditions
+        </span>
+        <ChevronRight
+          className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 sm:px-5 border-t border-gray-100">
+          <ul className="space-y-2 mt-3">
+            {GENERAL_CONDITIONS.map((c) => (
+              <li
+                key={c}
+                className="flex items-start gap-2 text-xs sm:text-sm text-gray-600"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface UserProfile {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  grade_level: string;
+  role: string;
+  company_id: string;
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+export default function PromotionViewPage() {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<PromotionItem | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [decisionFilter, setDecisionFilter] = useState("");
+
+  const { data: session } = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    },
+  });
+  const userId = session?.user?.id ?? "";
+
+  const { data: allUsers = [] } = useQuery<UserProfile[]>({
+    queryKey: ["get_users"],
+    queryFn: async () => {
+      const res = await api.get("/get_user");
+      return res.data as UserProfile[];
+    },
+  });
+
+  const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
+  const viewerRole = currentUser?.role ?? "";
+  const viewerGrade = gradeNum(currentUser?.grade_level);
+
+  const isSuperAdmin = viewerRole === "super_admin";
+  const canActOnOthers = isSuperAdmin || viewerGrade >= 4;
+  const canViewAll =
+    isSuperAdmin ||
+    viewerRole === "admin" ||
+    viewerRole === "manager" ||
+    viewerGrade >= 4;
+
+  // Fetch completed promotions from promotions table
+  const { data: completedRaw = [], isLoading: loadingCompleted } = useQuery<
+    CompletedPromotion[]
+  >({
+    queryKey: ["promotions_completed"],
+    enabled: !!userId,
+    queryFn: async () => {
+      const res = await api.get("/promotion/get_promotions");
+      return (res.data?.data ?? []).map((p: any) => ({
+        ...p,
+        type: "completed" as const,
+      }));
+    },
+  });
+
+  // Fetch pending (from appraisals)
+  const { data: pendingRaw = [], isLoading: loadingPending } = useQuery<
+    PendingPromotion[]
+  >({
+    queryKey: ["promotions_pending"],
+    enabled: !!userId && !loadingCompleted,
+    queryFn: async () => {
+      const res = await api.get("/promotion/get_pending");
+      const data = res.data?.data ?? [];
+      const completedAppraisalIds = new Set(
+        completedRaw.map((c) => c.appraisal_id),
+      );
+      return data
+        .filter((a: any) => !completedAppraisalIds.has(a.id))
+        .map((a: any) => ({ ...a, type: "pending" as const }));
+    },
+  });
+
+  const isLoading = loadingCompleted || loadingPending;
+
+  // Merge: pending first, then completed
+  const allItems: PromotionItem[] = useMemo(
+    () => [...pendingRaw, ...completedRaw],
+    [pendingRaw, completedRaw],
+  );
+
+  // Visibility filter
+  const visibleItems = useMemo<PromotionItem[]>(() => {
+    if (canViewAll) return allItems;
+    // Employee role — only own
+    return allItems.filter((item) => {
+      const empId =
+        item.type === "completed" ? item.employee_company_id : item.company_id;
+      return empId === currentUser?.company_id;
+    });
+  }, [allItems, canViewAll, currentUser]);
+
+  const filtered = useMemo<PromotionItem[]>(() => {
+    return visibleItems.filter((item) => {
+      const name = item.employee_name ?? "";
+      const grade = item.current_grade ?? "";
+      const matchSearch =
+        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchGrade = !gradeFilter || grade === gradeFilter;
+      const matchDecision =
+        !decisionFilter ||
+        (item.type === "completed" && item.final_decision === decisionFilter);
+      return matchSearch && matchGrade && matchDecision;
+    });
+  }, [visibleItems, search, gradeFilter, decisionFilter]);
+
+  const stats = useMemo(
+    () => ({
+      total: visibleItems.length,
+      pending: pendingRaw.length,
+      promoted: completedRaw.filter(
+        (p) =>
+          p.final_decision === "promote" ||
+          p.final_decision === "promote_with_conditions",
+      ).length,
+      deferred: completedRaw.filter(
+        (p) => p.final_decision === "defer_pending_skills",
+      ).length,
+      notReady: completedRaw.filter((p) => p.final_decision === "not_ready")
+        .length,
+    }),
+    [visibleItems, pendingRaw, completedRaw],
+  );
+
+  // Capture key before TypeScript narrows `selected` to null after the guard
+  const selectedKey = selected ? `${selected.type}:${selected.id}` : null;
+
+  if (showForm) {
+    return <PromotionFormPage onBack={() => setShowForm(false)} />;
+  }
+
+  if (selected) {
+    return (
+      <div className="p-4 sm:p-6 min-h-screen bg-gray-50">
+        <button
+          onClick={() => setSelected(null)}
+          className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-500 hover:text-gray-800 transition mb-4 sm:mb-6"
+        >
+          ← Back to promotions
+        </button>
+        <div className="max-w-4xl mx-auto">
+          {selected.type === "completed" ? (
+            <PromotionDetail promotion={selected} />
+          ) : (
+            <PendingDetail
+              item={selected}
+              onStartAssessment={() => {
+                setSelected(null);
+                setShowForm(true);
+              }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 sm:p-6 min-h-screen bg-gray-50">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Promotion Records
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            {canViewAll && !canActOnOthers
+              ? "View only — you need L4+ to approve promotions"
+              : "Grade and Promotion Tools · Promotion Step Matrix"}
+          </p>
+          {canViewAll && !canActOnOthers && (
+            <span className="inline-flex items-center mt-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              Read-only access
+            </span>
+          )}
+        </div>
+        {canActOnOthers && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 transition shadow-sm shrink-0"
+          >
+            <Plus className="w-4 h-4" /> New Promotion Assessment
+          </button>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4 mb-6">
+        {[
+          {
+            label: "Total",
+            value: stats.total,
+            color: "bg-gray-100 text-gray-500",
+          },
+          {
+            label: "Pending",
+            value: stats.pending,
+            color: "bg-amber-50 text-amber-600",
+          },
+          {
+            label: "Promoted",
+            value: stats.promoted,
+            color: "bg-emerald-50 text-emerald-600",
+          },
+          {
+            label: "Deferred",
+            value: stats.deferred,
+            color: "bg-blue-50 text-blue-600",
+          },
+          {
+            label: "Not Ready",
+            value: stats.notReady,
+            color: "bg-red-50 text-red-600",
+          },
+        ].map(({ label, value, color }) => (
+          <div
+            key={label}
+            className="bg-white rounded-2xl border border-gray-200 p-3 sm:p-4 flex items-center gap-3"
+          >
+            <div
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black text-base sm:text-lg shrink-0 ${color}`}
+            >
+              {value}
+            </div>
+            <p className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide leading-tight">
+              {label}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-6">
+        <GeneralConditionsPanel />
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-5 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-gray-50/50"
+          />
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <select
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value)}
+            className="flex-1 sm:flex-initial text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
+          >
+            <option value="">All Grades</option>
+            {["L1", "L2", "L3", "L4", "L5", "L6", "L7"].map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+          <select
+            value={decisionFilter}
+            onChange={(e) => setDecisionFilter(e.target.value)}
+            className="flex-1 sm:flex-initial text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
+          >
+            <option value="">All Decisions</option>
+            {Object.entries(DECISION_LABELS).map(([v, d]) => (
+              <option key={v} value={v}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* List */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
+          Loading promotions...
+        </div>
+      )}
+      {!isLoading && filtered.length === 0 && (
+        <div className="text-center py-20 text-gray-400">
+          <Award className="w-10 h-10 mx-auto mb-3 opacity-20" />
+          <p className="text-xs sm:text-sm font-medium">
+            No promotion records found
+          </p>
+        </div>
+      )}
+      <div className="space-y-2 max-w-3xl">
+        {filtered.map((item) => (
+          <PromotionCard
+            key={`${item.type}-${item.id}`}
+            item={item}
+            selected={selectedKey === `${item.type}:${item.id}`}
+            onClick={() => setSelected(item)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

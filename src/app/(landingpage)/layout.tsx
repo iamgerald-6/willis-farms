@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteContent.seo.siteUrl),
   title: siteContent.seo.title,
   description: siteContent.seo.description,
+  icons: {
+    icon: "/brand/logo.svg",
+    shortcut: "/brand/logo.svg",
+  },
   openGraph: {
     title: siteContent.seo.title,
     description: siteContent.seo.description,

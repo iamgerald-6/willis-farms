@@ -1,11 +1,12 @@
-// app/api/content/route.ts
+// app/api/content/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+const DEFAULT_COVER = "/images/breedfeed.webp";
+
 export async function POST(req: NextRequest) {
   try {
-    // ✅ Move env + client INSIDE the function
-    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
@@ -33,7 +34,6 @@ export async function POST(req: NextRequest) {
       created_by,
     } = body;
 
-    // ✅ Validation
     if (!title || !category || !description) {
       return NextResponse.json(
         { error: "Missing required fields: title, category, description" },
@@ -41,7 +41,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Insert into Supabase
     const { data, error } = await supabase
       .from("content")
       .insert([
@@ -50,7 +49,8 @@ export async function POST(req: NextRequest) {
           category,
           sub_category: sub_category ?? null,
           description,
-          cover_image_url: cover_image_url ?? null,
+          // Fall back to default cover if none was uploaded
+          cover_image_url: cover_image_url || DEFAULT_COVER,
           document_url: document_url ?? null,
           document_read_minutes: document_read_minutes ?? null,
           video_url: video_url ?? null,
@@ -76,10 +76,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      content: data[0],
-    });
+    return NextResponse.json({ success: true, content: data[0] });
   } catch (err) {
     console.error("Server error:", err);
     return NextResponse.json(

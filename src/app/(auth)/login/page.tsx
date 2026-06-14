@@ -1,10 +1,11 @@
 "use client";
 
+import { Suspense, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -13,8 +14,21 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+// ── Reads the ?redirect param so it must live inside <Suspense> ──────────────
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Only allow internal paths to prevent open-redirect attacks
+  const raw = searchParams.get("redirect") ?? "";
+  const redirectTo = raw.startsWith("/") ? raw : "/dashboard";
+
+  // If already logged in, skip the login screen
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace(redirectTo);
+    });
+  }, [redirectTo, router]);
 
   const {
     register,
@@ -35,7 +49,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(redirectTo);
   };
 
   return (
@@ -78,5 +92,19 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#C62828]" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

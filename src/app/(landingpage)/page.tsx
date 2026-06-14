@@ -10,15 +10,25 @@ import { OperatingDiagram } from "@/components/OperatingDiagram";
 // import { CTA } from "@/components/CTA";
 import { LeadForm } from "@/components/Forms/LeadForm";
 import { toWhatsAppHref } from "@/lib/utils";
+import { supabase } from "@/lib/supabaseClient";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function HomePage() {
+  const router = useRouter();
   const h = siteContent.home;
   const whatsappHref = toWhatsAppHref(
     siteContent.contact.whatsappNumber,
     "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork)."
   );
+
+  // Redirect staff who are already logged in straight to their dashboard
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/dashboard");
+    });
+  }, [router]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const images = [

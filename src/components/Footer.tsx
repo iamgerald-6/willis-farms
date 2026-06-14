@@ -50,6 +50,14 @@ export function Footer() {
                 {item.label}
               </Link>
             ))}
+            <div className="pt-2 mt-1 border-t border-black/5">
+              <Link
+                href="/login"
+                className="text-brand-gray hover:text-brand-dark hover:underline"
+              >
+                Pig Farm Management System
+              </Link>
+            </div>
           </div>
         </div>
 

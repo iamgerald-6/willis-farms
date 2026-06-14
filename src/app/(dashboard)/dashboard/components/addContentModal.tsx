@@ -5,213 +5,560 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, X, FileText, Video, FileImage } from "lucide-react";
-import Image from "next/image";
-// Define schema
+import {
+  Plus,
+  X,
+  FileText,
+  Video,
+  FileImage,
+  Upload,
+  Loader2,
+  CheckCircle2,
+} from "lucide-react";
+import { Content } from "@/types";
+import { useMutation } from "@tanstack/react-query";
+import api from "@/lib/api";
+
+// ─── Schema ────────────────────────────────────────────────────────────────────
 const contentSchema = z.object({
-  title: z.string().min(3, "Title is required"),
-  category: z.string().min(1, "Category required"),
-  sub_category: z.string().min(1, "Subcategory required"),
-  description: z.string().min(5, "Description required"),
-  cover_image: z.instanceof(File, { message: "Cover image required" }),
-  document: z.instanceof(File, { message: "Document required" }),
-  document_read_minutes: z.number().min(1, "Read time required"),
-  video: z.instanceof(File).optional(),
+  title: z.string().min(3, "Title must be at least 3 characters"),
+  category: z.string().min(1, "Category is required"),
+  sub_category: z.string().min(1, "Sub-category is required"),
+  description: z.string().min(5, "Description must be at least 5 characters"),
+  document_read_minutes: z.number().min(1, "Read time is required"),
   video_duration_minutes: z.number().optional(),
 });
 
-export type ContentFormValues = z.infer<typeof contentSchema>;
+export type ContentFormValues = {
+  title: string;
+  category: string;
+  sub_category: string;
+  description: string;
+  document_read_minutes: number;
+  video_duration_minutes?: number;
+};
 
+// ─── Updated Categories & Subcategories ───────────────────────────────────────
+const CATEGORIES = [
+  "Animal Health & Welfare",
+  "Breeding & Reproduction",
+  "Nutrition & Feeding",
+  "Biosecurity",
+  "Facility & Equipment",
+  "Health & Safety",
+  "HR & Administration",
+];
+
+const SUB_CATEGORIES: Record<string, string[]> = {
+  "Animal Health & Welfare": [
+    "Disease Identification & Treatment",
+    "Vaccination Protocols",
+    "Parasite Control",
+    "Injury & Wound Management",
+    "Mortality Management",
+    "Veterinary Visit Procedures",
+  ],
+  "Breeding & Reproduction": [
+    "Gilt Selection & Preparation",
+    "Insemination Procedures",
+    "Pregnancy Confirmation",
+    "Farrowing Procedures",
+    "Weaning Procedures",
+    "Boar Management",
+  ],
+  "Nutrition & Feeding": [
+    "Feed Schedules & Rations",
+    "Diet Formulations by Stage",
+    "Water Quality & Supply",
+    "Feed Storage & Handling",
+    "Lactating Sow Nutrition",
+  ],
+  Biosecurity: [
+    "Farm Entry & Exit Protocols",
+    "Visitor & Vehicle Management",
+    "Disinfection & Sanitation",
+    "Pest & Rodent Control",
+    "Quarantine Procedures",
+    "Disease Outbreak Response",
+  ],
+  "Facility & Equipment": [
+    "Pen Cleaning & Maintenance",
+    "Equipment Inspection & Servicing",
+    "Ventilation & Temperature Control",
+    "Waste & Effluent Management",
+    "Water System Maintenance",
+  ],
+  "Health & Safety": [
+    "PPE Requirements",
+    "Chemical Handling & Storage",
+    "Emergency Response Procedures",
+    "Incident Reporting",
+    "Staff Safety Training",
+  ],
+  "HR & Administration": [
+    "Staff Onboarding",
+    "Record Keeping & Documentation",
+    "Reporting Procedures",
+    "Performance & Compliance",
+  ],
+};
+
+// ─── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
   open: boolean;
   setOpen: (val: boolean) => void;
+  onSuccess?: (content: Content) => void;
 }
 
-export default function AddContentModal({ open, setOpen }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+// ─── Cloudinary upload ─────────────────────────────────────────────────────────
+async function uploadToCloudinary(file: File, folder: string): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", "willsUpload");
+  formData.append("folder", folder);
 
-  const { register, handleSubmit, reset, watch, setValue } =
-    useForm<ContentFormValues>({
-      resolver: zodResolver(contentSchema),
-    });
-  const coverImage = watch("cover_image") as File | null;
-  const documentFile = watch("document") as File | null;
-  const videoFile = watch("video") as File | null;
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  const isPdf = file.type === "application/pdf";
+  const resourceType = isImage || isPdf ? "image" : isVideo ? "video" : "raw";
 
-  const uploadToCloudinary = async (file: File, folder: string) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", "willsUpload");
-    formData.append("folder", folder);
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/dmvr8ooz1/${resourceType}/upload`,
+    { method: "POST", body: formData }
+  );
+  const json = await res.json();
+  if (!json.secure_url) throw new Error("Cloudinary upload failed");
+  return json.secure_url as string;
+}
 
-    const res = await fetch(
-      "https://api.cloudinary.com/v1_1/dmvr8ooz1/upload",
-      { method: "POST", body: formData }
-    );
-    const json = await res.json();
-    return json.secure_url as string;
+// ─── Field wrapper ─────────────────────────────────────────────────────────────
+function Field({
+  label,
+  required,
+  error,
+  icon,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  error?: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+        {icon && <span className="text-gray-400">{icon}</span>}
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+      {error && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+    </div>
+  );
+}
+
+// ─── File Drop Zone ────────────────────────────────────────────────────────────
+function FileDropZone({
+  accept,
+  file,
+  onChange,
+  placeholder,
+  hasError,
+  disabled,
+}: {
+  accept: string;
+  file: File | null;
+  onChange: (f: File | null) => void;
+  placeholder: string;
+  hasError?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={[
+        "flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg px-4 py-4 transition",
+        disabled
+          ? "opacity-50 cursor-not-allowed bg-gray-50 border-gray-200"
+          : "cursor-pointer hover:border-red-400 hover:bg-red-50/30",
+        hasError ? "border-red-300 bg-red-50" : "border-gray-200 bg-gray-50",
+      ].join(" ")}
+    >
+      <Upload className="w-4 h-4 text-gray-400" />
+      <span className="text-xs text-center text-gray-500 truncate max-w-full px-2">
+        {file ? file.name : placeholder}
+      </span>
+      <input
+        type="file"
+        accept={accept}
+        className="hidden"
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+      />
+    </label>
+  );
+}
+
+// ─── Input class helper ────────────────────────────────────────────────────────
+function inputCls(hasError?: boolean, isDisabled?: boolean) {
+  return [
+    "w-full border rounded-lg px-3 py-2 text-sm text-gray-900 transition",
+    "focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent",
+    "placeholder:text-gray-400",
+    hasError ? "border-red-300 bg-red-50" : "border-gray-200 bg-white",
+    isDisabled ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// ─── Upload payload type ───────────────────────────────────────────────────────
+interface UploadPayload {
+  title: string;
+  category: string;
+  sub_category: string;
+  description: string;
+  cover_image_url: string | null;
+  document_url: string;
+  document_read_minutes: number;
+  video_url: string | null;
+  video_duration_minutes: number | null;
+  created_by: string;
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [fileErrors, setFileErrors] = useState<{
+    cover?: string;
+    doc?: string;
+  }>({});
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors },
+  } = useForm<ContentFormValues>({
+    resolver: zodResolver(contentSchema),
+  });
+
+  const selectedCategory = watch("category");
+  const subOptions = selectedCategory
+    ? SUB_CATEGORIES[selectedCategory] ?? []
+    : [];
+
+  const validateFiles = () => {
+    const errs: { cover?: string; doc?: string } = {};
+    if (!docFile) errs.doc = "Document is required";
+    setFileErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
+  const { mutate, isPending } = useMutation({
+    mutationFn: async (payload: UploadPayload) => {
+      const res = await api.post("/sop/upload", payload);
+      return res.data;
+    },
+    onSuccess: (result) => {
+      setSuccessMsg("SOP added successfully!");
+      onSuccess?.(result.content);
+      setTimeout(() => handleClose(), 1200);
+    },
+    onError: (error: any) => {
+      const message =
+        error?.response?.data?.error ??
+        "Something went wrong. Please try again.";
+      setServerError(message);
+    },
+  });
+
   const onSubmit = async (data: ContentFormValues) => {
-    setLoading(true);
-    setMessage(null);
+    if (!validateFiles()) return;
+
+    setServerError(null);
+    setSuccessMsg(null);
+
     try {
-      // Upload each file to its folder
-      const coverUrl = await uploadToCloudinary(data.cover_image, "WillImage");
-      const docUrl = await uploadToCloudinary(data.document, "WillDocs");
-      let videoUrl: string | undefined = undefined;
-      if (data.video)
-        videoUrl = await uploadToCloudinary(data.video, "WillsVideos");
+      const [coverUrl, docUrl] = await Promise.all([
+        coverFile
+          ? uploadToCloudinary(coverFile, "WillImage")
+          : Promise.resolve(null),
+        uploadToCloudinary(docFile!, "WillDocs"),
+      ]);
 
-      // Send all data + URLs to backend
-      const res = await fetch("/api/content/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: data.title,
-          category: data.category,
-          sub_category: data.sub_category,
-          description: data.description,
-          cover_image_url: coverUrl,
-          document_url: docUrl,
-          document_read_minutes: data.document_read_minutes ?? null,
-          video_url: videoUrl ?? null,
-          video_duration_minutes: data.video_duration_minutes ?? null,
-        }),
+      const videoUrl = videoFile
+        ? await uploadToCloudinary(videoFile, "WillsVideos")
+        : null;
+
+      mutate({
+        title: data.title,
+        category: data.category,
+        sub_category: data.sub_category,
+        description: data.description,
+        cover_image_url: coverUrl,
+        document_url: docUrl,
+        document_read_minutes: data.document_read_minutes,
+        video_url: videoUrl,
+        video_duration_minutes: data.video_duration_minutes ?? null,
+        created_by: "Admin",
       });
-      const result = await res.json();
-
-      if (result.error) setMessage(result.error);
-      else {
-        setMessage("Content added successfully!");
-        reset();
-        setOpen(false);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage("Failed to add content");
-    } finally {
-      setLoading(false);
+    } catch (err: any) {
+      setServerError(err.message ?? "File upload failed. Please try again.");
     }
   };
 
-  return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] bg-white rounded shadow-lg p-6 max-h-[90vh] overflow-y-auto">
-          <Dialog.Title className="text-xl font-bold mb-4 flex justify-between items-center">
-            Add Learning Content
-            <X className="cursor-pointer" onClick={() => setOpen(false)} />
-          </Dialog.Title>
+  const handleClose = () => {
+    if (isPending) return;
+    reset();
+    setCoverFile(null);
+    setDocFile(null);
+    setVideoFile(null);
+    setFileErrors({});
+    setServerError(null);
+    setSuccessMsg(null);
+    setOpen(false);
+  };
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) handleClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto focus:outline-none">
+          {/* ── Header ── */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
             <div>
-              <label className="block font-medium mb-1">Title</label>
+              <Dialog.Title className="text-lg font-bold text-gray-900">
+                Add SOP
+              </Dialog.Title>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Files upload to Cloudinary. Fields marked{" "}
+                <span className="text-red-500">*</span> are required.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* ── Form ── */}
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="px-6 py-5 space-y-5"
+          >
+            {serverError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                {serverError}
+              </div>
+            )}
+            {successMsg && (
+              <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                {successMsg}
+              </div>
+            )}
+
+            {/* Title */}
+            <Field label="Title" required error={errors.title?.message}>
               <input
                 type="text"
+                placeholder="e.g. Farrowing Crate Preparation"
                 {...register("title")}
-                className="w-full border p-2 rounded"
+                className={inputCls(!!errors.title)}
               />
-            </div>
+            </Field>
 
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label className="block font-medium mb-1">Category</label>
-                <input
-                  type="text"
+            {/* Category + Sub-category */}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Category" required error={errors.category?.message}>
+                <select
                   {...register("category")}
-                  className="w-full border p-2 rounded"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block font-medium mb-1">Subcategory</label>
-                <input
-                  type="text"
+                  className={inputCls(!!errors.category)}
+                >
+                  <option value="">Select category</option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field
+                label="Sub-category"
+                required
+                error={errors.sub_category?.message}
+              >
+                <select
                   {...register("sub_category")}
-                  className="w-full border p-2 rounded"
+                  disabled={!selectedCategory}
+                  className={inputCls(!!errors.sub_category, !selectedCategory)}
+                >
+                  <option value="">
+                    {selectedCategory
+                      ? "Select sub-category"
+                      : "Choose category first"}
+                  </option>
+                  {subOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {/* Description */}
+            <Field
+              label="Description"
+              required
+              error={errors.description?.message}
+            >
+              <textarea
+                rows={3}
+                placeholder="What does this SOP cover?"
+                {...register("description")}
+                className={`${inputCls(!!errors.description)} resize-none`}
+              />
+            </Field>
+
+            {/* ── Media section ── */}
+            <div className="border-t border-dashed border-gray-200 pt-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                Media &amp; Documents
+              </p>
+
+              <Field
+                label="Cover Image"
+                icon={<FileImage className="w-4 h-4" />}
+              >
+                <FileDropZone
+                  accept="image/*"
+                  file={coverFile}
+                  onChange={setCoverFile}
+                  placeholder="Click to upload (optional)"
                 />
+                {coverFile && (
+                  <img
+                    src={URL.createObjectURL(coverFile)}
+                    alt="Cover preview"
+                    className="w-full h-36 object-cover rounded-lg mt-2 border border-gray-100"
+                  />
+                )}
+              </Field>
+
+              <div className="grid grid-cols-2 gap-4 mt-4 items-start">
+                <Field
+                  label="Document (PDF / Word)"
+                  required
+                  icon={<FileText className="w-4 h-4" />}
+                  error={fileErrors.doc}
+                >
+                  <FileDropZone
+                    accept=".pdf,.doc,.docx"
+                    file={docFile}
+                    onChange={(f) => {
+                      setDocFile(f);
+                      if (f)
+                        setFileErrors((prev) => ({ ...prev, doc: undefined }));
+                    }}
+                    placeholder="Click to upload a document"
+                    hasError={!!fileErrors.doc}
+                  />
+                </Field>
+
+                <Field
+                  label="Estimated Read Time (min)"
+                  required
+                  error={errors.document_read_minutes?.message}
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 10"
+                    {...register("document_read_minutes", {
+                      setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                    })}
+                    className={inputCls(!!errors.document_read_minutes)}
+                  />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4 items-start">
+                <Field
+                  label="Video (Optional)"
+                  icon={<Video className="w-4 h-4" />}
+                >
+                  <FileDropZone
+                    accept="video/*"
+                    file={videoFile}
+                    onChange={setVideoFile}
+                    placeholder="Click to upload a video"
+                  />
+                </Field>
+
+                <Field
+                  label="Video Duration (min)"
+                  error={errors.video_duration_minutes?.message}
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 15"
+                    disabled={!videoFile}
+                    {...register("video_duration_minutes", {
+                      setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                    })}
+                    className={inputCls(
+                      !!errors.video_duration_minutes,
+                      !videoFile
+                    )}
+                  />
+                </Field>
               </div>
             </div>
 
-            <div>
-              <label className="block font-medium mb-1">Description</label>
-              <textarea
-                {...register("description")}
-                className="w-full border p-2 rounded"
-                rows={3}
-              />
-            </div>
-
-            <div>
-              <label className=" font-medium mb-1 flex items-center gap-1">
-                <FileImage className="w-4 h-4" /> Cover Image
-              </label>
-              <input
-                type="file"
-                {...register("cover_image")}
-                accept="image/*"
-              />
-              {coverImage && (
-                <img
-                  src={URL.createObjectURL(coverImage)}
-                  alt="preview"
-                  className="w-full h-40 object-cover mt-2 rounded"
-                />
-              )}
-            </div>
-
-            <div>
-              <label className=" font-medium mb-1 flex items-center gap-1">
-                <FileText className="w-4 h-4" /> Document (PDF/Word)
-              </label>
-              <input
-                type="file"
-                {...register("document")}
-                accept=".pdf,.doc,.docx"
-              />
-              <input
-                type="number"
-                {...register("document_read_minutes", { valueAsNumber: true })}
-                placeholder="Estimated Read Time (minutes)"
-                className="border p-2 rounded mt-2 w-36"
-              />
-            </div>
-
-            <div>
-              <label className=" font-medium mb-1 flex items-center gap-1">
-                <Video className="w-4 h-4" /> Video (Optional)
-              </label>
-              <input type="file" {...register("video")} accept="video/*" />
-              <input
-                type="number"
-                {...register("video_duration_minutes", { valueAsNumber: true })}
-                placeholder="Duration (minutes)"
-                className="border p-2 rounded mt-2 w-36"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 mt-4">
+            {/* ── Footer ── */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <button
                 type="button"
-                className="px-4 py-2 border rounded hover:bg-gray-100"
-                onClick={() => setOpen(false)}
+                onClick={handleClose}
+                disabled={isPending}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-1"
-                disabled={loading}
+                disabled={isPending}
+                className="px-5 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition font-medium flex items-center gap-2 disabled:opacity-60"
               >
-                <Plus className="w-4 h-4" />
-                {loading ? "Adding..." : "Add Content"}
+                {isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Uploading…
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" /> Add SOP
+                  </>
+                )}
               </button>
             </div>
-            {message && (
-              <p className="text-center mt-2 text-red-600">{message}</p>
-            )}
           </form>
         </Dialog.Content>
       </Dialog.Portal>
