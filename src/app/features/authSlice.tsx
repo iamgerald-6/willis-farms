@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-export type Role = "employee" | "admin" | "super_admin";
+export type Role = "employee" | "admin" | "manager" | "super_admin";
 export interface AuthUser {
   id: string;
   email: string;
