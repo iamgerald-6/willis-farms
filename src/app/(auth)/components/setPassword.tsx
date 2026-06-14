@@ -11,24 +11,15 @@ export default function SetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if the URL hash contains an error (e.g. expired or invalid invite link)
     const hash = window.location.hash;
-    if (hash.includes("error=")) {
-      const params = new URLSearchParams(hash.replace("#", ""));
-      const description = params.get("error_description");
-      setLinkError(
-        description?.replace(/\+/g, " ") ??
-          "This invite link is invalid or has expired.",
-      );
+    if (hash.includes("error=access_denied") || hash.includes("error=")) {
+      router.replace("/invite-expired");
       return;
     }
 
-    // On production, Supabase processes the invite token and clears the hash
-    // before this component mounts — so we can never rely on reading the hash.
-    // Instead, just show the form as soon as any auth event fires.
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
         setReady(true);
@@ -62,23 +53,6 @@ export default function SetPasswordPage() {
     toast.success("Password set! Taking you to the dashboard…");
     setTimeout(() => router.push("/dashboard"), 1500);
   };
-
-  if (linkError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded shadow w-full max-w-md text-center">
-          <div className="text-4xl mb-4">⏱</div>
-          <h1 className="text-xl font-bold mb-2 text-gray-800">
-            Invite Link Expired
-          </h1>
-          <p className="text-sm text-gray-500 mb-6">{linkError}</p>
-          <p className="text-sm text-gray-400">
-            Please contact your administrator to send a new invite.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   if (!ready) {
     return (
