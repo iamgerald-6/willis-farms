@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -16,9 +16,21 @@ import {
   Award,
   ChevronDown,
   Info,
+  MessageSquare,
+  FileText,
 } from "lucide-react";
+import {
+  FINAL_DECISIONS,
+  GRADE_ORDER,
+  RATING_LABELS,
+  computeReadinessSummary,
+  getFormConfig,
+  getPromotionStep,
+  getProposedGrade,
+  type PromotionFormConfig,
+  type SkillSignoffStage,
+} from "./promotionFormConfigs";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface Appraisal {
   id: number;
   company_id: string;
@@ -35,8 +47,11 @@ interface Appraisal {
   submitted_by: string;
   employee_weighted_score?: number;
   supervisor_weighted_score?: number;
-  employee_ratings?: any;
-  supervisor_ratings?: any;
+  employee_ratings?: Record<
+    string,
+    Record<string, { rating: number; comment?: string }>
+  >;
+  supervisor_ratings?: unknown;
   created_at: string;
 }
 
@@ -51,69 +66,6 @@ interface UserProfile {
 
 type EligibilityAnswer = "yes" | "no" | "";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"];
-
-function gradeIndex(g: string | null | undefined) {
-  if (!g) return -1;
-  const clean = g.replace("_", "/").split("/")[0].trim();
-  return GRADE_ORDER.indexOf(clean);
-}
-
-const ELIGIBILITY_REQUIREMENTS = [
-  "Minimum expected time in role completed",
-  "Attendance record satisfactory",
-  "Conduct and discipline record satisfactory",
-  "No serious unresolved disciplinary issue",
-  "No major biosecurity or tier-discipline breach",
-  "Current performance satisfactory",
-  "All four Quarterly Performance Reviews of the year attached",
-  "Annual Appraisal of the year attached",
-  "Skills log completed where required",
-  "Practical sign-off completed where required",
-  "Theory assessment completed where required",
-  "Reproductive KPI contribution satisfactory (L3 and above)",
-  "Supervisor recommends employee for review",
-  "Business need / role availability confirmed",
-];
-
-const ASSESSMENT_AREAS = [
-  "Attendance and punctuality",
-  "Conduct and professionalism",
-  "Biosecurity compliance",
-  "Tier-discipline compliance",
-  "PPE compliance",
-  "SOP compliance",
-  "Technical competence in current role",
-  "AI competence (where applicable)",
-  "Recordkeeping accuracy",
-  "Abnormality detection and escalation",
-  "Task completion quality",
-  "Hygiene and sanitation discipline",
-  "Teamwork and collaboration",
-  "Reliability and accountability",
-  "Reproductive KPI contribution (L3+)",
-];
-
-const FINAL_DECISIONS = [
-  { value: "promote", label: "Promote" },
-  { value: "promote_with_conditions", label: "Promote with conditions" },
-  { value: "defer_pending_skills", label: "Defer pending skills completion" },
-  {
-    value: "retain_with_improvement",
-    label: "Retain in current role with improvement plan",
-  },
-  { value: "not_ready", label: "Not promotion-ready" },
-];
-
-const RATING_LABELS: Record<number, string> = {
-  1: "Unsatisfactory",
-  2: "Below Expectation",
-  3: "Meets Expectation",
-  4: "Above Expectation",
-  5: "Excellent",
-};
-
 const RATING_COLORS: Record<number, string> = {
   1: "bg-red-500",
   2: "bg-orange-400",
@@ -122,7 +74,18 @@ const RATING_COLORS: Record<number, string> = {
   5: "bg-emerald-500",
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const SKILL_STAGES: { value: SkillSignoffStage; label: string }[] = [
+  { value: "observed", label: "Observed" },
+  { value: "supervised", label: "Under Supervision" },
+  { value: "consistent", label: "Consistent to Standard" },
+];
+
+function gradeIndex(g: string | null | undefined) {
+  if (!g) return -1;
+  const clean = g.replace("_", "/").split("/")[0].trim();
+  return GRADE_ORDER.indexOf(clean as (typeof GRADE_ORDER)[number]);
+}
+
 function inputCls(hasError?: boolean) {
   return [
     "w-full border rounded-lg px-3 py-2 text-sm text-gray-900 transition",
@@ -146,7 +109,6 @@ function FieldLabel({
   );
 }
 
-// ─── Appraisal Summary Card ───────────────────────────────────────────────────
 function AppraisalSummaryCard({ appraisal }: { appraisal: Appraisal }) {
   const [expanded, setExpanded] = useState(false);
   const empScore = appraisal.employee_weighted_score;
@@ -169,21 +131,17 @@ function AppraisalSummaryCard({ appraisal }: { appraisal: Appraisal }) {
           <p className="text-white/60 text-sm mt-0.5">
             {appraisal.job_title || "No title set"} · {appraisal.current_grade}
           </p>
-          <p className="text-white/40 text-xs mt-1">
-            Supervisor: {appraisal.immediate_supervisor}
-          </p>
         </div>
         <div className="flex gap-4 bg-white/10 rounded-xl px-5 py-3">
-          {empScore && (
+          {empScore != null && (
             <div className="text-center">
               <p className="text-xs text-white/50 mb-1">Employee</p>
               <p className="text-xl font-black text-green-300">
                 {empScore.toFixed(2)}
               </p>
-              <p className="text-white/30 text-xs">/ 5</p>
             </div>
           )}
-          {supScore && (
+          {supScore != null && (
             <>
               <div className="w-px bg-white/10" />
               <div className="text-center">
@@ -191,7 +149,6 @@ function AppraisalSummaryCard({ appraisal }: { appraisal: Appraisal }) {
                 <p className="text-xl font-black text-emerald-300">
                   {supScore.toFixed(2)}
                 </p>
-                <p className="text-white/30 text-xs">/ 5</p>
               </div>
             </>
           )}
@@ -201,68 +158,51 @@ function AppraisalSummaryCard({ appraisal }: { appraisal: Appraisal }) {
               <div className="text-center">
                 <p className="text-xs text-white/50 mb-1">Final Avg</p>
                 <p className="text-xl font-black text-white">{finalAvg}</p>
-                <p className="text-white/30 text-xs">/ 5</p>
               </div>
             </>
           )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => setExpanded((p) => !p)}
-        className="mt-3 text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition"
-      >
-        {expanded ? "Hide" : "Show"} appraisal ratings
-        <ChevronDown
-          className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-        />
-      </button>
-      {expanded && appraisal.employee_ratings && (
-        <div className="mt-3 bg-white/5 rounded-xl p-4 space-y-3 max-h-64 overflow-y-auto">
-          {Object.entries(
-            appraisal.employee_ratings as Record<
-              string,
-              Record<string, { rating: number; comment?: string }>
-            >,
-          ).map(([sectionKey, items]) => (
-            <div key={sectionKey}>
-              <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1">
-                Section {sectionKey}
-              </p>
-              {Object.entries(items).map(([item, val]) => (
-                <div
-                  key={item}
-                  className="flex items-center justify-between py-0.5"
-                >
-                  <span className="text-xs text-white/60 truncate flex-1 pr-4">
-                    {item}
-                  </span>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                      val.rating >= 5
-                        ? "bg-emerald-500/30 text-emerald-300"
-                        : val.rating >= 4
-                          ? "bg-green-500/30 text-green-300"
-                          : val.rating >= 3
-                            ? "bg-amber-500/30 text-amber-300"
-                            : val.rating >= 2
-                              ? "bg-orange-500/30 text-orange-300"
-                              : "bg-red-500/30 text-red-300"
-                    }`}
-                  >
-                    {val.rating} · {RATING_LABELS[val.rating]}
-                  </span>
-                </div>
-              ))}
+      {appraisal.employee_ratings && (
+        <>
+          <button
+            type="button"
+            onClick={() => setExpanded((p) => !p)}
+            className="mt-3 text-xs text-white/50 hover:text-white/80 flex items-center gap-1"
+          >
+            {expanded ? "Hide" : "Show"} appraisal ratings
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
+          </button>
+          {expanded && (
+            <div className="mt-3 bg-white/5 rounded-xl p-4 max-h-64 overflow-y-auto">
+              {Object.entries(appraisal.employee_ratings).map(
+                ([sectionKey, items]) => (
+                  <div key={sectionKey} className="mb-2">
+                    <p className="text-xs font-semibold text-white/40 uppercase">
+                      Section {sectionKey}
+                    </p>
+                    {Object.entries(items).map(([item, val]) => (
+                      <div
+                        key={item}
+                        className="flex justify-between py-0.5 text-xs text-white/60"
+                      >
+                        <span className="truncate flex-1 pr-4">{item}</span>
+                        <span>{val.rating}</span>
+                      </div>
+                    ))}
+                  </div>
+                ),
+              )}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-// ─── Rating Selector ──────────────────────────────────────────────────────────
 function RatingSelector({
   value,
   onChange,
@@ -271,16 +211,16 @@ function RatingSelector({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-1 flex-wrap">
       {[1, 2, 3, 4, 5].map((n) => (
         <button
           key={n}
           type="button"
           onClick={() => onChange(n)}
           title={RATING_LABELS[n]}
-          className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border-2 ${
+          className={`w-8 h-8 rounded-lg text-xs font-bold border-2 transition-all ${
             value === n
-              ? `${RATING_COLORS[n]} text-white border-transparent shadow-sm`
+              ? `${RATING_COLORS[n]} text-white border-transparent`
               : "bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300"
           }`}
         >
@@ -291,27 +231,80 @@ function RatingSelector({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function resetFormState(config: PromotionFormConfig | null) {
+  return {
+    eligibility: {} as Record<
+      string,
+      { answer: EligibilityAnswer; comment: string }
+    >,
+    disqualifying: {} as Record<string, { present: "yes" | "no" | "" }>,
+    documentedEvidence: {} as Record<
+      string,
+      { rating: number | null; comment: string }
+    >,
+    skillsLog: {} as Record<
+      string,
+      { stage: SkillSignoffStage; verifier: string; date: string }
+    >,
+    interview: {} as Record<string, { rating: number | null; notes: string }>,
+    signOffs: {} as Record<string, { name: string; date: string }>,
+    developmentPlan: {
+      strengths: "",
+      gaps: "",
+      agreed_actions: "",
+      next_review_date: "",
+    },
+    proposedJobTitle: config?.toTitle ?? "",
+    proposedGrade: config?.toGrade ?? "",
+  };
+}
+
 export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedAppraisal, setSelectedAppraisal] = useState<Appraisal | null>(
     null,
   );
-
-  // Form state
   const [eligibility, setEligibility] = useState<
     Record<string, { answer: EligibilityAnswer; comment: string }>
   >({});
-  const [assessmentRatings, setAssessmentRatings] = useState<
+  const [disqualifying, setDisqualifying] = useState<
+    Record<string, { present: "yes" | "no" | "" }>
+  >({});
+  const [documentedEvidence, setDocumentedEvidence] = useState<
     Record<string, { rating: number | null; comment: string }>
   >({});
+  const [skillsLog, setSkillsLog] = useState<
+    Record<string, { stage: SkillSignoffStage; verifier: string; date: string }>
+  >({});
+  const [interview, setInterview] = useState<
+    Record<string, { rating: number | null; notes: string }>
+  >({});
+  const [signOffs, setSignOffs] = useState<
+    Record<string, { name: string; date: string }>
+  >({});
+  const [developmentPlan, setDevelopmentPlan] = useState({
+    strengths: "",
+    gaps: "",
+    agreed_actions: "",
+    next_review_date: "",
+  });
   const [finalDecision, setFinalDecision] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const formConfig = useMemo(
+    () =>
+      selectedAppraisal
+        ? getFormConfig(selectedAppraisal.current_grade)
+        : null,
+    [selectedAppraisal],
+  );
 
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
@@ -319,12 +312,13 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
       proposed_grade: "",
       reviewing_manager: "",
       tier_authorisation: "",
+      time_in_current_role: "",
+      business_need_confirmed: "",
       decision_comments: "",
       conditions: "",
     },
   });
 
-  // ── Session ──
   const { data: session } = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
@@ -334,7 +328,6 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   });
   const userId = session?.user?.id ?? "";
 
-  // ── Fetch current user profile to check grade ──
   const { data: allUsers = [] } = useQuery<UserProfile[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
@@ -350,7 +343,6 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   const currentUserGrade = currentUserProfile?.grade_level ?? null;
   const canFillPromotion = gradeIndex(currentUserGrade) >= gradeIndex("L4");
 
-  // ── Fetch appraisals with promotion_readiness = ready_for_assessment and both submitted ──
   const { data: promotionAppraisals = [], isLoading } = useQuery<Appraisal[]>({
     queryKey: ["promotion_appraisals"],
     queryFn: async () => {
@@ -359,11 +351,12 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     },
   });
 
-  // Exclude the current user's own appraisals — cannot promote yourself
   const eligibleAppraisals = useMemo(
     () =>
       promotionAppraisals.filter(
-        (a) => a.company_id !== currentUserProfile?.company_id,
+        (a) =>
+          a.company_id !== currentUserProfile?.company_id &&
+          getFormConfig(a.current_grade) != null,
       ),
     [promotionAppraisals, currentUserProfile],
   );
@@ -377,9 +370,36 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     );
   }, [eligibleAppraisals, searchQuery]);
 
-  // ── Submit mutation ──
+  useEffect(() => {
+    if (!selectedAppraisal || !formConfig) return;
+    const fresh = resetFormState(formConfig);
+    setEligibility(fresh.eligibility);
+    setDisqualifying(fresh.disqualifying);
+    setDocumentedEvidence(fresh.documentedEvidence);
+    setSkillsLog(fresh.skillsLog);
+    setInterview(fresh.interview);
+    setSignOffs(
+      Object.fromEntries(formConfig.signOffRoles.map((r) => [r, { name: "", date: "" }])),
+    );
+    setDevelopmentPlan(fresh.developmentPlan);
+    setFinalDecision("");
+    setValue("proposed_job_title", formConfig.toTitle);
+    setValue("proposed_grade", formConfig.toGrade);
+    setValue("tier_authorisation", selectedAppraisal.section_authorisations_held ?? "");
+  }, [selectedAppraisal, formConfig, setValue]);
+
+  const readinessSummary = useMemo(() => {
+    if (!formConfig) return null;
+    return computeReadinessSummary(
+      formConfig,
+      documentedEvidence,
+      skillsLog,
+      interview,
+    );
+  }, [formConfig, documentedEvidence, skillsLog, interview]);
+
   const { mutate, isPending } = useMutation({
-    mutationFn: async (payload: any) => {
+    mutationFn: async (payload: Record<string, unknown>) => {
       const res = await api.post("/promotion/post_promotions", payload);
       return res.data;
     },
@@ -387,13 +407,9 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
       toast.success("Promotion assessment submitted successfully!");
       reset();
       setSelectedAppraisal(null);
-      setEligibility({});
-      setAssessmentRatings({});
-      setFinalDecision("");
-      setFormErrors({});
       onBack?.();
     },
-    onError: (error: any) => {
+    onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(
         error?.response?.data?.error ?? "Failed to submit. Please try again.",
       );
@@ -402,51 +418,81 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
 
   const validateForm = () => {
     const errs: Record<string, string> = {};
-    if (!selectedAppraisal) {
+    if (!selectedAppraisal || !formConfig) {
       errs.appraisal = "Please select an appraisal";
       toast.error("Please select an appraisal");
+      return false;
     }
-    // Self-promotion guard
     if (
-      selectedAppraisal &&
-      currentUserProfile &&
-      selectedAppraisal.company_id === currentUserProfile.company_id
+      selectedAppraisal.company_id === currentUserProfile?.company_id
     ) {
-      errs.appraisal = "You cannot submit a promotion assessment for yourself.";
       toast.error("You cannot submit a promotion assessment for yourself.");
+      return false;
     }
     if (!finalDecision) {
       errs.decision = "Please select a final decision";
       toast.error("Please select a final decision");
     }
-    const missingRatings = ASSESSMENT_AREAS.some(
-      (a) => !assessmentRatings[a]?.rating,
+    const missingEvidence = formConfig.documentedEvidence.some(
+      (k) => !documentedEvidence[k]?.rating,
     );
-    if (missingRatings) {
-      errs.ratings = "Please complete all assessment area ratings";
-      toast.error("Please complete all assessment area ratings");
+    if (missingEvidence) {
+      errs.evidence = "Please complete all Section B evidence ratings";
+      toast.error(errs.evidence);
+    }
+    const missingInterview = formConfig.interviewQuestions.some(
+      (q) => !interview[q.id]?.rating,
+    );
+    if (missingInterview) {
+      errs.interview = "Please complete all Section D interview ratings";
+      toast.error(errs.interview);
     }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const onSubmit = (formData: any) => {
-    if (!validateForm()) return;
+  const onSubmit = (formData: {
+    proposed_job_title: string;
+    proposed_grade: string;
+    reviewing_manager: string;
+    tier_authorisation: string;
+    time_in_current_role: string;
+    business_need_confirmed: string;
+    decision_comments: string;
+    conditions: string;
+  }) => {
+    if (!validateForm() || !selectedAppraisal || !formConfig) return;
+
+    const promotionStep = getPromotionStep(selectedAppraisal.current_grade)!;
+    const form_data = {
+      disqualifying_factors: disqualifying,
+      documented_evidence: documentedEvidence,
+      skills_log_signoff: skillsLog,
+      interview_responses: interview,
+      readiness_summary: readinessSummary,
+      development_plan: developmentPlan,
+      sign_offs: signOffs,
+    };
+
     mutate({
-      appraisal_id: selectedAppraisal!.id,
-      company_id: selectedAppraisal!.company_id,
-      employee_name: selectedAppraisal!.employee_name,
-      current_grade: selectedAppraisal!.current_grade,
-      current_job_title: selectedAppraisal!.job_title,
+      appraisal_id: selectedAppraisal.id,
+      company_id: selectedAppraisal.company_id,
+      employee_name: selectedAppraisal.employee_name,
+      current_grade: selectedAppraisal.current_grade,
+      current_job_title: selectedAppraisal.job_title,
       proposed_job_title: formData.proposed_job_title,
-      proposed_grade: formData.proposed_grade,
-      immediate_supervisor: selectedAppraisal!.immediate_supervisor,
+      proposed_grade: formData.proposed_grade || getProposedGrade(selectedAppraisal.current_grade),
+      immediate_supervisor: selectedAppraisal.immediate_supervisor,
       reviewing_manager: formData.reviewing_manager,
       tier_authorisation: formData.tier_authorisation,
-      section_unit: selectedAppraisal!.section_authorisations_held,
-      triggering_review: `${selectedAppraisal!.cycle === "quarterly" ? selectedAppraisal!.review_quarter + " " : ""}${selectedAppraisal!.review_year}`,
+      section_unit: selectedAppraisal.section_authorisations_held,
+      triggering_review: `${selectedAppraisal.cycle === "quarterly" ? selectedAppraisal.review_quarter + " " : ""}${selectedAppraisal.review_year}`,
+      promotion_step: promotionStep,
+      time_in_current_role: formData.time_in_current_role || null,
+      business_need_confirmed: formData.business_need_confirmed === "yes",
       eligibility_checklist: eligibility,
-      assessment_ratings: assessmentRatings,
+      assessment_ratings: documentedEvidence,
+      form_data,
       final_decision: finalDecision,
       decision_comments: formData.decision_comments,
       conditions: formData.conditions,
@@ -455,7 +501,6 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     });
   };
 
-  // ── Access guard ──
   if (!canFillPromotion && currentUserGrade !== null) {
     return (
       <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
@@ -466,11 +511,7 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
           </h2>
           <p className="text-sm text-gray-500">
             Only staff at grade L4 and above can fill promotion assessment
-            forms. Your current grade is{" "}
-            <span className="font-semibold">
-              {currentUserGrade ?? "not set"}
-            </span>
-            .
+            forms.
           </p>
         </div>
       </div>
@@ -481,37 +522,35 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     <div className="p-6 min-h-screen bg-gray-50">
       {onBack && (
         <button
+          type="button"
           onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition mb-4"
+          className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
         >
           ← Back to promotions
         </button>
       )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
-          Promotion Assessment Form
+          Promotion Readiness Assessment
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Grade and Promotion Tools · L4 and above only
+          Grade-specific form · L4 and above only
         </p>
       </div>
 
       <div className="max-w-5xl space-y-6">
-        {/* ── Info banner ── */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-start gap-3 text-sm text-blue-700">
-          <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          Only appraisals where both the employee and supervisor have submitted
-          AND promotion readiness is marked as "Ready for assessment" appear
-          below.
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          Select an employee — the form automatically loads the correct
+          promotion step (L1→L2, L2→L3, etc.) based on their current grade.
         </div>
 
-        {/* ── Appraisal selector ── */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
             <User className="w-4 h-4 text-red-500" />
             Select Employee Appraisal
           </h3>
-
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -522,210 +561,185 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
               className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400"
             />
           </div>
-
           {isLoading && (
-            <div className="flex items-center justify-center py-8 text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading
-              appraisals...
+            <div className="flex justify-center py-8 text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
             </div>
           )}
-
           {!isLoading && filtered.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">
+            <p className="text-center py-8 text-gray-400 text-sm">
               No appraisals ready for promotion assessment
-            </div>
+            </p>
           )}
-
           <div className="space-y-2">
-            {filtered.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => {
-                  setSelectedAppraisal(a);
-                  setFormErrors({});
-                }}
-                className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-                  selectedAppraisal?.id === a.id
-                    ? "border-[#1e3a5f] bg-blue-50/40"
-                    : "border-gray-100 hover:border-gray-300"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {a.employee_name}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {a.current_grade} ·{" "}
-                      {a.cycle === "quarterly" ? `${a.review_quarter} ` : ""}
-                      {a.review_year} · {a.company_id}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    {a.employee_weighted_score && (
-                      <span className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded-lg font-semibold">
-                        Emp: {a.employee_weighted_score.toFixed(2)}
-                      </span>
-                    )}
-                    {a.supervisor_weighted_score && (
-                      <span className="text-xs px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg font-semibold">
-                        Sup: {a.supervisor_weighted_score.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))}
+            {filtered.map((a) => {
+              const step = getPromotionStep(a.current_grade);
+              const cfg = getFormConfig(a.current_grade);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedAppraisal(a);
+                    setFormErrors({});
+                  }}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+                    selectedAppraisal?.id === a.id
+                      ? "border-[#1e3a5f] bg-blue-50/40"
+                      : "border-gray-100 hover:border-gray-300"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-gray-900">
+                    {a.employee_name}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {a.current_grade}
+                    {step && cfg ? ` → ${cfg.toGrade}` : ""} · {a.company_id}
+                  </p>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* ── Form (shown once appraisal selected) ── */}
-        {selectedAppraisal && (
+        {selectedAppraisal && formConfig && (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* ── Appraisal summary ── */}
             <AppraisalSummaryCard appraisal={selectedAppraisal} />
 
-            {/* ── Employee & Proposal details ── */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+              <p className="text-sm font-bold text-indigo-900">
+                {formConfig.title}
+              </p>
+              <p className="text-xs text-indigo-700 mt-1 leading-relaxed">
+                {formConfig.howToUse}
+              </p>
+            </div>
+
+            {/* Header fields */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <User className="w-4 h-4 text-red-500" />
+              <h3 className="text-sm font-bold text-gray-800 mb-4">
                 Employee & Promotion Details
               </h3>
-              <div className="grid grid-cols-2 gap-4 mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-4 bg-gray-50 rounded-xl">
                 <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                    Employee Name
+                  <p className="text-xs text-gray-400 uppercase font-semibold">
+                    Employee
                   </p>
-                  <p className="text-sm font-semibold text-gray-800">
+                  <p className="text-sm font-semibold">
                     {selectedAppraisal.employee_name}
                   </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                    Current Grade
-                  </p>
-                  <p className="text-sm text-gray-800">
-                    {selectedAppraisal.current_grade}
+                  <p className="text-xs text-gray-400">
+                    ID {selectedAppraisal.company_id}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                    Current Job Title
+                  <p className="text-xs text-gray-400 uppercase font-semibold">
+                    Current → Proposed
                   </p>
-                  <p className="text-sm text-gray-800">
-                    {selectedAppraisal.job_title || "Not set"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                    Immediate Supervisor
-                  </p>
-                  <p className="text-sm text-gray-800">
-                    {selectedAppraisal.immediate_supervisor}
+                  <p className="text-sm">
+                    {formConfig.fromGrade} → {formConfig.toGrade}
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel required>Proposed New Job Title</FieldLabel>
+                  <FieldLabel required>Proposed Job Title</FieldLabel>
                   <input
-                    type="text"
-                    placeholder="e.g. Senior Swine Technician"
                     {...register("proposed_job_title", { required: true })}
                     className={inputCls(!!errors.proposed_job_title)}
                   />
                 </div>
                 <div>
-                  <FieldLabel required>Proposed New Grade</FieldLabel>
-                  <select
+                  <FieldLabel required>Proposed Grade</FieldLabel>
+                  <input
                     {...register("proposed_grade", { required: true })}
-                    className={inputCls(!!errors.proposed_grade)}
-                  >
-                    <option value="">Select grade</option>
-                    {GRADE_ORDER.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                    readOnly
+                    className={`${inputCls()} bg-gray-50`}
+                  />
                 </div>
                 <div>
                   <FieldLabel required>Reviewing Manager</FieldLabel>
                   <input
-                    type="text"
-                    placeholder="Reviewing manager name"
                     {...register("reviewing_manager", { required: true })}
                     className={inputCls(!!errors.reviewing_manager)}
                   />
                 </div>
                 <div>
-                  <FieldLabel>
-                    Tier Authorisation Held (GP / PS / GGP)
-                  </FieldLabel>
+                  <FieldLabel>Tier Authorisation (GP / PS / GGP)</FieldLabel>
+                  <input {...register("tier_authorisation")} className={inputCls()} />
+                </div>
+                <div>
+                  <FieldLabel>Time in Current Role</FieldLabel>
                   <input
-                    type="text"
-                    placeholder="e.g. GP, PS"
-                    {...register("tier_authorisation")}
+                    placeholder="e.g. 14 months"
+                    {...register("time_in_current_role")}
                     className={inputCls()}
                   />
+                </div>
+                <div>
+                  <FieldLabel required>Business Need / Vacancy Confirmed</FieldLabel>
+                  <select
+                    {...register("business_need_confirmed", { required: true })}
+                    className={inputCls()}
+                  >
+                    <option value="">Select</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
                 </div>
               </div>
             </div>
 
-            {/* ── Minimum eligibility checklist ── */}
+            {/* Section A */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-red-500" />
-                Minimum Eligibility Check
+                Section A — Minimum Eligibility Gate
               </h3>
-              <p className="text-xs text-gray-400 mb-4">
-                Tick Yes or No for each requirement. Add comments where needed.
-              </p>
               <div className="space-y-2">
-                {ELIGIBILITY_REQUIREMENTS.map((req) => {
+                {formConfig.eligibility.map((req) => {
                   const val = eligibility[req] ?? { answer: "", comment: "" };
                   return (
                     <div
                       key={req}
-                      className="grid grid-cols-[1fr_auto_auto_200px] gap-3 items-center p-3 rounded-xl bg-gray-50 border border-gray-100"
+                      className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_1fr] gap-2 sm:gap-3 items-center p-3 rounded-xl bg-gray-50 border border-gray-100"
                     >
                       <span className="text-sm text-gray-700">{req}</span>
                       <button
                         type="button"
                         onClick={() =>
-                          setEligibility((prev) => ({
-                            ...prev,
+                          setEligibility((p) => ({
+                            ...p,
                             [req]: { ...val, answer: "yes" },
                           }))
                         }
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${val.answer === "yes" ? "bg-emerald-500 text-white border-emerald-500" : "bg-white text-gray-500 border-gray-200 hover:border-emerald-300"}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 ${val.answer === "yes" ? "bg-emerald-500 text-white border-emerald-500" : "bg-white text-gray-500 border-gray-200"}`}
                       >
                         Yes
                       </button>
                       <button
                         type="button"
                         onClick={() =>
-                          setEligibility((prev) => ({
-                            ...prev,
+                          setEligibility((p) => ({
+                            ...p,
                             [req]: { ...val, answer: "no" },
                           }))
                         }
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${val.answer === "no" ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-500 border-gray-200 hover:border-red-300"}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 ${val.answer === "no" ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-500 border-gray-200"}`}
                       >
                         No
                       </button>
                       <input
                         type="text"
-                        placeholder="Comment..."
+                        placeholder="Evidence / comments"
                         value={val.comment}
                         onChange={(e) =>
-                          setEligibility((prev) => ({
-                            ...prev,
+                          setEligibility((p) => ({
+                            ...p,
                             [req]: { ...val, comment: e.target.value },
                           }))
                         }
-                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-300"
+                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
                       />
                     </div>
                   );
@@ -733,60 +747,389 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
 
-            {/* ── Assessment by core area ── */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
-                <ClipboardList className="w-4 h-4 text-red-500" />
-                Assessment by Core Area
+            {/* Disqualifying factors */}
+            <div className="bg-white rounded-xl border border-red-100 p-5">
+              <h3 className="text-sm font-bold text-red-800 mb-4">
+                Absolute Disqualifying Factors
               </h3>
-              <p className="text-xs text-gray-400 mb-4">
-                Rate each area 1–5 using the same scale as the appraisal.
-              </p>
+              <div className="space-y-2">
+                {formConfig.disqualifyingFactors.map((factor) => {
+                  const val = disqualifying[factor] ?? { present: "" };
+                  return (
+                    <div
+                      key={factor}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-red-50/40 border border-red-100"
+                    >
+                      <span className="text-sm text-gray-700">{factor}</span>
+                      <div className="flex gap-2">
+                        {(["yes", "no"] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() =>
+                              setDisqualifying((p) => ({
+                                ...p,
+                                [factor]: { present: v },
+                              }))
+                            }
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-2 ${val.present === v ? (v === "yes" ? "bg-red-500 text-white border-red-500" : "bg-emerald-500 text-white border-emerald-500") : "bg-white border-gray-200 text-gray-500"}`}
+                          >
+                            {v === "yes" ? "Present" : "Not present"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-              {formErrors.ratings && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg px-3 py-2 mb-3">
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                  {formErrors.ratings}
-                </div>
+            {/* Section B */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-red-500" />
+                Section B — Documented Evidence Review
+              </h3>
+              {formErrors.evidence && (
+                <p className="text-red-500 text-xs mb-3">{formErrors.evidence}</p>
               )}
-
-              <div className="border border-gray-100 rounded-xl overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto_240px] gap-3 px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <span>Assessment Area</span>
-                  <span>Rating (1–5)</span>
-                  <span>Comments</span>
-                </div>
-                {ASSESSMENT_AREAS.map((area) => {
-                  const val = assessmentRatings[area] ?? {
+              <div className="space-y-3">
+                {formConfig.documentedEvidence.map((area) => {
+                  const val = documentedEvidence[area] ?? {
                     rating: null,
                     comment: "",
                   };
                   return (
                     <div
                       key={area}
-                      className="grid grid-cols-[1fr_auto_240px] gap-3 items-center px-4 py-3 border-t border-gray-50 hover:bg-gray-50/50 transition-colors"
+                      className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-2"
                     >
-                      <span className="text-sm text-gray-700">{area}</span>
-                      <RatingSelector
-                        value={val.rating}
-                        onChange={(v) =>
-                          setAssessmentRatings((prev) => ({
-                            ...prev,
-                            [area]: { ...val, rating: v },
-                          }))
-                        }
-                      />
+                      <p className="text-sm text-gray-700">{area}</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <RatingSelector
+                          value={val.rating}
+                          onChange={(n) =>
+                            setDocumentedEvidence((p) => ({
+                              ...p,
+                              [area]: { ...val, rating: n },
+                            }))
+                          }
+                        />
+                        <input
+                          type="text"
+                          placeholder="Source / comments"
+                          value={val.comment}
+                          onChange={(e) =>
+                            setDocumentedEvidence((p) => ({
+                              ...p,
+                              [area]: { ...val, comment: e.target.value },
+                            }))
+                          }
+                          className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Section C */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-red-500" />
+                Section C — New-Level Skills-Log Sign-Off
+              </h3>
+              <div className="space-y-3">
+                {formConfig.skillsLogCompetencies.map((comp) => {
+                  const val = skillsLog[comp] ?? {
+                    stage: "" as SkillSignoffStage,
+                    verifier: "",
+                    date: "",
+                  };
+                  return (
+                    <div
+                      key={comp}
+                      className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-2"
+                    >
+                      <p className="text-sm text-gray-700">{comp}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {SKILL_STAGES.map(({ value, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() =>
+                              setSkillsLog((p) => ({
+                                ...p,
+                                [comp]: { ...val, stage: value },
+                              }))
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${val.stage === value ? "bg-[#1e3a5f] text-white border-[#1e3a5f]" : "bg-white border-gray-200 text-gray-500"}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Verifier"
+                          value={val.verifier}
+                          onChange={(e) =>
+                            setSkillsLog((p) => ({
+                              ...p,
+                              [comp]: { ...val, verifier: e.target.value },
+                            }))
+                          }
+                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                        <input
+                          type="date"
+                          value={val.date}
+                          onChange={(e) =>
+                            setSkillsLog((p) => ({
+                              ...p,
+                              [comp]: { ...val, date: e.target.value },
+                            }))
+                          }
+                          className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Section D */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-red-500" />
+                Section D — Forward-Looking Readiness Interview
+              </h3>
+              {formErrors.interview && (
+                <p className="text-red-500 text-xs mb-3">{formErrors.interview}</p>
+              )}
+              <div className="space-y-4">
+                {formConfig.interviewQuestions.map((q) => {
+                  const val = interview[q.id] ?? { rating: null, notes: "" };
+                  return (
+                    <div
+                      key={q.id}
+                      className="p-4 rounded-xl bg-gray-50 border border-gray-100"
+                    >
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+                        {q.section}
+                      </p>
+                      <p className="text-sm text-gray-800 mb-1">{q.question}</p>
+                      <p className="text-xs text-gray-400 italic mb-3">
+                        Look for: {q.lookFor}
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <RatingSelector
+                          value={val.rating}
+                          onChange={(n) =>
+                            setInterview((p) => ({
+                              ...p,
+                              [q.id]: { ...val, rating: n },
+                            }))
+                          }
+                        />
+                        <input
+                          type="text"
+                          placeholder="Notes"
+                          value={val.notes}
+                          onChange={(e) =>
+                            setInterview((p) => ({
+                              ...p,
+                              [q.id]: { ...val, notes: e.target.value },
+                            }))
+                          }
+                          className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Section E summary + decision */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-bold text-gray-800 mb-4">
+                Section E — Readiness Summary & Panel Decision
+              </h3>
+              {readinessSummary && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  {readinessSummary.section_b_avg != null && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-gray-400 uppercase">
+                        B ({formConfig.weights.sectionB}%)
+                      </p>
+                      <p className="text-lg font-bold">
+                        {readinessSummary.section_b_avg.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                  {readinessSummary.section_c_score != null && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-gray-400 uppercase">
+                        C ({formConfig.weights.sectionC}%)
+                      </p>
+                      <p className="text-lg font-bold">
+                        {readinessSummary.section_c_score.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                  {readinessSummary.section_d_avg != null && (
+                    <div className="bg-gray-50 rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-gray-400 uppercase">
+                        D ({formConfig.weights.sectionD}%)
+                      </p>
+                      <p className="text-lg font-bold">
+                        {readinessSummary.section_d_avg.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                  {readinessSummary.total_weighted != null && (
+                    <div className="bg-[#1e3a5f] rounded-xl p-3 text-center text-white">
+                      <p className="text-[10px] text-white/50 uppercase">Total</p>
+                      <p className="text-lg font-bold">
+                        {readinessSummary.total_weighted.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mb-4">{formConfig.interpretation}</p>
+
+              <div className="space-y-2 mb-4">
+                {FINAL_DECISIONS.map((d) => (
+                  <label
+                    key={d.value}
+                    className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer ${finalDecision === d.value ? "border-[#1e3a5f] bg-blue-50" : "border-gray-100"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="final_decision"
+                      checked={finalDecision === d.value}
+                      onChange={() => setFinalDecision(d.value)}
+                      className="accent-red-600"
+                    />
+                    <span className="text-sm text-gray-700">{d.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <FieldLabel>Strengths confirmed</FieldLabel>
+                  <textarea
+                    rows={2}
+                    value={developmentPlan.strengths}
+                    onChange={(e) =>
+                      setDevelopmentPlan((p) => ({
+                        ...p,
+                        strengths: e.target.value,
+                      }))
+                    }
+                    className={`${inputCls()} resize-none`}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Gaps to close</FieldLabel>
+                  <textarea
+                    rows={2}
+                    value={developmentPlan.gaps}
+                    onChange={(e) =>
+                      setDevelopmentPlan((p) => ({ ...p, gaps: e.target.value }))
+                    }
+                    className={`${inputCls()} resize-none`}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Agreed actions, owner, target date</FieldLabel>
+                  <textarea
+                    rows={2}
+                    value={developmentPlan.agreed_actions}
+                    onChange={(e) =>
+                      setDevelopmentPlan((p) => ({
+                        ...p,
+                        agreed_actions: e.target.value,
+                      }))
+                    }
+                    className={`${inputCls()} resize-none`}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Date of next readiness review</FieldLabel>
+                  <input
+                    type="date"
+                    value={developmentPlan.next_review_date}
+                    onChange={(e) =>
+                      setDevelopmentPlan((p) => ({
+                        ...p,
+                        next_review_date: e.target.value,
+                      }))
+                    }
+                    className={inputCls()}
+                  />
+                </div>
+              </div>
+
+              {finalDecision === "promote_with_conditions" && (
+                <div className="mb-4">
+                  <FieldLabel>Conditions</FieldLabel>
+                  <textarea
+                    rows={2}
+                    {...register("conditions")}
+                    className={`${inputCls()} resize-none`}
+                  />
+                </div>
+              )}
+
+              <div className="mb-4">
+                <FieldLabel>Decision Comments</FieldLabel>
+                <textarea
+                  rows={2}
+                  {...register("decision_comments")}
+                  className={`${inputCls()} resize-none`}
+                />
+              </div>
+
+              <h4 className="text-xs font-bold text-gray-700 uppercase mb-3">
+                Sign-Off
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {formConfig.signOffRoles.map((role) => {
+                  const val = signOffs[role] ?? { name: "", date: "" };
+                  return (
+                    <div key={role} className="p-3 bg-gray-50 rounded-xl">
+                      <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">
+                        {role}
+                      </p>
                       <input
                         type="text"
-                        placeholder="Add comment..."
-                        value={val.comment}
+                        placeholder="Name"
+                        value={val.name}
                         onChange={(e) =>
-                          setAssessmentRatings((prev) => ({
-                            ...prev,
-                            [area]: { ...val, comment: e.target.value },
+                          setSignOffs((p) => ({
+                            ...p,
+                            [role]: { ...val, name: e.target.value },
                           }))
                         }
-                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-300"
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs mb-2"
+                      />
+                      <input
+                        type="date"
+                        value={val.date}
+                        onChange={(e) =>
+                          setSignOffs((p) => ({
+                            ...p,
+                            [role]: { ...val, date: e.target.value },
+                          }))
+                        }
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
                       />
                     </div>
                   );
@@ -794,91 +1137,18 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
 
-            {/* ── Final Decision ── */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
-                <Award className="w-4 h-4 text-red-500" />
-                Final Decision
-              </h3>
-              <p className="text-xs text-gray-400 mb-4">
-                Select the panel's final decision on this promotion assessment.
-              </p>
-              <div className="space-y-2 mb-4">
-                {FINAL_DECISIONS.map((d) => (
-                  <label
-                    key={d.value}
-                    className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                      finalDecision === d.value
-                        ? "border-[#1e3a5f] bg-blue-50"
-                        : "border-gray-100 hover:border-gray-200"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="final_decision"
-                      value={d.value}
-                      checked={finalDecision === d.value}
-                      onChange={() => {
-                        setFinalDecision(d.value);
-                        setFormErrors((prev) => ({ ...prev, decision: "" }));
-                      }}
-                      className="accent-red-600"
-                    />
-                    <span className="text-sm text-gray-700 font-medium">
-                      {d.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {formErrors.decision && (
-                <p className="text-red-500 text-xs mb-3">
-                  {formErrors.decision}
-                </p>
-              )}
-
-              {finalDecision === "promote_with_conditions" && (
-                <div className="mb-4">
-                  <FieldLabel>Conditions</FieldLabel>
-                  <textarea
-                    rows={2}
-                    placeholder="Describe the conditions for promotion..."
-                    {...register("conditions")}
-                    className={`${inputCls()} resize-none`}
-                  />
-                </div>
-              )}
-
-              <div>
-                <FieldLabel>Decision Comments</FieldLabel>
-                <textarea
-                  rows={3}
-                  placeholder="Additional comments from the reviewing manager or panel..."
-                  {...register("decision_comments")}
-                  className={`${inputCls()} resize-none`}
-                />
-              </div>
-            </div>
-
-            {/* ── Submit ── */}
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  reset();
-                  setSelectedAppraisal(null);
-                  setEligibility({});
-                  setAssessmentRatings({});
-                  setFinalDecision("");
-                  setFormErrors({});
-                }}
-                className="px-5 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                onClick={() => setSelectedAppraisal(null)}
+                className="px-5 py-2.5 rounded-xl text-sm border border-gray-200 text-gray-600"
               >
-                Clear Form
+                Cancel
               </button>
               <button
                 type="submit"
                 disabled={isPending}
-                className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-60 flex items-center gap-2"
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 flex items-center gap-2"
               >
                 {isPending ? (
                   <>
@@ -886,13 +1156,20 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-4 h-4" /> Submit Promotion
-                    Assessment
+                    <CheckCircle2 className="w-4 h-4" /> Submit Assessment
                   </>
                 )}
               </button>
             </div>
           </form>
+        )}
+
+        {selectedAppraisal && !formConfig && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            No promotion form is configured for grade{" "}
+            <strong>{selectedAppraisal.current_grade}</strong>. Promotion forms
+            are available for L1 through L6.
+          </div>
         )}
       </div>
     </div>

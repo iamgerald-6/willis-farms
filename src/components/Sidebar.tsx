@@ -9,7 +9,6 @@ import {
   Users,
   FileStack,
   Bell,
-  Settings,
   LeafyGreen,
   ChevronDown,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
   TrendingUp,
   GanttChartSquare,
   UserCheck,
+  UserPlus,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -82,6 +82,12 @@ const NAV_ITEMS: NavItem[] = [
         icon: TrendingUp,
         adminOnly: true,
       },
+      {
+        label: "Recruitment",
+        href: "/dashboard/humanCapital/recruitment",
+        icon: UserPlus,
+        adminOnly: true,
+      },
     ],
   },
   {
@@ -96,11 +102,11 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileStack,
     adminOnly: true,
   },
-  {
-    label: "Learning Management System",
-    href: "/dashboard/lms",
-    icon: BookOpen,
-  },
+  // {
+  //   label: "Learning Management System",
+  //   href: "/dashboard/lms",
+  //   icon: BookOpen,
+  // },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   // {
   //   label: "Settings",

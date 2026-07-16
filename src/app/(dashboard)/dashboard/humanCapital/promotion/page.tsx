@@ -13,11 +13,16 @@ import {
   XCircle,
   AlertCircle,
   User,
-  FileText,
   Plus,
 } from "lucide-react";
 import api from "@/lib/api";
+import {
+  canActOnOthers as canActOnOthersAccess,
+  canViewOthers,
+} from "@/lib/accessControl";
 import PromotionFormPage from "./component/promotionForm";
+import { PromotionFormSections } from "./component/PromotionDetailSections";
+import type { PromotionFormData } from "./component/promotionFormConfigs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +45,10 @@ interface CompletedPromotion {
   section_unit?: string;
   eligibility_checklist: Record<string, { answer: string; comment: string }>;
   assessment_ratings: Record<string, { rating: number; comment: string }>;
+  promotion_step?: string | null;
+  time_in_current_role?: string | null;
+  business_need_confirmed?: boolean | null;
+  form_data?: PromotionFormData | null;
   final_decision: string;
   decision_comments?: string;
   conditions?: string;
@@ -213,22 +222,6 @@ const DECISION_LABELS: Record<
   },
 };
 
-const RATING_LABELS: Record<number, string> = {
-  1: "Unsatisfactory",
-  2: "Below Expectation",
-  3: "Meets Expectation",
-  4: "Above Expectation",
-  5: "Excellent",
-};
-
-const RATING_COLORS: Record<number, string> = {
-  1: "bg-red-50 text-red-700",
-  2: "bg-orange-50 text-orange-700",
-  3: "bg-amber-50 text-amber-700",
-  4: "bg-green-50 text-green-700",
-  5: "bg-emerald-50 text-emerald-700",
-};
-
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -237,10 +230,14 @@ function formatDate(d: string) {
   });
 }
 
-function gradeNum(grade: string | null | undefined): number {
-  if (!grade) return 0;
-  const n = parseInt(grade.replace(/\D/g, ""), 10);
-  return isNaN(n) ? 0 : n;
+function avgAssessmentRating(promotion: CompletedPromotion): string | null {
+  const evidence =
+    promotion.form_data?.documented_evidence ?? promotion.assessment_ratings;
+  const vals = Object.values(evidence)
+    .map((v) => v.rating)
+    .filter((r): r is number => typeof r === "number");
+  if (!vals.length) return null;
+  return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
 }
 
 // ─── Promotion Card ───────────────────────────────────────────────────────────
@@ -314,19 +311,17 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
   );
 
   const avgRating = useMemo(() => {
-    const vals = Object.values(promotion.assessment_ratings)
-      .map((v) => v.rating)
-      .filter(Boolean);
+    const evidence =
+      promotion.form_data?.documented_evidence ?? promotion.assessment_ratings;
+    const vals: number[] = [];
+    for (const v of Object.values(evidence)) {
+      if (typeof v.rating === "number") vals.push(v.rating);
+    }
     if (!vals.length) return null;
     return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
-  }, [promotion.assessment_ratings]);
+  }, [promotion.form_data, promotion.assessment_ratings]);
 
-  const eligibilityPassed = Object.values(
-    promotion.eligibility_checklist,
-  ).filter((v) => v.answer === "yes").length;
-  const eligibilityTotal = Object.values(
-    promotion.eligibility_checklist,
-  ).length;
+  const totalWeighted = promotion.form_data?.readiness_summary?.total_weighted;
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -334,7 +329,10 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-white/50 mb-1">
-              Promotion Assessment · {formatDate(promotion.created_at)}
+              {promotion.promotion_step
+                ? promotion.promotion_step.replace("_", " → ")
+                : "Promotion Assessment"}{" "}
+              · {formatDate(promotion.created_at)}
             </p>
             <h2 className="text-xl sm:text-2xl font-bold truncate">
               {promotion.employee_name}
@@ -352,13 +350,13 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
               </span>
             </div>
           </div>
-          {avgRating && (
+          {(totalWeighted != null || avgRating) && (
             <div className="bg-white/10 rounded-xl px-4 py-2 sm:py-3 text-center self-start sm:self-auto min-w-[100px]">
               <p className="text-[10px] sm:text-xs text-white/50 mb-0.5">
-                Assessment Avg
+                {totalWeighted != null ? "Weighted Score" : "Evidence Avg"}
               </p>
               <p className="text-xl sm:text-2xl font-black text-white">
-                {avgRating}
+                {(totalWeighted ?? avgRating)?.toString()}
               </p>
               <p className="text-white/30 text-[10px]">/ 5</p>
             </div>
@@ -404,38 +402,6 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
                 {matrixStep.readinessStandard}
               </p>
             </div>
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
-                Required Evidence
-              </p>
-              <ul className="space-y-1">
-                {matrixStep.requiredEvidence.map((e) => (
-                  <li
-                    key={e}
-                    className="text-xs text-gray-600 flex items-start gap-1.5"
-                  >
-                    <span className="w-1 h-1 rounded-full bg-gray-400 mt-1.5 shrink-0" />
-                    {e}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 sm:mb-2">
-                Decision Makers
-              </p>
-              <ul className="space-y-1">
-                {matrixStep.decisionMakers.map((d) => (
-                  <li
-                    key={d}
-                    className="text-xs text-gray-600 flex items-start gap-1.5"
-                  >
-                    <span className="w-1 h-1 rounded-full bg-gray-400 mt-1.5 shrink-0" />
-                    {d}
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
         </div>
       )}
@@ -446,6 +412,7 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {[
+            { label: "Staff No.", value: promotion.employee_company_id },
             { label: "Current Grade", value: promotion.current_grade },
             { label: "Proposed Grade", value: promotion.proposed_grade },
             {
@@ -474,92 +441,7 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-red-500" /> Minimum
-            Eligibility Check
-          </h3>
-          <span
-            className={`text-xs px-3 py-1 rounded-full font-semibold border self-start sm:self-auto ${eligibilityPassed === eligibilityTotal ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}
-          >
-            {eligibilityPassed} / {eligibilityTotal} passed
-          </span>
-        </div>
-        <div className="space-y-2">
-          {Object.entries(promotion.eligibility_checklist).map(([req, val]) => (
-            <div
-              key={req}
-              className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100"
-            >
-              <span className="text-xs sm:text-sm text-gray-700 flex-1">
-                {req}
-              </span>
-              <div className="flex items-center gap-3 shrink-0">
-                {val.comment && (
-                  <span className="text-xs text-gray-400 italic truncate max-w-[160px]">
-                    {val.comment}
-                  </span>
-                )}
-                <span
-                  className={`text-xs px-2.5 py-1 rounded-full font-bold border ${val.answer === "yes" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : val.answer === "no" ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-100 text-gray-400 border-gray-200"}`}
-                >
-                  {val.answer === "yes"
-                    ? "Yes"
-                    : val.answer === "no"
-                      ? "No"
-                      : "—"}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-        <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <FileText className="w-4 h-4 text-red-500" /> Assessment by Core Area
-        </h3>
-        <div className="border border-gray-100 rounded-xl overflow-hidden">
-          <div className="flex justify-between px-4 py-2 bg-gray-50 text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide">
-            <span>Assessment Area</span>
-            <span>Rating</span>
-          </div>
-          {Object.entries(promotion.assessment_ratings).map(([area, val]) => (
-            <div
-              key={area}
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-t border-gray-50"
-            >
-              <div className="min-w-0 flex-1">
-                <span className="text-xs sm:text-sm text-gray-700">{area}</span>
-                {val.comment && (
-                  <p className="text-xs text-gray-400 italic mt-0.5">
-                    {val.comment}
-                  </p>
-                )}
-              </div>
-              {val.rating && (
-                <span
-                  className={`text-xs px-2.5 py-1 rounded-full font-semibold self-start sm:self-auto shrink-0 ${RATING_COLORS[val.rating]}`}
-                >
-                  {val.rating} · {RATING_LABELS[val.rating]}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {promotion.decision_comments && (
-        <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-          <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
-            Decision Comments
-          </p>
-          <p className="text-xs sm:text-sm text-gray-700 leading-relaxed break-words">
-            {promotion.decision_comments}
-          </p>
-        </div>
-      )}
+      <PromotionFormSections promotion={promotion} />
 
       <p className="text-[10px] sm:text-xs text-gray-300 text-right pb-2">
         Submitted {formatDate(promotion.created_at)}
@@ -673,6 +555,189 @@ function GeneralConditionsPanel() {
   );
 }
 
+// ─── Promotion History Table ──────────────────────────────────────────────────
+function PromotionHistoryTable({
+  records,
+  isLoading,
+  onView,
+}: {
+  records: CompletedPromotion[];
+  isLoading: boolean;
+  onView: (record: CompletedPromotion) => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center text-gray-400 text-sm">
+        Loading promotion history...
+      </div>
+    );
+  }
+
+  if (records.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center text-gray-400">
+        <Award className="w-10 h-10 mx-auto mb-3 opacity-20" />
+        <p className="text-xs sm:text-sm font-medium">No promotion history yet</p>
+        <p className="text-[11px] sm:text-xs mt-1 opacity-60">
+          Completed promotion assessments will appear here
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Mobile cards */}
+      <div className="md:hidden space-y-3">
+        {records.map((record) => {
+          const decision = DECISION_LABELS[record.final_decision];
+          const avg = avgAssessmentRating(record);
+          const weighted = record.form_data?.readiness_summary?.total_weighted;
+          return (
+            <button
+              key={record.id}
+              onClick={() => onView(record)}
+              className="w-full text-left bg-white rounded-xl border border-gray-200 p-4 hover:border-gray-300 transition"
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {record.employee_name}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    ID {record.employee_company_id}
+                  </p>
+                </div>
+                {decision && (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${decision.color}`}
+                  >
+                    {decision.icon}
+                    {decision.label}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                <span>
+                  {record.current_grade} → {record.proposed_grade}
+                </span>
+                <span>· {formatDate(record.created_at)}</span>
+                {(weighted != null || avg) && (
+                  <span>
+                    ·{" "}
+                    {weighted != null
+                      ? `Score ${weighted.toFixed(2)}/5`
+                      : `Avg ${avg}/5`}
+                  </span>
+                )}
+              </div>
+              {record.proposed_job_title && (
+                <p className="text-xs text-gray-600 mt-2 truncate">
+                  {record.proposed_job_title}
+                </p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Date</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Employee
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Grade Change
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Proposed Title
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Reviewing Manager
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Avg Rating
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Decision
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {records.map((record) => {
+              const decision = DECISION_LABELS[record.final_decision];
+              const avg = avgAssessmentRating(record);
+              const weighted =
+                record.form_data?.readiness_summary?.total_weighted;
+              const scoreLabel =
+                weighted != null
+                  ? `${weighted.toFixed(2)}/5`
+                  : avg
+                    ? `${avg}/5`
+                    : "—";
+              return (
+                <tr
+                  key={record.id}
+                  className="border-b border-gray-100 hover:bg-gray-50"
+                >
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {formatDate(record.created_at)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">
+                      {record.employee_name}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      ID {record.employee_company_id}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                    {record.current_grade} → {record.proposed_grade}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">
+                    {record.proposed_job_title || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {record.reviewing_manager || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{scoreLabel}</td>
+                  <td className="px-4 py-3">
+                    {decision ? (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${decision.color}`}
+                      >
+                        {decision.icon}
+                        {decision.label}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => onView(record)}
+                      className="text-xs font-semibold text-red-600 hover:text-red-700"
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 interface UserProfile {
   user_id: string;
   first_name: string;
@@ -699,7 +764,7 @@ export default function PromotionViewPage() {
   });
   const userId = session?.user?.id ?? "";
 
-  const { data: allUsers = [] } = useQuery<UserProfile[]>({
+  const { data: allUsers = [], isLoading: loadingUsers } = useQuery<UserProfile[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
       const res = await api.get("/get_user");
@@ -708,16 +773,14 @@ export default function PromotionViewPage() {
   });
 
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
-  const viewerRole = currentUser?.role ?? "";
-  const viewerGrade = gradeNum(currentUser?.grade_level);
+  const viewerRole =
+    currentUser?.role ??
+    (session?.user?.user_metadata?.role as string | undefined) ??
+    "";
+  const viewerGradeLevel = currentUser?.grade_level ?? null;
 
-  const isSuperAdmin = viewerRole === "super_admin";
-  const canActOnOthers = isSuperAdmin || viewerGrade >= 4;
-  const canViewAll =
-    isSuperAdmin ||
-    viewerRole === "admin" ||
-    viewerRole === "manager" ||
-    viewerGrade >= 4;
+  const canActOnOthers = canActOnOthersAccess(viewerRole, viewerGradeLevel);
+  const canViewAll = canViewOthers(viewerRole, viewerGradeLevel);
 
   // Fetch completed promotions from promotions table
   const { data: completedRaw = [], isLoading: loadingCompleted } = useQuery<
@@ -727,7 +790,7 @@ export default function PromotionViewPage() {
     enabled: !!userId,
     queryFn: async () => {
       const res = await api.get("/promotion/get_promotions");
-      return (res.data?.data ?? []).map((p: any) => ({
+      return (res.data?.data ?? []).map((p: CompletedPromotion) => ({
         ...p,
         type: "completed" as const,
       }));
@@ -738,7 +801,10 @@ export default function PromotionViewPage() {
   const { data: pendingRaw = [], isLoading: loadingPending } = useQuery<
     PendingPromotion[]
   >({
-    queryKey: ["promotions_pending"],
+    queryKey: [
+      "promotions_pending",
+      completedRaw.map((c) => c.appraisal_id).join(","),
+    ],
     enabled: !!userId && !loadingCompleted,
     queryFn: async () => {
       const res = await api.get("/promotion/get_pending");
@@ -747,60 +813,74 @@ export default function PromotionViewPage() {
         completedRaw.map((c) => c.appraisal_id),
       );
       return data
-        .filter((a: any) => !completedAppraisalIds.has(a.id))
-        .map((a: any) => ({ ...a, type: "pending" as const }));
+        .filter((a: { id: number }) => !completedAppraisalIds.has(a.id))
+        .map((a: PendingPromotion) => ({ ...a, type: "pending" as const }));
     },
   });
 
-  const isLoading = loadingCompleted || loadingPending;
+  const isLoading =
+    loadingUsers || loadingCompleted || loadingPending;
 
-  // Merge: pending first, then completed
-  const allItems: PromotionItem[] = useMemo(
-    () => [...pendingRaw, ...completedRaw],
-    [pendingRaw, completedRaw],
-  );
-
-  // Visibility filter
-  const visibleItems = useMemo<PromotionItem[]>(() => {
-    if (canViewAll) return allItems;
-    // Employee role — only own
-    return allItems.filter((item) => {
+  const filterByVisibility = <T extends PromotionItem>(items: T[]): T[] => {
+    if (canViewAll) return items;
+    if (!currentUser?.company_id) return [];
+    return items.filter((item) => {
       const empId =
         item.type === "completed" ? item.employee_company_id : item.company_id;
-      return empId === currentUser?.company_id;
+      return empId === currentUser.company_id;
     });
-  }, [allItems, canViewAll, currentUser]);
+  };
 
-  const filtered = useMemo<PromotionItem[]>(() => {
-    return visibleItems.filter((item) => {
+  const visiblePending = useMemo(
+    () => filterByVisibility(pendingRaw),
+    [pendingRaw, canViewAll, currentUser?.company_id],
+  );
+
+  const visibleCompleted = useMemo(
+    () => filterByVisibility(completedRaw),
+    [completedRaw, canViewAll, currentUser?.company_id],
+  );
+
+  const filteredPending = useMemo<PendingPromotion[]>(() => {
+    return visiblePending.filter((item) => {
+      const name = item.employee_name ?? "";
+      const grade = item.current_grade ?? "";
+      const matchSearch =
+        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchGrade = !gradeFilter || grade === gradeFilter;
+      return matchSearch && matchGrade;
+    });
+  }, [visiblePending, search, gradeFilter]);
+
+  const filteredHistory = useMemo<CompletedPromotion[]>(() => {
+    return visibleCompleted.filter((item) => {
       const name = item.employee_name ?? "";
       const grade = item.current_grade ?? "";
       const matchSearch =
         !search || name.toLowerCase().includes(search.toLowerCase());
       const matchGrade = !gradeFilter || grade === gradeFilter;
       const matchDecision =
-        !decisionFilter ||
-        (item.type === "completed" && item.final_decision === decisionFilter);
+        !decisionFilter || item.final_decision === decisionFilter;
       return matchSearch && matchGrade && matchDecision;
     });
-  }, [visibleItems, search, gradeFilter, decisionFilter]);
+  }, [visibleCompleted, search, gradeFilter, decisionFilter]);
 
   const stats = useMemo(
     () => ({
-      total: visibleItems.length,
-      pending: pendingRaw.length,
-      promoted: completedRaw.filter(
+      total: visiblePending.length + visibleCompleted.length,
+      pending: visiblePending.length,
+      promoted: visibleCompleted.filter(
         (p) =>
           p.final_decision === "promote" ||
           p.final_decision === "promote_with_conditions",
       ).length,
-      deferred: completedRaw.filter(
+      deferred: visibleCompleted.filter(
         (p) => p.final_decision === "defer_pending_skills",
       ).length,
-      notReady: completedRaw.filter((p) => p.final_decision === "not_ready")
+      notReady: visibleCompleted.filter((p) => p.final_decision === "not_ready")
         .length,
     }),
-    [visibleItems, pendingRaw, completedRaw],
+    [visiblePending, visibleCompleted],
   );
 
   // Capture key before TypeScript narrows `selected` to null after the guard
@@ -953,29 +1033,57 @@ export default function PromotionViewPage() {
         </div>
       </div>
 
-      {/* List */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
-          Loading promotions...
+      {/* Pending assessments */}
+      <div className="mb-8">
+        <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3">
+          Awaiting Assessment
+        </h2>
+        {isLoading && (
+          <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
+            Loading promotions...
+          </div>
+        )}
+        {!isLoading && filteredPending.length === 0 && (
+          <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
+            <Clock className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="text-xs sm:text-sm font-medium">
+              No employees awaiting promotion assessment
+            </p>
+            <p className="text-[11px] sm:text-xs mt-1 opacity-60">
+              Staff flagged as ready for assessment in their appraisal will
+              appear here
+            </p>
+          </div>
+        )}
+        <div className="space-y-2 max-w-3xl">
+          {filteredPending.map((item) => (
+            <PromotionCard
+              key={`pending-${item.id}`}
+              item={item}
+              selected={selectedKey === `pending:${item.id}`}
+              onClick={() => setSelected(item)}
+            />
+          ))}
         </div>
-      )}
-      {!isLoading && filtered.length === 0 && (
-        <div className="text-center py-20 text-gray-400">
-          <Award className="w-10 h-10 mx-auto mb-3 opacity-20" />
-          <p className="text-xs sm:text-sm font-medium">
-            No promotion records found
+      </div>
+
+      {/* Past promotion history */}
+      <div>
+        <div className="mb-3">
+          <h2 className="text-sm sm:text-base font-bold text-gray-800">
+            Promotion History
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {canViewAll
+              ? "Past promotion assessment results for all employees"
+              : "Your past promotion assessment results"}
           </p>
         </div>
-      )}
-      <div className="space-y-2 max-w-3xl">
-        {filtered.map((item) => (
-          <PromotionCard
-            key={`${item.type}-${item.id}`}
-            item={item}
-            selected={selectedKey === `${item.type}:${item.id}`}
-            onClick={() => setSelected(item)}
-          />
-        ))}
+        <PromotionHistoryTable
+          records={filteredHistory}
+          isLoading={isLoading}
+          onView={(record) => setSelected(record)}
+        />
       </div>
     </div>
   );

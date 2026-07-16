@@ -34,6 +34,10 @@ export async function GET(req: NextRequest) {
         decision_comments,
         conditions,
         submitted_by_grade,
+        promotion_step,
+        time_in_current_role,
+        business_need_confirmed,
+        form_data,
         created_at,
         updated_at
       `,
