@@ -21,6 +21,7 @@ import {
   GanttChartSquare,
   UserCheck,
   X,
+  ListChecks,
 } from "lucide-react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ type NavItem = {
   icon: React.ElementType;
   adminOnly?: boolean;
   children?: SubItem[];
+  badge?: string;
 };
 
 type SidebarProps = {
@@ -83,6 +85,12 @@ const NAV_ITEMS: NavItem[] = [
         adminOnly: true,
       },
     ],
+  },
+  {
+    label: "Task Manager",
+    href: "/dashboard/taskManager",
+    icon: ListChecks,
+    badge: "NEW",
   },
   {
     label: "Policies & Ops",
@@ -190,7 +198,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
-          const { label, href, icon: Icon, children } = item;
+          const { label, href, icon: Icon, children, badge } = item;
           const active = isParentActive(item);
           const expanded = isOpen(item);
           const hasChildren = !!children?.length;
@@ -245,7 +253,12 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                         : "text-gray-400 group-hover:text-gray-600"
                     }`}
                   />
-                  {label}
+                  <span className="flex-1">{label}</span>
+                  {badge && !active && (
+                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
+                      {badge}
+                    </span>
+                  )}
                   {active && (
                     <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />
                   )}
