@@ -15,6 +15,7 @@ export default function TaskRow({
   users,
   currentUserId,
   isSeniorManagement,
+  variant = "register",
   onChanged,
   onOpenAudit,
 }: {
@@ -23,6 +24,7 @@ export default function TaskRow({
   users: User[];
   currentUserId: string | null;
   isSeniorManagement: boolean;
+  variant?: "register" | "monitoring";
   onChanged: () => void;
   onOpenAudit: (task: TMTask) => void;
 }) {
@@ -31,6 +33,9 @@ export default function TaskRow({
   const [title, setTitle] = useState(task.title);
   const [ownerId, setOwnerId] = useState<string | null>(task.owner_id ?? null);
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
+  const [indicator, setIndicator] = useState(task.indicator ?? "");
+  const [frequency, setFrequency] = useState(task.frequency ?? "");
+  const [methodProvider, setMethodProvider] = useState(task.method_provider ?? "");
 
   const [editingProgress, setEditingProgress] = useState(false);
   const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
@@ -43,6 +48,9 @@ export default function TaskRow({
     setTitle(task.title);
     setOwnerId(task.owner_id ?? null);
     setDueDate(task.due_date ?? "");
+    setIndicator(task.indicator ?? "");
+    setFrequency(task.frequency ?? "");
+    setMethodProvider(task.method_provider ?? "");
   };
 
   const handleSave = async () => {
@@ -56,6 +64,11 @@ export default function TaskRow({
         title: title.trim(),
         owner_id: ownerId,
         due_date: dueDate || null,
+        ...(variant === "monitoring" && {
+          indicator: indicator || null,
+          frequency: frequency || null,
+          method_provider: methodProvider || null,
+        }),
       });
       toast.success("Task updated");
       setEditing(false);
@@ -127,46 +140,72 @@ export default function TaskRow({
 
   if (editing) {
     return (
-      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 bg-red-50/60 rounded-lg">
-        <div />
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm font-medium focus:outline-none"
-          autoFocus
-        />
-        <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
-        <input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
-        />
-        <div>
-          <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
-            {status}
-          </span>
-          <p className="text-[10px] text-gray-400 italic mt-0.5">auto — from due date</p>
+      <div className="bg-red-50/60 rounded-lg px-3 py-2.5 space-y-2">
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+          <div />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm font-medium focus:outline-none"
+            autoFocus
+          />
+          <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+          />
+          <div>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+              {status}
+            </span>
+            <p className="text-[10px] text-gray-400 italic mt-0.5">auto — from due date</p>
+          </div>
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-1 bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-red-700 disabled:opacity-60"
+            >
+              <Check className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              onClick={() => {
+                resetDraft();
+                setEditing(false);
+              }}
+              disabled={saving}
+              className="text-xs text-gray-500 hover:text-gray-700 px-2"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 justify-end">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-1 bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-red-700 disabled:opacity-60"
-          >
-            <Check className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save"}
-          </button>
-          <button
-            onClick={() => {
-              resetDraft();
-              setEditing(false);
-            }}
-            disabled={saving}
-            className="text-xs text-gray-500 hover:text-gray-700 px-2"
-          >
-            Cancel
-          </button>
-        </div>
+        {variant === "monitoring" && (
+          <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_auto] gap-3 items-center">
+            <div />
+            <input
+              value={indicator}
+              onChange={(e) => setIndicator(e.target.value)}
+              placeholder="Indicator (e.g. Air Quality)"
+              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+            />
+            <input
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value)}
+              placeholder="Frequency (e.g. Quarterly)"
+              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+            />
+            <input
+              value={methodProvider}
+              onChange={(e) => setMethodProvider(e.target.value)}
+              placeholder="Method / provider"
+              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+            />
+            <div />
+          </div>
+        )}
       </div>
     );
   }
@@ -188,11 +227,9 @@ export default function TaskRow({
       </div>
       <div>
         <p className="text-sm font-semibold text-gray-900">{task.title}</p>
-        {(task.indicator || task.frequency) && (
+        {(task.indicator || task.frequency || task.method_provider) && (
           <p className="text-xs text-gray-400 mt-0.5">
-            {task.indicator}
-            {task.indicator && task.frequency ? " · " : ""}
-            {task.frequency}
+            {[task.indicator, task.frequency, task.method_provider].filter(Boolean).join(" · ")}
           </p>
         )}
       </div>

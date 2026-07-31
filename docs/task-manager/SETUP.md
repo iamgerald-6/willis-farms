@@ -81,6 +81,30 @@ the sidebar, marked NEW).
   List / New Project / Monthly Report buttons, and only projects where
   they own a task are visible at all.
 
+## Fixing "Add User" errors on a fresh/test Supabase project
+
+Two separate things need to be true for the Users page's "Add User" to work,
+and a test project usually starts missing both:
+
+1. `NEXT_PUBLIC_SUPABASE_URL` and friends aside — the invite email needs
+   `NEXT_PUBLIC_APP_URL` set in `.env.local` (e.g.
+   `NEXT_PUBLIC_APP_URL=http://localhost:3000`), **and** that same URL added
+   to Supabase's allowed redirect list: Authentication → URL Configuration →
+   Redirect URLs → add `http://localhost:3000/set-password`. Without both,
+   Supabase rejects the invite outright.
+2. The `users` table needs two more columns than the earlier migration
+   added — `create_user`'s insert also writes `email_verified` and
+   `email_confirm`, which a fresh table won't have. Run:
+
+```sql
+alter table users add column if not exists email_verified boolean default false;
+alter table users add column if not exists email_confirm boolean default false;
+```
+
+If "Add User" still fails after both of those, the error message returned
+by the API is the real Supabase/Postgres error — paste it back to me
+verbatim rather than a summary, it'll say exactly what's missing.
+
 ## Update — round 2 (progress %, owner assignment, Word docs, document picker)
 
 If you already ran the schema once, run this too (adds one column, safe to
@@ -111,17 +135,47 @@ documents), run `npm install` again before `npm run dev`.
   "Choose existing" to pick from documents already uploaded under Policies &
   Ops or the SOP library, instead of uploading a fresh file.
 
-## Notes / things I simplified from the concept deck
+## Update — round 3 (tabs now match the deck exactly, plus fixes)
 
-- The deck's separate "Obligation Register" and "Monitoring Schedule"
-  tabs are unified into one **Tasks** list here — a task can optionally
-  carry monitoring-specific fields (indicator, frequency, method/provider)
-  when it's a recurring check, but they live in the same table and list
-  rather than two separate views. Easy to split back out later if you'd
-  rather keep them visually distinct.
-- The deck's "Dashboard / Gantt" tab became the **Summary** tab (stat
-  cards + upcoming deadlines) rather than a full Gantt chart, to keep the
-  first build scoped. Can add a real Gantt view as a follow-up.
+The tab structure was rebuilt to match the concept deck: **Summary**,
+**Dashboard / Gantt**, **Obligation Register**, **Monitoring Schedule**,
+**Compliance Calendar** — five tabs instead of the earlier simplified
+three.
+
+- **Obligation Register** and **Monitoring Schedule** are now two separate
+  views. Same underlying `tm_tasks` table — a task's `task_type` decides
+  which list it shows up in (`monitoring` → Monitoring Schedule, anything
+  else → Obligation Register). Monitoring tasks additionally show/edit
+  Indicator, Frequency, and Method/Provider fields; the Obligation Register
+  doesn't.
+- **Dashboard / Gantt** is a real progress view now: one row per active
+  task, sorted by completion, with a bar filled to `progress_percent` and
+  colored by status (red = overdue, amber = in progress, green =
+  compliant/ongoing, blue = completed, grey = not started). It intentionally
+  does **not** position bars by due date — the ask was "how complete is
+  each task at a glance," not a calendar-style timeline.
+- No new SQL for this round — `task_type` and `progress_percent` already
+  existed from earlier rounds.
 - Deleting a task is a **soft delete** — the row and its full audit trail
   stay in the database, just hidden from the default view. Nothing is
   ever hard-deleted.
+
+**Also fixed this round:**
+
+- "Add User" errors and the missing invite-redirect config — see the
+  section above.
+- Policies & Ops upload failing with "could not find the table
+  public.manuals" — your test Supabase project was missing the `manuals`,
+  `manual_versions`, and `content` tables entirely (used elsewhere in the
+  portal, not new to Task Manager). Run `docs/task-manager/supporting-tables.sql`
+  once to add them.
+- Manual upload category is now a free-text field with your existing
+  categories as suggestions, instead of being locked to four fixed options.
+
+**Still open, need info from you to fix:**
+
+- The "Minified React error #31" you hit sending the Monthly Report — need
+  to know whether you were running `npm run dev` or a production build, and
+  the full terminal output at the moment it crashed.
+- The user you added directly via the SQL editor not showing up in `users`
+  or on the platform — need to see the exact SQL you ran.

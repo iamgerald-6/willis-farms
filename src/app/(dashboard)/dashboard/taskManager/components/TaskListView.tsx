@@ -18,16 +18,20 @@ const LIFECYCLE_VIEWS: { key: string; label: string }[] = [
   { key: "deleted", label: "Deleted" },
 ];
 
+type Variant = "register" | "monitoring";
+
 export default function TaskListView({
   project,
   users,
   isSeniorManagement,
   currentUserId,
+  variant = "register",
 }: {
   project: TMProject;
   users: User[];
   isSeniorManagement: boolean;
   currentUserId: string | null;
+  variant?: Variant;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
@@ -44,13 +48,15 @@ export default function TaskListView({
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["tm-tasks", project.id] });
 
-  const tasks = data?.tasks ?? [];
+  const allTasks = data?.tasks ?? [];
+  const tasks = allTasks.filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"));
+  const title = variant === "monitoring" ? "Monitoring Schedule" : "Obligation Register";
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-sm font-bold text-gray-900">{project.name} — Tasks</h3>
+          <h3 className="text-sm font-bold text-gray-900">{project.name} — {title}</h3>
           {isSeniorManagement && (
             <div className="flex items-center gap-1 mt-2">
               {LIFECYCLE_VIEWS.map((v) => (
@@ -72,12 +78,14 @@ export default function TaskListView({
           <div className="flex items-center gap-2">
             {editMode && lifecycleView === "active" && (
               <>
-                <button
-                  onClick={() => setExtractOpen(true)}
-                  className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
-                >
-                  <FileUp className="w-3.5 h-3.5" /> From Document
-                </button>
+                {variant === "register" && (
+                  <button
+                    onClick={() => setExtractOpen(true)}
+                    className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
+                  >
+                    <FileUp className="w-3.5 h-3.5" /> From Document
+                  </button>
+                )}
                 <button
                   onClick={() => setAddingTask(true)}
                   className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
@@ -112,9 +120,9 @@ export default function TaskListView({
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <div />
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Task</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Indicator" : "Task"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Owner</p>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Due Date</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Next Due" : "Due Date"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Status</p>
           <div />
         </div>
@@ -129,6 +137,7 @@ export default function TaskListView({
               <NewTaskRow
                 projectId={project.id}
                 users={users}
+                variant={variant}
                 onCancel={() => setAddingTask(false)}
                 onCreated={() => {
                   setAddingTask(false);
@@ -145,6 +154,7 @@ export default function TaskListView({
               users={users}
               currentUserId={currentUserId}
               isSeniorManagement={isSeniorManagement}
+              variant={variant}
               onChanged={refresh}
               onOpenAudit={setAuditTask}
             />

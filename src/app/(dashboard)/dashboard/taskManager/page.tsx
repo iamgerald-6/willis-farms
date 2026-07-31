@@ -10,15 +10,16 @@ import ProjectPills from "./components/ProjectPills";
 import NewProjectModal from "./components/NewProjectModal";
 import TaskListView from "./components/TaskListView";
 import SummaryView from "./components/SummaryView";
+import GanttView from "./components/GanttView";
 import CalendarView from "./components/CalendarView";
 import MonthlyReportModal from "./components/MonthlyReportModal";
 
-type Tab = "summary" | "tasks" | "calendar";
+type Tab = "summary" | "gantt" | "register" | "monitoring" | "calendar";
 
 export default function TaskManagerPage() {
   const { isLoading: userLoading, isSeniorManagement, allUsers, userId } = useCurrentUser();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("tasks");
+  const [tab, setTab] = useState<Tab>("register");
   const [showNewProject, setShowNewProject] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
@@ -85,16 +86,18 @@ export default function TaskManagerPage() {
 
             {selectedProject && (
               <>
-                <div className="flex items-center gap-1 mt-4 mb-5 border-b border-gray-100">
+                <div className="flex items-center gap-1 mt-4 mb-5 border-b border-gray-100 overflow-x-auto">
                   {([
                     ["summary", "Summary"],
-                    ["tasks", "Tasks"],
-                    ["calendar", "Calendar"],
+                    ["gantt", "Dashboard / Gantt"],
+                    ["register", "Obligation Register"],
+                    ["monitoring", "Monitoring Schedule"],
+                    ["calendar", "Compliance Calendar"],
                   ] as [Tab, string][]).map(([key, label]) => (
                     <button
                       key={key}
                       onClick={() => setTab(key)}
-                      className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${
+                      className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition whitespace-nowrap ${
                         tab === key ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
                       }`}
                     >
@@ -104,8 +107,24 @@ export default function TaskManagerPage() {
                 </div>
 
                 {tab === "summary" && <SummaryView project={selectedProject} />}
-                {tab === "tasks" && (
-                  <TaskListView project={selectedProject} users={allUsers} isSeniorManagement={isSeniorManagement} currentUserId={userId ?? null} />
+                {tab === "gantt" && <GanttView project={selectedProject} />}
+                {tab === "register" && (
+                  <TaskListView
+                    project={selectedProject}
+                    users={allUsers}
+                    isSeniorManagement={isSeniorManagement}
+                    currentUserId={userId ?? null}
+                    variant="register"
+                  />
+                )}
+                {tab === "monitoring" && (
+                  <TaskListView
+                    project={selectedProject}
+                    users={allUsers}
+                    isSeniorManagement={isSeniorManagement}
+                    currentUserId={userId ?? null}
+                    variant="monitoring"
+                  />
                 )}
                 {tab === "calendar" && <CalendarView project={selectedProject} />}
               </>
