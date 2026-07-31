@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isSeniorManagement, computeDisplayStatus } from "@/lib/taskAccessControl";
 
 // GET /api/task-manager/projects
 // Senior Management sees every active project. Everyone else only sees a
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 
     const { data: taskCounts, error: countsError } = await supabaseAdmin
       .from("tm_tasks")
-      .select("project_id, owner_id, lifecycle_status, due_date, is_recurring")
+      .select("project_id, owner_id, lifecycle_status, due_date, is_recurring, progress_percent")
       .neq("lifecycle_status", "deleted");
     if (countsError) throw countsError;
 
@@ -38,7 +38,13 @@ export async function GET(req: NextRequest) {
       stats.total += 1;
       if (t.lifecycle_status === "active") {
         stats.open += 1;
-        if (t.due_date && new Date(t.due_date) < new Date()) stats.overdue += 1;
+        // Use the same computeDisplayStatus every task badge uses — a raw
+        // `new Date(due_date) < new Date()` double-counted tasks due
+        // "today" as overdue because it compared a UTC midnight timestamp
+        // against the current wall-clock time instead of normalizing both
+        // to the same day boundary.
+        const status = computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent);
+        if (status === "Overdue") stats.overdue += 1;
       }
       statsByProject[t.project_id] = stats;
     }
