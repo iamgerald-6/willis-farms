@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import mammoth from "mammoth";
 import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
 import type { ExtractedTaskProposal } from "@/types/taskManager";
+
+function isWordDoc(fileName: string, contentType: string | null): boolean {
+  const name = fileName.toLowerCase();
+  return name.endsWith(".docx") || name.endsWith(".doc") || !!contentType?.includes("wordprocessingml") || !!contentType?.includes("msword");
+}
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -64,7 +70,27 @@ export async function POST(req: NextRequest) {
     const fileRes = await fetch(file_url);
     if (!fileRes.ok) throw new Error(`Could not download the document (HTTP ${fileRes.status})`);
     const arrayBuffer = await fileRes.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = fileRes.headers.get("content-type");
+
+    const instructions =
+      "This is a compliance document (e.g. a permit, licence, or regulatory notice) for a farm operation. Read it and extract every distinct obligation, deadline, renewal date, and recurring monitoring/reporting requirement as a task. Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document.";
+
+    // Word docs: pull the text out with mammoth and send it as plain text —
+    // Claude's document blocks only read PDFs and images natively.
+    // Everything else (PDF) goes straight to Claude as a native document.
+    let content: any[];
+    if (isWordDoc(file_name ?? "", contentType)) {
+      const { value: text } = await mammoth.extractRawText({ buffer });
+      if (!text.trim()) throw new Error("Couldn't read any text out of that Word document.");
+      content = [{ type: "text", text: `${instructions}\n\n--- DOCUMENT TEXT ---\n\n${text}` }];
+    } else {
+      const base64 = buffer.toString("base64");
+      content = [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+        { type: "text", text: instructions },
+      ];
+    }
 
     const message = await anthropic.messages.create({
       // Swap this for whatever's current on console.anthropic.com/models if
@@ -73,21 +99,7 @@ export async function POST(req: NextRequest) {
       max_tokens: 4096,
       tools: [EXTRACTION_TOOL],
       tool_choice: { type: "tool", name: "record_extracted_tasks" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: base64 },
-            } as any,
-            {
-              type: "text",
-              text: "This is a compliance document (e.g. a permit, licence, or regulatory notice) for a farm operation. Read it and extract every distinct obligation, deadline, renewal date, and recurring monitoring/reporting requirement as a task. Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document.",
-            },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content }],
     });
 
     const toolUse = message.content.find((b) => b.type === "tool_use");

@@ -22,10 +22,12 @@ export default function TaskListView({
   project,
   users,
   isSeniorManagement,
+  currentUserId,
 }: {
   project: TMProject;
   users: User[];
   isSeniorManagement: boolean;
+  currentUserId: string | null;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
@@ -136,21 +138,31 @@ export default function TaskListView({
             </div>
           )}
           {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} editMode={editMode} users={users} onChanged={refresh} onOpenAudit={setAuditTask} />
+            <TaskRow
+              key={task.id}
+              task={task}
+              editMode={editMode}
+              users={users}
+              currentUserId={currentUserId}
+              isSeniorManagement={isSeniorManagement}
+              onChanged={refresh}
+              onOpenAudit={setAuditTask}
+            />
           ))}
         </div>
       </div>
 
-      {isSeniorManagement && (
-        <p className="text-xs text-gray-400 italic mt-3">
-          Only Senior Management can edit, archive, or delete tasks. Every change is logged with who made it and when — tap the clock icon on any task to see its history.
-        </p>
-      )}
+      <p className="text-xs text-gray-400 italic mt-3">
+        {isSeniorManagement
+          ? "Only Senior Management can edit, archive, or delete tasks. Every change is logged with who made it and when — tap the clock icon on any task to see its history."
+          : "You can update the progress on your own tasks — everything else here is read-only."}
+      </p>
 
       {auditTask && <AuditLogDrawer task={auditTask} onClose={() => setAuditTask(null)} />}
       {extractOpen && (
         <DocumentExtractionModal
           project={project}
+          users={users}
           onClose={() => setExtractOpen(false)}
           onSaved={() => {
             setExtractOpen(false);

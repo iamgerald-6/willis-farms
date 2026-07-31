@@ -52,6 +52,7 @@ export interface TMTask {
   method_provider?: string | null;
   lifecycle_status: LifecycleStatus;
   completed_at?: string | null;
+  progress_percent: number;
   source: TaskSource;
   source_document_url?: string | null;
   source_document_name?: string | null;
@@ -99,6 +100,20 @@ export interface ExtractedTaskProposal {
   frequency?: string | null;
   indicator?: string | null;
   method_provider?: string | null;
+  // Not set by Claude — filled in by whoever reviews the proposals, so each
+  // extracted task can land with an owner already assigned.
+  owner_id?: string | null;
+}
+
+/** An already-uploaded document elsewhere in the portal, offered as an extraction source instead of uploading a fresh file. */
+export interface PortalDocument {
+  id: string;
+  title: string;
+  source: "Policies & Ops" | "SOP";
+  category?: string | null;
+  file_name: string;
+  url: string;
+  uploaded_at: string;
 }
 
 export interface TMMonthlyReport {

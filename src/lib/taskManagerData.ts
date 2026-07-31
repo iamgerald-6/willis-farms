@@ -27,7 +27,7 @@ export function enrichTasks(
   return tasks.map((t) => ({
     ...t,
     owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
-    display_status: computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring),
+    display_status: computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent),
   }));
 }
 
@@ -59,6 +59,7 @@ export async function applyLifecycleChange(
     lifecycle_status: nextStatus,
     updated_at: new Date().toISOString(),
     completed_at: action === "completed" ? new Date().toISOString() : action === "restored" ? null : existing.completed_at,
+    progress_percent: action === "completed" ? 100 : action === "restored" ? 0 : existing.progress_percent,
   };
 
   const { data: updated, error } = await supabaseAdmin
@@ -76,6 +77,54 @@ export async function applyLifecycleChange(
     changed_fields: ["lifecycle_status"],
     previous_values: { lifecycle_status: existing.lifecycle_status },
     new_values: { lifecycle_status: updated.lifecycle_status },
+    performedBy,
+  });
+
+  const userNames = await fetchUserNames([updated.owner_id]);
+  return { task: enrichTasks([updated], userNames)[0] };
+}
+
+/**
+ * Updates just progress_percent — the one field the task's owner is allowed
+ * to touch themselves, without full edit permission. Hitting 100 auto-
+ * completes the task (same effect as Senior Management clicking Complete).
+ * Caller is responsible for the owner-or-Senior-Management permission check.
+ */
+export async function updateTaskProgress(taskId: string, rawProgress: number, performedBy: RequestUser) {
+  const progress = Math.max(0, Math.min(100, Math.round(rawProgress)));
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("tm_tasks")
+    .select("*")
+    .eq("id", taskId)
+    .single();
+  if (fetchError || !existing) return { error: "Task not found", status: 404 as const };
+  if (existing.lifecycle_status !== "active") {
+    return { error: "Only active tasks can have their progress updated", status: 400 as const };
+  }
+  if (existing.progress_percent === progress) {
+    const userNames = await fetchUserNames([existing.owner_id]);
+    return { task: enrichTasks([existing], userNames)[0] };
+  }
+
+  const autoCompleting = progress >= 100;
+  const updates: Record<string, unknown> = {
+    progress_percent: progress,
+    updated_at: new Date().toISOString(),
+    lifecycle_status: autoCompleting ? "completed" : "active",
+    completed_at: autoCompleting ? new Date().toISOString() : null,
+  };
+
+  const { data: updated, error } = await supabaseAdmin.from("tm_tasks").update(updates).eq("id", taskId).select().single();
+  if (error) return { error: error.message, status: 500 as const };
+
+  await writeAuditLog({
+    task_id: updated.id,
+    project_id: updated.project_id,
+    action: autoCompleting ? "completed" : "edited",
+    changed_fields: autoCompleting ? ["progress_percent", "lifecycle_status"] : ["progress_percent"],
+    previous_values: { progress_percent: existing.progress_percent },
+    new_values: { progress_percent: updated.progress_percent },
     performedBy,
   });
 

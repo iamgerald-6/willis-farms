@@ -13,12 +13,16 @@ export default function TaskRow({
   task,
   editMode,
   users,
+  currentUserId,
+  isSeniorManagement,
   onChanged,
   onOpenAudit,
 }: {
   task: TMTask;
   editMode: boolean;
   users: User[];
+  currentUserId: string | null;
+  isSeniorManagement: boolean;
   onChanged: () => void;
   onOpenAudit: (task: TMTask) => void;
 }) {
@@ -27,6 +31,10 @@ export default function TaskRow({
   const [title, setTitle] = useState(task.title);
   const [ownerId, setOwnerId] = useState<string | null>(task.owner_id ?? null);
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
+
+  const [editingProgress, setEditingProgress] = useState(false);
+  const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
+  const [savingProgress, setSavingProgress] = useState(false);
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -100,7 +108,22 @@ export default function TaskRow({
     }
   };
 
+  const handleSaveProgress = async () => {
+    setSavingProgress(true);
+    try {
+      await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: progressDraft });
+      if (progressDraft >= 100) toast.success("Marked complete");
+      setEditingProgress(false);
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Failed to update progress");
+    } finally {
+      setSavingProgress(false);
+    }
+  };
+
   const isLifecycleActive = task.lifecycle_status === "active";
+  const canEditProgress = isLifecycleActive && (isSeniorManagement || (!!currentUserId && task.owner_id === currentUserId));
 
   if (editing) {
     return (
@@ -181,6 +204,51 @@ export default function TaskRow({
         <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
           {status}
         </span>
+        {isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) && (
+          <button
+            onClick={() => canEditProgress && setEditingProgress(true)}
+            disabled={!canEditProgress}
+            className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${canEditProgress ? "cursor-pointer" : "cursor-default"}`}
+            title={canEditProgress ? "Update progress" : undefined}
+          >
+            <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+              <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
+            </span>
+            <span className="text-[10px] text-gray-400">{task.progress_percent}%</span>
+          </button>
+        )}
+        {isLifecycleActive && editingProgress && (
+          <div className="mt-1.5 max-w-[150px]">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={progressDraft}
+              onChange={(e) => setProgressDraft(Number(e.target.value))}
+              className="w-full"
+              autoFocus
+            />
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-[10px] text-gray-500">{progressDraft}%</span>
+              <div className="flex items-center gap-2">
+                <button onClick={handleSaveProgress} disabled={savingProgress} className="text-[10px] font-semibold text-red-600 hover:text-red-700">
+                  {savingProgress ? "Saving…" : "Save"}
+                </button>
+                <button
+                  onClick={() => {
+                    setProgressDraft(task.progress_percent ?? 0);
+                    setEditingProgress(false);
+                  }}
+                  disabled={savingProgress}
+                  className="text-[10px] text-gray-400 hover:text-gray-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
         <button onClick={() => onOpenAudit(task)} title="History" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400">

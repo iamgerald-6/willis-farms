@@ -48,6 +48,11 @@ create table if not exists tm_tasks (
   lifecycle_status text not null default 'active' check (lifecycle_status in ('active', 'completed', 'archived', 'deleted')),
   completed_at timestamptz,
 
+  -- The one thing a task's owner can update themselves, without full edit
+  -- access: their own progress. Hitting 100 auto-completes the task
+  -- (lifecycle_status -> 'completed'). See /api/task-manager/tasks/[id]/progress.
+  progress_percent int not null default 0 check (progress_percent between 0 and 100),
+
   source text not null default 'manual' check (source in ('manual', 'ai_extracted')),
   source_document_url text,
   source_document_name text,

@@ -81,6 +81,36 @@ the sidebar, marked NEW).
   List / New Project / Monthly Report buttons, and only projects where
   they own a task are visible at all.
 
+## Update — round 2 (progress %, owner assignment, Word docs, document picker)
+
+If you already ran the schema once, run this too (adds one column, safe to
+re-run):
+
+```sql
+alter table tm_tasks add column if not exists progress_percent int not null default 0 check (progress_percent between 0 and 100);
+```
+
+Then, since this round added a new package (`mammoth`, for reading Word
+documents), run `npm install` again before `npm run dev`.
+
+**New things to test:**
+
+- **Progress**: as a task's owner (or Senior Management), you'll see a thin
+  progress bar under the status badge — click it to open a slider (0–100,
+  steps of 5). This is the one thing a non-Senior-Management owner can
+  change on their own task. Hitting 100 auto-completes the task and logs it,
+  same as clicking Complete.
+- **Owner assignment during extraction**: on the review screen after
+  uploading/choosing a document, each proposed task now has an owner
+  dropdown — assign before saving instead of after.
+- **Word documents**: the upload step now accepts `.doc`/`.docx` alongside
+  PDF. Text is extracted and sent to Claude as plain text (no native
+  document view for Word, so formatting/images in the doc aren't seen —
+  only the text).
+- **Choose existing document**: in "Add Tasks From a Document," toggle to
+  "Choose existing" to pick from documents already uploaded under Policies &
+  Ops or the SOP library, instead of uploading a fresh file.
+
 ## Notes / things I simplified from the concept deck
 
 - The deck's separate "Obligation Register" and "Monitoring Schedule"

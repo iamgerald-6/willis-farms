@@ -16,7 +16,7 @@ import MonthlyReportModal from "./components/MonthlyReportModal";
 type Tab = "summary" | "tasks" | "calendar";
 
 export default function TaskManagerPage() {
-  const { isLoading: userLoading, isSeniorManagement, allUsers } = useCurrentUser();
+  const { isLoading: userLoading, isSeniorManagement, allUsers, userId } = useCurrentUser();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("tasks");
   const [showNewProject, setShowNewProject] = useState(false);
@@ -104,7 +104,9 @@ export default function TaskManagerPage() {
                 </div>
 
                 {tab === "summary" && <SummaryView project={selectedProject} />}
-                {tab === "tasks" && <TaskListView project={selectedProject} users={allUsers} isSeniorManagement={isSeniorManagement} />}
+                {tab === "tasks" && (
+                  <TaskListView project={selectedProject} users={allUsers} isSeniorManagement={isSeniorManagement} currentUserId={userId ?? null} />
+                )}
                 {tab === "calendar" && <CalendarView project={selectedProject} />}
               </>
             )}

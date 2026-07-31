@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: updated, error } = await supabaseAdmin
       .from("tm_tasks")
       .update(updates)
-      .eq("id", params.id)
+      .eq("id", id)
       .select()
       .single();
     if (error) throw error;

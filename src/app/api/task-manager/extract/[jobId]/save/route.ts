@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       project_id: job.project_id,
       title: t.title.trim(),
       description: t.description ?? null,
+      owner_id: t.owner_id ?? null,
       due_date: t.due_date ?? null,
       is_recurring: !!t.is_recurring,
       task_type: t.is_recurring ? "monitoring" : "obligation",
