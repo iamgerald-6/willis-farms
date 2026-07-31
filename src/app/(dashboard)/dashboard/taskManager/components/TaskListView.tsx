@@ -11,8 +11,14 @@ import NewTaskRow from "./NewTaskRow";
 import AuditLogDrawer from "./AuditLogDrawer";
 import DocumentExtractionModal from "./DocumentExtractionModal";
 
+// "Active" deliberately includes completed tasks too — Sheila wants
+// finished work to stay visible on the dashboard (so a manager can see
+// what's been completed at a glance) rather than disappearing the moment
+// it's marked done. It only drops off once the task itself is archived,
+// or the whole project is closed. "Completed" still exists as its own
+// filter for anyone who wants to see only what's finished.
 const LIFECYCLE_VIEWS: { key: string; label: string }[] = [
-  { key: "active", label: "Active" },
+  { key: "active,completed", label: "Active" },
   { key: "completed", label: "Completed" },
   { key: "archived", label: "Archived" },
   { key: "deleted", label: "Deleted" },
@@ -35,7 +41,7 @@ export default function TaskListView({
 }) {
   const [editMode, setEditMode] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
-  const [lifecycleView, setLifecycleView] = useState("active");
+  const [lifecycleView, setLifecycleView] = useState("active,completed");
   const [auditTask, setAuditTask] = useState<TMTask | null>(null);
   const [extractOpen, setExtractOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -46,7 +52,13 @@ export default function TaskListView({
     queryFn: async () => (await api.get(`/task-manager/tasks?project_id=${project.id}&include=${lifecycleView}`)).data,
   });
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["tm-tasks", project.id] });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["tm-tasks", project.id] });
+    // The project pills show a live "N overdue" count from a separate
+    // query — without this it goes stale after any edit (e.g. changing a
+    // due date) since the pills never remount on their own.
+    queryClient.invalidateQueries({ queryKey: ["tm-projects"] });
+  };
 
   const allTasks = data?.tasks ?? [];
   const tasks = allTasks.filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"));
@@ -76,7 +88,7 @@ export default function TaskListView({
 
         {isSeniorManagement && (
           <div className="flex items-center gap-2">
-            {editMode && lifecycleView === "active" && (
+            {editMode && lifecycleView === "active,completed" && (
               <>
                 {variant === "register" && (
                   <button

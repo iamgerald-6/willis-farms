@@ -19,8 +19,11 @@ const BAR_COLOR: Record<DisplayStatus, string> = {
 
 export default function GanttView({ project }: { project: TMProject }) {
   const { data, isLoading } = useQuery<{ tasks: TMTask[] }>({
-    queryKey: ["tm-tasks", project.id, "active"],
-    queryFn: async () => (await api.get(`/task-manager/tasks?project_id=${project.id}&include=active`)).data,
+    // Completed tasks stay on the board (at 100%) until the project itself
+    // is closed — Sheila wants managers to be able to see what's finished,
+    // not just what's outstanding.
+    queryKey: ["tm-tasks", project.id, "active,completed"],
+    queryFn: async () => (await api.get(`/task-manager/tasks?project_id=${project.id}&include=active,completed`)).data,
   });
 
   const tasks = [...(data?.tasks ?? [])].sort((a, b) => (a.progress_percent ?? 0) - (b.progress_percent ?? 0));
@@ -33,7 +36,7 @@ export default function GanttView({ project }: { project: TMProject }) {
       <p className="text-xs text-gray-400 mb-4">At a glance: how complete each task is, not when it's due.</p>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-        {tasks.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No active tasks yet.</p>}
+        {tasks.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No tasks yet.</p>}
         <div className="space-y-3">
           {tasks.map((t) => {
             const pct = t.progress_percent ?? 0;
