@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileBarChart } from "lucide-react";
+import { FileBarChart, Calendar as CalendarIcon } from "lucide-react";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { useCurrentUser } from "./useCurrentUser";
@@ -11,10 +11,10 @@ import NewProjectModal from "./components/NewProjectModal";
 import TaskListView from "./components/TaskListView";
 import SummaryView from "./components/SummaryView";
 import GanttView from "./components/GanttView";
-import CalendarView from "./components/CalendarView";
+import CalendarModal from "./components/CalendarModal";
 import MonthlyReportModal from "./components/MonthlyReportModal";
 
-type Tab = "summary" | "gantt" | "register" | "monitoring" | "calendar";
+type Tab = "summary" | "gantt" | "register" | "monitoring";
 
 export default function TaskManagerPage() {
   const { isLoading: userLoading, isSeniorManagement, allUsers, userId } = useCurrentUser();
@@ -22,6 +22,7 @@ export default function TaskManagerPage() {
   const [tab, setTab] = useState<Tab>("register");
   const [showNewProject, setShowNewProject] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const { data, isLoading: projectsLoading, refetch } = useQuery<{ projects: TMProject[] }>({
     queryKey: ["tm-projects"],
@@ -52,14 +53,22 @@ export default function TaskManagerPage() {
           <h1 className="text-2xl font-bold text-gray-900">Task Manager</h1>
           <p className="text-sm text-gray-500 mt-1">Projects, tasks and deadlines — built from documents or entered by hand.</p>
         </div>
-        {isSeniorManagement && (
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => setShowReport(true)}
-            className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50 flex-shrink-0"
+            onClick={() => setShowCalendar(true)}
+            className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50"
           >
-            <FileBarChart className="w-4 h-4" /> Monthly Report
+            <CalendarIcon className="w-4 h-4" /> Calendar
           </button>
-        )}
+          {isSeniorManagement && (
+            <button
+              onClick={() => setShowReport(true)}
+              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50"
+            >
+              <FileBarChart className="w-4 h-4" /> Monthly Report
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-6">
@@ -92,7 +101,6 @@ export default function TaskManagerPage() {
                     ["gantt", "Dashboard / Gantt"],
                     ["register", "Obligation Register"],
                     ["monitoring", "Monitoring Schedule"],
-                    ["calendar", "Compliance Calendar"],
                   ] as [Tab, string][]).map(([key, label]) => (
                     <button
                       key={key}
@@ -126,7 +134,6 @@ export default function TaskManagerPage() {
                     variant="monitoring"
                   />
                 )}
-                {tab === "calendar" && <CalendarView projects={projects} />}
               </>
             )}
           </>
@@ -140,6 +147,7 @@ export default function TaskManagerPage() {
         />
       )}
       {showReport && <MonthlyReportModal projects={projects} onClose={() => setShowReport(false)} />}
+      {showCalendar && <CalendarModal projects={projects} onClose={() => setShowCalendar(false)} />}
     </div>
   );
 }

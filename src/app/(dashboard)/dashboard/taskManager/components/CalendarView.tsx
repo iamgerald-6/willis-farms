@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import api from "@/lib/api";
 import { TMProject, TMTask } from "@/types/taskManager";
+import { STATUS_STYLES } from "../statusStyles";
 
 // Cycled by project so every project gets a consistent dot/chip color
 // across the whole calendar, however many projects there are.
@@ -23,6 +24,7 @@ export default function CalendarView({ projects }: { projects: TMProject[] }) {
     d.setDate(1);
     return d;
   });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // No project_id — this deliberately spans every project the user can see.
   const { data } = useQuery<{ tasks: TMTask[] }>({
@@ -60,10 +62,12 @@ export default function CalendarView({ projects }: { projects: TMProject[] }) {
   const today = new Date();
   const isToday = (day: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
 
+  const selectedDayTasks = selectedDay ? (tasksByDay[selectedDay] ?? []) : [];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-gray-900">Compliance Calendar — All Projects</h3>
+        <p className="text-xs text-gray-400">Click any day with tasks to see the full list.</p>
         <div className="flex items-center gap-2">
           <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
             <ChevronLeft className="w-4 h-4" />
@@ -100,8 +104,15 @@ export default function CalendarView({ projects }: { projects: TMProject[] }) {
           {cells.map((day, i) => {
             const key = day ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` : `blank-${i}`;
             const dayTasks = day ? (tasksByDay[key] ?? []) : [];
+            const clickable = day !== null && dayTasks.length > 0;
             return (
-              <div key={key} className={`min-h-[92px] border-b border-r border-gray-50 p-1.5 ${day ? "" : "bg-gray-50/30"}`}>
+              <div
+                key={key}
+                onClick={() => clickable && setSelectedDay(key)}
+                className={`min-h-[92px] border-b border-r border-gray-50 p-1.5 ${day ? "" : "bg-gray-50/30"} ${
+                  clickable ? "cursor-pointer hover:bg-red-50/40 transition" : ""
+                }`}
+              >
                 {day && (
                   <>
                     <span
@@ -124,7 +135,9 @@ export default function CalendarView({ projects }: { projects: TMProject[] }) {
                           </p>
                         );
                       })}
-                      {dayTasks.length > 2 && <p className="text-[10px] text-gray-400 px-1.5">+{dayTasks.length - 2} more</p>}
+                      {dayTasks.length > 2 && (
+                        <p className="text-[10px] text-red-600 font-medium px-1.5 hover:underline">+{dayTasks.length - 2} more</p>
+                      )}
                     </div>
                   </>
                 )}
@@ -133,6 +146,42 @@ export default function CalendarView({ projects }: { projects: TMProject[] }) {
           })}
         </div>
       </div>
+
+      {selectedDay && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={() => setSelectedDay(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white">
+              <h3 className="text-sm font-bold text-gray-900">
+                {new Date(selectedDay).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              </h3>
+              <button onClick={() => setSelectedDay(null)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              {selectedDayTasks.map((t) => {
+                const color = colorByProject[t.project_id] ?? { dot: "bg-gray-400" };
+                const style = STATUS_STYLES[t.display_status ?? "Not Started"];
+                return (
+                  <div key={t.id} className="border border-gray-100 rounded-lg p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-semibold text-gray-900">{t.title}</p>
+                      <span className={`flex-shrink-0 inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+                        {t.display_status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className={`w-2 h-2 rounded-full ${color.dot ?? "bg-gray-400"}`} />
+                      <p className="text-xs text-gray-500">{t.project_name ?? "—"}</p>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">Owner: {t.owner_name ?? "Unassigned"}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
