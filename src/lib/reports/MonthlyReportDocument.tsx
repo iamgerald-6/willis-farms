@@ -45,18 +45,14 @@ const styles = StyleSheet.create({
   upcomingSub: { fontSize: 7, color: GRAY, marginTop: 1 },
   upcomingDate: { fontSize: 8, color: GRAY },
 
-  projectCard: { border: `1pt solid ${BORDER}`, borderRadius: 6, marginBottom: 14, padding: 10 },
-  projectHeaderRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  projectName: { fontSize: 11, fontWeight: 700, color: DARK },
+  // Section headers for a per-project block on page 2 — deliberately not a
+  // bordered "card": a box that straddles a page break renders with a
+  // half-drawn border in react-pdf, which is exactly the "jumbled" look to
+  // avoid. Plain header + divider instead, free to flow across pages.
+  projectSection: { marginTop: 20 },
+  projectSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", borderBottom: `1pt solid ${DARK}`, paddingBottom: 4, marginBottom: 10 },
+  projectName: { fontSize: 12, fontWeight: 700, color: DARK },
   projectStats: { fontSize: 8, color: GRAY },
-  tableHeaderRow: { flexDirection: "row", borderBottom: `1pt solid ${BORDER}`, paddingBottom: 4, marginBottom: 4 },
-  tableRow: { flexDirection: "row", paddingVertical: 3, borderBottom: `0.5pt solid ${BORDER}` },
-  colTask: { flex: 3 },
-  colOwner: { flex: 2 },
-  colDue: { flex: 1.5 },
-  colStatus: { flex: 1.5 },
-  th: { fontSize: 7, fontWeight: 700, color: GRAY, textTransform: "uppercase" },
-  td: { fontSize: 8, color: DARK },
 
   ganttProjectHeader: { fontSize: 11, fontWeight: 700, color: DARK, marginTop: 14, marginBottom: 6 },
   ganttRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4, gap: 8 },
@@ -113,6 +109,67 @@ function Footer({ data }: { data: MonthlyReportData }) {
   );
 }
 
+// Same six stat cards used on page 1 (all projects combined) and, per
+// project, on page 2 — kept as one component so the two pages stay
+// visually identical apart from scope.
+function StatCards({ stats }: { stats: MonthlyReportData["overall"] }) {
+  return (
+    <View style={styles.statRow}>
+      <View style={styles.statCard}>
+        <Text style={styles.statNumber}>{stats.total}</Text>
+        <Text style={styles.statLabel}>Total active tasks</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={[styles.statNumber, { color: RED }]}>{stats.overdue}</Text>
+        <Text style={styles.statLabel}>Overdue</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={[styles.statNumber, { color: AMBER }]}>{stats.inProgress}</Text>
+        <Text style={styles.statLabel}>In Progress</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={styles.statNumber}>{stats.notStarted}</Text>
+        <Text style={styles.statLabel}>Not Started</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={[styles.statNumber, { color: GREEN }]}>{stats.compliantOngoing}</Text>
+        <Text style={styles.statLabel}>Compliant / Ongoing</Text>
+      </View>
+      <View style={styles.statCard}>
+        <Text style={[styles.statNumber, { color: BLUE }]}>{stats.completed}</Text>
+        <Text style={styles.statLabel}>Completed this period</Text>
+      </View>
+    </View>
+  );
+}
+
+function UpcomingList({ items, showProject }: { items: (UpcomingItem | ReportTask)[]; showProject: boolean }) {
+  if (items.length === 0) {
+    return <Text style={styles.emptyNote}>Nothing scheduled.</Text>;
+  }
+  return (
+    <>
+      {items.map((t, i) => (
+        <View key={i} style={styles.upcomingRow}>
+          <View>
+            <Text style={styles.upcomingTitle}>{t.title}</Text>
+            <Text style={styles.upcomingSub}>
+              {showProject && "project_name" in t ? `${t.project_name} · ` : ""}
+              {t.owner_name ?? "Unassigned"}
+            </Text>
+          </View>
+          <Text style={styles.upcomingDate}>{fmtDate(t.due_date)}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+// A single bar row is small and safe to keep on one page (wrap={false});
+// the surrounding per-project block deliberately has NO wrap restriction —
+// forcing a whole project's task list to stay together broke pages that
+// had more tasks than would fit in the remaining space, producing
+// overlapping/garbled output instead of a clean page break.
 function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
   if (projects.length === 0) {
     return <Text style={styles.emptyNote}>Nothing to show for this period.</Text>;
@@ -120,8 +177,10 @@ function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
   return (
     <>
       {projects.map((project) => (
-        <View key={project.name} wrap={false}>
-          <Text style={styles.ganttProjectHeader}>{project.name}</Text>
+        <View key={project.name}>
+          <Text style={styles.ganttProjectHeader} wrap={false}>
+            {project.name}
+          </Text>
           {project.tasks.length === 0 ? (
             <Text style={styles.emptyNote}>None.</Text>
           ) : (
@@ -129,7 +188,7 @@ function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
               const pct = t.progress_percent ?? 0;
               const color = STATUS_BAR_COLOR[t.display_status as DisplayStatus] ?? "#9CA3AF";
               return (
-                <View key={i} style={styles.ganttRow}>
+                <View key={i} style={styles.ganttRow} wrap={false}>
                   <View style={styles.ganttLabel}>
                     <Text style={styles.ganttName}>{t.title}</Text>
                     <Text style={styles.ganttOwner}>{t.owner_name ?? "Unassigned"}</Text>
@@ -164,7 +223,7 @@ export interface ReportProjectBreakdown {
   notStarted: number;
   compliantOngoing: number;
   completed: number;
-  tasks: ReportTask[];
+  upcoming: ReportTask[];
 }
 
 export interface ReportProjectGantt {
@@ -216,85 +275,41 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
       <Page size="A4" style={styles.page}>
         <ReportHeader data={data} pageLabel="Page 1" pageTitle="Summary" pageSubtitle="All projects combined." />
 
-        <View style={styles.statRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{data.overall.total}</Text>
-            <Text style={styles.statLabel}>Total active tasks</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: RED }]}>{data.overall.overdue}</Text>
-            <Text style={styles.statLabel}>Overdue</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: AMBER }]}>{data.overall.inProgress}</Text>
-            <Text style={styles.statLabel}>In Progress</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{data.overall.notStarted}</Text>
-            <Text style={styles.statLabel}>Not Started</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: GREEN }]}>{data.overall.compliantOngoing}</Text>
-            <Text style={styles.statLabel}>Compliant / Ongoing</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: BLUE }]}>{data.overall.completed}</Text>
-            <Text style={styles.statLabel}>Completed this period</Text>
-          </View>
-        </View>
+        <StatCards stats={data.overall} />
 
         <Text style={styles.sectionTitle}>Coming Up</Text>
-        {data.upcoming.length === 0 ? (
-          <Text style={styles.emptyNote}>Nothing scheduled.</Text>
-        ) : (
-          data.upcoming.map((t, i) => (
-            <View key={i} style={styles.upcomingRow}>
-              <View>
-                <Text style={styles.upcomingTitle}>{t.title}</Text>
-                <Text style={styles.upcomingSub}>
-                  {t.project_name} · {t.owner_name ?? "Unassigned"}
-                </Text>
-              </View>
-              <Text style={styles.upcomingDate}>{fmtDate(t.due_date)}</Text>
-            </View>
-          ))
-        )}
+        <UpcomingList items={data.upcoming} showProject />
 
         <Footer data={data} />
       </Page>
 
-      {/* Page 2 — breakdown of page 1, by project */}
+      {/* Page 2 — same layout as page 1, per project instead of combined */}
       <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} pageLabel="Page 2" pageTitle="Breakdown by Project" />
+        <ReportHeader data={data} pageLabel="Page 2" pageTitle="Breakdown by Project" pageSubtitle="The summary above, split out per project." />
 
         {data.projectBreakdown.length === 0 ? (
           <Text style={styles.emptyNote}>No projects to report on.</Text>
         ) : (
           data.projectBreakdown.map((project) => (
-            <View key={project.name} style={styles.projectCard} wrap={false}>
-              <View style={styles.projectHeaderRow}>
+            <View key={project.name} style={styles.projectSection}>
+              <View style={styles.projectSectionHeader} wrap={false}>
                 <Text style={styles.projectName}>{project.name}</Text>
                 <Text style={styles.projectStats}>
                   {project.total} active · {project.overdue} overdue · {project.completed} completed this period
                 </Text>
               </View>
-              <View style={styles.tableHeaderRow}>
-                <Text style={[styles.th, styles.colTask]}>Task</Text>
-                <Text style={[styles.th, styles.colOwner]}>Owner</Text>
-                <Text style={[styles.th, styles.colDue]}>Due</Text>
-                <Text style={[styles.th, styles.colStatus]}>Status</Text>
-              </View>
-              {project.tasks.slice(0, 12).map((t, i) => (
-                <View key={i} style={styles.tableRow}>
-                  <Text style={[styles.td, styles.colTask]}>{t.title}</Text>
-                  <Text style={[styles.td, styles.colOwner]}>{t.owner_name ?? "Unassigned"}</Text>
-                  <Text style={[styles.td, styles.colDue]}>{fmtDate(t.due_date)}</Text>
-                  <Text style={[styles.td, styles.colStatus]}>{t.display_status}</Text>
-                </View>
-              ))}
-              {project.tasks.length > 12 && (
-                <Text style={{ fontSize: 7, color: GRAY, marginTop: 4 }}>+ {project.tasks.length - 12} more — see the dashboard for the full list.</Text>
-              )}
+              <StatCards
+                stats={{
+                  total: project.total,
+                  overdue: project.overdue,
+                  inProgress: project.inProgress,
+                  notStarted: project.notStarted,
+                  compliantOngoing: project.compliantOngoing,
+                  completed: project.completed,
+                }}
+              />
+              <Text style={styles.sectionTitle}>Coming Up</Text>
+              <UpcomingList items={project.upcoming} showProject={false} />
             </View>
           ))
         )}
@@ -330,7 +345,7 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
           <Text style={styles.emptyNote}>No assigned tasks to report on.</Text>
         ) : (
           data.ownerStats.map((o) => (
-            <View key={o.name} style={styles.ownerRow}>
+            <View key={o.name} style={styles.ownerRow} wrap={false}>
               <View style={styles.ownerLabel}>
                 <Text style={styles.ownerName}>{o.name}</Text>
                 <Text style={styles.ownerCount}>
@@ -352,7 +367,7 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
           [...data.ownerStats]
             .sort((a, b) => b.completedPct - a.completedPct)
             .map((o) => (
-              <View key={o.name} style={styles.ownerRow}>
+              <View key={o.name} style={styles.ownerRow} wrap={false}>
                 <View style={styles.ownerLabel}>
                   <Text style={styles.ownerName}>{o.name}</Text>
                   <Text style={styles.ownerCount}>

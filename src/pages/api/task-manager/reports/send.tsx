@@ -100,8 +100,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     for (const project of projects ?? []) {
       const projectTasks = (allTasks ?? []).filter((t) => t.project_id === project.id);
       const activeTasks = projectTasks.filter((t) => t.lifecycle_status === "active");
+      // Compare calendar dates only (slice off the time-of-day) — completed_at
+      // is a full ISO timestamp like "2026-07-31T18:30:00.000Z", but
+      // period_end is a plain date "2026-07-31". Comparing the raw strings
+      // put anything completed on the LAST day of the period after
+      // period_end lexicographically (a longer string that starts with the
+      // same date sorts as "greater"), silently dropping same-day
+      // completions from the report.
       const completedInPeriod = projectTasks.filter(
-        (t) => t.lifecycle_status === "completed" && t.completed_at && t.completed_at >= period_start && t.completed_at <= period_end,
+        (t) =>
+          t.lifecycle_status === "completed" &&
+          t.completed_at &&
+          t.completed_at.slice(0, 10) >= period_start &&
+          t.completed_at.slice(0, 10) <= period_end,
       );
 
       let overdue = 0,
@@ -163,7 +174,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         notStarted,
         compliantOngoing,
         completed: completedInPeriod.length,
-        tasks: sortedActiveRows,
+        upcoming: sortedActiveRows.filter((t) => t.due_date).slice(0, 5),
       });
 
       activeGanttByProject.push({ name: project.name, tasks: sortedActiveRows });
