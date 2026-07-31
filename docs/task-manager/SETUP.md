@@ -174,8 +174,26 @@ three.
 
 **Still open, need info from you to fix:**
 
-- The "Minified React error #31" you hit sending the Monthly Report — need
-  to know whether you were running `npm run dev` or a production build, and
-  the full terminal output at the moment it crashed.
-- The user you added directly via the SQL editor not showing up in `users`
-  or on the platform — need to see the exact SQL you ran.
+(none currently — see round 4 below for the Monthly Report fix)
+
+## Update — round 4 (Monthly Report crash fixed, calendar/pill fixes)
+
+- **Monthly Report "Minified React error #31"** is fixed. Root cause: a
+  currently-unresolved upstream bug where `@react-pdf/renderer`'s
+  `renderToBuffer()` crashes specifically inside Next's App Router request
+  handling (confirmed with a side-by-side test — same code, same data,
+  worked from a Pages Router route and a plain Node script, failed
+  identically from App Router regardless of bundler, react-pdf version, or
+  Strict Mode). The send route now lives at
+  `src/pages/api/task-manager/reports/send.tsx` (Pages Router) instead of
+  under `src/app/api/...` — same URL, so nothing else changed. No SQL, no
+  new env vars, just pull and restart `npm run dev`.
+- **Project pill "N overdue" count** could disagree with what the task
+  list actually showed (e.g. "1 overdue" with no overdue task visible) —
+  it used a raw date comparison instead of the same status logic as the
+  task badges. Fixed to use the same calculation everywhere.
+- **Compliance Calendar** now spans every project at once (color-coded,
+  with a legend) instead of showing one project at a time, and moved out
+  of the tab bar into its own "Calendar" button next to "Monthly Report."
+  Clicking a day (including "+N more") opens the full list of that day's
+  tasks — no more unreadable truncated text.
