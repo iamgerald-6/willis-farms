@@ -63,6 +63,7 @@ export interface TMTask {
   // Attached by the API — not stored columns
   owner_name?: string | null;
   display_status?: DisplayStatus;
+  project_name?: string | null;
 }
 
 export interface TMAuditLogEntry {

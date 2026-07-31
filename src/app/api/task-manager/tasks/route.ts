@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
-import { enrichTasks, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
+import { enrichTasks, fetchUserNames, fetchProjectNames, writeAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
+// project_id is optional — omit it to get tasks across every active project
+// (used by the Compliance Calendar, which spans all projects, not just one).
 // Defaults to "active" only. Pass include=active,completed,archived,deleted
 // to see lifecycle history (used by the archive/lifecycle views).
 export async function GET(req: NextRequest) {
@@ -13,16 +15,15 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("project_id");
-    if (!projectId) return NextResponse.json({ error: "project_id is required" }, { status: 400 });
-
     const include = (searchParams.get("include") ?? "active").split(",").map((s) => s.trim());
 
     let query = supabaseAdmin
       .from("tm_tasks")
       .select("*")
-      .eq("project_id", projectId)
       .in("lifecycle_status", include)
       .order("due_date", { ascending: true, nullsFirst: false });
+
+    if (projectId) query = query.eq("project_id", projectId);
 
     const senior = isSeniorManagement(user.role);
     if (!senior) query = query.eq("owner_id", user.id);
@@ -31,7 +32,12 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
 
     const userNames = await fetchUserNames((tasks ?? []).map((t) => t.owner_id));
-    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames) });
+
+    // Only look up project names when spanning multiple projects — a
+    // single-project request already knows which project it's looking at.
+    const projectNames = projectId ? undefined : await fetchProjectNames((tasks ?? []).map((t) => t.project_id));
+
+    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames) });
   } catch (err: any) {
     console.error("[GET /api/task-manager/tasks]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });

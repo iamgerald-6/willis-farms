@@ -19,15 +19,29 @@ export async function fetchUserNames(userIds: string[]): Promise<Record<string, 
   return map;
 }
 
-/** Attaches owner_name + the computed display_status to raw task rows. */
+/** Looks up project names for a set of project ids from the `tm_projects` table. */
+export async function fetchProjectNames(projectIds: string[]): Promise<Record<string, string>> {
+  const uniqueIds = [...new Set(projectIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return {};
+
+  const { data } = await supabaseAdmin.from("tm_projects").select("id, name").in("id", uniqueIds);
+
+  const map: Record<string, string> = {};
+  for (const p of data ?? []) map[p.id] = p.name;
+  return map;
+}
+
+/** Attaches owner_name + the computed display_status (and, optionally, project_name) to raw task rows. */
 export function enrichTasks(
   tasks: any[],
   userNames: Record<string, string>,
+  projectNames?: Record<string, string>,
 ): TMTask[] {
   return tasks.map((t) => ({
     ...t,
     owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
     display_status: computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent),
+    ...(projectNames ? { project_name: projectNames[t.project_id] ?? null } : {}),
   }));
 }
 

@@ -126,7 +126,7 @@ export default function TaskManagerPage() {
                     variant="monitoring"
                   />
                 )}
-                {tab === "calendar" && <CalendarView project={selectedProject} />}
+                {tab === "calendar" && <CalendarView projects={projects} />}
               </>
             )}
           </>
