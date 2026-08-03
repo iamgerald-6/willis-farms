@@ -34,6 +34,12 @@ export interface WeightRow {
   weight: number;
 }
 
+export interface StageDurations {
+  stage1: string;
+  stage2: string;
+  stage3: string;
+}
+
 export interface InterviewGuideConfig {
   key: InterviewGuideKey;
   title: string;
@@ -41,12 +47,21 @@ export interface InterviewGuideConfig {
   briefing: string;
   recommendedPanel: string;
   duration: string;
+  stageDurations: StageDurations;
   screening: ScreeningItem[];
   questions: InterviewQuestion[];
   scenarios: ScenarioItem[];
   weights: WeightRow[];
   interpretation: string;
   disqualifiers: string[];
+}
+
+function stageDurations(
+  interview: string,
+  practical: string,
+  evaluation = "15–20 min",
+): StageDurations {
+  return { stage1: interview, stage2: practical, stage3: evaluation };
 }
 
 function q(
@@ -75,6 +90,10 @@ const L1_GUIDE: InterviewGuideConfig = {
     "At L1 we hire for attitude, trainability, honesty, and discipline. Technical skill is trained on farm; character is not. Probe biosecurity, PPE, honest recordkeeping, no unauthorised treatment, and immediate escalation.",
   recommendedPanel: "Herd Supervisor/Manager (L4) as chair, plus Breeding Farm Manager and/or Veterinarian",
   duration: "45–60 min interview + 45–60 min practical",
+  stageDurations: stageDurations(
+    "45–60 min — Sections A & B",
+    "45–60 min — Section C practical",
+  ),
   screening: [
     { id: "A1", requirement: "Certificate in Animal Health (2 yrs) OR NC II (CTVET) — originals sighted", mandatory: true },
     { id: "A2", requirement: "Physically able and willing to lift 50 kg feed sacks", mandatory: true },
@@ -125,6 +144,10 @@ const L2_GUIDE: InterviewGuideConfig = {
     "L2 is a competent hands-on operator across breeding, farrowing, and grower-finisher. Hire for reliable execution, SOP discipline, accurate recording, and biosecurity/tier compliance.",
   recommendedPanel: "Herd Supervisor/Manager (L4) as chair, plus Breeding Farm Manager or Veterinarian",
   duration: "60 minutes",
+  stageDurations: stageDurations(
+    "35–40 min — Sections A & B",
+    "20–25 min — Section C practical",
+  ),
   screening: [
     { id: "A1", requirement: "Diploma / HND in Animal Health, Science, Husbandry, or Production — originals sighted", mandatory: true },
     { id: "A2", requirement: "Meaningful hands-on pig production experience", mandatory: true },
@@ -169,6 +192,10 @@ const L3_GUIDE: InterviewGuideConfig = {
     "L3 is lead AI operator, floor coordinator, and coach. Hire for technical excellence, coaching ability, calm floor presence, and discipline enforcing standards on peers.",
   recommendedPanel: "Breeding Farm Manager or Herd Supervisor as chair, plus Veterinarian",
   duration: "60 min + practical/coaching assessment",
+  stageDurations: stageDurations(
+    "35–40 min — Sections A & B",
+    "25–30 min — Section C practical/coaching",
+  ),
   screening: [
     { id: "A1", requirement: "Diploma / HND in Animal Health, Science, Husbandry, or Production", mandatory: true },
     { id: "A2", requirement: "Lead AI Operator certification (internal or equivalent)", mandatory: true },
@@ -213,6 +240,10 @@ const L4_GUIDE: InterviewGuideConfig = {
     "First true management role — people control, KPI ownership, calm decision-making under pressure, plus technical credibility across breeding, farrowing, and grower-finisher.",
   recommendedPanel: "Breeding Farm Manager or Operations Manager as chair, plus Veterinarian",
   duration: "60–75 minutes",
+  stageDurations: stageDurations(
+    "40–45 min — Sections A & B",
+    "25–30 min — Section C scenarios",
+  ),
   screening: [
     { id: "A1", requirement: "Bachelor's or B.Tech in Animal Science / Production / Health / Agribusiness", mandatory: true },
     { id: "A2", requirement: "Demonstrated supervisory or daily-operations leadership", mandatory: true },
@@ -260,6 +291,10 @@ const L5_GUIDE: InterviewGuideConfig = {
     "Second-line management — multi-section coordination, gilt pipeline oversight, reporting integrity, and stable leadership supporting the Breeding Farm Manager.",
   recommendedPanel: "Breeding Farm Manager as chair, plus Operations Manager and/or Veterinarian",
   duration: "60–75 minutes",
+  stageDurations: stageDurations(
+    "40–45 min — Sections A & B",
+    "25–30 min — Section C scenarios",
+  ),
   screening: [
     { id: "A1", requirement: "Bachelor's in Animal Science / Production / Health / Agribusiness", mandatory: true },
     { id: "A2", requirement: "Significant technical and supervisory experience in intensive livestock", mandatory: true },
@@ -307,6 +342,10 @@ const L6_GUIDE: InterviewGuideConfig = {
     "Functional manager of the whole multiplication farm — reproductive KPIs, genetic-tier integrity, people, budget, and scaling from 52 to 200 GP sows while breeding own replacements.",
   recommendedPanel: "Operations/Production Manager or CEO as chair, plus Veterinarian and HR/finance",
   duration: "75–90 minutes including strategic case",
+  stageDurations: stageDurations(
+    "45–50 min — Sections A & B",
+    "30–35 min — Section C strategic case",
+  ),
   screening: [
     { id: "A1", requirement: "Bachelor's in Animal Science / Production / Veterinary Medicine / Agribusiness", mandatory: true },
     { id: "A2", requirement: "Strong prior supervisory and operational farm-management experience", mandatory: true },
@@ -354,6 +393,10 @@ const L7_GUIDE: InterviewGuideConfig = {
     "Top line-management role — enterprise operational leadership across breeding multiplication and grower-finisher, aligning production, finance, compliance, and people with strategy.",
   recommendedPanel: "CEO as chair, plus board/investor representative and Veterinarian or external swine expert",
   duration: "90 minutes including strategic presentation",
+  stageDurations: stageDurations(
+    "50–55 min — Sections A & B",
+    "35–40 min — Section C strategic presentation",
+  ),
   screening: [
     { id: "A1", requirement: "Bachelor's in Animal Science / Production / Veterinary Medicine / Agribusiness / Operations", mandatory: true },
     { id: "A2", requirement: "Significant farm leadership and multi-level management experience", mandatory: true },
@@ -400,6 +443,10 @@ const DATA_ANALYST_GUIDE: InterviewGuideConfig = {
     "Owns integrity, reporting, and traceability of multiplication records. Does NOT enter or correct primary records — analyses, reports, and flags issues back to L4. Hire for analytical skill, accuracy, and boundary discipline.",
   recommendedPanel: "Breeding Farm Manager or Operations Manager as chair, plus L4 and IT/analytics reviewer",
   duration: "60–75 minutes including hands-on exercise",
+  stageDurations: stageDurations(
+    "40–45 min — Sections A & B",
+    "25–30 min — Section C data exercise",
+  ),
   screening: [
     { id: "A1", requirement: "Data-analyst credential OR professional certification with portfolio", mandatory: true },
     { id: "A2", requirement: "Advanced spreadsheets, basic SQL, and one dashboarding tool", mandatory: true },
@@ -443,6 +490,10 @@ const VETERINARIAN_GUIDE: InterviewGuideConfig = {
     "Veterinary leadership for herd health programmes, biosecurity governance, and regulatory compliance on a genetics-led multiplication operation.",
   recommendedPanel: "Operations/Production Manager or CEO as chair, plus Breeding Farm Manager and external peer if available",
   duration: "75–90 minutes",
+  stageDurations: stageDurations(
+    "45–50 min — Sections A & B",
+    "30–35 min — Section C scenarios",
+  ),
   screening: [
     { id: "A1", requirement: "DVM with valid Ghana Veterinary Council registration", mandatory: true },
     { id: "A2", requirement: "Swine or intensive livestock veterinary experience", mandatory: true },

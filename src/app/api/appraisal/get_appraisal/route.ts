@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     const cycle = searchParams.get("cycle");
     const grade_band = searchParams.get("grade_band");
     const review_year = searchParams.get("review_year");
+    const review_quarter = searchParams.get("review_quarter");
+    const status = searchParams.get("status");
 
     let query = supabaseAdmin
       .from("appraisals")
@@ -27,6 +29,8 @@ export async function GET(req: NextRequest) {
     if (cycle) query = query.eq("cycle", cycle);
     if (grade_band) query = query.eq("grade_band", grade_band);
     if (review_year) query = query.eq("review_year", Number(review_year));
+    if (review_quarter) query = query.eq("review_quarter", review_quarter);
+    if (status) query = query.eq("status", status);
 
     const { data, error } = await query;
 

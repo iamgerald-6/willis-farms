@@ -20,6 +20,7 @@ import {
   GanttChartSquare,
   UserCheck,
   UserPlus,
+  ShieldAlert,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -27,19 +28,25 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import {
+  canAccessPage,
+  hasUnrestrictedAccess,
+  resolveAccessProfile,
+  type PagePermissionKey,
+} from "@/lib/pagePermissions";
 
 type SubItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  adminOnly?: boolean;
+  permissionKey: PagePermissionKey;
 };
 
 type NavItem = {
   label: string;
   href: string;
   icon: React.ElementType;
-  adminOnly?: boolean;
+  permissionKey?: PagePermissionKey;
   children?: SubItem[];
 };
 
@@ -49,8 +56,18 @@ type SidebarProps = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Users", href: "/dashboard/users", icon: Users, adminOnly: true },
+  {
+    label: "Overview",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    permissionKey: "dashboard",
+  },
+  {
+    label: "Users",
+    href: "/dashboard/users",
+    icon: Users,
+    permissionKey: "users",
+  },
   {
     label: "Human Capital",
     href: "/dashboard/humanCapital",
@@ -60,33 +77,43 @@ const NAV_ITEMS: NavItem[] = [
         label: "Leave",
         href: "/dashboard/humanCapital/leave",
         icon: CalendarCheck,
+        permissionKey: "hc:leave",
       },
       {
         label: "Appraisal",
         href: "/dashboard/humanCapital/appraisal",
         icon: Star,
+        permissionKey: "hc:appraisal",
+      },
+      {
+        label: "Justifications",
+        href: "/dashboard/humanCapital/appraisal/justifications",
+        icon: ShieldAlert,
+        permissionKey: "hc:justifications",
       },
       {
         label: "Skill Logs",
         href: "/dashboard/humanCapital/skillLog",
         icon: ClipboardList,
+        permissionKey: "hc:skillLog",
       },
       {
         label: "Schedule Planner",
         href: "/dashboard/humanCapital/schedule",
         icon: CalendarRange,
+        permissionKey: "hc:schedule",
       },
       {
         label: "Promotion",
         href: "/dashboard/humanCapital/promotion",
         icon: TrendingUp,
-        adminOnly: true,
+        permissionKey: "hc:promotion",
       },
       {
         label: "Recruitment",
         href: "/dashboard/humanCapital/recruitment",
         icon: UserPlus,
-        adminOnly: true,
+        permissionKey: "hc:recruitment",
       },
     ],
   },
@@ -94,26 +121,21 @@ const NAV_ITEMS: NavItem[] = [
     label: "Policies & Ops",
     href: "/dashboard/policies",
     icon: GanttChartSquare,
+    permissionKey: "policies",
   },
-  { label: "SOP", href: "/dashboard/sop", icon: LeafyGreen },
+  {
+    label: "SOP",
+    href: "/dashboard/sop",
+    icon: LeafyGreen,
+    permissionKey: "sop:view",
+  },
   {
     label: "Add SOP",
     href: "/dashboard/addSop",
     icon: FileStack,
-    adminOnly: true,
+    permissionKey: "sop:add",
   },
-  // {
-  //   label: "Learning Management System",
-  //   href: "/dashboard/lms",
-  //   icon: BookOpen,
-  // },
-  { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
-  // {
-  //   label: "Settings",
-  //   href: "/dashboard/settings",
-  //   icon: Settings,
-  //   adminOnly: true,
-  // },
+  { label: "Notifications", href: "/dashboard/notifications", icon: Bell, permissionKey: "notifications" },
 ];
 
 export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
@@ -139,9 +161,14 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
-  const role = profile?.role ?? session?.user?.user_metadata?.role;
-  const isAdmin =
-    role === "admin" || role === "super_admin" || role === "manager";
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
+
+  const canSee = (key: PagePermissionKey) => {
+    if (unrestricted) return true;
+    return accessProfile ? canAccessPage(accessProfile, key) : false;
+  };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const isActive = (href: string) => {
@@ -164,7 +191,10 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   };
 
   const visibleItems = NAV_ITEMS.filter((item) => {
-    if (item.adminOnly && !isAdmin) return false;
+    if (item.children?.length) {
+      return item.children.some((c) => canSee(c.permissionKey));
+    }
+    if (item.permissionKey) return canSee(item.permissionKey);
     return true;
   });
 
@@ -201,8 +231,8 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           const expanded = isOpen(item);
           const hasChildren = !!children?.length;
 
-          const visibleChildren = children?.filter(
-            (c) => !c.adminOnly || isAdmin,
+          const visibleChildren = children?.filter((c) =>
+            canSee(c.permissionKey),
           );
 
           return (
@@ -259,9 +289,9 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               )}
 
               {/* Sub-items */}
-              {hasChildren && expanded && (
+              {hasChildren && expanded && visibleChildren && visibleChildren.length > 0 && (
                 <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
-                  {visibleChildren!.map((child) => {
+                  {visibleChildren.map((child) => {
                     const childActive = isActive(child.href);
                     const ChildIcon = child.icon;
                     return (

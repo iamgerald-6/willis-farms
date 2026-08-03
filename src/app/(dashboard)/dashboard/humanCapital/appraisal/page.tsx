@@ -37,12 +37,15 @@ const AppraisalsHomePage = () => {
     | "admin"
     | "super_admin";
 
-  // Supervisor is determined by grade_level (L3+), NOT by role.
-  // We pass the full viewer context so the landing page can derive it correctly.
+  // Supervisor (fill-side) is determined by grade_level (L4+), NOT by role.
+  // "Full access" (see everyone) is a separate, L5+/Manager/Admin/Super
+  // Admin concept — the landing page derives that itself via
+  // hasFullAppraisalAccess(). We just pass the full viewer context.
   const viewer: ViewerContext = {
     role: role ?? "employee",
     gradeLevel: profile?.grade_level ?? null,
     companyId: profile?.company_id,
+    userId,
   };
 
   return (
@@ -58,6 +61,11 @@ const AppraisalsHomePage = () => {
       onNavigateToFinalReview={(appraisalId) =>
         router.push(
           `/dashboard/humanCapital/appraisal/appraisalForms?id=${appraisalId}&step=final`,
+        )
+      }
+      onNavigateToJustification={(appraisalId) =>
+        router.push(
+          `/dashboard/humanCapital/appraisal/justifications/new?appraisal_id=${appraisalId}`,
         )
       }
     />

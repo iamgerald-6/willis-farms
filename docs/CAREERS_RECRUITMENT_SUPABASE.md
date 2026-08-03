@@ -114,7 +114,20 @@ If `RESEND_API_KEY` is missing, the application is still saved but no email is s
 | `GET /api/careers/applications` | HR inbox list |
 | `PATCH /api/careers/applications` | Update status / HR notes |
 | `GET /api/careers/interview?application_id=` | Fetch interview evaluation |
-| `POST /api/careers/interview` | Save panel interview scores |
+| `POST /api/careers/interview` | Save staged interview (actions: `save_draft`, `send_panel_invites`, `schedule_stage2`, `complete_stage2`, `finalize`) |
+
+### Staged interview flow
+
+1. **Panel setup** (before stages) — panel names/emails, interview start time, location → Resend invites with WillsOne link
+2. **Stage 1** — Sections A & B + schedule Stage 2 practical → email to candidate + `info@willsfarms.com`
+3. **Stage 2** — Section C scenarios/practical
+4. **Stage 3** — Tabular evaluation (Section D), panel decision, disqualifiers
+
+Panel invite link format: `/dashboard/humanCapital/recruitment?interview={application_id}`
+
+Email base URL: `http://localhost:3000` in development; production uses `siteContent.seo.siteUrl` or `NEXT_PUBLIC_APP_URL`.
+
+Optional env: `NEXT_PUBLIC_APP_URL` — override link base in emails (e.g. `https://www.willsfarms.com`).
 
 Dashboard: `/dashboard/humanCapital/recruitment` (admin / manager)
 

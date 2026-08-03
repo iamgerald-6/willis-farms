@@ -1,0 +1,138 @@
+let
+  
+    SiteUrl = "https://devbankghana.sharepoint.com/sites/dbgdata2",
+    ApiSource = SharePoint.Contents(SiteUrl, [ApiVersion = 15]),
+    Documents = ApiSource{[Name = "Shared Documents"]}[Content],
+    LendingData = Documents{[Name = "Lending Data"]}[Content],
+    Year2025 = LendingData{[Name = "2025"]}[Content],
+    NewFolder = Year2025{[Name = "New folder"]}[Content],
+    Repayment = NewFolder{[Name = "Repayment"]}[Content],
+    SSISTotalSchedule = Repayment{[Name = "SSIS Total Schedule Data to Migrate"]}[Content],
+    MonthlyClosedLoanSchedule = SSISTotalSchedule{[Name = "Monthly Closed Loan Schedule"]}[Content],
+
+    MonthNames = {
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december"
+    },
+
+    GetReportingDateFromFileName = (fileName as text) as nullable date =>
+        let
+            CleanName = Text.Lower(Text.BeforeDelimiter(fileName, ".xlsx")),
+            MatchedMonth =
+                List.First(
+                    List.Select(
+                        MonthNames,
+                        each
+                            Text.Contains(CleanName, " " & _ & " ")
+                            or Text.Contains(CleanName, "-" & _ & "-")
+                            or Text.Contains(CleanName, " " & _ & "-")
+                            or Text.Contains(CleanName, "-" & _ & " ")
+                            or Text.StartsWith(CleanName, _ & "-")
+                            or Text.StartsWith(CleanName, _ & " ")
+                            or Text.EndsWith(CleanName, "-" & _)
+                            or Text.EndsWith(CleanName, " " & _)
+                    ),
+                    null
+                ),
+            MonthNumber =
+                if MatchedMonth = null then null
+                else List.PositionOf(MonthNames, MatchedMonth) + 1,
+            YearStart = Text.PositionOf(CleanName, "20"),
+            YearNumber =
+                if YearStart = -1 then null
+                else try Number.From(Text.Middle(CleanName, YearStart, 4)) otherwise null,
+            FirstOfMonth =
+                if MonthNumber = null or YearNumber = null then null
+                else #date(YearNumber, MonthNumber, 1),
+            EndOfMonth =
+                if FirstOfMonth = null then null
+                else Date.EndOfMonth(FirstOfMonth)
+        in
+            EndOfMonth,
+
+    ExcelFilesOnly =
+        Table.SelectRows(
+            MonthlyClosedLoanSchedule,
+            each Text.EndsWith([Name], ".xlsx") and not Text.StartsWith([Name], "~$")
+        ),
+
+    AddWorkbooks =
+        Table.AddColumn(
+            ExcelFilesOnly,
+            "Workbook",
+            each Excel.Workbook([Content], null, true),
+            type table
+        ),
+
+    KeepSheetsOnly =
+        Table.AddColumn(
+            AddWorkbooks,
+            "Sheets",
+            each Table.SelectRows([Workbook], each [Kind] = "Sheet" and [Hidden] <> true),
+            type table
+        ),
+
+    ExpandSheets =
+        Table.ExpandTableColumn(
+            KeepSheetsOnly,
+            "Sheets",
+            {"Name", "Data"},
+            {"SheetName", "SheetData"}
+        ),
+
+    AddReportingDate =
+        Table.AddColumn(
+            ExpandSheets,
+            "ReportingDate",
+            each GetReportingDateFromFileName([Name]),
+            type date
+        ),
+
+    PromotedHeaders =
+        Table.TransformColumns(
+            AddReportingDate,
+            {{"SheetData", each Table.PromoteHeaders(_, [PromoteAllScalars = true])}}
+        ),
+
+    ExpandedData =
+        Table.ExpandTableColumn(
+            PromotedHeaders,
+            "SheetData",
+            {"PFI", "Old Arrangement ID", "Closing Date", "New Arrangement ID", "New Start Date", "Column6"},
+            {"PFI", "Old Arrangement ID", "Closing Date", "New Arrangement ID", "New Start Date", "Action"}
+        ),
+
+    CleanRows =
+        Table.SelectRows(
+            ExpandedData,
+            each [PFI] <> null and [PFI] <> "PFI"
+        ),
+
+    ChangedTypes =
+        Table.TransformColumnTypes(
+            CleanRows,
+            {
+                {"ReportingDate", type date},
+                {"Closing Date", type date},
+                {"New Start Date", type date}
+            }
+        ),
+
+    FilledReportingDate =
+        Table.FillDown(ChangedTypes, {"ReportingDate"}),
+
+    Final =
+        Table.SelectColumns(
+            FilledReportingDate,
+            {
+                "ReportingDate",
+                "PFI",
+                "Old Arrangement ID",
+                "Closing Date",
+                "New Arrangement ID",
+                "New Start Date",
+                "Action"
+            }
+        )
+in
+    Final

@@ -477,8 +477,8 @@ function PendingDetail({
         </p>
         <div className="mt-4 bg-amber-500/20 border border-amber-400/30 rounded-lg px-3 py-2 text-xs text-amber-200 flex items-center gap-2">
           <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-          Flagged as ready for promotion assessment — no formal assessment has
-          been submitted yet.
+          Automatically flagged eligible — their Q4 (Annual) Final Score was
+          ≥ 70%. No formal promotion assessment has been submitted yet.
         </div>
       </div>
 

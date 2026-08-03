@@ -8,11 +8,10 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import AppraisalForm from "@/app/(dashboard)/dashboard/humanCapital/appraisal/component/AppraisalPage";
 import FinalReviewForm from "@/app/(dashboard)/dashboard/humanCapital/appraisal/component/finalFormReview";
-
-type Cycle = "quarterly" | "annual";
+import { Quarter, QUARTERS } from "@/lib/appraisal/sections";
 
 const AppraisalFormPage = () => {
-  const [cycle, setCycle] = useState<Cycle>("quarterly");
+  const [quarter, setQuarter] = useState<Quarter>("Q1");
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -58,20 +57,22 @@ const AppraisalFormPage = () => {
         </p>
       </div>
 
-      {/* Hide cycle toggle on final review — cycle is fixed from the record */}
-      {!isFinalReview && (
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-6 w-fit">
-          {(["quarterly", "annual"] as Cycle[]).map((tab) => (
+      {/* Quarter picker — hidden once filling an existing record (quarter is
+          locked from that record) or during the Final Review Meeting.
+          There are exactly 4 quarters; Q4 is also the Annual appraisal. */}
+      {!isFinalReview && !existingAppraisalId && (
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 mb-6 w-fit flex-wrap">
+          {QUARTERS.map((q) => (
             <button
-              key={tab}
-              onClick={() => setCycle(tab)}
+              key={q}
+              onClick={() => setQuarter(q)}
               className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${
-                cycle === tab
+                quarter === q
                   ? "bg-red-600 text-white shadow-sm"
                   : "text-gray-500 hover:text-gray-800"
               }`}
             >
-              {tab === "quarterly" ? "Quarterly Review" : "Annual Appraisal"}
+              {q === "Q4" ? "Q4 (Annual)" : q}
             </button>
           ))}
         </div>
@@ -86,8 +87,8 @@ const AppraisalFormPage = () => {
           />
         ) : (
           <AppraisalForm
-            key={cycle}
-            cycle={cycle}
+            key={quarter}
+            defaultQuarter={quarter}
             viewerGradeLevel={profile?.grade_level}
             existingAppraisalId={existingAppraisalId}
             onSuccess={() => router.push("/dashboard/humanCapital/appraisal")}

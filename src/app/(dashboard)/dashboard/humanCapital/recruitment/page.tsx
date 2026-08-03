@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
@@ -43,15 +44,28 @@ function ApplicationDetail({
   onClose,
   onUpdated,
   adminId,
+  openInterviewOnMount,
+  onInterviewOpened,
 }: {
   application: JobApplication;
   onClose: () => void;
   onUpdated: () => void;
   adminId: string;
+  openInterviewOnMount?: boolean;
+  onInterviewOpened?: () => void;
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(application.status);
   const [hrNotes, setHrNotes] = useState(application.hr_notes ?? "");
-  const [showInterview, setShowInterview] = useState(false);
+  const [showInterview, setShowInterview] = useState(
+    openInterviewOnMount ?? false,
+  );
+
+  useEffect(() => {
+    if (openInterviewOnMount) {
+      setShowInterview(true);
+      onInterviewOpened?.();
+    }
+  }, [openInterviewOnMount, onInterviewOpened]);
 
   const canInterview = ["shortlisted", "interview", "offer"].includes(
     application.status,
@@ -211,7 +225,7 @@ function ApplicationDetail({
                 <button
                   type="button"
                   onClick={() => setShowInterview(true)}
-                  className="flex-1 py-2.5 border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100"
+                  className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100"
                 >
                   Open interview guide
                 </button>
@@ -252,9 +266,15 @@ function ApplicationDetail({
 }
 
 export default function RecruitmentPage() {
+  const searchParams = useSearchParams();
+  const interviewParam = searchParams.get("interview");
+
   const [filter, setFilter] = useState<ApplicationStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<JobApplication | null>(null);
+  const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<
+    string | null
+  >(null);
   const queryClient = useQueryClient();
 
   const { data: session } = useQuery({
@@ -306,6 +326,15 @@ export default function RecruitmentPage() {
   }, [data, filter, search]);
 
   const newCount = (data ?? []).filter((a) => a.status === "applied").length;
+
+  useEffect(() => {
+    if (!interviewParam || !data?.length || !session?.user?.id) return;
+    const app = data.find((a) => a.id === interviewParam);
+    if (!app) return;
+    if (!["shortlisted", "interview", "offer"].includes(app.status)) return;
+    setSelected(app);
+    setAutoOpenInterviewId(app.id);
+  }, [interviewParam, data, session?.user?.id]);
 
   if (!session) {
     return (
@@ -454,6 +483,8 @@ export default function RecruitmentPage() {
           application={selected}
           onClose={() => setSelected(null)}
           adminId={session.user!.id}
+          openInterviewOnMount={autoOpenInterviewId === selected.id}
+          onInterviewOpened={() => setAutoOpenInterviewId(null)}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ["job_applications"] });
             setSelected(null);

@@ -1,5 +1,7 @@
 export type Role = "admin" | "super_admin" | "manager" | "employee";
 
+export type AccessTier = "standard" | "delegated";
+
 export type GradeLevel = "L1" | "L2" | "L3" | "L4" | "L5" | "L6" | "L7";
 
 export interface User {
@@ -13,6 +15,17 @@ export interface User {
   company_id: string;
   job_position?: string | null;
   grade_level?: GradeLevel | null;
+  /** Average of the 4 quarters' final_quarter_score, written once Q4 locks. */
+  final_score?: number | null;
+  final_score_year?: number | null;
+  /** Fully computed (final_score >= 70) — no manual override anywhere. */
+  promotion_eligible?: boolean;
+  /** standard = normal; delegated = sub-admin / half_admin (Access Control only) */
+  access_tier?: AccessTier;
+  /** Page keys when access_tier is delegated — see pagePermissions.ts */
+  page_permissions?: string[];
+  access_updated_at?: string | null;
+  access_updated_by?: string | null;
   created_at?: string;
 }
 
@@ -31,71 +44,6 @@ export interface Content {
   created_by: string;
 }
 
-export type RatingValue = 1 | 2 | 3 | 4 | 5;
-
-export interface RatingItem {
-  rating: RatingValue | null;
-  comment: string;
-}
-
-export interface SectionRatings {
-  [itemLabel: string]: RatingItem;
-}
-
-export interface Ratings {
-  [sectionKey: string]: SectionRatings;
-}
-
-export interface Appraisal {
-  id: string;
-  company_id: string;
-  employee_name: string;
-  job_title: string;
-  current_grade: string;
-  grade_band: string;
-  cycle: "quarterly" | "annual";
-  review_quarter?: string | null;
-  review_year: number;
-  immediate_supervisor: string;
-  reviewing_manager?: string | null;
-  period_covered?: string | null;
-  section_authorisations_held?: string | null;
-  ratings: Ratings;
-  promotion_readiness: string;
-  strengths_observed?: string | null;
-  improvement_areas?: string | null;
-  agreed_actions?: string | null;
-  employee_comments?: string | null;
-  most_significant_achievement?: string | null;
-  development_plan_next_year?: string | null;
-  promotion_readiness_assessment?: string | null;
-  compensation_review_input?: string | null;
-  created_at: string;
-}
-
-export interface Appraisal {
-  id: string;
-  company_id: string;
-  employee_name: string;
-  job_title: string;
-  current_grade: string;
-  grade_band: string;
-  cycle: "quarterly" | "annual";
-  review_quarter?: string | null;
-  review_year: number;
-  immediate_supervisor: string;
-  reviewing_manager?: string | null;
-  period_covered?: string | null;
-  section_authorisations_held?: string | null;
-  ratings: Ratings;
-  promotion_readiness: string;
-  strengths_observed?: string | null;
-  improvement_areas?: string | null;
-  agreed_actions?: string | null;
-  employee_comments?: string | null;
-  most_significant_achievement?: string | null;
-  development_plan_next_year?: string | null;
-  promotion_readiness_assessment?: string | null;
-  compensation_review_input?: string | null;
-  created_at: string;
-}
+// Appraisal-specific types (0–100% scoring, Q1–Q4 with Q4 = Annual) now
+// live in src/lib/appraisal/scoring.ts and src/lib/appraisal/sections.ts —
+// see those modules instead of duplicating types here.

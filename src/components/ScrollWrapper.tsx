@@ -17,8 +17,8 @@ const ScrollWrapper: React.FC<ScrollWrapperProps> = ({ children }) => {
     scrollInstance.current = new LocomotiveScroll({
       lenisOptions: {
         wrapper: scrollRef.current!,
-        lerp: 0.8,
-        duration: 4,
+        lerp: 0.5,
+        duration: 3,
         orientation: "vertical",
         gestureOrientation: "vertical",
         smoothWheel: true,

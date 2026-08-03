@@ -13,23 +13,21 @@ import {
   Clock,
   PenLine,
   Users,
+  AlertTriangle,
+  ShieldCheck,
+  ShieldAlert,
+  Award,
 } from "lucide-react";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-type RatingValue = 1 | 2 | 3 | 4 | 5;
-
-interface RatingItem {
-  rating: RatingValue | null;
-  comment: string;
-}
-
-interface SectionRatings {
-  [itemLabel: string]: RatingItem;
-}
-
-interface Ratings {
-  [sectionKey: string]: SectionRatings;
-}
+import {
+  Ratings,
+  SectionRatings,
+  bandFor,
+  itemRatingMeta,
+  ITEM_RATING_MAX,
+} from "@/lib/appraisal/scoring";
+import { Quarter, isSupervisorGrade } from "@/lib/appraisal/sections";
+import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import { DeadlineBanner } from "./DeadlineBanner";
 
 export interface Appraisal {
   id: string;
@@ -38,10 +36,11 @@ export interface Appraisal {
   job_title: string;
   current_grade: string;
   grade_band: string;
-  cycle: "quarterly" | "annual";
-  review_quarter?: string | null;
+  review_quarter: Quarter;
   review_year: number;
   immediate_supervisor: string;
+  supervisor_email?: string | null;
+  employee_email?: string | null;
   reviewing_manager?: string | null;
   period_covered?: string | null;
   section_authorisations_held?: string | null;
@@ -49,62 +48,48 @@ export interface Appraisal {
   supervisor_ratings?: Ratings | null;
   employee_weighted_score?: number | null;
   supervisor_weighted_score?: number | null;
+  final_quarter_score?: number | null;
   final_review_date?: string | null;
   promotion_readiness: string;
   strengths_observed?: string | null;
   improvement_areas?: string | null;
   agreed_actions?: string | null;
   employee_comments?: string | null;
-  // submitted_by: who has submitted so far
-  // "employee"  → only employee done
-  // "supervisor" → only supervisor done
-  // "both"      → both done
-  // undefined   → nobody yet
   submitted_by?: "employee" | "supervisor" | "both";
-  status?: string;
+  status?: "open" | "submitted" | "final_reviewed" | "locked" | "reopened";
+  locked_reason?: "employee_incomplete" | "supervisor_incomplete" | "reopen_incomplete" | null;
+  deadline_at?: string | null;
+  reopened_deadline_at?: string | null;
+  appeal_exhausted?: boolean;
+  employee_penalty_points?: number | null;
+  supervisor_id?: string | null;
+  employee_user_id?: string | null;
   created_at: string;
 }
 
-// ─── Viewer context ───────────────────────────────────────────────────────────
-// isSupervisor is derived from grade_level >= L3, NOT from role.
-// The role can be employee, manager, admin, super_admin — it doesn't matter here.
+interface Justification {
+  id: string;
+  appraisal_id: string;
+  supervisor_id: string;
+  reason_text: string;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by_name?: string | null;
+  review_notes?: string | null;
+  reviewed_at?: string | null;
+  points_waived: boolean;
+  created_at: string;
+}
+
+// Supervisor is derived from grade_level >= L4 (line-supervisor threshold),
+// NOT from role. "Full access" (see all employees) is a separate, L5+ concept.
 export interface ViewerContext {
   role: "employee" | "manager" | "admin" | "super_admin";
-  gradeLevel: string | null; // e.g. "L1", "L3", "L4", "L5"
+  gradeLevel: string | null;
   companyId?: string;
-}
-
-// Grade levels in order — L3+ is "supervisor"
-const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"];
-
-function gradeIndex(g: string | null | undefined): number {
-  if (!g) return -1;
-  const clean = g.split("/")[0].trim();
-  return GRADE_ORDER.indexOf(clean);
-}
-
-/** A user is a supervisor if their grade is L3 or above */
-function isSupervisorGrade(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= 2; // L3 is index 2
+  userId?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const RATING_LABELS: Record<number, string> = {
-  1: "Unsatisfactory",
-  2: "Below Expectation",
-  3: "Meets Expectation",
-  4: "Above Expectation",
-  5: "Excellent",
-};
-
-const RATING_BAR: Record<number, string> = {
-  1: "bg-red-500",
-  2: "bg-orange-400",
-  3: "bg-amber-400",
-  4: "bg-green-400",
-  5: "bg-emerald-500",
-};
-
 const PROMOTION_LABELS: Record<string, string> = {
   not_yet_ready: "Not Yet Ready",
   developing: "Developing Toward Next Level",
@@ -114,12 +99,14 @@ const PROMOTION_LABELS: Record<string, string> = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+/** Raw item ratings are 1–5; returns the section average as a 0–100% score. */
 function sectionAvg(sectionRatings: SectionRatings): number | null {
   const vals = Object.values(sectionRatings)
     .map((r) => r.rating)
-    .filter((r): r is RatingValue => r !== null);
+    .filter((r): r is number => r !== null && r !== undefined);
   if (!vals.length) return null;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
+  const avgRaw = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return (avgRaw / ITEM_RATING_MAX) * 100;
 }
 
 function formatDate(d: string) {
@@ -130,12 +117,18 @@ function formatDate(d: string) {
   });
 }
 
+function periodLabel(a: Appraisal) {
+  return a.review_quarter === "Q4"
+    ? `Q4 (Annual) ${a.review_year}`
+    : `${a.review_quarter} ${a.review_year}`;
+}
+
 // ─── Rating Cell ──────────────────────────────────────────────────────────────
 function RatingCell({
   rating,
   hidden,
 }: {
-  rating: RatingValue | null;
+  rating: number | null;
   hidden: boolean;
 }) {
   if (hidden) {
@@ -145,24 +138,14 @@ function RatingCell({
       </span>
     );
   }
-  if (!rating) return <span className="text-gray-300 text-xs">—</span>;
+  if (rating == null) return <span className="text-gray-300 text-xs">—</span>;
+  const meta = itemRatingMeta(rating);
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold
-      ${
-        rating >= 5
-          ? "bg-emerald-50 text-emerald-700"
-          : rating >= 4
-            ? "bg-green-50 text-green-700"
-            : rating >= 3
-              ? "bg-amber-50 text-amber-700"
-              : rating >= 2
-                ? "bg-orange-50 text-orange-700"
-                : "bg-red-50 text-red-700"
-      }`}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${meta?.bg} ${meta?.text}`}
     >
-      <span className={`w-1.5 h-1.5 rounded-full ${RATING_BAR[rating]}`} />
-      {rating} · {RATING_LABELS[rating]}
+      <span className={`w-1.5 h-1.5 rounded-full ${meta?.color}`} />
+      {rating}/5 · {meta?.label}
     </span>
   );
 }
@@ -218,33 +201,59 @@ function ScoreDisplay({
       </div>
     );
   }
-  const color =
-    score >= 4.5
-      ? "text-emerald-300"
-      : score >= 3.5
-        ? "text-green-300"
-        : score >= 2.5
-          ? "text-amber-300"
-          : score >= 1.5
-            ? "text-orange-300"
-            : "text-red-300";
+  const band = bandFor(score);
+  const colorMap: Record<string, string> = {
+    "bg-emerald-500": "text-emerald-300",
+    "bg-green-500": "text-green-300",
+    "bg-amber-400": "text-amber-300",
+    "bg-orange-400": "text-orange-300",
+    "bg-red-500": "text-red-300",
+  };
+  const color = band ? (colorMap[band.color] ?? "text-white") : "text-white";
 
   return (
     <div className="text-center flex-1 sm:flex-initial">
       <p className="text-[10px] sm:text-xs text-white/50 mb-1">{label}</p>
       <p className={`text-xl sm:text-2xl font-black ${color}`}>
-        {score.toFixed(2)}
+        {score.toFixed(1)}
       </p>
-      <p className="text-white/30 text-[10px] sm:text-xs">/ 5</p>
+      <p className="text-white/30 text-[10px] sm:text-xs">%</p>
     </div>
   );
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
-function StatusBadge({ submittedBy }: { submittedBy?: string }) {
-  if (submittedBy === "both") {
+function StatusBadge({
+  status,
+  submittedBy,
+}: {
+  status?: string;
+  submittedBy?: string;
+}) {
+  if (status === "locked") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+        <Lock className="w-3.5 h-3.5" /> Locked
+      </span>
+    );
+  }
+  if (status === "reopened") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+        <AlertTriangle className="w-3.5 h-3.5" /> Reopened
+      </span>
+    );
+  }
+  if (status === "final_reviewed") {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+        <ShieldCheck className="w-3.5 h-3.5" /> Final Reviewed
+      </span>
+    );
+  }
+  if (submittedBy === "both") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
         <CheckCircle2 className="w-3.5 h-3.5" /> Both Submitted
       </span>
     );
@@ -278,11 +287,6 @@ function AppraisalCard({
   appraisal: Appraisal;
   onClick: () => void;
 }) {
-  const period =
-    appraisal.cycle === "quarterly"
-      ? `${appraisal.review_quarter ?? ""} ${appraisal.review_year}`
-      : (appraisal.period_covered ?? String(appraisal.review_year));
-
   return (
     <button
       onClick={onClick}
@@ -290,15 +294,18 @@ function AppraisalCard({
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 sm:gap-2 mb-2 flex-wrap">
-          <StatusBadge submittedBy={appraisal.submitted_by} />
+          <StatusBadge
+            status={appraisal.status}
+            submittedBy={appraisal.submitted_by}
+          />
           <span
             className={`text-[11px] sm:text-xs px-2 py-0.5 rounded-full font-semibold ${
-              appraisal.cycle === "quarterly"
-                ? "bg-blue-50 text-blue-600"
-                : "bg-purple-50 text-purple-600"
+              appraisal.review_quarter === "Q4"
+                ? "bg-purple-50 text-purple-600"
+                : "bg-blue-50 text-blue-600"
             }`}
           >
-            {appraisal.cycle === "quarterly" ? "Quarterly" : "Annual"}
+            {appraisal.review_quarter === "Q4" ? "Annual" : "Quarterly"}
           </span>
           <span className="text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
             {appraisal.grade_band}
@@ -309,7 +316,8 @@ function AppraisalCard({
         </p>
         <p className="text-[11px] sm:text-xs text-gray-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="flex items-center gap-1">
-            <CalendarRange className="w-3 h-3 shrink-0" /> {period}
+            <CalendarRange className="w-3 h-3 shrink-0" />{" "}
+            {periodLabel(appraisal)}
           </span>
           {appraisal.final_review_date && (
             <span className="text-blue-500 font-medium">
@@ -329,21 +337,20 @@ function AppraisalDetail({
   viewer,
   onFillForm,
   onFinalReview,
+  onSubmitJustification,
 }: {
   appraisal: Appraisal;
   viewer: ViewerContext;
   onFillForm: () => void;
   onFinalReview: () => void;
+  onSubmitJustification: () => void;
 }) {
   const bothSubmitted = appraisal.submitted_by === "both";
 
-  // Supervisor status is determined purely by grade_level, not role
+  // Line-supervisor threshold (L4+) — governs who fills which side of the form.
   const viewerIsSupervisor = isSupervisorGrade(viewer.gradeLevel);
   const viewerIsEmployee = !viewerIsSupervisor;
 
-  // Visibility rules (mirror the old logic but using grade-based supervisor check):
-  // - Employee sees their own ratings always; supervisor ratings hidden until both submit
-  // - Supervisor sees supervisor ratings always; employee ratings hidden until both submit
   const hideEmployeeRatings = !bothSubmitted && viewerIsSupervisor;
   const hideSupervisorRatings = !bothSubmitted && viewerIsEmployee;
 
@@ -362,25 +369,41 @@ function AppraisalDetail({
     return Array.from(new Set([...empItems, ...supItems]));
   };
 
-  const period =
-    appraisal.cycle === "quarterly"
-      ? `${appraisal.review_quarter ?? ""} ${appraisal.review_year}`
-      : (appraisal.period_covered ?? String(appraisal.review_year));
-
-  // Who can fill what:
-  // - Employee (grade < L3): can fill self-appraisal if not yet submitted by employee or both
-  // - Supervisor (grade >= L3): can fill supervisor review if not yet submitted by supervisor or both
   const canEmployeeFill =
     viewerIsEmployee &&
+    appraisal.status !== "locked" &&
+    appraisal.status !== "reopened" &&
     appraisal.submitted_by !== "employee" &&
     appraisal.submitted_by !== "both";
 
   const canSupervisorFill =
     viewerIsSupervisor &&
-    appraisal.submitted_by !== "supervisor" &&
-    appraisal.submitted_by !== "both";
+    appraisal.status !== "locked" &&
+    appraisal.status !== "final_reviewed" &&
+    (appraisal.status === "reopened"
+      ? appraisal.submitted_by === "employee"
+      : appraisal.submitted_by !== "supervisor" &&
+        appraisal.submitted_by !== "both");
 
   const showCTA = canEmployeeFill || canSupervisorFill;
+
+  const canSubmitJustification =
+    appraisal.status === "locked" &&
+    appraisal.locked_reason === "supervisor_incomplete" &&
+    !appraisal.appeal_exhausted &&
+    (viewer.userId === appraisal.supervisor_id ||
+      hasFullAppraisalAccess(viewer.role, viewer.gradeLevel));
+
+  const { data: justifications } = useQuery<Justification[]>({
+    queryKey: ["appraisal-justifications", appraisal.id],
+    queryFn: async () => {
+      const res = await api.get(
+        `/appraisal/justification?appraisal_id=${appraisal.id}`,
+      );
+      return res.data.data ?? [];
+    },
+  });
+  const latestJustification = justifications?.[0] ?? null;
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -390,15 +413,18 @@ function AppraisalDetail({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 flex-wrap">
               <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-white/50">
-                {appraisal.cycle === "quarterly"
-                  ? "Quarterly Review"
-                  : "Annual Appraisal"}
+                {appraisal.review_quarter === "Q4"
+                  ? "Annual Appraisal (Q4)"
+                  : "Quarterly Review"}
               </span>
               <span className="text-white/30">·</span>
               <span className="text-[10px] sm:text-xs font-semibold text-white/50 uppercase tracking-widest">
                 {appraisal.grade_band}
               </span>
-              <StatusBadge submittedBy={appraisal.submitted_by} />
+              <StatusBadge
+                status={appraisal.status}
+                submittedBy={appraisal.submitted_by}
+              />
             </div>
             <h2 className="text-xl sm:text-2xl font-bold truncate">
               {appraisal.employee_name}
@@ -408,7 +434,8 @@ function AppraisalDetail({
             </p>
             <p className="text-white/40 text-[11px] sm:text-xs mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="flex items-center gap-1">
-                <CalendarRange className="w-3.5 h-3.5 shrink-0" /> {period}
+                <CalendarRange className="w-3.5 h-3.5 shrink-0" />{" "}
+                {periodLabel(appraisal)}
               </span>
               {appraisal.immediate_supervisor && (
                 <span className="truncate">
@@ -418,7 +445,6 @@ function AppraisalDetail({
             </p>
           </div>
 
-          {/* Scores */}
           <div className="flex gap-2 sm:gap-4 bg-white/10 rounded-xl p-3 sm:p-4 justify-between sm:justify-start w-full lg:w-auto">
             <ScoreDisplay
               score={appraisal.employee_weighted_score ?? null}
@@ -431,27 +457,34 @@ function AppraisalDetail({
               hidden={hideSupervisorRatings}
               label="Supervisor Score"
             />
-            {bothSubmitted &&
-              appraisal.employee_weighted_score &&
-              appraisal.supervisor_weighted_score && (
+            {appraisal.status === "final_reviewed" &&
+              appraisal.final_quarter_score != null && (
                 <>
                   <div className="w-px bg-white/10" />
                   <ScoreDisplay
-                    score={
-                      (appraisal.employee_weighted_score +
-                        appraisal.supervisor_weighted_score) /
-                      2
-                    }
+                    score={appraisal.final_quarter_score}
                     hidden={false}
-                    label="Final Average"
+                    label="Final Quarter Score"
                   />
                 </>
               )}
           </div>
         </div>
 
+        {appraisal.deadline_at &&
+          appraisal.status !== "final_reviewed" &&
+          appraisal.status !== "locked" && (
+            <div className="mt-4 bg-white/10 rounded-lg px-3 py-2 flex items-center gap-2 text-xs sm:text-sm">
+              <CalendarRange className="w-4 h-4 text-white/60 shrink-0" />
+              <span className="text-white/60">Deadline:</span>
+              <span className="font-semibold">
+                {formatDate(appraisal.deadline_at)}
+              </span>
+            </div>
+          )}
+
         {appraisal.final_review_date && (
-          <div className="mt-4 bg-white/10 rounded-lg px-3 py-2 flex items-center gap-2 text-xs sm:text-sm">
+          <div className="mt-2 bg-white/10 rounded-lg px-3 py-2 flex items-center gap-2 text-xs sm:text-sm">
             <CalendarRange className="w-4 h-4 text-white/60 shrink-0" />
             <span className="text-white/60">Final Review Meeting:</span>
             <span className="font-semibold">
@@ -461,21 +494,105 @@ function AppraisalDetail({
         )}
       </div>
 
+      {/* ── Locked banner (visible to everyone, including the employee) ── */}
+      {appraisal.status === "locked" && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <Lock className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs sm:text-sm font-semibold text-red-800">
+                This appraisal is locked
+              </p>
+              <p className="text-[11px] sm:text-xs text-red-600 mt-0.5">
+                {appraisal.locked_reason === "supervisor_incomplete"
+                  ? "The supervisor evaluation deadline was missed. A 10-point deduction has been applied to the supervisor's own appraisal unless waived by an approved justification."
+                  : appraisal.locked_reason === "reopen_incomplete"
+                    ? "The reopened completion window expired without a final review. Penalties have been applied and no further appeals are permitted."
+                    : "The self-assessment deadline was missed."}
+              </p>
+            </div>
+          </div>
+          {canSubmitJustification && (
+            <button
+              onClick={onSubmitJustification}
+              className="w-full md:w-auto flex-shrink-0 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition flex items-center justify-center gap-2"
+            >
+              <ShieldAlert className="w-4 h-4" />
+              Submit Justification
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Justification outcome (visible to the employee too) ── */}
+      {latestJustification && (
+        <div
+          className={`rounded-xl p-4 border ${
+            latestJustification.status === "approved"
+              ? "bg-emerald-50 border-emerald-200"
+              : latestJustification.status === "rejected"
+                ? "bg-gray-50 border-gray-200"
+                : "bg-amber-50 border-amber-200"
+          }`}
+        >
+          <p className="text-xs sm:text-sm font-semibold flex items-center gap-2">
+            {latestJustification.status === "approved" ? (
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            ) : latestJustification.status === "rejected" ? (
+              <ShieldAlert className="w-4 h-4 text-gray-500" />
+            ) : (
+              <Clock className="w-4 h-4 text-amber-600" />
+            )}
+            Justification{" "}
+            {latestJustification.status === "pending"
+              ? "under review"
+              : latestJustification.status}
+          </p>
+          <p className="text-[11px] sm:text-xs text-gray-600 mt-1.5">
+            <strong>Reason given:</strong> {latestJustification.reason_text}
+          </p>
+          {latestJustification.reviewed_by_name && (
+            <p className="text-[11px] sm:text-xs text-gray-600 mt-1">
+              <strong>
+                Reviewed by {latestJustification.reviewed_by_name}
+              </strong>
+              {latestJustification.review_notes
+                ? ` — ${latestJustification.review_notes}`
+                : ""}
+            </p>
+          )}
+          {latestJustification.status !== "pending" && (
+            <p className="text-[11px] sm:text-xs mt-1 font-medium">
+              10-point deduction{" "}
+              {latestJustification.points_waived ? "waived" : "stands"}.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ── CTA ── */}
       {showCTA && (
+        <div className="space-y-3">
+          <DeadlineBanner
+            reviewQuarter={appraisal.review_quarter}
+            reviewYear={appraisal.review_year}
+            status={appraisal.status}
+            deadlineAt={appraisal.deadline_at}
+            reopenedDeadlineAt={appraisal.reopened_deadline_at}
+          />
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <PenLine className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-xs sm:text-sm font-semibold text-amber-800">
                 {canEmployeeFill
-                  ? "Your self-appraisal is pending"
-                  : "Supervisor review is pending"}
+                  ? "Your self-assessment is pending"
+                  : "Supervisor evaluation is pending"}
               </p>
               <p className="text-[11px] sm:text-xs text-amber-600 mt-0.5">
                 {canEmployeeFill
-                  ? "Fill in your self-appraisal. Your ratings will be hidden from your supervisor until they complete their review."
-                  : "The employee has submitted their self-appraisal. Complete your supervisor review now."}
+                  ? "Fill in your self-assessment. Your ratings will be hidden from your supervisor until they complete their review."
+                  : "The employee has submitted their self-assessment. Complete your supervisor evaluation now."}
               </p>
             </div>
           </div>
@@ -487,14 +604,27 @@ function AppraisalDetail({
             Fill Form
           </button>
         </div>
+        </div>
       )}
 
-      {/* ── Final Review Meeting CTA — supervisor only, both submitted, not yet final_reviewed ── */}
+      {/* ── Final Review Meeting CTA ── */}
       {bothSubmitted &&
         viewerIsSupervisor &&
         appraisal.status !== "final_reviewed" &&
-        appraisal.final_review_date &&
-        new Date(appraisal.final_review_date) <= new Date() && (
+        appraisal.status !== "locked" &&
+        (appraisal.status === "reopened" ||
+          (appraisal.final_review_date &&
+            new Date(appraisal.final_review_date) <= new Date())) && (
+          <div className="space-y-3">
+            {appraisal.status === "reopened" && (
+              <DeadlineBanner
+                reviewQuarter={appraisal.review_quarter}
+                reviewYear={appraisal.review_year}
+                status={appraisal.status}
+                deadlineAt={appraisal.deadline_at}
+                reopenedDeadlineAt={appraisal.reopened_deadline_at}
+              />
+            )}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <Users className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
@@ -504,7 +634,7 @@ function AppraisalDetail({
                 </p>
                 <p className="text-[11px] sm:text-xs text-blue-600 mt-0.5">
                   Review both scores together, discuss any differences, and lock
-                  in the final agreed ratings.
+                  in the final agreed score.
                 </p>
               </div>
             </div>
@@ -516,37 +646,11 @@ function AppraisalDetail({
               Open Final Review
             </button>
           </div>
-        )}
-
-      {bothSubmitted &&
-        viewerIsSupervisor &&
-        appraisal.status !== "final_reviewed" &&
-        appraisal.final_review_date &&
-        new Date(appraisal.final_review_date) > new Date() && (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-3">
-            <CalendarRange className="w-5 h-5 text-gray-400 flex-shrink-0" />
-            <div>
-              <p className="text-xs sm:text-sm font-semibold text-gray-600">
-                Both parties have submitted
-              </p>
-              <p className="text-[11px] sm:text-xs text-gray-400 mt-0.5">
-                Final Review Meeting opens on{" "}
-                <span className="font-semibold text-gray-600">
-                  {new Date(appraisal.final_review_date).toLocaleDateString(
-                    "en-GB",
-                    {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    },
-                  )}
-                </span>
-              </p>
-            </div>
           </div>
         )}
+
       {/* ── Hidden notice ── */}
-      {!bothSubmitted && (
+      {!bothSubmitted && appraisal.status !== "locked" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-[11px] sm:text-xs text-gray-500">
           <Lock className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="leading-snug">
@@ -590,7 +694,7 @@ function AppraisalDetail({
                     </span>
                     {empAvg !== null && (
                       <span className="ml-1.5 text-white text-[11px] sm:text-xs font-bold bg-white/10 px-1.5 py-0.5 rounded">
-                        avg {empAvg.toFixed(1)}
+                        avg {empAvg.toFixed(0)}%
                       </span>
                     )}
                     {hideEmployeeRatings && (
@@ -603,7 +707,7 @@ function AppraisalDetail({
                     </span>
                     {supAvg !== null && (
                       <span className="ml-1.5 text-white text-[11px] sm:text-xs font-bold bg-white/10 px-1.5 py-0.5 rounded">
-                        avg {supAvg.toFixed(1)}
+                        avg {supAvg.toFixed(0)}%
                       </span>
                     )}
                     {hideSupervisorRatings && (
@@ -718,7 +822,7 @@ function AppraisalDetail({
           {appraisal.promotion_readiness && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                Promotion Readiness
+                Promotion Readiness Notes
               </p>
               <p className="text-xs sm:text-sm font-bold text-blue-800">
                 {PROMOTION_LABELS[appraisal.promotion_readiness] ??
@@ -726,6 +830,23 @@ function AppraisalDetail({
               </p>
             </div>
           )}
+
+          {appraisal.review_quarter === "Q4" &&
+            appraisal.status === "final_reviewed" && (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-start gap-3">
+                <Award className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs sm:text-sm font-bold text-purple-800">
+                    Annual Final Score computed
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-purple-600 mt-0.5">
+                    Promotion eligibility for the year has been calculated
+                    automatically (Final Score ≥ 70% required) — see the
+                    employee's profile for the result.
+                  </p>
+                </div>
+              </div>
+            )}
         </div>
       )}
 
@@ -741,27 +862,36 @@ export default function AppraisalLandingPage({
   viewer,
   onNavigateToForm,
   onNavigateToFinalReview,
+  onNavigateToJustification,
 }: {
   viewer: ViewerContext;
   onNavigateToForm?: (appraisalId?: string) => void;
   onNavigateToFinalReview?: (appraisalId: string) => void;
+  onNavigateToJustification?: (appraisalId: string) => void;
 }) {
   const [selected, setSelected] = useState<Appraisal | null>(null);
-  const [cycleFilter, setCycleFilter] = useState<"" | "quarterly" | "annual">(
-    "",
+  const [quarterFilter, setQuarterFilter] = useState<"" | Quarter>("");
+
+  // Full access (Manager/Admin/Super Admin/L5+) sees everyone; everyone
+  // else sees only their own appraisal data (spec Section 4).
+  const viewerHasFullAccess = hasFullAppraisalAccess(
+    viewer.role,
+    viewer.gradeLevel,
   );
 
-  const viewerIsSupervisor = isSupervisorGrade(viewer.gradeLevel);
-
   const queryParams = new URLSearchParams();
-  // Employees only see their own appraisals
-  if (!viewerIsSupervisor && viewer.companyId) {
+  if (!viewerHasFullAccess && viewer.companyId) {
     queryParams.set("company_id", viewer.companyId);
   }
-  if (cycleFilter) queryParams.set("cycle", cycleFilter);
+  if (quarterFilter) queryParams.set("review_quarter", quarterFilter);
 
   const { data, isLoading, isError } = useQuery<Appraisal[]>({
-    queryKey: ["appraisals", viewer.gradeLevel, viewer.companyId, cycleFilter],
+    queryKey: [
+      "appraisals",
+      viewer.gradeLevel,
+      viewer.companyId,
+      quarterFilter,
+    ],
     queryFn: async () => {
       const res = await api.get(
         `/appraisal/get_appraisal?${queryParams.toString()}`,
@@ -771,6 +901,7 @@ export default function AppraisalLandingPage({
   });
 
   const appraisals = data ?? [];
+  const viewerIsSupervisor = isSupervisorGrade(viewer.gradeLevel);
 
   if (selected) {
     return (
@@ -787,6 +918,9 @@ export default function AppraisalLandingPage({
             viewer={viewer}
             onFillForm={() => onNavigateToForm?.(selected.id)}
             onFinalReview={() => onNavigateToFinalReview?.(selected.id)}
+            onSubmitJustification={() =>
+              onNavigateToJustification?.(selected.id)
+            }
           />
         </div>
       </div>
@@ -801,8 +935,8 @@ export default function AppraisalLandingPage({
             Performance Appraisals
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-            {viewerIsSupervisor
-              ? "Appraisals for your team"
+            {viewerHasFullAccess
+              ? "Appraisals across the organisation"
               : "Your performance reviews"}
           </p>
         </div>
@@ -817,17 +951,17 @@ export default function AppraisalLandingPage({
       </div>
 
       <div className="flex gap-1.5 sm:gap-2 mb-5 overflow-x-auto pb-1 scrollbar-none">
-        {(["", "quarterly", "annual"] as const).map((c) => (
+        {(["", "Q1", "Q2", "Q3", "Q4"] as const).map((q) => (
           <button
-            key={c}
-            onClick={() => setCycleFilter(c)}
+            key={q}
+            onClick={() => setQuarterFilter(q)}
             className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all whitespace-nowrap ${
-              cycleFilter === c
+              quarterFilter === q
                 ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
                 : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
             }`}
           >
-            {c === "" ? "All" : c === "quarterly" ? "Quarterly" : "Annual"}
+            {q === "" ? "All" : q === "Q4" ? "Q4 (Annual)" : q}
           </button>
         ))}
       </div>
@@ -852,7 +986,7 @@ export default function AppraisalLandingPage({
           <p className="text-[11px] sm:text-xs mt-1 opacity-60">
             {viewerIsSupervisor
               ? "Start a new appraisal using the button above"
-              : "Your supervisor will initiate your first review"}
+              : "Complete your self-assessment using the button above"}
           </p>
         </div>
       )}

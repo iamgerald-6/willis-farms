@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { recomputeFinalScore } from "@/lib/appraisal/server";
 
 export async function GET(
   req: NextRequest,
@@ -59,10 +60,11 @@ export async function PATCH(
       );
     }
 
-    // Fetch existing record to determine context
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("appraisals")
-      .select("id, submitted_by, status")
+      .select(
+        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score",
+      )
       .eq("id", appraisalId)
       .single();
 
@@ -73,9 +75,21 @@ export async function PATCH(
       );
     }
 
-    // ── Final Review Meeting (Step 3) ──────────────────────────────────────
-    // Identified by status: "final_reviewed" in the body.
-    // Only allowed when current submitted_by is "both".
+    // A locked appraisal cannot be edited by either party (Section 7).
+    // It can only be unlocked via an approved/rejected justification.
+    if (existing.status === "locked") {
+      return NextResponse.json(
+        {
+          error:
+            "This appraisal is locked. A justification must be reviewed before it can be edited again.",
+        },
+        { status: 423 },
+      );
+    }
+
+    // ── Final Review Meeting (kept per business decision — this is what
+    // actually finalizes a quarter's score for the annual Final Score
+    // average). Only allowed once both parties have submitted. ──────────
     if (body.status === "final_reviewed") {
       if (existing.submitted_by !== "both") {
         return NextResponse.json(
@@ -116,7 +130,8 @@ export async function PATCH(
           final_review_notes: final_review_notes ?? null,
           promotion_readiness: promotion_readiness ?? undefined,
           status: "final_reviewed",
-          // submitted_by stays "both" — this is just a revision pass
+          final_quarter_score: supervisor_weighted_score ?? null,
+          reopened_deadline_at: null,
         })
         .eq("id", appraisalId)
         .select()
@@ -126,10 +141,24 @@ export async function PATCH(
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
 
+      // Q4 finalized → compute the annual Final Score + promotion
+      // eligibility (Section 3: only after Q4 is submitted and locked).
+      if (existing.review_quarter === "Q4" && existing.employee_user_id) {
+        try {
+          await recomputeFinalScore(
+            supabaseAdmin,
+            existing.employee_user_id,
+            existing.review_year,
+          );
+        } catch (e) {
+          console.error("[PATCH /api/appraisal/[id]] recomputeFinalScore failed", e);
+        }
+      }
+
       return NextResponse.json({ data });
     }
 
-    // ── Step 2: Second party submitting their ratings ──────────────────────
+    // ── Step 2: supervisor submitting their evaluation ──────────────────
     const {
       supervisor_ratings,
       supervisor_weighted_score,
@@ -143,6 +172,7 @@ export async function PATCH(
       promotion_readiness_assessment,
       compensation_review_input,
       promotion_readiness,
+      supervisor_user_id,
     } = body;
 
     if (!supervisor_ratings) {
@@ -152,7 +182,6 @@ export async function PATCH(
       );
     }
 
-    // If employee already submitted → both; otherwise supervisor only
     const newSubmittedBy =
       existing.submitted_by === "employee" ? "both" : "supervisor";
 
@@ -172,7 +201,9 @@ export async function PATCH(
         compensation_review_input: compensation_review_input ?? null,
         promotion_readiness: promotion_readiness ?? undefined,
         submitted_by: newSubmittedBy,
-        status: newSubmittedBy === "both" ? "submitted" : "draft",
+        status: newSubmittedBy === "both" ? "submitted" : "open",
+        supervisor_submitted_at: new Date().toISOString(),
+        supervisor_id: existing.supervisor_id ?? supervisor_user_id ?? null,
       })
       .eq("id", appraisalId)
       .select()
@@ -184,6 +215,7 @@ export async function PATCH(
 
     return NextResponse.json({ data });
   } catch (err) {
+    console.error("[PATCH /api/appraisal/[id]]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

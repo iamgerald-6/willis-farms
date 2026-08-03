@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, LogOut, User, Menu } from "lucide-react";
+import { Bell, LogOut, User, Menu, ShieldCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { User as UserType } from "@/types";
+import { canManageAccessControl } from "@/lib/pagePermissions";
 
 // ── Page title map ────────────────────────────────────────────────────────────
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -45,6 +46,10 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard/lms": {
     title: "Learning Management",
     subtitle: "Training and development resources",
+  },
+  "/dashboard/access-control": {
+    title: "Access Control",
+    subtitle: "Grant roles and page-level access",
   },
 };
 
@@ -87,6 +92,11 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const initials = profile
     ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase()
     : (session?.user?.email?.slice(0, 2).toUpperCase() ?? "?");
+
+  const showAccessControl = canManageAccessControl(
+    profile?.role ?? (session?.user?.user_metadata?.role as string | undefined),
+    profile?.grade_level,
+  );
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -172,6 +182,18 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                   <User className="w-4 h-4 text-gray-400" />
                   Account Settings
                 </button>
+                {showAccessControl && (
+                  <button
+                    className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
+                    onClick={() => {
+                      setOpen(false);
+                      router.push("/dashboard/access-control");
+                    }}
+                  >
+                    <ShieldCheck className="w-4 h-4 text-red-500" />
+                    Access Control
+                  </button>
+                )}
                 <button
                   className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
                   onClick={handleLogout}

@@ -47,14 +47,29 @@ export interface JobApplication {
   updated_at: string;
 }
 
+export interface PanelMember {
+  name: string;
+  email: string;
+}
+
+export interface InterviewSetup {
+  members: PanelMember[];
+  interview_start_at?: string;
+  location?: string;
+  invites_sent_at?: string;
+}
+
+export type InterviewStage = 1 | 2 | 3;
+
 export interface InterviewFormData {
-  panel?: {
-    chair?: string;
-    member_2?: string;
-    member_3?: string;
-    interview_date?: string;
-    location?: string;
-  };
+  /** Panel setup — outside staged form */
+  setup?: InterviewSetup;
+  /** 1 = A+B, 2 = C, 3 = evaluation */
+  current_stage?: InterviewStage;
+  stage1_completed_at?: string;
+  stage2_scheduled_at?: string;
+  stage2_schedule_sent_at?: string;
+  stage2_completed_at?: string;
   screening?: Record<string, { pass: "yes" | "no" | ""; notes: string }>;
   question_ratings?: Record<
     string,
@@ -72,4 +87,70 @@ export interface InterviewFormData {
     decision_notes?: string;
     recommended_start_date?: string;
   };
+  /** @deprecated legacy panel fields — migrated on read */
+  panel?: {
+    chair?: string;
+    member_2?: string;
+    member_3?: string;
+    interview_date?: string;
+    location?: string;
+  };
+}
+
+export function normalizeInterviewFormData(
+  raw: InterviewFormData | null | undefined,
+): InterviewFormData {
+  const data: InterviewFormData = {
+    setup: { members: [{ name: "", email: "" }] },
+    current_stage: 1,
+    screening: {},
+    question_ratings: {},
+    scenario_ratings: {},
+    disqualifiers: {},
+    summary: { decision: "" },
+    ...(raw ?? {}),
+  };
+
+  if (!data.setup?.members?.length) {
+    const legacy = raw?.panel;
+    const members: PanelMember[] = [];
+    if (legacy?.chair?.trim()) {
+      members.push({ name: legacy.chair.trim(), email: "" });
+    }
+    if (legacy?.member_2?.trim()) {
+      members.push({ name: legacy.member_2.trim(), email: "" });
+    }
+    if (legacy?.member_3?.trim()) {
+      members.push({ name: legacy.member_3.trim(), email: "" });
+    }
+    data.setup = {
+      members: members.length ? members : [{ name: "", email: "" }],
+      interview_start_at: legacy?.interview_date
+        ? `${legacy.interview_date}T09:00:00`
+        : data.setup?.interview_start_at,
+      location: legacy?.location ?? data.setup?.location,
+      invites_sent_at: data.setup?.invites_sent_at,
+    };
+  }
+
+  if (!data.current_stage) {
+    if (data.stage2_completed_at) data.current_stage = 3;
+    else if (data.stage1_completed_at) data.current_stage = 2;
+    else data.current_stage = 1;
+  }
+
+  return data;
+}
+
+export function interviewWorkflowStep(
+  data: InterviewFormData,
+): "panel" | InterviewStage {
+  const setup = data.setup;
+  const hasValidPanel =
+    setup?.invites_sent_at &&
+    setup.members.some((m) => m.name.trim() && m.email.trim());
+  if (!hasValidPanel) return "panel";
+  if (!data.stage1_completed_at) return 1;
+  if (!data.stage2_completed_at) return 2;
+  return 3;
 }

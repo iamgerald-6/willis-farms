@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import NavbarDashboard from "@/components/NavbarDashboard";
 import QueryProvider from "@/components/QueryProvider";
 import ReduxProvider from "@/components/Provider";
+import RouteAccessGuard from "@/components/RouteAccessGuard";
 import { Toaster } from "sonner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -48,7 +49,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <div className="flex-1 flex flex-col md:ml-64 min-h-screen md:h-screen md:pt-0">
                   <NavbarDashboard onMenuClick={() => setMobileOpen(true)} />
                   <main className="flex-1 overflow-y-auto bg-gray-50">
-                    {children}
+                    <RouteAccessGuard>{children}</RouteAccessGuard>
                   </main>
                 </div>
               </div>

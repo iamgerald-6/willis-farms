@@ -91,6 +91,37 @@ export function gradeBandsBelow(viewerGrade: string | null | undefined): Grade[]
 }
 
 /**
+ * Appraisal System — full-access group (spec Section 4).
+ *   - role = manager / admin / super_admin → full access to all employees'
+ *     appraisal data and dashboards
+ *   - grade_level = L5 or above → full access, REGARDLESS of role
+ *   - everyone else (below L5, no Manager/Admin/Super Admin role) → limited
+ *     access: only their own appraisal data
+ *
+ * NOTE: this is intentionally separate from canViewOthers()/isSupervisor()
+ * (L4+) above, which govern who can act as a line supervisor on someone's
+ * record for Promotion/Skill Logs. Appraisal "full access" is a different,
+ * L5+ concept per the spec — do not conflate the two.
+ */
+export function hasFullAppraisalAccess(
+  role: string | null | undefined,
+  grade: string | null | undefined,
+): boolean {
+  if (role === "manager" || role === "admin" || role === "super_admin") {
+    return true;
+  }
+  return gradeIndex(grade) >= 4; // L5 = index 4
+}
+
+/**
+ * Justification review pool (spec Section 8): Manager, L5+, Admin, and
+ * Super Admin can review a supervisor's justification for a locked
+ * appraisal. This is the same group as hasFullAppraisalAccess — kept as
+ * a distinct name for readability at call sites.
+ */
+export const canReviewJustification = hasFullAppraisalAccess;
+
+/**
  * Can viewer sign off a skill log whose filler had fillerGrade?
  *   - L3 and below → never
  *   - L4 (index 3) → only if fillerGrade is L3 (index 2)

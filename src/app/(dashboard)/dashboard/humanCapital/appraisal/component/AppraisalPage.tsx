@@ -19,22 +19,31 @@ import {
   Info,
   Award,
   Lock,
+  Mail,
+  CalendarClock,
 } from "lucide-react";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-type Cycle = "quarterly" | "annual";
-type RatingValue = 1 | 2 | 3 | 4 | 5;
-
-interface RatingItem {
-  rating: RatingValue | null;
-  comment: string;
-}
-interface SectionRatings {
-  [itemLabel: string]: RatingItem;
-}
-interface Ratings {
-  [sectionKey: string]: SectionRatings;
-}
+import {
+  Ratings,
+  SectionRatings,
+  computeWeightedScore,
+  bandFor,
+  itemRatingMeta,
+  ITEM_RATING_MIN,
+  ITEM_RATING_MAX,
+} from "@/lib/appraisal/scoring";
+import {
+  Quarter,
+  QUARTERS,
+  GRADE_OPTIONS,
+  GRADE_BAND_COVERS,
+  canRate,
+  canAppraiseOthers,
+  isSupervisorGrade,
+  availableGradeBands,
+  sectionsFor,
+} from "@/lib/appraisal/sections";
+import { computeDeadline } from "@/lib/appraisal/deadlines";
+import { DeadlineBanner } from "./DeadlineBanner";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -44,703 +53,61 @@ interface ExistingAppraisal {
   job_title: string;
   current_grade: string;
   grade_band: string;
-  cycle: Cycle;
-  review_quarter?: string | null;
+  cycle: "quarterly" | "annual";
+  review_quarter: Quarter;
   review_year: number;
   immediate_supervisor: string;
+  supervisor_email?: string | null;
+  employee_email?: string | null;
   reviewing_manager?: string | null;
   period_covered?: string | null;
   section_authorisations_held?: string | null;
   submitted_by?: "employee" | "supervisor" | "both";
   employee_ratings?: Ratings | null;
   supervisor_ratings?: Ratings | null;
+  status?: string;
+  deadline_at?: string | null;
+  reopened_deadline_at?: string | null;
+  locked_reason?: "employee_incomplete" | "supervisor_incomplete" | "reopen_incomplete" | null;
 }
 
-// ─── Grade helpers ────────────────────────────────────────────────────────────
-const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"];
-
-function gradeIndex(g: string | null | undefined): number {
-  if (!g) return -1;
-  const clean = g.replace("_", "/").split("/")[0].trim();
-  return GRADE_ORDER.indexOf(clean);
-}
-
-function canRate(
-  raterGrade: string | null | undefined,
-  targetGrade: string | null | undefined,
-): boolean {
-  const rater = gradeIndex(raterGrade);
-  const target = gradeIndex(targetGrade);
-  if (rater < 3 || target === -1) return false; // below L4 cannot rate others
-  return rater > target; // L4+ can only rate strictly lower grades
-}
-
-function canAppraiseOthers(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= 3; // L4+ (index 3)
-}
-
-// Supervisor = L4 and above (index 3)
-function isSupervisorGrade(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= 3;
-}
-
-// ─── Sections map ─────────────────────────────────────────────────────────────
-const SECTIONS_MAP: Record<
-  string,
-  Record<
-    Cycle,
-    { key: string; title: string; weight: number; items: string[] }[]
-  >
-> = {
-  L1: {
-    quarterly: [
-      {
-        key: "A",
-        title: "Attendance and Conduct",
-        weight: 0.25,
-        items: [
-          "Attendance (full days present ÷ scheduled days)",
-          "Punctuality",
-          "Compliance with supervisor instructions",
-          "Professional conduct and respect",
-          "Teamwork and cooperation",
-        ],
-      },
-      {
-        key: "B",
-        title: "Compliance Discipline",
-        weight: 0.25,
-        items: [
-          "Biosecurity compliance (100% required)",
-          "PPE compliance (100% required)",
-          "SOP compliance under supervision",
-          "Hygiene and sanitation discipline",
-          "Honest reporting and recording",
-        ],
-      },
-      {
-        key: "C",
-        title: "Task Execution Under Supervision",
-        weight: 0.3,
-        items: [
-          "Carries out assigned husbandry tasks correctly",
-          "Feeding and watering routines",
-          "Animal observation and prompt reporting of abnormalities",
-          "Pen and section hygiene tasks",
-          "Calm, correct animal handling",
-          "Basic recordkeeping accuracy",
-        ],
-      },
-      {
-        key: "D",
-        title: "Learning and Development",
-        weight: 0.2,
-        items: [
-          "Speed and consistency of learning",
-          "Willingness to be coached and corrected",
-          "Section authorisations progressed in the quarter",
-          "Skills-log items moved from Observed to Performed Under Supervision",
-          "Skills-log items moved from Performed Under Supervision to Performed Consistently to Standard",
-        ],
-      },
-    ],
-    annual: [
-      {
-        key: "A",
-        title: "Attendance, Conduct, and Reliability (Full Year)",
-        weight: 0.2,
-        items: [
-          "Attendance (full days present ÷ scheduled days, year)",
-          "Punctuality (year)",
-          "Compliance with supervisor instructions (year)",
-          "Professional conduct and respect (year)",
-          "Teamwork and cooperation (year)",
-          "Reliability and dependability (year)",
-        ],
-      },
-      {
-        key: "B",
-        title: "Compliance Discipline (Year)",
-        weight: 0.2,
-        items: [
-          "Biosecurity compliance: 100% required (year)",
-          "PPE compliance: 100% required (year)",
-          "SOP compliance under supervision (year)",
-          "Hygiene and sanitation discipline (year)",
-          "Honest reporting and recording (year)",
-          "Number of disciplinary or compliance incidents during the year (target: zero)",
-        ],
-      },
-      {
-        key: "C",
-        title: "Task Execution Under Supervision (Year)",
-        weight: 0.3,
-        items: [
-          "Husbandry task execution quality (year average)",
-          "Animal observation and abnormality escalation (year)",
-          "Daily barn cleaning and sanitation discipline (year)",
-          "Grower-finisher husbandry support (year)",
-          "Feed preparation support (current phase only) (year)",
-          "Basic recordkeeping accuracy (year)",
-          "Calm and correct animal handling (year)",
-        ],
-      },
-      {
-        key: "D",
-        title: "Year's Learning, Skills, and Section Authorisations",
-        weight: 0.2,
-        items: [
-          "Speed and consistency of learning across the year",
-          "Section authorisations added in the year (list each)",
-          "Skills-log items moved from Observed to Performed Under Supervision",
-          "Skills-log items moved from Performed Under Supervision to Performed Consistently to Standard",
-          "Internal training completed in the year",
-          "Coaching responsiveness and improvement following feedback",
-        ],
-      },
-      {
-        key: "E",
-        title: "Year-End KPI Summary",
-        weight: 0.1,
-        items: [
-          "Year-end KPI performance vs starting target in force at year-end (overall)",
-          "Quarter-on-quarter trend (improving / stable / declining)",
-          "Most impactful KPI contribution by this employee",
-          "KPI shortfalls — root cause and corrective actions taken",
-          "Mid-year target revisions (if any) and reason",
-        ],
-      },
-    ],
-  },
-  L2_L3: {
-    quarterly: [
-      {
-        key: "A",
-        title: "Attendance and Conduct",
-        weight: 0.15,
-        items: [
-          "Attendance and punctuality",
-          "Professional conduct and respect",
-          "Teamwork and reliability",
-          "Discipline and dependability",
-        ],
-      },
-      {
-        key: "B",
-        title: "Compliance and Standards",
-        weight: 0.2,
-        items: [
-          "Biosecurity compliance (100% required)",
-          "Tier-discipline compliance (100% required)",
-          "PPE compliance (100% required)",
-          "SOP compliance (independent within scope)",
-          "Hygiene and sanitation enforcement",
-          "Escalation of non-compliance observed in others (L3)",
-        ],
-      },
-      {
-        key: "C",
-        title: "Routine Technical Execution",
-        weight: 0.25,
-        items: [
-          "Routine section tasks executed accurately and on time",
-          "Animal observation and abnormality detection (early and accurate)",
-          "Feeding, watering, movement, and daily care discipline",
-          "Section-specific competence in authorised sections",
-          "Recordkeeping accuracy and timeliness (target ≥ 98%)",
-        ],
-      },
-      {
-        key: "D",
-        title: "AI Competence (where authorised)",
-        weight: 0.2,
-        items: [
-          "Heat detection accuracy and reliability",
-          "AI procedure execution within authorised scope (L2)",
-          "Lead AI Operator quality and consistency (L3)",
-          "AI recordkeeping completeness and accuracy",
-          "Hygiene and timing discipline in AI routines",
-        ],
-      },
-      {
-        key: "E",
-        title: "Coaching and Floor Coordination (L3 only)",
-        weight: 0.1,
-        items: [
-          "Coaching of L1 and L2 staff in daily routines",
-          "Daily floor coordination and workflow continuity",
-          "Follow-up on task completion by junior staff",
-          "First-line review of section records and checklists",
-          "Reinforcement of section discipline and standards",
-        ],
-      },
-      {
-        key: "F",
-        title: "Section Reproductive KPI Contribution (L3)",
-        weight: 0.1,
-        items: [
-          "Contribution to farrowing rate, conception rate, returns rate",
-          "Contribution to total born / born alive / pre-wean mortality (where applicable)",
-          "Contribution to semen-quality or boar-performance KPIs (where applicable)",
-          "Quality of abnormality detection that supports KPI outcomes",
-        ],
-      },
-    ],
-    annual: [
-      {
-        key: "A",
-        title: "Attendance, Conduct, and Reliability (Year)",
-        weight: 0.15,
-        items: [
-          "Attendance and punctuality (year)",
-          "Professional conduct and respect (year)",
-          "Teamwork and reliability (year)",
-          "Discipline and dependability (year)",
-        ],
-      },
-      {
-        key: "B",
-        title: "Compliance and Standards (Year)",
-        weight: 0.2,
-        items: [
-          "Biosecurity compliance: 100% (year)",
-          "Tier-discipline compliance: 100% (year)",
-          "PPE compliance: 100% (year)",
-          "SOP compliance — independent execution within scope (year)",
-          "Number of disciplinary or compliance incidents (target: zero)",
-        ],
-      },
-      {
-        key: "C",
-        title: "Routine and Advanced Technical Execution (Year)",
-        weight: 0.25,
-        items: [
-          "Routine section tasks executed accurately and on time (year)",
-          "Animal observation and abnormality detection (year)",
-          "Recordkeeping accuracy and timeliness ≥ 98% (year)",
-          "Section-specific technical competence across authorised sections (year)",
-        ],
-      },
-      {
-        key: "D",
-        title: "AI Competence (Year, where authorised)",
-        weight: 0.2,
-        items: [
-          "Heat detection accuracy and reliability (year)",
-          "AI procedure execution quality within scope (year)",
-          "AI recordkeeping completeness (year)",
-          "Lead AI Operator quality (L3, year)",
-        ],
-      },
-      {
-        key: "E",
-        title: "Coaching and Floor Coordination (L3, Year)",
-        weight: 0.1,
-        items: [
-          "Coaching of L1 and L2 staff across the year",
-          "First-line checking and records review quality (year)",
-          "Floor coordination and workflow continuity (year)",
-        ],
-      },
-      {
-        key: "F",
-        title: "Section Reproductive KPI Contribution (Year)",
-        weight: 0.1,
-        items: [
-          "Section KPI contribution vs target (year-end)",
-          "Quarter-on-quarter KPI trend",
-          "Most impactful contribution to section KPIs",
-          "KPI shortfalls — root cause and corrective actions",
-        ],
-      },
-    ],
-  },
-  L4: {
-    quarterly: [
-      {
-        key: "A",
-        title: "Attendance, Conduct, and Leadership Presence",
-        weight: 0.15,
-        items: [
-          "Attendance and punctuality (sets the standard for the section)",
-          "Calm and consistent authority on the floor",
-          "Professional conduct under pressure",
-          "Fair and firm staff discipline",
-        ],
-      },
-      {
-        key: "B",
-        title: "Operational Control and Work Planning",
-        weight: 0.2,
-        items: [
-          "Daily work planning and task allocation discipline",
-          "Sequencing of activities to section priorities and reproductive cycle",
-          "Critical routines covered and completed to standard",
-          "Adjustment of staffing and priorities to operational needs",
-          "Continuity of section operation across leave and absence",
-        ],
-      },
-      {
-        key: "C",
-        title: "People Supervision and Coaching",
-        weight: 0.2,
-        items: [
-          "Supervision of L1–L3 staff (attendance, conduct, compliance)",
-          "Coaching effectiveness with Senior Swine Technicians",
-          "Identification and development of high-potential staff",
-          "Prompt correction of non-compliance and poor execution",
-          "Quality of induction and probation support for new hires",
-        ],
-      },
-      {
-        key: "D",
-        title: "KPI Delivery",
-        weight: 0.25,
-        items: [
-          "Section reproductive KPIs vs target (farrowing rate, conception, returns, born alive, pre-wean mortality)",
-          "Section operational KPIs vs target (AI quality, semen quality, gilt pool, etc.)",
-          "Grower-finisher KPIs vs target (ADG, FCR, mortality, dispatch-weight compliance)",
-          "Investigation and corrective action on KPI deviations",
-          "Quality of weekly KPI reporting upward",
-        ],
-      },
-      {
-        key: "E",
-        title: "Compliance Enforcement and Records Verification",
-        weight: 0.1,
-        items: [
-          "Section biosecurity and tier-discipline compliance (100% target)",
-          "PPE and SOP enforcement",
-          "Verification of section records, checklists, and reports",
-          "Identification and resolution of missing or inaccurate records",
-          "Audit-readiness of the section",
-        ],
-      },
-      {
-        key: "F",
-        title: "Escalation, Reporting, and Resource Use",
-        weight: 0.1,
-        items: [
-          "Timeliness and quality of issue escalation to Assistant Farm Manager / Farm Manager / Veterinarian",
-          "Quality of management reporting (weekly / monthly)",
-          "Resource use discipline (labour, supplies, equipment)",
-          "Communication with the Veterinarian and Data Analyst",
-        ],
-      },
-    ],
-    annual: [
-      {
-        key: "A",
-        title: "Leadership Presence and Conduct (Year)",
-        weight: 0.15,
-        items: [
-          "Attendance and punctuality (year; sets the standard for the section)",
-          "Calm and consistent authority on the floor (year)",
-          "Professional conduct under pressure (year)",
-          "Fair and firm staff discipline (year)",
-          "Modelling of biosecurity, tier-discipline, welfare, and records standards (year)",
-        ],
-      },
-      {
-        key: "B",
-        title: "Operational Control and Work Planning (Year)",
-        weight: 0.2,
-        items: [
-          "Daily work planning and task allocation discipline (year average)",
-          "Sequencing of activities to section priorities and reproductive cycle (year)",
-          "Critical routines covered and completed to standard (year)",
-          "Continuity of section operation across leave and absence (year)",
-          "Quality of operational planning for each quarter (year)",
-        ],
-      },
-      {
-        key: "C",
-        title: "People Supervision, Development, and Succession (Year)",
-        weight: 0.2,
-        items: [
-          "Supervision of L1–L3 staff — attendance, conduct, compliance (year)",
-          "Coaching effectiveness with Senior Swine Technicians (year)",
-          "Identification and development of high-potential staff (year)",
-          "Probation reviews completed for new hires (year)",
-          "Promotions supported and progressed during the year",
-          "Quality of induction and ongoing development for the team",
-        ],
-      },
-      {
-        key: "D",
-        title: "KPI Delivery — Year-End vs Targets",
-        weight: 0.25,
-        items: [
-          "Breeding KPI Library — year-end performance vs starting target in force at year-end",
-          "Grower-Finisher KPI Library — year-end performance vs starting target in force at year-end",
-          "Feed Production KPIs (current phase only) — year-end performance",
-          "Investigation and corrective action on KPI deviations during the year",
-          "Quality of weekly and quarterly KPI reporting upward",
-        ],
-      },
-      {
-        key: "E",
-        title: "Compliance Enforcement and Records Verification (Year)",
-        weight: 0.1,
-        items: [
-          "Section biosecurity and tier-discipline compliance: 100% target (year)",
-          "PPE and SOP enforcement (year)",
-          "Verification of section records, checklists, and reports (year)",
-          "Audit-readiness of the section (year)",
-          "Number of compliance incidents / breaches in the year (target: zero)",
-        ],
-      },
-      {
-        key: "F",
-        title: "Escalation, Reporting, and Resource Use (Year)",
-        weight: 0.1,
-        items: [
-          "Timeliness and quality of issue escalation to Assistant Farm Manager / Farm Manager / Veterinarian (year)",
-          "Quality of management reporting (quarterly, year-end)",
-          "Resource use discipline (labour, supplies, equipment) (year)",
-          "Communication with the Veterinarian and Data Analyst (year)",
-        ],
-      },
-    ],
-  },
-  L5_L6_L7: {
-    quarterly: [
-      {
-        key: "A",
-        title: "Leadership Behaviours",
-        weight: 0.2,
-        items: [
-          "Visible leadership presence and authority",
-          "Consistency, fairness, and integrity in decision-making",
-          "Calm decision-making under operational pressure",
-          "Modelling of standards (biosecurity, tier-discipline, welfare, records)",
-        ],
-      },
-      {
-        key: "B",
-        title: "Operational and KPI Delivery",
-        weight: 0.25,
-        items: [
-          "Multi-section / farm-wide / enterprise-wide KPI delivery against agreed targets",
-          "Breeding KPI Library and Grower-Finisher KPI Library performance under your remit",
-          "Stability of operations across the area of responsibility",
-          "Productivity and continuous-improvement actions taken in the quarter",
-          "Quality of root-cause analysis on operational issues",
-        ],
-      },
-      {
-        key: "C",
-        title: "People Development and Succession",
-        weight: 0.2,
-        items: [
-          "Development of L4 supervisors and below",
-          "Talent identification and individual learning plan ownership",
-          "Succession depth for key roles in the area of responsibility",
-          "Promotion-pipeline progress in the quarter",
-          "Quality of probation reviews completed for the area",
-        ],
-      },
-      {
-        key: "D",
-        title: "Planning, Budget, and Resource Control",
-        weight: 0.15,
-        items: [
-          "Planning of labour, equipment, supplies, and operating resources",
-          "Resource use vs approved budget",
-          "Capital project progress (where applicable)",
-          "Quality of operational planning for the next period",
-        ],
-      },
-      {
-        key: "E",
-        title: "Reporting and Governance",
-        weight: 0.1,
-        items: [
-          "Quality and timeliness of management reporting",
-          "Compliance and biosecurity governance",
-          "Audit readiness across the area of responsibility",
-          "Documentation and decision traceability",
-        ],
-      },
-      {
-        key: "F",
-        title: "Stakeholder and External Relationships",
-        weight: 0.1,
-        items: [
-          "Customer relationships and PS/F1 customer satisfaction",
-          "Veterinary, regulatory, and supplier relationships",
-          "Internal cross-functional working (HR, Finance, Executive)",
-          "(L7) Strategic contribution and enterprise leadership",
-        ],
-      },
-    ],
-    annual: [
-      {
-        key: "A",
-        title: "Leadership Behaviours (Year)",
-        weight: 0.2,
-        items: [
-          "Visible leadership presence and authority (year)",
-          "Consistency, fairness, and integrity in decision-making (year)",
-          "Calm decision-making under operational pressure (year)",
-          "Modelling of standards (biosecurity, tier-discipline, welfare, records) (year)",
-          "Contribution to organisational culture and engagement (year)",
-        ],
-      },
-      {
-        key: "B",
-        title: "Operational and KPI Delivery — Year-End vs Targets",
-        weight: 0.25,
-        items: [
-          "Multi-section / farm / enterprise-wide KPI delivery against agreed targets (year-end)",
-          "Breeding KPI Library and Grower-Finisher KPI Library performance under your remit (year-end)",
-          "Stability of operations across the area of responsibility (year)",
-          "Productivity and continuous-improvement actions taken during the year",
-          "Quality of root-cause analysis on operational issues during the year",
-        ],
-      },
-      {
-        key: "C",
-        title: "People Development and Succession (Year)",
-        weight: 0.2,
-        items: [
-          "Development of L4 supervisors and below (year)",
-          "Talent identification and Individual Learning Plan ownership (year)",
-          "Succession depth for key roles in the area of responsibility (year-end)",
-          "Promotion-pipeline progress during the year",
-          "Quality of probation reviews completed for the area (year)",
-          "Engagement and retention outcomes (year)",
-        ],
-      },
-      {
-        key: "D",
-        title: "Planning, Budget, and Resource Control (Year)",
-        weight: 0.15,
-        items: [
-          "Planning of labour, equipment, supplies, and operating resources (year)",
-          "Resource use vs approved budget (year-end variance)",
-          "Capital project progress (year, where applicable)",
-          "Quality of operational planning for the coming year",
-          "Performance against agreed business targets (year-end)",
-        ],
-      },
-      {
-        key: "E",
-        title: "Reporting and Governance (Year)",
-        weight: 0.1,
-        items: [
-          "Quality and timeliness of management reporting (year)",
-          "Compliance and biosecurity governance (year)",
-          "Audit readiness across the area of responsibility (year)",
-          "Documentation and decision traceability (year)",
-          "Risk-management actions taken during the year",
-        ],
-      },
-      {
-        key: "F",
-        title: "Stakeholder and External Relationships (Year)",
-        weight: 0.1,
-        items: [
-          "Customer relationships and PS/F1 customer satisfaction (year-end)",
-          "Veterinary, regulatory, and supplier relationships (year)",
-          "Internal cross-functional working (HR, Finance, Executive) (year)",
-          "(L7) Strategic contribution and enterprise leadership (year)",
-          "(L7) External-market and industry positioning (year)",
-        ],
-      },
-    ],
-  },
-};
-
-const GRADE_OPTIONS = [
-  { value: "L1", label: "L1 — Junior Swine Technician" },
-  {
-    value: "L2_L3",
-    label: "L2 / L3 — Swine Technician / Senior Swine Technician",
-  },
-  { value: "L4", label: "L4 — Herd Supervisor" },
-  { value: "L5_L6_L7", label: "L5 / L6 / L7 — Management" },
-];
-
-const GRADE_BAND_COVERS: Record<string, string[]> = {
-  L1: ["L1"],
-  L2_L3: ["L2", "L3"],
-  L4: ["L4"],
-  L5_L6_L7: ["L5", "L6", "L7"],
-};
-
-function availableGradeBands(raterGrade: string | null | undefined) {
-  if (!canAppraiseOthers(raterGrade)) {
-    return GRADE_OPTIONS.filter((o) => o.value === "L1");
-  }
-  return GRADE_OPTIONS.filter((opt) => {
-    const grades = GRADE_BAND_COVERS[opt.value] ?? [];
-    return grades.some((g) => canRate(raterGrade, g));
-  });
-}
-
-const RATING_LABELS: Record<number, string> = {
-  1: "Unsatisfactory",
-  2: "Below Expectation",
-  3: "Meets Expectation",
-  4: "Above Expectation",
-  5: "Excellent",
-};
-const RATING_COLORS: Record<number, string> = {
-  1: "bg-red-500",
-  2: "bg-orange-400",
-  3: "bg-amber-400",
-  4: "bg-green-400",
-  5: "bg-emerald-500",
-};
-const PROMOTION_OPTIONS = [
-  { value: "not_yet_ready", label: "Not yet ready" },
-  { value: "developing", label: "Developing toward next level" },
-  { value: "nearly_ready", label: "Nearly ready" },
-  { value: "ready_for_assessment", label: "Ready for promotion assessment" },
-  {
-    value: "ready_for_expanded_responsibility",
-    label: "Ready for expanded responsibility but not yet formal promotion",
-  },
-];
-
-// ─── Weighted score ───────────────────────────────────────────────────────────
-function computeWeightedScore(
-  ratings: Ratings,
-  sections: { key: string; weight: number; items: string[] }[],
-) {
-  let weightedScore = 0;
-  let totalWeight = 0;
-  let totalItems = 0;
-  let ratedItems = 0;
-  const sectionAverages: Record<string, number | null> = {};
-
-  for (const section of sections) {
-    const sectionRatings = ratings[section.key] ?? {};
-    const vals = section.items
-      .map((item) => sectionRatings[item]?.rating)
-      .filter((r): r is RatingValue => r != null);
-    totalItems += section.items.length;
-    ratedItems += vals.length;
-    if (vals.length > 0) {
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      sectionAverages[section.key] = avg;
-      weightedScore += section.weight * avg;
-      totalWeight += section.weight;
-    } else {
-      sectionAverages[section.key] = null;
-    }
-  }
-
-  return {
-    weightedScore:
-      totalWeight > 0
-        ? Math.round((weightedScore / totalWeight) * 100) / 100
-        : null,
-    sectionAverages,
-    completionPct:
-      totalItems > 0 ? Math.round((ratedItems / totalItems) * 100) : 0,
-  };
+// ─── Live Score Banner ────────────────────────────────────────────────────────
+function WeightedScoreBanner({
+  weightedScore,
+  completionPct,
+}: {
+  weightedScore: number | null;
+  completionPct: number;
+}) {
+  const band = bandFor(weightedScore);
+  return (
+    <div className="sticky top-4 z-10 bg-[#1e3a5f] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-lg">
+      <div className="flex items-center gap-3">
+        <TrendingUp className="w-4 h-4 text-white/60" />
+        <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">
+          Live Weighted Score
+        </span>
+      </div>
+      <div className="flex items-center gap-5">
+        <div className="text-right">
+          <span className="text-2xl font-black text-white">
+            {weightedScore !== null ? weightedScore.toFixed(1) : "—"}
+          </span>
+          <span className="text-white/40 text-xs ml-1">%</span>
+        </div>
+        <div className="text-right hidden sm:block">
+          <p className="text-xs text-white/50">{band?.label ?? "—"}</p>
+          <p className="text-xs text-white/30">{completionPct}% complete</p>
+        </div>
+        <div className="w-20 h-1.5 bg-white/20 rounded-full overflow-hidden hidden sm:block">
+          <div
+            className="h-full bg-white/70 rounded-full transition-all"
+            style={{ width: `${completionPct}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
@@ -788,81 +155,44 @@ function FieldLabel({
   );
 }
 
-// ─── Rating Selector ──────────────────────────────────────────────────────────
+// ─── Rating Selector (1–5) ────────────────────────────────────────────────────
 function RatingSelector({
   value,
   onChange,
 }: {
-  value: RatingValue | null;
-  onChange: (v: RatingValue) => void;
+  value: number | null;
+  onChange: (v: number) => void;
 }) {
+  const meta = itemRatingMeta(value);
   return (
-    <div className="flex gap-1">
-      {([1, 2, 3, 4, 5] as RatingValue[]).map((n) => (
-        <button
-          key={n}
-          type="button"
-          onClick={() => onChange(n)}
-          title={RATING_LABELS[n]}
-          className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border-2 ${
-            value === n
-              ? `${RATING_COLORS[n]} text-white border-transparent shadow-sm`
-              : "bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300 hover:text-gray-600"
-          }`}
-        >
-          {n}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Live Score Banner ────────────────────────────────────────────────────────
-function WeightedScoreBanner({
-  weightedScore,
-  completionPct,
-}: {
-  weightedScore: number | null;
-  completionPct: number;
-}) {
-  const label =
-    weightedScore === null
-      ? "—"
-      : weightedScore >= 4.5
-        ? "Excellent"
-        : weightedScore >= 3.5
-          ? "Above Expectation"
-          : weightedScore >= 2.5
-            ? "Meets Expectation"
-            : weightedScore >= 1.5
-              ? "Below Expectation"
-              : "Unsatisfactory";
-  return (
-    <div className="sticky top-4 z-10 bg-[#1e3a5f] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-lg">
-      <div className="flex items-center gap-3">
-        <TrendingUp className="w-4 h-4 text-white/60" />
-        <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">
-          Live Weighted Score
-        </span>
+    <div className="flex flex-col gap-1 w-full sm:w-auto">
+      <div className="flex items-center gap-1">
+        {Array.from(
+          { length: ITEM_RATING_MAX - ITEM_RATING_MIN + 1 },
+          (_, i) => ITEM_RATING_MIN + i,
+        ).map((n) => {
+          const selected = value === n;
+          const m = itemRatingMeta(n);
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n)}
+              title={m?.label}
+              className={`w-7 h-7 rounded-lg text-xs font-bold border transition-colors ${
+                selected
+                  ? `${m?.color} text-white border-transparent`
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              {n}
+            </button>
+          );
+        })}
       </div>
-      <div className="flex items-center gap-5">
-        <div className="text-right">
-          <span className="text-2xl font-black text-white">
-            {weightedScore !== null ? weightedScore.toFixed(2) : "—"}
-          </span>
-          <span className="text-white/40 text-xs ml-1">/ 5</span>
-        </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-xs text-white/50">{label}</p>
-          <p className="text-xs text-white/30">{completionPct}% complete</p>
-        </div>
-        <div className="w-20 h-1.5 bg-white/20 rounded-full overflow-hidden hidden sm:block">
-          <div
-            className="h-full bg-white/70 rounded-full transition-all"
-            style={{ width: `${completionPct}%` }}
-          />
-        </div>
-      </div>
+      {value !== null && meta && (
+        <span className={`text-[10px] font-semibold ${meta.text}`}>{meta.label}</span>
+      )}
     </div>
   );
 }
@@ -878,7 +208,7 @@ function SectionBlock({
   section: { key: string; title: string; weight: number; items: string[] };
   sectionAvg: number | null;
   ratings: SectionRatings;
-  onRatingChange: (item: string, rating: RatingValue) => void;
+  onRatingChange: (item: string, rating: number) => void;
   onCommentChange: (item: string, comment: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -900,7 +230,7 @@ function SectionBlock({
         <div className="flex items-center gap-3">
           {sectionAvg !== null && (
             <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-              Avg: {sectionAvg.toFixed(1)}
+              Avg: {sectionAvg.toFixed(1)}%
             </span>
           )}
           <ChevronDown
@@ -920,7 +250,7 @@ function SectionBlock({
             return (
               <div
                 key={item}
-                className="grid grid-cols-[1fr_auto_240px] gap-3 items-center px-4 py-3 hover:bg-gray-50 transition-colors"
+                className="grid grid-cols-1 sm:grid-cols-[1fr_auto_240px] gap-3 items-center px-4 py-3 hover:bg-gray-50 transition-colors"
               >
                 <span className="text-sm text-gray-700 leading-snug">
                   {item}
@@ -945,23 +275,36 @@ function SectionBlock({
   );
 }
 
+const PROMOTION_OPTIONS = [
+  { value: "not_yet_ready", label: "Not yet ready" },
+  { value: "developing", label: "Developing toward next level" },
+  { value: "nearly_ready", label: "Nearly ready" },
+  { value: "ready_for_assessment", label: "Ready for promotion assessment" },
+  {
+    value: "ready_for_expanded_responsibility",
+    label: "Ready for expanded responsibility but not yet formal promotion",
+  },
+];
+
 // ─── Main Form ────────────────────────────────────────────────────────────────
 interface AppraisalFormProps {
-  cycle: Cycle;
   /** grade_level of the person currently logged in, e.g. "L4".
-   *  Supervisor mode is derived from this: L3+ = supervisor. */
+   *  Supervisor mode is derived from this: L4+ = supervisor. */
   viewerGradeLevel?: string | null;
   /** If set, the form is in "second-party fill" mode:
    *  it fetches this appraisal, pre-fills read-only fields,
    *  and PATCHes on submit instead of POSTing. */
   existingAppraisalId?: string | null;
+  /** Quarter to start a fresh appraisal in (ignored once an existing
+   *  appraisal is loaded — the quarter is locked from that record). */
+  defaultQuarter?: Quarter;
   onSuccess?: () => void;
 }
 
 export default function AppraisalForm({
-  cycle,
   viewerGradeLevel = null,
   existingAppraisalId = null,
+  defaultQuarter = "Q1",
   onSuccess,
 }: AppraisalFormProps) {
   // ── Derive supervisor mode from grade, not role ──
@@ -989,11 +332,12 @@ export default function AppraisalForm({
     });
 
   // ── Is this the second party filling? ──
-  // If an existing appraisal is loaded, the current viewer is filling second.
   const isFillingSecond = !!existingAppraisalId && !!existingAppraisal;
+  const isLocked = existingAppraisal?.status === "locked";
 
   // ── Local state ──
   const [gradeBand, setGradeBand] = useState<string>("L1");
+  const [quarter, setQuarter] = useState<Quarter>(defaultQuarter);
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
   const [ratings, setRatings] = useState<Ratings>({});
   const [promotionReadiness, setPromotionReadiness] = useState("");
@@ -1005,12 +349,14 @@ export default function AppraisalForm({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
       section_authorisations_held: "",
       immediate_supervisor: "",
-      review_quarter: "",
+      supervisor_email: "",
+      employee_email: "",
       review_year: new Date().getFullYear(),
       reviewing_manager: "",
       period_covered: "",
@@ -1046,6 +392,23 @@ export default function AppraisalForm({
   const canSelectForOthers = supervisorMode && !isFillingSecond;
   const selfAppraisalMode = !supervisorMode && !isFillingSecond;
 
+  const watchedReviewYear = watch("review_year");
+  const effectiveReviewYear =
+    existingAppraisal?.review_year ?? Number(watchedReviewYear) ?? new Date().getFullYear();
+
+  const showDeadlineBanner =
+    !isLocked &&
+    existingAppraisal?.status !== "final_reviewed" &&
+    (existingAppraisal?.status === "reopened" ||
+      !isFillingSecond ||
+      (selfAppraisalMode &&
+        existingAppraisal?.submitted_by !== "employee" &&
+        existingAppraisal?.submitted_by !== "both") ||
+      (supervisorMode &&
+        isFillingSecond &&
+        existingAppraisal?.submitted_by !== "both" &&
+        existingAppraisal?.status !== "final_reviewed"));
+
   const allowedGradeBands = useMemo(
     () => availableGradeBands(currentUserGrade),
     [currentUserGrade],
@@ -1055,24 +418,23 @@ export default function AppraisalForm({
   useEffect(() => {
     if (!existingAppraisal) return;
 
-    // Set grade band from existing record
     setGradeBand(existingAppraisal.grade_band);
+    setQuarter(existingAppraisal.review_quarter);
 
-    // Pre-fill form fields from the existing record (read-only ones)
     setValue(
       "immediate_supervisor",
       existingAppraisal.immediate_supervisor ?? "",
     );
+    setValue("supervisor_email", existingAppraisal.supervisor_email ?? "");
+    setValue("employee_email", existingAppraisal.employee_email ?? "");
     setValue(
       "section_authorisations_held",
       existingAppraisal.section_authorisations_held ?? "",
     );
-    setValue("review_quarter", existingAppraisal.review_quarter ?? "");
     setValue("review_year", existingAppraisal.review_year);
     setValue("reviewing_manager", existingAppraisal.reviewing_manager ?? "");
     setValue("period_covered", existingAppraisal.period_covered ?? "");
 
-    // Find the employee in the users list by company_id and set them as selected
     const emp = allUsers.find(
       (u) => u.company_id === existingAppraisal.company_id,
     );
@@ -1081,7 +443,7 @@ export default function AppraisalForm({
 
   // ── Filter employees for fresh supervisor fill ──
   const filteredEmployees = useMemo(() => {
-    if (isFillingSecond) return []; // no selection needed when filling second
+    if (isFillingSecond) return [];
     const gradeBandGrades = GRADE_BAND_COVERS[gradeBand] ?? [];
     return allUsers.filter((u) => {
       if (!u.grade_level || !gradeBandGrades.includes(u.grade_level))
@@ -1099,7 +461,7 @@ export default function AppraisalForm({
     isFillingSecond,
   ]);
 
-  const sections = SECTIONS_MAP[gradeBand]?.[cycle] ?? [];
+  const sections = sectionsFor(gradeBand, quarter);
 
   // Keep grade band within allowed range (only applies to fresh fills)
   useEffect(() => {
@@ -1112,15 +474,18 @@ export default function AppraisalForm({
     }
   }, [allowedGradeBands, gradeBand, isFillingSecond]);
 
-  // Self-appraisal: auto-select self on load
+  // Self-appraisal: auto-select self on load, pre-fill email from profile
   useEffect(() => {
     if (selfAppraisalMode && currentUserProfile) {
       setSelectedEmployee(currentUserProfile);
       setGradeBand("L1");
+      if (currentUserProfile.email) {
+        setValue("employee_email", currentUserProfile.email);
+      }
     }
-  }, [selfAppraisalMode, currentUserProfile]);
+  }, [selfAppraisalMode, currentUserProfile, setValue]);
 
-  // Reset ratings and employee when grade band or cycle changes (fresh fill only)
+  // Reset ratings and employee when grade band or quarter changes (fresh fill only)
   useEffect(() => {
     if (isFillingSecond) return;
     setRatings({});
@@ -1129,7 +494,7 @@ export default function AppraisalForm({
     } else if (!isFillingSecond) {
       setSelectedEmployee(null);
     }
-  }, [gradeBand, cycle]);
+  }, [gradeBand, quarter]);
 
   // ── Live score ──
   const { weightedScore, sectionAverages, completionPct } = useMemo(
@@ -1140,7 +505,7 @@ export default function AppraisalForm({
   const handleRatingChange = (
     sectionKey: string,
     item: string,
-    rating: RatingValue,
+    rating: number,
   ) => {
     setRatings((prev) => ({
       ...prev,
@@ -1187,7 +552,7 @@ export default function AppraisalForm({
     let missingRatings = false;
     for (const section of sections) {
       for (const item of section.items) {
-        if (!ratings[section.key]?.[item]?.rating) {
+        if (ratings[section.key]?.[item]?.rating == null) {
           missingRatings = true;
           break;
         }
@@ -1208,14 +573,12 @@ export default function AppraisalForm({
   const { mutate, isPending } = useMutation({
     mutationFn: async (payload: any) => {
       if (isFillingSecond && existingAppraisalId) {
-        // Second party always PATCHes
         const res = await api.patch(
           `/appraisal/${existingAppraisalId}`,
           payload,
         );
         return res.data;
       }
-      // First party always POSTs
       const res = await api.post("/appraisal/upload_appraisal", payload);
       return res.data;
     },
@@ -1223,7 +586,7 @@ export default function AppraisalForm({
       toast.success(
         supervisorMode
           ? `Supervisor review submitted. Review date scheduled for ${reviewDate}.`
-          : "Self-appraisal submitted successfully!",
+          : "Self-appraisal submitted successfully! Your supervisor has been notified by email.",
       );
       reset();
       setSelectedEmployee(null);
@@ -1251,9 +614,10 @@ export default function AppraisalForm({
       current_grade: selectedEmployee!.grade_level ?? gradeBand,
       section_authorisations_held: formData.section_authorisations_held || null,
       immediate_supervisor: formData.immediate_supervisor,
-      cycle,
+      supervisor_email: formData.supervisor_email || null,
+      employee_email: formData.employee_email || null,
       grade_band: gradeBand,
-      review_quarter: cycle === "quarterly" ? formData.review_quarter : null,
+      review_quarter: quarter,
       review_year: Number(formData.review_year),
       reviewing_manager: formData.reviewing_manager || null,
       period_covered: formData.period_covered || null,
@@ -1262,22 +626,22 @@ export default function AppraisalForm({
             supervisor_ratings: ratings,
             supervisor_weighted_score: weightedScore,
             final_review_date: reviewDate,
+            supervisor_user_id: userId,
           }
         : {
             employee_ratings: ratings,
             employee_weighted_score: weightedScore,
           }),
       submitted_by: supervisorMode ? "supervisor" : "employee",
+      employee_user_id: selectedEmployee!.user_id,
       promotion_readiness: promotionReadiness,
       strengths_observed: formData.strengths_observed || null,
       improvement_areas: formData.improvement_areas || null,
       agreed_actions: formData.agreed_actions || null,
       employee_comments: formData.employee_comments || null,
-      most_significant_achievement:
-        formData.most_significant_achievement || null,
+      most_significant_achievement: formData.most_significant_achievement || null,
       development_plan_next_year: formData.development_plan_next_year || null,
-      promotion_readiness_assessment:
-        formData.promotion_readiness_assessment || null,
+      promotion_readiness_assessment: formData.promotion_readiness_assessment || null,
       compensation_review_input: formData.compensation_review_input || null,
     });
   };
@@ -1299,6 +663,22 @@ export default function AppraisalForm({
     );
   }
 
+  if (isLocked) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+        <Lock className="w-8 h-8 text-red-400 mx-auto mb-3" />
+        <p className="text-sm font-bold text-red-700">
+          This appraisal is locked
+        </p>
+        <p className="text-xs text-red-500 mt-1 max-w-md mx-auto">
+          {existingAppraisal?.locked_reason === "supervisor_incomplete"
+            ? "The supervisor evaluation deadline was missed. A Justification Form must be submitted and approved before this can be edited again."
+            : "The self-assessment deadline was missed. This quarter's appraisal can no longer be edited."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 px-5 py-5">
       {/* ── Mode Banner ── */}
@@ -1312,14 +692,35 @@ export default function AppraisalForm({
         <Info className="w-4 h-4 flex-shrink-0" />
         {isFillingSecond
           ? supervisorMode
-            ? "Completing your supervisor review. Employee details and review period are locked from the original submission."
+            ? "Completing your supervisor evaluation. Employee details and review period are locked from the original submission."
             : "Completing your self-appraisal. Details from your supervisor's submission are pre-filled and locked."
           : supervisorMode
-            ? `As grade ${viewerGradeLevel}, you are initiating a supervisor review. Select the employee below.`
+            ? `As grade ${viewerGradeLevel}, you are initiating a supervisor evaluation. Select the employee below.`
             : canSelectForOthers
               ? `As ${currentUserGrade}, select a grade band and employee below your level to complete their appraisal.`
-              : "Self-appraisal — complete your own review. Your ratings stay hidden from your supervisor until they submit theirs."}
+              : "Self-appraisal — complete your own review first. Once you submit, your supervisor is notified by email and your ratings stay hidden from them until they submit theirs."}
       </div>
+
+      {existingAppraisal?.status === "reopened" && (
+        <div className="rounded-xl px-4 py-3 flex items-center gap-2 text-sm bg-purple-50 border border-purple-200 text-purple-700">
+          <CalendarClock className="w-4 h-4 flex-shrink-0" />
+          This appraisal was reopened following an approved justification. Complete
+          the supervisor evaluation and final review before the date below.
+        </div>
+      )}
+
+      {showDeadlineBanner && (
+        <DeadlineBanner
+          reviewQuarter={existingAppraisal?.review_quarter ?? quarter}
+          reviewYear={effectiveReviewYear}
+          status={existingAppraisal?.status ?? "open"}
+          deadlineAt={
+            existingAppraisal?.deadline_at ??
+            computeDeadline(quarter, effectiveReviewYear).toISOString()
+          }
+          reopenedDeadlineAt={existingAppraisal?.reopened_deadline_at}
+        />
+      )}
 
       {/* ── Grade warning ── */}
       {gradeWarning && (
@@ -1347,7 +748,6 @@ export default function AppraisalForm({
           )}
         </h3>
 
-        {/* Grade band + employee select — only shown when NOT filling second */}
         {!isFillingSecond && (
           <div
             className={`grid gap-4 mb-4 ${selfAppraisalMode ? "grid-cols-1" : "grid-cols-2"}`}
@@ -1409,7 +809,6 @@ export default function AppraisalForm({
           </div>
         )}
 
-        {/* Employee info card — shown once selected or pre-filled */}
         {selectedEmployee && (
           <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
             <div>
@@ -1442,7 +841,25 @@ export default function AppraisalForm({
           </div>
         )}
 
-        {/* Section authorisations + Immediate supervisor */}
+        {/* Employee email + Section authorisations — self-assessment only */}
+        {!isFillingSecond && !supervisorMode && (
+          <div className="mb-4">
+            <FieldLabel required>Your Email Address</FieldLabel>
+            <p className="text-xs text-gray-400 mb-1.5">
+              Used to send you deadline reminders and appraisal notices.
+            </p>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                placeholder="you@willsfarms.com"
+                {...register("employee_email", { required: true })}
+                className={`${inputCls(!!errors.employee_email)} pl-9`}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <FieldLabel>Section Authorisations Held</FieldLabel>
@@ -1461,10 +878,6 @@ export default function AppraisalForm({
             )}
           </div>
           <div>
-            {/* Immediate supervisor:
-                - Employee filling first → editable (they type their supervisor's name)
-                - Supervisor filling first → editable (they type their own name)
-                - Filling second → read-only from the existing record */}
             {isFillingSecond ? (
               <ReadOnlyField
                 label="Immediate Supervisor"
@@ -1483,6 +896,26 @@ export default function AppraisalForm({
             )}
           </div>
         </div>
+
+        {/* Supervisor email — self-assessment only (routes the notification) */}
+        {!isFillingSecond && !supervisorMode && (
+          <div className="mt-4">
+            <FieldLabel required>Supervisor's Email Address</FieldLabel>
+            <p className="text-xs text-gray-400 mb-1.5">
+              As soon as you submit, your supervisor is emailed here to
+              complete their evaluation.
+            </p>
+            <div className="relative">
+              <Mail className="w-4 h-4 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="email"
+                placeholder="supervisor@willsfarms.com"
+                {...register("supervisor_email", { required: true })}
+                className={`${inputCls(!!errors.supervisor_email)} pl-9`}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Review Period ── */}
@@ -1498,19 +931,13 @@ export default function AppraisalForm({
         </h3>
 
         {isFillingSecond ? (
-          /* Read-only review period when filling second */
           <div className="grid grid-cols-3 gap-4">
-            {existingAppraisal?.cycle === "quarterly" && (
-              <ReadOnlyField
-                label="Quarter"
-                value={existingAppraisal?.review_quarter}
-              />
-            )}
+            <ReadOnlyField label="Quarter" value={existingAppraisal?.review_quarter} />
             <ReadOnlyField
               label="Year"
               value={String(existingAppraisal?.review_year ?? "")}
             />
-            {existingAppraisal?.cycle === "annual" && (
+            {existingAppraisal?.review_quarter === "Q4" && (
               <>
                 <ReadOnlyField
                   label="Reviewing Manager"
@@ -1524,25 +951,21 @@ export default function AppraisalForm({
             )}
           </div>
         ) : (
-          /* Editable review period when filling first */
           <div className="grid grid-cols-3 gap-4">
-            {cycle === "quarterly" && (
-              <div>
-                <FieldLabel required>Quarter</FieldLabel>
-                <select
-                  {...register("review_quarter", {
-                    required: cycle === "quarterly",
-                  })}
-                  className={inputCls(!!errors.review_quarter)}
-                >
-                  <option value="">Select quarter</option>
-                  <option value="Q1">Q1</option>
-                  <option value="Q2">Q2</option>
-                  <option value="Q3">Q3</option>
-                  <option value="Q4">Q4</option>
-                </select>
-              </div>
-            )}
+            <div>
+              <FieldLabel required>Quarter</FieldLabel>
+              <select
+                value={quarter}
+                onChange={(e) => setQuarter(e.target.value as Quarter)}
+                className={inputCls()}
+              >
+                {QUARTERS.map((q) => (
+                  <option key={q} value={q}>
+                    {q === "Q4" ? "Q4 (Annual)" : q}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <FieldLabel required>Year</FieldLabel>
               <input
@@ -1553,7 +976,7 @@ export default function AppraisalForm({
                 className={inputCls(!!errors.review_year)}
               />
             </div>
-            {cycle === "annual" && (
+            {quarter === "Q4" && (
               <>
                 <div>
                   <FieldLabel>Reviewing Manager</FieldLabel>
@@ -1578,7 +1001,17 @@ export default function AppraisalForm({
           </div>
         )}
 
-        {/* Final review date — supervisor only, always editable */}
+        {quarter === "Q4" && (
+          <div className="mt-4 flex items-start gap-2 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-700">
+            <Award className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>
+              <strong>This appraisal covers the employee's entire year of
+              performance.</strong> Q4 is the Annual appraisal — there is no
+              separate annual form.
+            </span>
+          </div>
+        )}
+
         {supervisorMode && (
           <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
             <FieldLabel required>Final Review Date</FieldLabel>
@@ -1606,20 +1039,35 @@ export default function AppraisalForm({
 
       {/* ── Ratings ── */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-red-500" />
             Performance Ratings
           </h3>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            {([1, 2, 3, 4, 5] as const).map((n) => (
-              <span key={n} className="flex items-center gap-1">
-                <span className={`w-3 h-3 rounded-sm ${RATING_COLORS[n]}`} />
-                {n} – {RATING_LABELS[n]}
-              </span>
-            ))}
+          <div className="flex items-center gap-2 text-[11px] text-gray-400 flex-wrap">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm bg-emerald-500" /> 90–100% Outstanding
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm bg-green-500" /> 80–89% Exceeds
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm bg-amber-400" /> 70–79% Meets
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm bg-orange-400" /> 60–69% Needs Improvement
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm bg-red-500" /> &lt;60% Unsatisfactory
+            </span>
           </div>
         </div>
+
+        <p className="text-[11px] text-gray-400 -mt-1">
+          Rate each item 1–5. Your weighted score above is computed
+          automatically from these ratings using each section's weight,
+          scaled to a 0–100% final score.
+        </p>
 
         {formErrors.ratings && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg px-3 py-2">
@@ -1653,11 +1101,12 @@ export default function AppraisalForm({
       {/* ── Promotion Readiness ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-bold text-gray-800 mb-1">
-          Promotion Readiness Status
+          Promotion Readiness Notes
         </h3>
         <p className="text-xs text-gray-400 mb-4">
-          Tick one option. If 'Ready for promotion assessment' is selected, the
-          Promotion Assessment Form will be required.
+          A discussion/development note only — it does not determine
+          promotion eligibility. Eligibility is calculated automatically
+          from the Final Score once Q4 locks (≥ 70% required).
         </p>
         <div className="space-y-2">
           {PROMOTION_OPTIONS.map((opt) => (
@@ -1692,20 +1141,6 @@ export default function AppraisalForm({
             {formErrors.promotionReadiness}
           </p>
         )}
-        {promotionReadiness === "ready_for_assessment" && (
-          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-            <Award className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-amber-800">
-                Promotion Assessment Required
-              </p>
-              <p className="text-xs text-amber-600 mt-0.5">
-                This employee must be put through the formal Promotion
-                Assessment Form.
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Comments — supervisor only ── */}
@@ -1735,8 +1170,7 @@ export default function AppraisalForm({
             </div>
             <div>
               <FieldLabel>
-                Agreed Actions for{" "}
-                {cycle === "quarterly" ? "Next Quarter" : "Next Year"}
+                Agreed Actions for {quarter === "Q4" ? "Next Year" : "Next Quarter"}
               </FieldLabel>
               <textarea
                 rows={2}
@@ -1747,6 +1181,10 @@ export default function AppraisalForm({
             </div>
             <div>
               <FieldLabel>Employee Comments</FieldLabel>
+              <p className="text-xs text-gray-400 -mt-0.5 mb-1.5">
+                Visible to the employee afterwards — use this to support
+                them in improving, not just to record a score.
+              </p>
               <textarea
                 rows={2}
                 placeholder="Employee's own comments on the review..."
@@ -1755,7 +1193,7 @@ export default function AppraisalForm({
               />
             </div>
 
-            {cycle === "annual" && (
+            {quarter === "Q4" && (
               <div className="border-t border-dashed border-gray-200 pt-4 space-y-4">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Year-End Development Plan
@@ -1809,7 +1247,7 @@ export default function AppraisalForm({
         <button
           type="button"
           onClick={() => {
-            if (isFillingSecond) return; // don't clear pre-filled data
+            if (isFillingSecond) return;
             reset();
             setSelectedEmployee(null);
             setRatings({});
@@ -1835,8 +1273,8 @@ export default function AppraisalForm({
             <>
               <CheckCircle2 className="w-4 h-4" />
               {supervisorMode
-                ? "Submit Supervisor Review"
-                : "Submit Self-Appraisal"}
+                ? "Submit Supervisor Evaluation"
+                : "Submit Self-Assessment"}
             </>
           )}
         </button>
