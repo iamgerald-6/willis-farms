@@ -31,7 +31,7 @@ export default function UploadManualModal({
   uploadedById: string;
 }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<ManualCategory>("HR");
+  const [category, setCategory] = useState<string>("HR");
   const [description, setDescription] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [versionNotes, setVersionNotes] = useState("");
@@ -212,17 +212,20 @@ export default function UploadManualModal({
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
                 Category
               </label>
-              <select
+              <input
+                type="text"
+                list="manual-category-options"
                 value={category}
-                onChange={(e) => setCategory(e.target.value as ManualCategory)}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="e.g. HR, or type a new one"
                 className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-              >
+              />
+              <datalist id="manual-category-options">
                 {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c} />
                 ))}
-              </select>
+              </datalist>
+              <p className="text-[11px] text-gray-400 mt-1">Pick an existing one or type a new category.</p>
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">

@@ -27,6 +27,10 @@ export interface User {
   access_updated_at?: string | null;
   access_updated_by?: string | null;
   created_at?: string;
+  // Task Manager: can this user see every task/project, or only their own?
+  // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
+  // false except super_admin, who always has it regardless of this value.
+  tm_can_view_all_tasks?: boolean;
 }
 
 export interface Content {

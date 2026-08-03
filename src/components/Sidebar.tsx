@@ -22,6 +22,8 @@ import {
   UserPlus,
   ShieldAlert,
   X,
+  ListChecks,
+  Calendar,
 } from "lucide-react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
@@ -48,6 +50,7 @@ type NavItem = {
   icon: React.ElementType;
   permissionKey?: PagePermissionKey;
   children?: SubItem[];
+  badge?: string;
 };
 
 type SidebarProps = {
@@ -114,6 +117,26 @@ const NAV_ITEMS: NavItem[] = [
         href: "/dashboard/humanCapital/recruitment",
         icon: UserPlus,
         permissionKey: "hc:recruitment",
+      },
+    ],
+  },
+  {
+    label: "Task Manager",
+    href: "/dashboard/taskManager",
+    icon: ListChecks,
+    badge: "NEW",
+    children: [
+      {
+        label: "Calendar",
+        href: "/dashboard/taskManager/calendar",
+        icon: Calendar,
+        permissionKey: "tm:calendar",
+      },
+      {
+        label: "Tasks",
+        href: "/dashboard/taskManager/tasks",
+        icon: ListChecks,
+        permissionKey: "tm:tasks",
       },
     ],
   },
@@ -226,7 +249,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
-          const { label, href, icon: Icon, children } = item;
+          const { label, href, icon: Icon, children, badge } = item;
           const active = isParentActive(item);
           const expanded = isOpen(item);
           const hasChildren = !!children?.length;
@@ -254,6 +277,11 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     }`}
                   />
                   <span className="flex-1 text-left">{label}</span>
+                  {badge && !active && (
+                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
+                      {badge}
+                    </span>
+                  )}
                   {expanded ? (
                     <ChevronDown
                       className={`w-3.5 h-3.5 flex-shrink-0 ${active ? "text-white/70" : "text-gray-400"}`}
@@ -281,7 +309,12 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                         : "text-gray-400 group-hover:text-gray-600"
                     }`}
                   />
-                  {label}
+                  <span className="flex-1">{label}</span>
+                  {badge && !active && (
+                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
+                      {badge}
+                    </span>
+                  )}
                   {active && (
                     <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />
                   )}
