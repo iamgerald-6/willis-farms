@@ -22,6 +22,7 @@ import {
   UserCheck,
   X,
   ListChecks,
+  Calendar,
 } from "lucide-react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
@@ -91,6 +92,18 @@ const NAV_ITEMS: NavItem[] = [
     href: "/dashboard/taskManager",
     icon: ListChecks,
     badge: "NEW",
+    children: [
+      {
+        label: "Calendar",
+        href: "/dashboard/taskManager/calendar",
+        icon: Calendar,
+      },
+      {
+        label: "Tasks",
+        href: "/dashboard/taskManager/tasks",
+        icon: ListChecks,
+      },
+    ],
   },
   {
     label: "Policies & Ops",
@@ -226,6 +239,11 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     }`}
                   />
                   <span className="flex-1 text-left">{label}</span>
+                  {badge && !active && (
+                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
+                      {badge}
+                    </span>
+                  )}
                   {expanded ? (
                     <ChevronDown
                       className={`w-3.5 h-3.5 flex-shrink-0 ${active ? "text-white/70" : "text-gray-400"}`}

@@ -26,6 +26,11 @@ export default function NewTaskRow({
   const [indicator, setIndicator] = useState("");
   const [frequency, setFrequency] = useState("");
   const [methodProvider, setMethodProvider] = useState("");
+  // Monitoring items are recurring by nature (that's the whole point of a
+  // monitoring schedule), so this only needs to be a user choice for
+  // register-variant tasks — things like an annual permit renewal that
+  // should cycle forward when completed instead of just closing.
+  const [isRecurring, setIsRecurring] = useState(variant === "monitoring");
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
@@ -33,6 +38,7 @@ export default function NewTaskRow({
       toast.error("Task name can't be empty");
       return;
     }
+    const recurring = variant === "monitoring" ? true : isRecurring;
     setSaving(true);
     try {
       await api.post("/task-manager/tasks", {
@@ -41,12 +47,12 @@ export default function NewTaskRow({
         owner_id: ownerId,
         due_date: dueDate || null,
         task_type: variant === "monitoring" ? "monitoring" : "general",
-        is_recurring: variant === "monitoring",
+        is_recurring: recurring,
         ...(variant === "monitoring" && {
           indicator: indicator || null,
-          frequency: frequency || null,
           method_provider: methodProvider || null,
         }),
+        ...(recurring && { frequency: frequency || null }),
       });
       toast.success("Task added");
       setTitle("");
@@ -55,6 +61,7 @@ export default function NewTaskRow({
       setIndicator("");
       setFrequency("");
       setMethodProvider("");
+      setIsRecurring(variant === "monitoring");
       onCreated();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to add task");
@@ -116,6 +123,31 @@ export default function NewTaskRow({
             placeholder="Method / provider"
             className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
           />
+          <div />
+        </div>
+      )}
+      {variant === "register" && (
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_auto] gap-3 items-center">
+          <div />
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isRecurring}
+              onChange={(e) => setIsRecurring(e.target.checked)}
+              className="accent-red-600 w-3.5 h-3.5 cursor-pointer"
+            />
+            Recurring
+          </label>
+          {isRecurring ? (
+            <input
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value)}
+              placeholder="Frequency (e.g. Annual, Quarterly)"
+              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+            />
+          ) : (
+            <div />
+          )}
           <div />
         </div>
       )}

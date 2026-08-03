@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { enrichTasks, fetchUserNames, fetchProjectNames, writeAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
@@ -25,8 +24,9 @@ export async function GET(req: NextRequest) {
 
     if (projectId) query = query.eq("project_id", projectId);
 
-    const senior = isSeniorManagement(user.role);
-    if (!senior) query = query.eq("owner_id", user.id);
+    // Read scope: distinct from write permission (isSeniorManagement, used
+    // below for POST) — see canViewAllTasks() in taskAccessControl.ts.
+    if (!user.canViewAllTasks) query = query.eq("owner_id", user.id);
 
     const { data: tasks, error } = await query;
     if (error) throw error;

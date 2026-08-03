@@ -1,25 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { isSeniorManagement, computeDisplayStatus } from "@/lib/taskAccessControl";
+import { computeDisplayStatus } from "@/lib/taskAccessControl";
 
 // GET /api/task-manager/projects
-// Senior Management sees every active project. Everyone else only sees a
-// project if they own at least one non-deleted task inside it — per
-// Sheila's instruction that employees shouldn't see a tab they have no
-// tasks under, not just a grayed-out one.
+// Anyone with the tm_can_view_all_tasks grant (or who's super_admin) sees
+// every active project — see canViewAllTasks() in taskAccessControl.ts.
+// This is a separate permission from Senior Management (role-based write
+// access); by default only super_admin has it until granted to specific
+// users via the Users page. Everyone else only sees a project if they own
+// at least one non-deleted task inside it — per Sheila's instruction that
+// employees shouldn't see a tab they have no tasks under, not just a
+// grayed-out one.
 export async function GET(req: NextRequest) {
   try {
-    const user = await getRequestUser(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Archived projects are only ever shown in the "Manage Projects" modal
+    // (see ManageProjectsModal.tsx) — everywhere else (the project pills,
+    // the report/calendar pickers) only wants active ones, and that default
+    // keeps the existing broader read access unchanged for every caller
+    // that doesn't ask for archived projects.
+    const includeArchived = req.nextUrl.searchParams.get("include") === "all";
+    const user = includeArchived ? await requireSeniorManagement(req) : await getRequestUser(req);
+    if (!user) {
+      return NextResponse.json({ error: includeArchived ? "Forbidden — Senior Management only" : "Unauthorized" }, { status: includeArchived ? 403 : 401 });
+    }
 
-    const { data: projects, error } = await supabaseAdmin
-      .from("tm_projects")
-      .select("*")
-      .eq("status", "active")
-      .order("created_at", { ascending: true });
+    let projectsQuery = supabaseAdmin.from("tm_projects").select("*").order("created_at", { ascending: true });
+    if (!includeArchived) projectsQuery = projectsQuery.eq("status", "active");
+    const { data: projects, error } = await projectsQuery;
     if (error) throw error;
 
-    const senior = isSeniorManagement(user.role);
+    // Read scope, not write permission — see canViewAllTasks() in
+    // taskAccessControl.ts, already resolved onto user.canViewAllTasks by
+    // getRequestUser. Project/task creation, editing, etc. still go through
+    // requireSeniorManagement (role-based) unchanged.
+    const canSeeAll = user.canViewAllTasks;
 
     const { data: taskCounts, error: countsError } = await supabaseAdmin
       .from("tm_tasks")
@@ -31,7 +45,7 @@ export async function GET(req: NextRequest) {
     const statsByProject: Record<string, { total: number; open: number; overdue: number }> = {};
 
     for (const t of taskCounts ?? []) {
-      if (!senior && t.owner_id !== user.id) continue;
+      if (!canSeeAll && t.owner_id !== user.id) continue;
       visibleProjectIds.add(t.project_id);
 
       const stats = statsByProject[t.project_id] ?? { total: 0, open: 0, overdue: 0 };
@@ -49,8 +63,11 @@ export async function GET(req: NextRequest) {
       statsByProject[t.project_id] = stats;
     }
 
+    // Manage Projects is an administrative surface (Senior Management
+    // only, enforced above) — it needs to list every project regardless of
+    // task ownership, not just the ones the caller happens to own tasks in.
     const result = (projects ?? [])
-      .filter((p) => senior || visibleProjectIds.has(p.id))
+      .filter((p) => includeArchived || canSeeAll || visibleProjectIds.has(p.id))
       .map((p) => ({
         ...p,
         task_count: statsByProject[p.id]?.total ?? 0,

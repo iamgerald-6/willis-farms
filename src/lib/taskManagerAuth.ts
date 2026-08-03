@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isSeniorManagement, canViewAllTasks } from "@/lib/taskAccessControl";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,6 +13,9 @@ export interface RequestUser {
   email: string | null;
   role: string | null;
   name: string;
+  // Whether this user can see every task/project, or only their own — see
+  // canViewAllTasks() in taskAccessControl.ts.
+  canViewAllTasks: boolean;
 }
 
 /**
@@ -36,7 +39,7 @@ export async function getRequestUser(req: NextRequest): Promise<RequestUser | nu
 
   const { data: profile } = await supabaseAdmin
     .from("users")
-    .select("user_id, role, first_name, last_name, email")
+    .select("user_id, role, first_name, last_name, email, tm_can_view_all_tasks")
     .eq("user_id", authData.user.id)
     .single();
 
@@ -45,6 +48,7 @@ export async function getRequestUser(req: NextRequest): Promise<RequestUser | nu
     email: profile?.email ?? authData.user.email ?? null,
     role: profile?.role ?? null,
     name: profile ? `${profile.first_name} ${profile.last_name}`.trim() : (authData.user.email ?? "Unknown"),
+    canViewAllTasks: canViewAllTasks(profile?.role ?? null, profile?.tm_can_view_all_tasks),
   };
 }
 

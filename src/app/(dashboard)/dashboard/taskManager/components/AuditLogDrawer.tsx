@@ -20,6 +20,16 @@ const FIELD_LABEL: Record<string, string> = {
   due_date: "Due date",
   description: "Description",
   lifecycle_status: "Status",
+  // Server-resolved to project names before it ever reaches here (see
+  // PATCH /api/task-manager/tasks/[id]) — not the raw project_id uuid.
+  project_id: "Project",
+  task_type: "Tab",
+};
+
+const TASK_TYPE_LABEL: Record<string, string> = {
+  obligation: "Obligation Register",
+  monitoring: "Monitoring Schedule",
+  general: "General",
 };
 
 function formatValue(field: string, value: unknown): string {
@@ -28,6 +38,7 @@ function formatValue(field: string, value: unknown): string {
     const d = new Date(String(value));
     return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   }
+  if (field === "task_type") return TASK_TYPE_LABEL[String(value)] ?? String(value);
   return String(value);
 }
 

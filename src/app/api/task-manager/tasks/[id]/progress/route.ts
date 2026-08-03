@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const result = await updateTaskProgress(id, progress_percent, user);
     if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });
-    return NextResponse.json({ task: result.task });
+    return NextResponse.json({ task: result.task, recurred: result.recurred, next_due_date: result.next_due_date });
   } catch (err: any) {
     console.error("[PATCH /api/task-manager/tasks/[id]/progress]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });

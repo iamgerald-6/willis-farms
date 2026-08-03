@@ -38,7 +38,10 @@ const styles = StyleSheet.create({
   statNumber: { fontSize: 20, fontWeight: 700, color: DARK },
   statLabel: { fontSize: 8, color: GRAY, marginTop: 2 },
 
-  sectionTitle: { fontSize: 12, fontWeight: 700, color: DARK, marginTop: 18, marginBottom: 8 },
+  // Bold, uppercase, and with real air above/below — these mark "Coming
+  // Up", "Overdue Rate" etc. as a subheading at a glance rather than
+  // reading as just another bold line of body text.
+  sectionTitle: { fontSize: 12.5, fontWeight: 700, color: DARK, marginTop: 22, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
 
   upcomingRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4, borderBottom: `0.5pt solid ${BORDER}` },
   upcomingTitle: { fontSize: 9, fontWeight: 700, color: DARK },
@@ -48,13 +51,32 @@ const styles = StyleSheet.create({
   // Section headers for a per-project block on page 2 — deliberately not a
   // bordered "card": a box that straddles a page break renders with a
   // half-drawn border in react-pdf, which is exactly the "jumbled" look to
-  // avoid. Plain header + divider instead, free to flow across pages.
-  projectSection: { marginTop: 20 },
-  projectSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", borderBottom: `1pt solid ${DARK}`, paddingBottom: 4, marginBottom: 10 },
-  projectName: { fontSize: 12, fontWeight: 700, color: DARK },
-  projectStats: { fontSize: 8, color: GRAY },
+  // avoid. Plain header + divider instead, free to flow across pages. A
+  // heavier rule and larger, uppercase name make it obvious at a glance
+  // where one project ends and the next begins.
+  projectSection: { marginTop: 30 },
+  projectSectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", borderBottom: `2pt solid ${DARK}`, paddingBottom: 6, marginBottom: 12 },
+  projectName: { fontSize: 15, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3 },
+  projectStats: { fontSize: 8.5, color: GRAY },
 
-  ganttProjectHeader: { fontSize: 11, fontWeight: 700, color: DARK, marginTop: 14, marginBottom: 6 },
+  // Gantt project headers get their own shaded, left-accented block (rather
+  // than a plain bold line) — same reasoning as above: on a page with
+  // several projects' task lists running one after another, a plain text
+  // header blends into the rows above it. The accent bar and background
+  // both stop at this block's own edges rather than running the width of
+  // the page, so it reads as "this project's label" and not a stripe
+  // across the report.
+  ganttProjectHeaderBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: LIGHT,
+    borderLeft: `3pt solid ${RED}`,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    marginTop: 24,
+    marginBottom: 10,
+  },
+  ganttProjectHeaderText: { fontSize: 12.5, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3 },
   ganttRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4, gap: 8 },
   ganttLabel: { width: "32%" },
   ganttName: { fontSize: 8.5, fontWeight: 700, color: DARK },
@@ -73,6 +95,8 @@ const styles = StyleSheet.create({
 
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 7, color: GRAY, textAlign: "center" },
   emptyNote: { fontSize: 8, color: GRAY, fontStyle: "italic" },
+
+  summaryParagraph: { fontSize: 10.5, color: DARK, lineHeight: 1.6, marginBottom: 14 },
 });
 
 function fmtDate(d: string | null) {
@@ -178,9 +202,9 @@ function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
     <>
       {projects.map((project) => (
         <View key={project.name}>
-          <Text style={styles.ganttProjectHeader} wrap={false}>
-            {project.name}
-          </Text>
+          <View style={styles.ganttProjectHeaderBox} wrap={false}>
+            <Text style={styles.ganttProjectHeaderText}>{project.name}</Text>
+          </View>
           {project.tasks.length === 0 ? (
             <Text style={styles.emptyNote}>None.</Text>
           ) : (
@@ -253,6 +277,9 @@ export interface MonthlyReportData {
   generatedAt: string;
   generatedByName: string;
   dashboardUrl: string;
+  // Two short paragraphs, separated by a blank line — the board-facing
+  // opening page. See generateExecutiveSummary in sendMonthlyReport.tsx.
+  executiveSummary: string;
   overall: {
     total: number;
     overdue: number;
@@ -271,9 +298,22 @@ export interface MonthlyReportData {
 export default function MonthlyReportDocument({ data }: { data: MonthlyReportData }) {
   return (
     <Document>
-      {/* Page 1 — overall summary, not broken down by project */}
+      {/* Page 1 — board-facing executive summary, plain prose, no tables */}
       <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} pageLabel="Page 1" pageTitle="Summary" pageSubtitle="All projects combined." />
+        <ReportHeader data={data} pageLabel="Page 1" pageTitle="Executive Summary" pageSubtitle="Task outlook for the board." />
+
+        {data.executiveSummary.split(/\n\s*\n/).map((para, i) => (
+          <Text key={i} style={styles.summaryParagraph}>
+            {para.trim()}
+          </Text>
+        ))}
+
+        <Footer data={data} />
+      </Page>
+
+      {/* Page 2 — overall summary, not broken down by project */}
+      <Page size="A4" style={styles.page}>
+        <ReportHeader data={data} pageLabel="Page 2" pageTitle="Summary" pageSubtitle="All projects combined." />
 
         <StatCards stats={data.overall} />
 
@@ -283,9 +323,9 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
         <Footer data={data} />
       </Page>
 
-      {/* Page 2 — same layout as page 1, per project instead of combined */}
+      {/* Page 3 — same layout as page 2, per project instead of combined */}
       <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} pageLabel="Page 2" pageTitle="Breakdown by Project" pageSubtitle="The summary above, split out per project." />
+        <ReportHeader data={data} pageLabel="Page 3" pageTitle="Breakdown by Project" pageSubtitle="The summary above, split out per project." />
 
         {data.projectBreakdown.length === 0 ? (
           <Text style={styles.emptyNote}>No projects to report on.</Text>
@@ -317,25 +357,25 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
         <Footer data={data} />
       </Page>
 
-      {/* Page 3 — Gantt of uncompleted (active) tasks, per project */}
+      {/* Page 4 — Gantt of uncompleted (active) tasks, per project */}
       <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} pageLabel="Page 3" pageTitle="Outstanding Work" pageSubtitle="Uncompleted tasks, by project — bar shows % complete." />
+        <ReportHeader data={data} pageLabel="Page 4" pageTitle="Outstanding Work" pageSubtitle="Uncompleted tasks, by project — bar shows % complete." />
         <GanttSection projects={data.activeGanttByProject} />
         <Footer data={data} />
       </Page>
 
-      {/* Page 4 — Gantt of completed tasks, per project */}
+      {/* Page 5 — Gantt of completed tasks, per project */}
       <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} pageLabel="Page 4" pageTitle="Completed This Period" pageSubtitle="Tasks finished during the reporting period, by project." />
+        <ReportHeader data={data} pageLabel="Page 5" pageTitle="Completed This Period" pageSubtitle="Tasks finished during the reporting period, by project." />
         <GanttSection projects={data.completedGanttByProject} />
         <Footer data={data} />
       </Page>
 
-      {/* Page 5 — owner performance bar graphs */}
+      {/* Page 6 — owner performance bar graphs */}
       <Page size="A4" style={styles.page}>
         <ReportHeader
           data={data}
-          pageLabel="Page 5"
+          pageLabel="Page 6"
           pageTitle="Owner Performance"
           pageSubtitle="Ranked by overdue rate — highest first, to flag anyone consistently missing deadlines."
         />

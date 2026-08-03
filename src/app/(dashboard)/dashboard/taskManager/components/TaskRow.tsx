@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Pencil, Archive, X, Check, History, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { TMTask } from "@/types/taskManager";
+import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
 import { STATUS_STYLES } from "../statusStyles";
 import OwnerSelect from "./OwnerSelect";
@@ -13,6 +13,7 @@ export default function TaskRow({
   task,
   editMode,
   users,
+  projects,
   currentUserId,
   isSeniorManagement,
   variant = "register",
@@ -22,6 +23,10 @@ export default function TaskRow({
   task: TMTask;
   editMode: boolean;
   users: User[];
+  // Every active project, for the "Project" move selector — undefined/empty
+  // just hides that selector rather than breaking (e.g. any caller that
+  // hasn't been updated to pass it yet).
+  projects?: TMProject[];
   currentUserId: string | null;
   isSeniorManagement: boolean;
   variant?: "register" | "monitoring";
@@ -36,6 +41,16 @@ export default function TaskRow({
   const [indicator, setIndicator] = useState(task.indicator ?? "");
   const [frequency, setFrequency] = useState(task.frequency ?? "");
   const [methodProvider, setMethodProvider] = useState(task.method_provider ?? "");
+  const [projectId, setProjectId] = useState(task.project_id);
+  // Which tab this task belongs to — drives the edit form itself (e.g.
+  // whether the indicator/method-provider inputs show up), not just where
+  // it's saved to, so switching it while editing updates the form right
+  // away rather than needing a second edit pass after moving.
+  const [taskType, setTaskType] = useState<TaskType>(task.task_type);
+  // Only a user choice when taskType isn't "monitoring" — monitoring items
+  // are recurring by nature and always send is_recurring: true regardless
+  // of this state (see handleSave below).
+  const [isRecurring, setIsRecurring] = useState(task.is_recurring);
 
   const [editingProgress, setEditingProgress] = useState(false);
   const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
@@ -51,6 +66,9 @@ export default function TaskRow({
     setIndicator(task.indicator ?? "");
     setFrequency(task.frequency ?? "");
     setMethodProvider(task.method_provider ?? "");
+    setProjectId(task.project_id);
+    setTaskType(task.task_type);
+    setIsRecurring(task.is_recurring);
   };
 
   const handleSave = async () => {
@@ -58,19 +76,29 @@ export default function TaskRow({
       toast.error("Task name can't be empty");
       return;
     }
+    const recurring = taskType === "monitoring" ? true : isRecurring;
+    const movedProject = projectId !== task.project_id;
+    const movedTab = taskType !== task.task_type;
     setSaving(true);
     try {
       await api.patch(`/task-manager/tasks/${task.id}`, {
         title: title.trim(),
         owner_id: ownerId,
         due_date: dueDate || null,
-        ...(variant === "monitoring" && {
+        is_recurring: recurring,
+        frequency: recurring ? frequency || null : null,
+        project_id: projectId,
+        task_type: taskType,
+        ...(taskType === "monitoring" && {
           indicator: indicator || null,
-          frequency: frequency || null,
           method_provider: methodProvider || null,
         }),
       });
-      toast.success("Task updated");
+      let message = "Task updated";
+      if (movedProject && movedTab) message = `Task updated, moved to the new project and ${taskType === "monitoring" ? "Monitoring Schedule" : "Obligation Register"}`;
+      else if (movedProject) message = "Task updated and moved to the new project";
+      else if (movedTab) message = `Task updated and moved to ${taskType === "monitoring" ? "Monitoring Schedule" : "Obligation Register"}`;
+      toast.success(message);
       setEditing(false);
       onChanged();
     } catch (err: any) {
@@ -111,10 +139,15 @@ export default function TaskRow({
     }
   };
 
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
   const handleToggleComplete = async () => {
     try {
       const endpoint = task.lifecycle_status === "completed" ? "restore" : "complete";
-      await api.post(`/task-manager/tasks/${task.id}/${endpoint}`);
+      const res = await api.post(`/task-manager/tasks/${task.id}/${endpoint}`);
+      if (res.data?.recurred) {
+        toast.success(`Recurring task — next due date set to ${fmtDate(res.data.next_due_date)}`);
+      }
       onChanged();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to update task");
@@ -124,8 +157,12 @@ export default function TaskRow({
   const handleSaveProgress = async () => {
     setSavingProgress(true);
     try {
-      await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: progressDraft });
-      if (progressDraft >= 100) toast.success("Marked complete");
+      const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: progressDraft });
+      if (progressDraft >= 100) {
+        toast.success(
+          res.data?.recurred ? `Recurring task — next due date set to ${fmtDate(res.data.next_due_date)}` : "Marked complete",
+        );
+      }
       setEditingProgress(false);
       onChanged();
     } catch (err: any) {
@@ -182,7 +219,42 @@ export default function TaskRow({
             </button>
           </div>
         </div>
-        {variant === "monitoring" && (
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_auto] gap-3 items-center">
+          <div />
+          {projects && projects.length > 1 ? (
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Project</label>
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div />
+          )}
+          <div>
+            <label className="text-[10px] text-gray-400 block mb-0.5">Move to</label>
+            <select
+              value={taskType === "monitoring" ? "monitoring" : "register"}
+              onChange={(e) =>
+                setTaskType(e.target.value === "monitoring" ? "monitoring" : task.task_type !== "monitoring" ? task.task_type : "general")
+              }
+              className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
+            >
+              <option value="register">Obligation Register</option>
+              <option value="monitoring">Monitoring Schedule</option>
+            </select>
+          </div>
+          <div />
+        </div>
+        {taskType === "monitoring" && (
           <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_auto] gap-3 items-center">
             <div />
             <input
@@ -203,6 +275,31 @@ export default function TaskRow({
               placeholder="Method / provider"
               className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
             />
+            <div />
+          </div>
+        )}
+        {taskType !== "monitoring" && (
+          <div className="grid grid-cols-[2.5rem_1fr_1fr_auto] gap-3 items-center">
+            <div />
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => setIsRecurring(e.target.checked)}
+                className="accent-red-600 w-3.5 h-3.5 cursor-pointer"
+              />
+              Recurring
+            </label>
+            {isRecurring ? (
+              <input
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value)}
+                placeholder="Frequency (e.g. Annual, Quarterly)"
+                className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+              />
+            ) : (
+              <div />
+            )}
             <div />
           </div>
         )}
@@ -227,9 +324,14 @@ export default function TaskRow({
       </div>
       <div>
         <p className="text-sm font-semibold text-gray-900">{task.title}</p>
-        {(task.indicator || task.frequency || task.method_provider) && (
+        {/* Indicator/method-provider are monitoring-specific concepts (what's
+            being measured, and by what lab/method) — meaningless for an
+            Obligation Register item, so only show them on the Monitoring
+            Schedule. Frequency still shows either way: it's genuinely
+            relevant for a recurring register task too (e.g. "Annual"). */}
+        {(variant === "monitoring" ? task.indicator || task.frequency || task.method_provider : task.frequency) && (
           <p className="text-xs text-gray-400 mt-0.5">
-            {[task.indicator, task.frequency, task.method_provider].filter(Boolean).join(" · ")}
+            {(variant === "monitoring" ? [task.indicator, task.frequency, task.method_provider] : [task.frequency]).filter(Boolean).join(" · ")}
           </p>
         )}
       </div>

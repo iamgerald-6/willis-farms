@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Send, Loader2, FileBarChart } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { X, Send, Loader2, FileBarChart, History } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { TMProject, TMMonthlyReport } from "@/types/taskManager";
+import { TMProject } from "@/types/taskManager";
+import SentReportsDrawer from "./SentReportsDrawer";
 
 function monthBounds(monthValue: string): { start: string; end: string } {
   const [year, month] = monthValue.split("-").map(Number);
@@ -24,12 +25,8 @@ export default function MonthlyReportModal({ projects, onClose }: { projects: TM
   const [month, setMonth] = useState(currentMonthValue());
   const [recipients, setRecipients] = useState("");
   const [sending, setSending] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const queryClient = useQueryClient();
-
-  const { data } = useQuery<{ reports: TMMonthlyReport[] }>({
-    queryKey: ["tm-reports"],
-    queryFn: async () => (await api.get("/task-manager/reports")).data,
-  });
 
   const handleSend = async () => {
     const emails = recipients
@@ -62,9 +59,18 @@ export default function MonthlyReportModal({ projects, onClose }: { projects: TM
             <FileBarChart className="w-4 h-4 text-red-600" />
             <h2 className="text-base font-bold text-gray-900">Monthly Report</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setHistoryOpen(true)}
+              title="Sent reports"
+              className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400"
+            >
+              <History className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-4">
@@ -108,23 +114,10 @@ export default function MonthlyReportModal({ projects, onClose }: { projects: TM
             )}
           </button>
 
-          {(data?.reports.length ?? 0) > 0 && (
-            <div className="pt-3 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Previously sent</p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {data!.reports.map((r) => (
-                  <div key={r.id} className="text-xs text-gray-600 flex items-center justify-between">
-                    <span>
-                      {new Date(r.period_start).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                    </span>
-                    <span className="text-gray-400">{r.sent_to.length} recipient{r.sent_to.length === 1 ? "" : "s"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {historyOpen && <SentReportsDrawer onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

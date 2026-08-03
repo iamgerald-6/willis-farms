@@ -79,11 +79,20 @@ export interface TMAuditLogEntry {
   performed_at: string;
 }
 
+export interface ExtractionJobFile {
+  file_name: string;
+  file_url: string;
+}
+
 export interface TMExtractionJob {
   id: string;
   project_id: string;
-  file_name: string;
-  file_url: string;
+  // Legacy single-file columns — kept populated with the first file for
+  // back-compat, but `files` is the source of truth now that a job can
+  // cover more than one document (see multi-document-extraction.sql).
+  file_name: string | null;
+  file_url: string | null;
+  files: ExtractionJobFile[];
   status: "pending" | "completed" | "failed";
   extracted_tasks?: ExtractedTaskProposal[] | null;
   error_message?: string | null;
@@ -101,9 +110,19 @@ export interface ExtractedTaskProposal {
   frequency?: string | null;
   indicator?: string | null;
   method_provider?: string | null;
-  // Not set by Claude — filled in by whoever reviews the proposals, so each
-  // extracted task can land with an owner already assigned.
+  // Best-effort filled in server-side by matching owner_name against real
+  // users (see matchOwnerId in the extract route) — still just a proposal;
+  // whoever reviews it can change or clear it before saving.
   owner_id?: string | null;
+  // The name as actually written in the source document, if any — kept
+  // even when owner_id couldn't be confidently matched, so the reviewer
+  // can see who was intended and pick manually.
+  owner_name?: string | null;
+  // Which uploaded file this task was primarily drawn from, when the
+  // extraction covered more than one document — omitted when a task
+  // synthesizes information across several files rather than coming from
+  // just one. Display-only, not saved onto the task itself.
+  source_file_name?: string | null;
 }
 
 /** An already-uploaded document elsewhere in the portal, offered as an extraction source instead of uploading a fresh file. */
@@ -123,6 +142,40 @@ export interface TMMonthlyReport {
   period_end: string;
   pdf_url?: string | null;
   sent_to: string[];
-  generated_by: string;
+  generated_by: string | null;
   generated_at: string;
+  // Attached by the API — not a stored column. "Automatic Schedule" when
+  // generated_by is null (a cron-triggered send).
+  generated_by_name?: string;
+}
+
+/** Automatic monthly-report send config — singleton row, read/written via /api/task-manager/reports/schedule. */
+export interface TMReportSchedule {
+  id: string;
+  enabled: boolean;
+  day_of_month: number;
+  recipients: string[];
+  last_sent_period: string | null;
+  updated_at: string;
+}
+
+/** Deadline reminder config — singleton row, read/written via /api/task-manager/reminders/settings. */
+export interface TMReminderSettings {
+  id: string;
+  enabled: boolean;
+  days_before_due: number;
+  // Optional extra addresses cc'd on every reminder, in addition to the
+  // task owner (who's always notified automatically).
+  cc_recipients: string[];
+  updated_at: string;
+}
+
+/** AI usage budget alert config — singleton row, read/written via /api/task-manager/ai-usage/settings. */
+export interface TMAiUsageSettings {
+  id: string;
+  enabled: boolean;
+  monthly_budget_usd: number | null;
+  recipients: string[];
+  last_alerted_period: string | null;
+  updated_at: string;
 }

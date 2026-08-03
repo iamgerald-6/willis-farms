@@ -28,12 +28,16 @@ type Variant = "register" | "monitoring";
 
 export default function TaskListView({
   project,
+  projects,
   users,
   isSeniorManagement,
   currentUserId,
   variant = "register",
 }: {
   project: TMProject;
+  // Every active project — threaded down to TaskRow's "Project" move
+  // selector. Optional so nothing breaks if a caller doesn't pass it.
+  projects?: TMProject[];
   users: User[];
   isSeniorManagement: boolean;
   currentUserId: string | null;
@@ -53,7 +57,12 @@ export default function TaskListView({
   });
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["tm-tasks", project.id] });
+    // Broad on purpose (no project id) — moving a task to a different
+    // project needs that OTHER project's cached task list invalidated too,
+    // not just this one's, or it'll show stale data (missing the moved-in
+    // task, or still showing the moved-out one) whenever the user switches
+    // to it next.
+    queryClient.invalidateQueries({ queryKey: ["tm-tasks"] });
     // The project pills show a live "N overdue" count from a separate
     // query — without this it goes stale after any edit (e.g. changing a
     // due date) since the pills never remount on their own.
@@ -164,6 +173,7 @@ export default function TaskListView({
               task={task}
               editMode={editMode}
               users={users}
+              projects={projects}
               currentUserId={currentUserId}
               isSeniorManagement={isSeniorManagement}
               variant={variant}

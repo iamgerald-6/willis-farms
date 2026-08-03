@@ -9,5 +9,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const result = await applyLifecycleChange(id, "completed", user);
   if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status });
-  return NextResponse.json({ task: result.task });
+  return NextResponse.json({ task: result.task, recurred: result.recurred, next_due_date: result.next_due_date });
 }

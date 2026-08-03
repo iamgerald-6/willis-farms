@@ -25,22 +25,55 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       .single();
     if (jobError || !job) return NextResponse.json({ error: "Extraction job not found" }, { status: 404 });
 
-    const rowsToInsert = tasks.map((t) => ({
-      project_id: job.project_id,
-      title: t.title.trim(),
-      description: t.description ?? null,
-      owner_id: t.owner_id ?? null,
-      due_date: t.due_date ?? null,
-      is_recurring: !!t.is_recurring,
-      task_type: t.is_recurring ? "monitoring" : "obligation",
-      frequency: t.frequency ?? null,
-      indicator: t.indicator ?? null,
-      method_provider: t.method_provider ?? null,
-      source: "ai_extracted",
-      source_document_url: job.file_url,
-      source_document_name: job.file_name,
-      created_by: user.id,
-    }));
+    // A job can now cover several files read together (see extract/route.ts)
+    // — `files` is the source of truth, falling back to the legacy single
+    // file_url/file_name columns for any job created before that existed.
+    // Per task, source_document_* points at whichever single file it was
+    // attributed to (source_file_name, set by Claude — see EXTRACTION_TOOL),
+    // or falls back to every file name joined together when a task drew on
+    // more than one document.
+    const jobFiles: { file_name: string; file_url: string }[] =
+      Array.isArray(job.files) && job.files.length > 0 ? job.files : job.file_url ? [{ file_name: job.file_name ?? "document", file_url: job.file_url }] : [];
+    const joinedFileNames = jobFiles.map((f) => f.file_name).join(" + ") || null;
+    const findFile = (name?: string | null) => (name ? jobFiles.find((f) => f.file_name?.toLowerCase() === name.toLowerCase()) : undefined);
+
+    // A single document (e.g. an EPA permit) routinely mixes one-off
+    // obligations ("submit annual report by March 31") with recurring
+    // monitoring/testing requirements ("test effluent quarterly") — the
+    // "From Document" button only lives on the Obligation Register tab
+    // (see TaskListView.tsx), but the tasks it produces still need to land
+    // on whichever tab actually fits each one, or every monitoring-style
+    // requirement in the document silently disappears from the Monitoring
+    // Schedule tab. is_recurring alone can't tell them apart any more —
+    // Obligation Register tasks can also be recurring now (e.g. an annual
+    // licence renewal) — so classification instead follows indicator/
+    // method_provider, which the extraction tool only fills in for genuine
+    // monitoring requirements (see EXTRACTION_TOOL in extract/route.ts).
+    // Those two fields are kept for monitoring tasks, where they're
+    // meaningful, and nulled out for everything else — Claude sometimes
+    // writes a person's name into method_provider despite being told not
+    // to, and this is the backstop that keeps that from ever being saved
+    // on a plain obligation.
+    const rowsToInsert = tasks.map((t) => {
+      const isMonitoring = !!(t.indicator || t.method_provider);
+      const matchedFile = findFile(t.source_file_name);
+      return {
+        project_id: job.project_id,
+        title: t.title.trim(),
+        description: t.description ?? null,
+        owner_id: t.owner_id ?? null,
+        due_date: t.due_date ?? null,
+        is_recurring: !!t.is_recurring,
+        task_type: isMonitoring ? "monitoring" : "obligation",
+        frequency: t.frequency ?? null,
+        indicator: isMonitoring ? (t.indicator ?? null) : null,
+        method_provider: isMonitoring ? (t.method_provider ?? null) : null,
+        source: "ai_extracted",
+        source_document_url: matchedFile?.file_url ?? jobFiles[0]?.file_url ?? null,
+        source_document_name: matchedFile?.file_name ?? joinedFileNames,
+        created_by: user.id,
+      };
+    });
 
     const { data: created, error } = await supabaseAdmin.from("tm_tasks").insert(rowsToInsert).select();
     if (error) throw error;
