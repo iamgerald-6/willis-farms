@@ -169,13 +169,3 @@ export interface TMReminderSettings {
   cc_recipients: string[];
   updated_at: string;
 }
-
-/** AI usage budget alert config — singleton row, read/written via /api/task-manager/ai-usage/settings. */
-export interface TMAiUsageSettings {
-  id: string;
-  enabled: boolean;
-  monthly_budget_usd: number | null;
-  recipients: string[];
-  last_alerted_period: string | null;
-  updated_at: string;
-}

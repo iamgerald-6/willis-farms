@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import { TMReportSchedule, TMReminderSettings, TMAiUsageSettings } from "@/types/taskManager";
+import { TMReportSchedule, TMReminderSettings } from "@/types/taskManager";
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -26,24 +26,6 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
     queryKey: ["tm-reminder-settings"],
     queryFn: async () => (await api.get("/task-manager/reminders/settings")).data,
   });
-  const { data: aiUsageData, isLoading: aiUsageLoading } = useQuery<{ settings: TMAiUsageSettings }>({
-    queryKey: ["tm-ai-usage-settings"],
-    queryFn: async () => (await api.get("/task-manager/ai-usage/settings")).data,
-  });
-  // Live spend is fetched separately (and only while this modal is open) —
-  // it calls out to Anthropic on every load rather than being cached
-  // alongside the settings row itself.
-  const { data: currentSpend, isLoading: currentSpendLoading } = useQuery<{
-    configured: boolean;
-    totalUsd: number;
-    periodStart: string;
-    periodEnd: string;
-    monthly_budget_usd: number | null;
-  }>({
-    queryKey: ["tm-ai-usage-current"],
-    queryFn: async () => (await api.get("/task-manager/ai-usage/current")).data,
-  });
-
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [dayOfMonth, setDayOfMonth] = useState(1);
   const [scheduleRecipients, setScheduleRecipients] = useState("");
@@ -54,12 +36,6 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
   const [reminderCc, setReminderCc] = useState("");
   const [savingReminders, setSavingReminders] = useState(false);
   const [testingReminders, setTestingReminders] = useState(false);
-
-  const [aiUsageEnabled, setAiUsageEnabled] = useState(false);
-  const [monthlyBudget, setMonthlyBudget] = useState("");
-  const [aiUsageRecipients, setAiUsageRecipients] = useState("");
-  const [savingAiUsage, setSavingAiUsage] = useState(false);
-  const [testingAiUsage, setTestingAiUsage] = useState(false);
 
   useEffect(() => {
     if (scheduleData?.schedule) {
@@ -76,14 +52,6 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
       setReminderCc((reminderData.settings.cc_recipients ?? []).join(", "));
     }
   }, [reminderData]);
-
-  useEffect(() => {
-    if (aiUsageData?.settings) {
-      setAiUsageEnabled(aiUsageData.settings.enabled);
-      setMonthlyBudget(aiUsageData.settings.monthly_budget_usd != null ? String(aiUsageData.settings.monthly_budget_usd) : "");
-      setAiUsageRecipients((aiUsageData.settings.recipients ?? []).join(", "));
-    }
-  }, [aiUsageData]);
 
   const handleSaveSchedule = async () => {
     const emails = scheduleRecipients.split(",").map((e) => e.trim()).filter(Boolean);
@@ -133,51 +101,6 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
       toast.error(err?.response?.data?.error ?? "Failed to save reminder settings");
     } finally {
       setSavingReminders(false);
-    }
-  };
-
-  const handleSaveAiUsage = async () => {
-    const recipients = aiUsageRecipients.split(",").map((e) => e.trim()).filter(Boolean);
-    if (aiUsageEnabled && !monthlyBudget.trim()) {
-      toast.error("Set a monthly budget before turning alerts on");
-      return;
-    }
-    if (aiUsageEnabled && recipients.length === 0) {
-      toast.error("Add at least one recipient before turning alerts on");
-      return;
-    }
-    setSavingAiUsage(true);
-    try {
-      await api.put("/task-manager/ai-usage/settings", {
-        enabled: aiUsageEnabled,
-        monthly_budget_usd: monthlyBudget.trim() ? Number(monthlyBudget) : null,
-        recipients,
-      });
-      toast.success("AI usage settings saved");
-      queryClient.invalidateQueries({ queryKey: ["tm-ai-usage-settings"] });
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? "Failed to save AI usage settings");
-    } finally {
-      setSavingAiUsage(false);
-    }
-  };
-
-  const handleTestAiUsage = async () => {
-    setTestingAiUsage(true);
-    try {
-      const res = await api.post("/task-manager/ai-usage/test");
-      const { skipped, reason, alerted, spent, budget } = res.data ?? {};
-      if (skipped) {
-        toast.info(reason ? `Nothing sent — ${reason}` : "Nothing sent");
-      } else if (alerted) {
-        toast.success(`Test alert sent — $${Number(spent).toFixed(2)} of $${Number(budget).toFixed(2)} this month.`);
-      } else {
-        toast.info("Nothing sent — under budget and not forced.");
-      }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? "Failed to send test alert");
-    } finally {
-      setTestingAiUsage(false);
     }
   };
 
@@ -325,107 +248,6 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
                   Runs the same weekly summary right now, any day — no need to wait for Monday. It's a real send
                   (not a preview), but it's just today's current picture, so running it again just resends the
                   same list — it won't affect what Monday's actual run includes.
-                </p>
-              </>
-            )}
-          </div>
-
-          <div className="border-t border-gray-100" />
-
-          {/* ── AI usage budget ─────────────────────────────────────── */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">AI usage budget</h3>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={aiUsageEnabled}
-                  onChange={(e) => setAiUsageEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-red-600"
-                />
-                <span className="text-xs font-medium text-gray-600">{aiUsageEnabled ? "On" : "Off"}</span>
-              </label>
-            </div>
-            <p className="text-xs text-gray-500">
-              Tracks how much the Anthropic API account (used for document extraction and report summaries) has
-              spent this calendar month, and emails the recipients below once if spend reaches the budget. Checked
-              daily by the same cron as the report/reminders above — a fresh email won't go out again until next month.
-            </p>
-
-            {currentSpendLoading ? (
-              <p className="text-xs text-gray-400">Loading current spend…</p>
-            ) : !currentSpend?.configured ? (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                Not set up yet — this needs an Admin API key from Anthropic (separate from the regular API key),
-                added as <code className="font-mono">ANTHROPIC_ADMIN_API_KEY</code>. See docs/task-manager/ai-usage.sql.
-              </p>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500">
-                    Spent {currentSpend.periodStart.slice(0, 7)}
-                  </span>
-                  <span className="font-semibold text-gray-800">
-                    ${currentSpend.totalUsd.toFixed(2)}
-                    {currentSpend.monthly_budget_usd != null && ` of $${currentSpend.monthly_budget_usd.toFixed(2)}`}
-                  </span>
-                </div>
-                {currentSpend.monthly_budget_usd != null && currentSpend.monthly_budget_usd > 0 && (
-                  <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${currentSpend.totalUsd >= currentSpend.monthly_budget_usd ? "bg-red-600" : "bg-green-500"}`}
-                      style={{ width: `${Math.min(100, (currentSpend.totalUsd / currentSpend.monthly_budget_usd) * 100)}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {aiUsageLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
-            ) : (
-              <>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Monthly budget (USD)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={monthlyBudget}
-                    onChange={(e) => setMonthlyBudget(e.target.value)}
-                    placeholder="e.g. 200"
-                    className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to (comma-separated emails)</label>
-                  <input
-                    value={aiUsageRecipients}
-                    onChange={(e) => setAiUsageRecipients(e.target.value)}
-                    placeholder="e.g. gm@willsfarms.com, ops@willsfarms.com"
-                    className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  />
-                </div>
-
-                <button
-                  onClick={handleSaveAiUsage}
-                  disabled={savingAiUsage}
-                  className="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {savingAiUsage && <Loader2 className="w-4 h-4 animate-spin" />} Save AI usage settings
-                </button>
-
-                <button
-                  onClick={handleTestAiUsage}
-                  disabled={testingAiUsage}
-                  className="w-full border border-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  {testingAiUsage && <Loader2 className="w-4 h-4 animate-spin" />} Send test alert
-                </button>
-                <p className="text-xs text-gray-400">
-                  Sends the alert email right now regardless of current spend, so you can confirm recipients and
-                  wording are right. Requires a budget and at least one recipient to be saved first.
                 </p>
               </>
             )}

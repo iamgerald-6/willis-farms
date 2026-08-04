@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sendDeadlineReminders } from "@/lib/reminders/sendReminders";
 import { runScheduledMonthlyReportIfDue } from "@/lib/reports/scheduledReportRunner";
-import { checkAiUsageAlert } from "@/lib/aiUsage/checkAiUsageAlert";
 
 // Triggered daily at 9am (Africa/Accra = UTC, so "0 9 * * *" in vercel.json
 // is 9am on the farm) by Vercel Cron. Lives in the Pages Router because it
@@ -16,11 +15,7 @@ import { checkAiUsageAlert } from "@/lib/aiUsage/checkAiUsageAlert";
 //      weekly because job 2 below needs a daily check.
 //   2. The monthly report — only actually generates/sends on the
 //      configured day of the month, and only once per month.
-//   3. AI usage budget alert — checks this month's Anthropic API spend
-//      against the configured budget, emails once if it's crossed (see
-//      checkAiUsageAlert.ts); a no-op until ANTHROPIC_ADMIN_API_KEY and a
-//      budget are both configured.
-// Each is wrapped separately so one failing doesn't stop the others.
+// Each is wrapped separately so one failing doesn't stop the other.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Vercel Cron sends `Authorization: Bearer $CRON_SECRET` automatically
   // when a CRON_SECRET env var is set on the project. Locally (no
@@ -34,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  const result: { reminders: unknown; report: unknown; aiUsage: unknown } = { reminders: null, report: null, aiUsage: null };
+  const result: { reminders: unknown; report: unknown } = { reminders: null, report: null };
 
   try {
     result.reminders = await sendDeadlineReminders();
@@ -48,13 +43,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     console.error("[cron/daily] scheduled report failed", err);
     result.report = { error: err.message ?? "Failed to run scheduled report" };
-  }
-
-  try {
-    result.aiUsage = await checkAiUsageAlert();
-  } catch (err: any) {
-    console.error("[cron/daily] AI usage check failed", err);
-    result.aiUsage = { error: err.message ?? "Failed to check AI usage" };
   }
 
   return res.status(200).json(result);

@@ -51,6 +51,14 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
     title: "Access Control",
     subtitle: "Grant roles and page-level access",
   },
+  "/dashboard/taskManager/calendar": {
+    title: "Schedule Tracker",
+    subtitle: "Leave, off-days, appraisal reviews and task deadlines in one view",
+  },
+  "/dashboard/taskManager/tasks": {
+    title: "Tasks Dashboard",
+    subtitle: "Manage projects, tasks and compliance monitoring",
+  },
 };
 
 interface NavbarDashboardProps {
