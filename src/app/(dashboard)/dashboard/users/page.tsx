@@ -112,6 +112,15 @@ export default function UserTablePage() {
   const promptDelete = (userIds: string[], label: string) =>
     setConfirmDelete({ open: true, userIds, label });
 
+  const { mutate: togglePermission, isPending: isTogglingPermission } = useMutation({
+    mutationFn: async ({ userId, value }: { userId: string; value: boolean }) =>
+      (await api.patch(`/task-manager/users/${userId}/permissions`, { tm_can_view_all_tasks: value })).data,
+    onSuccess: () => refetch(),
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error ?? "Failed to update permission");
+    },
+  });
+
   const { mutate: handleDelete, isPending: isDeleting } = useMutation({
     mutationFn: async (userIds: string[]) =>
       (await api.delete("/delete_user", { data: { userIds } })).data,
@@ -254,6 +263,24 @@ export default function UserTablePage() {
                         </span>
                       )}
                     </div>
+                    <div className="mt-2">
+                      {user.role === "super_admin" ? (
+                        <span className="text-xs text-gray-400">Sees all tasks (super admin)</span>
+                      ) : (
+                        <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={!!user.tm_can_view_all_tasks}
+                            disabled={isTogglingPermission}
+                            onChange={(e) =>
+                              togglePermission({ userId: user.user_id, value: e.target.checked })
+                            }
+                            className="accent-red-600 w-3.5 h-3.5 cursor-pointer disabled:opacity-50"
+                          />
+                          Sees all tasks
+                        </label>
+                      )}
+                    </div>
                   </div>
                   <button
                     onClick={() =>
@@ -297,6 +324,9 @@ export default function UserTablePage() {
                 Position / Grade
               </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Sees all tasks
+              </th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">
                 Actions
               </th>
@@ -306,7 +336,7 @@ export default function UserTablePage() {
             {filteredData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   No users found.
@@ -368,6 +398,23 @@ export default function UserTablePage() {
                       >
                         {user.role.replace("_", " ")}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {user.role === "super_admin" ? (
+                        <span className="text-xs text-gray-400">Always (super admin)</span>
+                      ) : (
+                        <label className="inline-flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!user.tm_can_view_all_tasks}
+                            disabled={isTogglingPermission}
+                            onChange={(e) =>
+                              togglePermission({ userId: user.user_id, value: e.target.checked })
+                            }
+                            className="accent-red-600 w-4 h-4 cursor-pointer disabled:opacity-50"
+                          />
+                        </label>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end">

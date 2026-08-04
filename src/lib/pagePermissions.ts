@@ -15,6 +15,8 @@ export const PAGE_PERMISSION_KEYS = [
   "hc:schedule",
   "hc:promotion",
   "hc:recruitment",
+  "tm:tasks",
+  "tm:calendar",
   "policies",
   "sop:view",
   "sop:add",
@@ -46,6 +48,8 @@ export const PAGE_PERMISSION_LABELS: Record<
   "hc:schedule": { label: "Schedule Planner", group: "Human Capital" },
   "hc:promotion": { label: "Promotion", group: "Human Capital" },
   "hc:recruitment": { label: "Recruitment", group: "Human Capital" },
+  "tm:tasks": { label: "Tasks", group: "Task Manager" },
+  "tm:calendar": { label: "Calendar", group: "Task Manager" },
   policies: { label: "Policies & Ops", group: "Operations" },
   "sop:view": { label: "SOP (view)", group: "Operations" },
   "sop:add": { label: "Add SOP", group: "Operations" },
@@ -74,6 +78,8 @@ const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [
   "hc:appraisal",
   "hc:skillLog",
   "hc:schedule",
+  "tm:tasks",
+  "tm:calendar",
   "policies",
   "sop:view",
   "notifications",
@@ -131,6 +137,8 @@ export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
   if (pathname.startsWith("/dashboard/humanCapital/recruitment")) {
     return "hc:recruitment";
   }
+  if (pathname.startsWith("/dashboard/taskManager/calendar")) return "tm:calendar";
+  if (pathname.startsWith("/dashboard/taskManager")) return "tm:tasks";
   if (pathname.startsWith("/dashboard/policies")) return "policies";
   if (pathname.startsWith("/dashboard/addSop")) return "sop:add";
   if (pathname.startsWith("/dashboard/sop")) return "sop:view";
