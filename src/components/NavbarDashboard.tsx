@@ -53,7 +53,8 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   },
   "/dashboard/taskManager/calendar": {
     title: "Schedule Tracker",
-    subtitle: "Leave, off-days, appraisal reviews and task deadlines in one view",
+    subtitle:
+      "Leave, off-days, appraisal reviews and task deadlines in one view",
   },
   "/dashboard/taskManager/tasks": {
     title: "Tasks Dashboard",
@@ -71,7 +72,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const pageInfo = PAGE_TITLES[pathname] ?? {
+  const pageInfo = PAGE_TITLES[pathname ?? ""] ?? {
     title: "Dashboard",
     subtitle: "WillsFarm Management Portal",
   };

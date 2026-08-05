@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -265,9 +265,9 @@ function ApplicationDetail({
   );
 }
 
-export default function RecruitmentPage() {
+function RecruitmentPageContent() {
   const searchParams = useSearchParams();
-  const interviewParam = searchParams.get("interview");
+  const interviewParam = searchParams?.get("interview");
 
   const [filter, setFilter] = useState<ApplicationStatus | "all">("all");
   const [search, setSearch] = useState("");
@@ -492,5 +492,19 @@ export default function RecruitmentPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function RecruitmentPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 flex justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <RecruitmentPageContent />
+    </Suspense>
   );
 }

@@ -5,18 +5,13 @@ import {
   PAGE_PERMISSION_KEYS,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
+import {
+  requireAuth,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
 
 const VALID_ROLES = new Set(["employee", "manager", "admin"]);
-
-async function getActor(supabaseAdmin: NonNullable<ReturnType<typeof getSupabaseAdmin>>, actorUserId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("user_id, role, grade_level")
-    .eq("user_id", actorUserId)
-    .single();
-  if (error || !data) return null;
-  return data;
-}
 
 export async function PATCH(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -28,6 +23,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const body = await req.json();
     const {
       target_user_id,
@@ -52,9 +50,12 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const actor = await getActor(supabaseAdmin, updated_by);
-    if (!actor || !canManageAccessControl(actor.role, actor.grade_level)) {
-      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    if (updated_by !== caller.id) {
+      return jsonForbidden("updated_by must match the authenticated user.");
+    }
+
+    if (!canManageAccessControl(caller.role, caller.grade_level)) {
+      return jsonForbidden();
     }
 
     const { data: target, error: targetError } = await supabaseAdmin

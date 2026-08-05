@@ -47,7 +47,9 @@ export default function RouteAccessGuard({
   const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
   const loading = sessionLoading || usersLoading;
 
-  const isAccessControlRoute = pathname.startsWith("/dashboard/access-control");
+  const isAccessControlRoute = pathname?.startsWith(
+    "/dashboard/access-control",
+  );
 
   useEffect(() => {
     if (loading) return;
@@ -56,19 +58,28 @@ export default function RouteAccessGuard({
     if (!accessProfile) return;
 
     if (isAccessControlRoute) {
-      if (!canManageAccessControl(accessProfile.role, accessProfile.grade_level)) {
+      if (
+        !canManageAccessControl(accessProfile.role, accessProfile.grade_level)
+      ) {
         toast.error("You do not have permission to open Access Control.");
         router.replace("/dashboard");
       }
       return;
     }
 
-    const pageKey = pageKeyFromPath(pathname);
+    const pageKey = pageKeyFromPath(pathname || "");
     if (pageKey && !canAccessPage(accessProfile, pageKey)) {
       toast.error("You do not have access to this page.");
       router.replace("/dashboard");
     }
-  }, [loading, accessProfile, unrestricted, pathname, router, isAccessControlRoute]);
+  }, [
+    loading,
+    accessProfile,
+    unrestricted,
+    pathname,
+    router,
+    isAccessControlRoute,
+  ]);
 
   if (loading && !unrestricted) {
     return (
@@ -82,16 +93,16 @@ export default function RouteAccessGuard({
     return <>{children}</>;
   }
 
-  if (isAccessControlRoute && accessProfile && !canManageAccessControl(accessProfile.role, accessProfile.grade_level)) {
+  if (
+    isAccessControlRoute &&
+    accessProfile &&
+    !canManageAccessControl(accessProfile.role, accessProfile.grade_level)
+  ) {
     return null;
   }
 
-  const pageKey = pageKeyFromPath(pathname);
-  if (
-    pageKey &&
-    accessProfile &&
-    !canAccessPage(accessProfile, pageKey)
-  ) {
+  const pageKey = pageKeyFromPath(pathname || "");
+  if (pageKey && accessProfile && !canAccessPage(accessProfile, pageKey)) {
     return null;
   }
 

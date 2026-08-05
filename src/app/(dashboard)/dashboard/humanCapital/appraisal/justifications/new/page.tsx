@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -23,10 +23,10 @@ interface AppraisalSummary {
  * bolted onto the appraisal. A supervisor lands here from the "Submit
  * Justification" button on a locked appraisal.
  */
-export default function SubmitJustificationPage() {
+function SubmitJustificationPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const appraisalId = searchParams.get("appraisal_id");
+  const appraisalId = searchParams?.get("appraisal_id");
 
   const [reasonText, setReasonText] = useState("");
   const [error, setError] = useState("");
@@ -159,5 +159,19 @@ export default function SubmitJustificationPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function SubmitJustificationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <SubmitJustificationPageContent />
+    </Suspense>
   );
 }

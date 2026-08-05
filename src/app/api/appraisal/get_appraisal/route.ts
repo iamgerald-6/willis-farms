@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  requireAuth,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
+import { hasFullAppraisalAccess } from "@/lib/accessControl";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -7,11 +13,14 @@ export async function GET(req: NextRequest) {
   if (!supabaseAdmin) {
     return NextResponse.json(
       { error: "Server configuration error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const { searchParams } = new URL(req.url);
     const company_id = searchParams.get("company_id");
     const cycle = searchParams.get("cycle");
@@ -19,6 +28,14 @@ export async function GET(req: NextRequest) {
     const review_year = searchParams.get("review_year");
     const review_quarter = searchParams.get("review_quarter");
     const status = searchParams.get("status");
+
+    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+
+    if (!fullAccess) {
+      if (company_id && caller.company_id && company_id !== caller.company_id) {
+        return jsonForbidden("You can only view your own appraisals.");
+      }
+    }
 
     let query = supabaseAdmin
       .from("appraisals")
@@ -31,6 +48,16 @@ export async function GET(req: NextRequest) {
     if (review_year) query = query.eq("review_year", Number(review_year));
     if (review_quarter) query = query.eq("review_quarter", review_quarter);
     if (status) query = query.eq("status", status);
+
+    if (!fullAccess) {
+      if (caller.company_id) {
+        query = query.eq("company_id", caller.company_id);
+      } else {
+        query = query.or(
+          `employee_user_id.eq.${caller.id},supervisor_id.eq.${caller.id}`,
+        );
+      }
+    }
 
     const { data, error } = await query;
 

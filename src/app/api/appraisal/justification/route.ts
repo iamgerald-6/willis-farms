@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  requireAuth,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
+import { hasFullAppraisalAccess } from "@/lib/accessControl";
 
 /**
  * Justification Form (Section 8) — its own dedicated resource, not a field
@@ -16,6 +22,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const body = await req.json();
     const { appraisal_id, supervisor_id, reason_text } = body;
 
@@ -24,6 +33,10 @@ export async function POST(req: NextRequest) {
         { error: "appraisal_id, supervisor_id, and reason_text are required" },
         { status: 400 },
       );
+    }
+
+    if (supervisor_id !== caller.id) {
+      return jsonForbidden("supervisor_id must match the authenticated user.");
     }
 
     const { data: appraisal, error: appraisalError } = await supabaseAdmin
@@ -98,10 +111,23 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const appraisal_id = searchParams.get("appraisal_id");
     const supervisor_id = searchParams.get("supervisor_id");
+
+    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+
+    if (supervisor_id && supervisor_id !== caller.id && !fullAccess) {
+      return jsonForbidden("You can only view your own justifications.");
+    }
+
+    if (!fullAccess && !appraisal_id && !supervisor_id) {
+      return jsonForbidden("Insufficient permissions to list justifications.");
+    }
 
     let query = supabaseAdmin
       .from("appraisal_justifications")
@@ -111,6 +137,10 @@ export async function GET(req: NextRequest) {
     if (status) query = query.eq("status", status);
     if (appraisal_id) query = query.eq("appraisal_id", appraisal_id);
     if (supervisor_id) query = query.eq("supervisor_id", supervisor_id);
+
+    if (!fullAccess && !supervisor_id) {
+      query = query.eq("supervisor_id", caller.id);
+    }
 
     const { data, error } = await query;
 

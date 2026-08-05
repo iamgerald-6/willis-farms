@@ -17,22 +17,27 @@ import ManageProjectsModal from "../components/ManageProjectsModal";
 
 type Tab = "summary" | "gantt" | "register" | "monitoring";
 
-// Projects, tasks and deadlines — the "Tasks" side of the Task Manager
-// sidebar dropdown. The calendar view used to live behind a button on this
-// same page (as a modal); it's now its own sidebar entry and page at
-// /dashboard/taskManager/calendar, same as Human Capital splits Leave,
-// Appraisal etc. into their own sub-pages rather than tabs/modals on one
-// page.
 export default function TaskManagerTasksPage() {
-  const { isLoading: userLoading, isSeniorManagement, allUsers, userId } = useCurrentUser();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const {
+    isLoading: userLoading,
+    isSeniorManagement,
+    allUsers,
+    userId,
+  } = useCurrentUser();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null,
+  );
   const [tab, setTab] = useState<Tab>("register");
   const [showNewProject, setShowNewProject] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showAutomation, setShowAutomation] = useState(false);
   const [showManageProjects, setShowManageProjects] = useState(false);
 
-  const { data, isLoading: projectsLoading, refetch } = useQuery<{ projects: TMProject[] }>({
+  const {
+    data,
+    isLoading: projectsLoading,
+    refetch,
+  } = useQuery<{ projects: TMProject[] }>({
     queryKey: ["tm-projects"],
     queryFn: async () => (await api.get("/task-manager/projects")).data,
     enabled: !userLoading,
@@ -42,20 +47,24 @@ export default function TaskManagerTasksPage() {
 
   useEffect(() => {
     if (projects.length === 0) return;
-    // Also covers the currently-viewed project being archived or deleted
-    // out from under the user — falls back to the first remaining one
-    // instead of showing a project that's no longer in the list.
-    if (!selectedProjectId || !projects.some((p) => p.id === selectedProjectId)) {
+
+    if (
+      !selectedProjectId ||
+      !projects.some((p) => p.id === selectedProjectId)
+    ) {
       setSelectedProjectId(projects[0].id);
     }
   }, [projects, selectedProjectId]);
 
-  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const selectedProject =
+    projects.find((p) => p.id === selectedProjectId) ?? null;
 
   if (userLoading || projectsLoading) {
     return (
       <div className="p-6">
-        <div className="animate-pulse text-sm text-gray-400">Loading Task Manager…</div>
+        <div className="animate-pulse text-sm text-gray-400">
+          Loading Task Manager…
+        </div>
       </div>
     );
   }
@@ -65,7 +74,10 @@ export default function TaskManagerTasksPage() {
       <div className="flex items-start justify-between gap-4 mb-1">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Task Manager</h1>
-          <p className="text-sm text-gray-500 mt-1">Projects, tasks and deadlines — built from documents or entered by hand.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Projects, tasks and deadlines — built from documents or entered by
+            hand.
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {isSeniorManagement && (
@@ -99,10 +111,15 @@ export default function TaskManagerTasksPage() {
         {projects.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center">
             <p className="text-sm text-gray-500">
-              {isSeniorManagement ? "No projects yet — create one to get started." : "You don't have any tasks assigned yet."}
+              {isSeniorManagement
+                ? "No projects yet — create one to get started."
+                : "You don't have any tasks assigned yet."}
             </p>
             {isSeniorManagement && (
-              <button onClick={() => setShowNewProject(true)} className="mt-4 bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-red-700">
+              <button
+                onClick={() => setShowNewProject(true)}
+                className="mt-4 bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-red-700"
+              >
                 + New Project
               </button>
             )}
@@ -120,17 +137,21 @@ export default function TaskManagerTasksPage() {
             {selectedProject && (
               <>
                 <div className="flex items-center gap-1 mt-4 mb-5 border-b border-gray-100 overflow-x-auto">
-                  {([
-                    ["summary", "Summary"],
-                    ["gantt", "Dashboard / Gantt"],
-                    ["register", "Obligation Register"],
-                    ["monitoring", "Monitoring Schedule"],
-                  ] as [Tab, string][]).map(([key, label]) => (
+                  {(
+                    [
+                      ["summary", "Summary"],
+                      ["gantt", "Dashboard / Gantt"],
+                      ["register", "Obligation Register"],
+                      ["monitoring", "Monitoring Schedule"],
+                    ] as [Tab, string][]
+                  ).map(([key, label]) => (
                     <button
                       key={key}
                       onClick={() => setTab(key)}
                       className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition whitespace-nowrap ${
-                        tab === key ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                        tab === key
+                          ? "border-red-600 text-red-600"
+                          : "border-transparent text-gray-500 hover:text-gray-700"
                       }`}
                     >
                       {label}
@@ -172,9 +193,18 @@ export default function TaskManagerTasksPage() {
           onCreated={() => refetch()}
         />
       )}
-      {showReport && <MonthlyReportModal projects={projects} onClose={() => setShowReport(false)} />}
-      {showAutomation && <AutomationSettingsModal onClose={() => setShowAutomation(false)} />}
-      {showManageProjects && <ManageProjectsModal onClose={() => setShowManageProjects(false)} />}
+      {showReport && (
+        <MonthlyReportModal
+          projects={projects}
+          onClose={() => setShowReport(false)}
+        />
+      )}
+      {showAutomation && (
+        <AutomationSettingsModal onClose={() => setShowAutomation(false)} />
+      )}
+      {showManageProjects && (
+        <ManageProjectsModal onClose={() => setShowManageProjects(false)} />
+      )}
     </div>
   );
 }

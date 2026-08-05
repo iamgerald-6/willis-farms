@@ -6,13 +6,13 @@ import { toTelHref, toWhatsAppHref } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
 
-export default function ContactPage({
+export default async function ContactPage({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[]>;
+  searchParams: Promise<{ interest?: string }>;
 }) {
-  const interestRaw = (searchParams?.interest ?? "gilts") as string | string[];
-  const interest = Array.isArray(interestRaw) ? interestRaw[0] : interestRaw;
+  const params = await searchParams;
+  const interest = params.interest === "pork" ? "pork" : "gilts";
   const defaultType = interest === "pork" ? "pork" : "gilts";
 
   const whatsappHref = toWhatsAppHref(

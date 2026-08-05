@@ -34,14 +34,14 @@ export function Navbar() {
             const active =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname?.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={classNames(
                   "text-sm font-medium text-brand-gray hover:text-brand-dark",
-                  active && "text-brand-dark"
+                  active && "text-brand-dark",
                 )}
               >
                 {item.label}
@@ -72,7 +72,7 @@ export function Navbar() {
                 const active =
                   item.href === "/"
                     ? pathname === "/"
-                    : pathname.startsWith(item.href);
+                    : pathname?.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -82,7 +82,7 @@ export function Navbar() {
                       "rounded-xl px-3 py-2 text-sm font-medium",
                       active
                         ? "bg-brand-light text-brand-dark"
-                        : "text-brand-gray hover:bg-brand-light"
+                        : "text-brand-gray hover:bg-brand-light",
                     )}
                   >
                     {item.label}

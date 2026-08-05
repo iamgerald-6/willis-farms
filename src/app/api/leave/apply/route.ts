@@ -1,33 +1,44 @@
-// app/api/leave/apply/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  requireAuth,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
+  { auth: { persistSession: false } },
 );
 
 export async function POST(req: NextRequest) {
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const { user_id, leave_type, reason, start_date, end_date, total_days } =
       await req.json();
 
     if (!user_id || !leave_type || !start_date || !end_date || !total_days) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
+    }
+
+    if (user_id !== caller.id && !isSeniorManagement(caller.role)) {
+      return jsonForbidden("You can only submit leave for yourself.");
     }
 
     if (new Date(start_date) > new Date(end_date)) {
       return NextResponse.json(
         { error: "Start date cannot be after end date" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Check annual leave balance (30 days max per year)
     if (leave_type === "Annual") {
       const currentYear = new Date().getFullYear();
       const { data: existing } = await supabaseAdmin
@@ -47,7 +58,7 @@ export async function POST(req: NextRequest) {
               30 - usedDays
             } annual leave days remaining this year.`,
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }

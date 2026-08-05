@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  requireSeniorManagement,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -8,6 +12,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Server configuration error" },
       { status: 500 }
+    );
+  }
+
+  const caller = await requireSeniorManagement(req);
+  if (!caller) {
+    return jsonForbidden(
+      "Forbidden — admin, manager, or super_admin access required.",
     );
   }
 

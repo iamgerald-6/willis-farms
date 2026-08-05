@@ -20,8 +20,7 @@ const FIELD_LABEL: Record<string, string> = {
   due_date: "Due date",
   description: "Description",
   lifecycle_status: "Status",
-  // Server-resolved to project names before it ever reaches here (see
-  // PATCH /api/task-manager/tasks/[id]) — not the raw project_id uuid.
+
   project_id: "Project",
   task_type: "Tab",
 };
@@ -36,16 +35,30 @@ function formatValue(field: string, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (field === "due_date") {
     const d = new Date(String(value));
-    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    return isNaN(d.getTime())
+      ? String(value)
+      : d.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
   }
-  if (field === "task_type") return TASK_TYPE_LABEL[String(value)] ?? String(value);
+  if (field === "task_type")
+    return TASK_TYPE_LABEL[String(value)] ?? String(value);
   return String(value);
 }
 
-export default function AuditLogDrawer({ task, onClose }: { task: TMTask; onClose: () => void }) {
+export default function AuditLogDrawer({
+  task,
+  onClose,
+}: {
+  task: TMTask;
+  onClose: () => void;
+}) {
   const { data, isLoading } = useQuery<{ entries: TMAuditLogEntry[] }>({
     queryKey: ["task-audit", task.id],
-    queryFn: async () => (await api.get(`/task-manager/tasks/${task.id}/audit`)).data,
+    queryFn: async () =>
+      (await api.get(`/task-manager/tasks/${task.id}/audit`)).data,
   });
 
   return (
@@ -62,7 +75,10 @@ export default function AuditLogDrawer({ task, onClose }: { task: TMTask; onClos
               <p className="text-xs text-gray-500 mt-0.5">{task.title}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -74,17 +90,27 @@ export default function AuditLogDrawer({ task, onClose }: { task: TMTask; onClos
           )}
           {data?.entries.map((entry) => (
             <div key={entry.id} className="border-l-2 border-red-200 pl-4 pb-1">
-              <p className="text-sm font-semibold text-gray-900">{ACTION_LABEL[entry.action] ?? entry.action}</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {ACTION_LABEL[entry.action] ?? entry.action}
+              </p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {entry.performed_by_name} &middot; {new Date(entry.performed_at).toLocaleString("en-GB")}
+                {entry.performed_by_name} &middot;{" "}
+                {new Date(entry.performed_at).toLocaleString("en-GB")}
               </p>
               {entry.changed_fields && entry.changed_fields.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {entry.changed_fields.map((field) => (
                     <p key={field} className="text-xs text-gray-600">
-                      <span className="font-medium">{FIELD_LABEL[field] ?? field}:</span>{" "}
-                      <span className="line-through text-gray-400">{formatValue(field, entry.previous_values?.[field])}</span>{" "}
-                      → <span className="text-gray-800">{formatValue(field, entry.new_values?.[field])}</span>
+                      <span className="font-medium">
+                        {FIELD_LABEL[field] ?? field}:
+                      </span>{" "}
+                      <span className="line-through text-gray-400">
+                        {formatValue(field, entry.previous_values?.[field])}
+                      </span>{" "}
+                      →{" "}
+                      <span className="text-gray-800">
+                        {formatValue(field, entry.new_values?.[field])}
+                      </span>
                     </p>
                   ))}
                 </div>

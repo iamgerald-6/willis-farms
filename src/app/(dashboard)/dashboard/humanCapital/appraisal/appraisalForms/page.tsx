@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
@@ -10,7 +11,7 @@ import AppraisalForm from "@/app/(dashboard)/dashboard/humanCapital/appraisal/co
 import FinalReviewForm from "@/app/(dashboard)/dashboard/humanCapital/appraisal/component/finalFormReview";
 import { Quarter, QUARTERS } from "@/lib/appraisal/sections";
 
-const AppraisalFormPage = () => {
+function AppraisalFormPageContent() {
   const [quarter, setQuarter] = useState<Quarter>("Q1");
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -34,9 +35,9 @@ const AppraisalFormPage = () => {
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
 
-  const existingAppraisalId = searchParams.get("id");
+  const existingAppraisalId = searchParams?.get("id");
   // ?step=final triggers the Final Review Meeting form
-  const step = searchParams.get("step");
+  const step = searchParams?.get("step");
   const isFinalReview = step === "final" && !!existingAppraisalId;
 
   return (
@@ -97,6 +98,18 @@ const AppraisalFormPage = () => {
       </div>
     </div>
   );
-};
+}
 
-export default AppraisalFormPage;
+export default function AppraisalFormPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <AppraisalFormPageContent />
+    </Suspense>
+  );
+}

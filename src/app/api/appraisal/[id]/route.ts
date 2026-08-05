@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { recomputeFinalScore } from "@/lib/appraisal/server";
+import {
+  requireAuth,
+  canAccessAppraisalRecord,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
 
 export async function GET(
   req: NextRequest,
@@ -15,6 +21,9 @@ export async function GET(
       { status: 500 },
     );
   }
+
+  const caller = await requireAuth(req);
+  if (!caller) return jsonUnauthorized();
 
   if (!id) {
     return NextResponse.json(
@@ -31,6 +40,10 @@ export async function GET(
 
   if (error || !data) {
     return NextResponse.json({ error: "Appraisal not found" }, { status: 404 });
+  }
+
+  if (!canAccessAppraisalRecord(caller, data)) {
+    return jsonForbidden("You do not have access to this appraisal.");
   }
 
   return NextResponse.json({ data });
@@ -51,6 +64,9 @@ export async function PATCH(
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const body = await req.json();
 
     if (!appraisalId) {
@@ -63,7 +79,7 @@ export async function PATCH(
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("appraisals")
       .select(
-        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score",
+        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score, company_id",
       )
       .eq("id", appraisalId)
       .single();
@@ -73,6 +89,10 @@ export async function PATCH(
         { error: "Appraisal not found" },
         { status: 404 },
       );
+    }
+
+    if (!canAccessAppraisalRecord(caller, existing)) {
+      return jsonForbidden("You do not have access to this appraisal.");
     }
 
     // A locked appraisal cannot be edited by either party (Section 7).

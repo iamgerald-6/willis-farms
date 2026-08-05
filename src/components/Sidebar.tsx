@@ -158,7 +158,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileStack,
     permissionKey: "sop:add",
   },
-  { label: "Notifications", href: "/dashboard/notifications", icon: Bell, permissionKey: "notifications" },
+  {
+    label: "Notifications",
+    href: "/dashboard/notifications",
+    icon: Bell,
+    permissionKey: "notifications",
+  },
 ];
 
 export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
@@ -196,7 +201,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   // ── Helpers ───────────────────────────────────────────────────────────────
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(href);
+    return pathname?.startsWith(href);
   };
 
   const isParentActive = (item: NavItem) => {
@@ -322,38 +327,41 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               )}
 
               {/* Sub-items */}
-              {hasChildren && expanded && visibleChildren && visibleChildren.length > 0 && (
-                <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
-                  {visibleChildren.map((child) => {
-                    const childActive = isActive(child.href);
-                    const ChildIcon = child.icon;
-                    return (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        onClick={onClose}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group ${
-                          childActive
-                            ? "bg-red-50 text-red-600"
-                            : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                        }`}
-                      >
-                        <ChildIcon
-                          className={`w-3.5 h-3.5 flex-shrink-0 ${
+              {hasChildren &&
+                expanded &&
+                visibleChildren &&
+                visibleChildren.length > 0 && (
+                  <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
+                    {visibleChildren.map((child) => {
+                      const childActive = isActive(child.href);
+                      const ChildIcon = child.icon;
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group ${
                             childActive
-                              ? "text-red-500"
-                              : "text-gray-300 group-hover:text-gray-500"
+                              ? "bg-red-50 text-red-600"
+                              : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                           }`}
-                        />
-                        {child.label}
-                        {childActive && (
-                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-400" />
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+                        >
+                          <ChildIcon
+                            className={`w-3.5 h-3.5 flex-shrink-0 ${
+                              childActive
+                                ? "text-red-500"
+                                : "text-gray-300 group-hover:text-gray-500"
+                            }`}
+                          />
+                          {child.label}
+                          {childActive && (
+                            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-400" />
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
             </div>
           );
         })}

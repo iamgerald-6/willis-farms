@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { computeReopenDeadline } from "@/lib/appraisal/deadlines";
-import { hasFullAppraisalAccess } from "@/lib/accessControl";
 import { recomputeFinalScore } from "@/lib/appraisal/server";
 import { sendJustificationDecisionEmail } from "@/lib/appraisal/emails";
+import {
+  requireFullAppraisalAccess,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
 
 /**
  * Reviewer decision on a justification (Section 8). Any Manager, L5+
@@ -25,6 +28,13 @@ export async function PATCH(
   }
 
   try {
+    const reviewer = await requireFullAppraisalAccess(req);
+    if (!reviewer) {
+      return jsonForbidden(
+        "Only a Manager, Admin, Super Admin, or L5+ employee can review a justification.",
+      );
+    }
+
     const body = await req.json();
     const { decision, reviewer_id, review_notes } = body;
 
@@ -41,20 +51,8 @@ export async function PATCH(
       );
     }
 
-    const { data: reviewer } = await supabaseAdmin
-      .from("users")
-      .select("role, grade_level, first_name, last_name")
-      .eq("user_id", reviewer_id)
-      .maybeSingle();
-
-    if (!reviewer || !hasFullAppraisalAccess(reviewer.role, reviewer.grade_level)) {
-      return NextResponse.json(
-        {
-          error:
-            "Only a Manager, Admin, Super Admin, or L5+ employee can review a justification.",
-        },
-        { status: 403 },
-      );
+    if (reviewer_id !== reviewer.id) {
+      return jsonForbidden("reviewer_id must match the authenticated user.");
     }
 
     const { data: justification, error: justError } = await supabaseAdmin
@@ -87,7 +85,7 @@ export async function PATCH(
       );
     }
 
-    const reviewerName = `${reviewer.first_name ?? ""} ${reviewer.last_name ?? ""}`.trim() || "HR";
+    const reviewerName = reviewer.name || "HR";
     const approved = decision === "approved";
     const reviewedAt = new Date().toISOString();
     const reopenedDeadline = approved

@@ -3,6 +3,12 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { computeDeadline } from "@/lib/appraisal/deadlines";
 import type { Quarter } from "@/lib/appraisal/sections";
 import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
+import {
+  requireAuth,
+  jsonUnauthorized,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
+import { hasFullAppraisalAccess, isSupervisor } from "@/lib/accessControl";
 
 const QUARTERS: Quarter[] = ["Q1", "Q2", "Q3", "Q4"];
 
@@ -17,6 +23,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const body = await req.json();
 
     const {
@@ -106,6 +115,24 @@ export async function POST(req: NextRequest) {
         { error: "employee_email is required for the self-assessment" },
         { status: 400 },
       );
+    }
+
+    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+    const isEmployeeSubmit = (submitted_by ?? "employee") === "employee";
+
+    if (!fullAccess) {
+      if (isEmployeeSubmit) {
+        const ownsRecord =
+          (employee_user_id && employee_user_id === caller.id) ||
+          (caller.company_id && caller.company_id === company_id);
+        if (!ownsRecord) {
+          return jsonForbidden("You can only submit your own self-assessment.");
+        }
+      } else if (!isSupervisor(caller.grade_level)) {
+        return jsonForbidden(
+          "Only supervisors (L4+) or managers can submit supervisor evaluations.",
+        );
+      }
     }
 
     // Confirm company_id exists in users table

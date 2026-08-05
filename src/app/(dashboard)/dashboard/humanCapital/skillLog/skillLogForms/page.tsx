@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { Suspense, useState, useMemo, useEffect } from "react";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -469,10 +469,10 @@ function RatingPicker({
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function SkillLogFormPage() {
+function SkillLogFormPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const editId = searchParams.get("edit");
+  const editId = searchParams?.get("edit");
   const isEditMode = !!editId;
 
   // ── Auth ──
@@ -1027,5 +1027,19 @@ export default function SkillLogFormPage() {
         )}
       </form>
     </div>
+  );
+}
+
+export default function SkillLogFormPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <SkillLogFormPageContent />
+    </Suspense>
   );
 }
