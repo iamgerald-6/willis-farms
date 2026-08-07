@@ -122,6 +122,11 @@ export default function TaskManagerTasksPage() {
           </div>
         ) : (
           <>
+            {selectedProject && (
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3">
+                {selectedProject.name}
+              </h2>
+            )}
             <ProjectSelect
               projects={projects}
               selectedId={selectedProjectId}

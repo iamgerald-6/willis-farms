@@ -30,7 +30,8 @@ export default function SummaryView({ project }: { project: TMProject }) {
 
   return (
     <div>
-      <h3 className="text-sm font-bold text-gray-900 mb-4">{project.name} — Summary</h3>
+      <h3 className="text-sm font-bold text-gray-900 mb-1">{project.name} — Summary</h3>
+      <p className="text-xs text-gray-400 mb-4">A quick snapshot of where this project stands — task counts by status, and what's coming up next.</p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">

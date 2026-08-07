@@ -73,12 +73,17 @@ export default function TaskListView({
   const allTasks = data?.tasks ?? [];
   const tasks = allTasks.filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"));
   const title = variant === "monitoring" ? "Monitoring Schedule" : "Obligation Register";
+  const description =
+    variant === "monitoring"
+      ? "Recurring monitoring and testing requirements, and when each one is next due."
+      : "Every one-off obligation and deadline tracked for this project — permits, renewals, reports and the like.";
 
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between mb-4">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-gray-900 break-words">{project.name} — {title}</h3>
+          <p className="text-xs text-gray-400 mt-1">{description}</p>
           {isSeniorManagement && (
             <div className="flex flex-wrap items-center gap-1 mt-2">
               {LIFECYCLE_VIEWS.map((v) => (
