@@ -212,6 +212,11 @@ export default function DocumentExtractionModal({
       toast.error(`"${tooOld.title}" has a start or due date more than a year in the past — fix it before saving`);
       return;
     }
+    const dueBeforeStart = proposals.find((p) => p.start_date && p.due_date && p.due_date < p.start_date);
+    if (dueBeforeStart) {
+      toast.error(`"${dueBeforeStart.title}" has a due date earlier than its start date — fix it before saving`);
+      return;
+    }
     setSaving(true);
     try {
       await api.post(`/task-manager/extract/${jobId}/save`, {
@@ -506,7 +511,7 @@ export default function DocumentExtractionModal({
                         <input
                           type="date"
                           value={p.due_date ?? ""}
-                          min={minDate}
+                          min={p.start_date && p.start_date > minDate ? p.start_date : minDate}
                           onChange={(e) =>
                             updateProposal(idx, {
                               due_date: e.target.value || null,

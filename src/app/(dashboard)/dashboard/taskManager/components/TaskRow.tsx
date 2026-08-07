@@ -59,6 +59,9 @@ export default function TaskRow({
   const [savingProgress, setSavingProgress] = useState(false);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
   const minDate = minTaskDate();
+  // The due date picker's floor: never more than a year back, and never
+  // earlier than whatever start date is already chosen.
+  const dueMinDate = startDate && startDate > minDate ? startDate : minDate;
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -83,6 +86,10 @@ export default function TaskRow({
     }
     if ((startDate && startDate < minDate) || (dueDate && dueDate < minDate)) {
       toast.error("Start and due dates can't be more than a year in the past");
+      return;
+    }
+    if (startDate && dueDate && dueDate < startDate) {
+      toast.error("Due date can't be earlier than the start date");
       return;
     }
     const recurring = taskType === "monitoring" ? true : isRecurring;
@@ -220,7 +227,7 @@ export default function TaskRow({
               <input
                 type="date"
                 value={dueDate}
-                min={minDate}
+                min={dueMinDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
               />
@@ -306,7 +313,7 @@ export default function TaskRow({
           <input
             type="date"
             value={dueDate}
-            min={minDate}
+            min={dueMinDate}
             onChange={(e) => setDueDate(e.target.value)}
             title="Due date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"

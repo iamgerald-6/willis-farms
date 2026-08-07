@@ -36,6 +36,9 @@ export default function NewTaskRow({
   const [isRecurring, setIsRecurring] = useState(variant === "monitoring");
   const [saving, setSaving] = useState(false);
   const minDate = minTaskDate();
+  // The due date picker's floor: never more than a year back, and never
+  // earlier than whatever start date is already chosen.
+  const dueMinDate = startDate && startDate > minDate ? startDate : minDate;
 
   const handleCreate = async () => {
     if (!title.trim()) {
@@ -44,6 +47,10 @@ export default function NewTaskRow({
     }
     if ((startDate && startDate < minDate) || (dueDate && dueDate < minDate)) {
       toast.error("Start and due dates can't be more than a year in the past");
+      return;
+    }
+    if (startDate && dueDate && dueDate < startDate) {
+      toast.error("Due date can't be earlier than the start date");
       return;
     }
     const recurring = variant === "monitoring" ? true : isRecurring;
@@ -108,7 +115,7 @@ export default function NewTaskRow({
             <input
               type="date"
               value={dueDate}
-              min={minDate}
+              min={dueMinDate}
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
             />
@@ -165,7 +172,7 @@ export default function NewTaskRow({
         <input
           type="date"
           value={dueDate}
-          min={minDate}
+          min={dueMinDate}
           onChange={(e) => setDueDate(e.target.value)}
           title="Due date"
           className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
