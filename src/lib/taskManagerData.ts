@@ -83,13 +83,28 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
  * reporting doesn't lose it just because the task itself didn't stay
  * "completed").
  *
- * If is_recurring is true but the frequency text isn't recognizable, this
- * falls back to the ordinary close-it-out behavior — silently guessing at
- * a cadence would be worse than just completing it normally.
+ * "Hourly" is a deliberate special case, handled here rather than through
+ * computeNextDueDate: due_date is a day (not a time), so there's no
+ * sensible per-hour interval to advance it by, and a task genuinely due
+ * hourly can be ticked complete many times in the same day — each tick
+ * should just reset progress and stay due TODAY, not jump to tomorrow.
+ * due_date only ever moves forward for an Hourly task via the separate
+ * close-of-business rollover cron (src/app/api/task-manager/cron/
+ * hourly-rollover/route.ts), which runs once daily and isn't triggered by
+ * completion at all.
+ *
+ * If is_recurring is true but the frequency text isn't recognizable (and
+ * isn't "Hourly"), this falls back to the ordinary close-it-out behavior —
+ * silently guessing at a cadence would be worse than just completing it
+ * normally.
  */
 async function performTaskCompletion(existing: any, performedBy: RequestUser) {
-  const nextDueDate =
-    existing.is_recurring && existing.due_date ? computeNextDueDate(existing.due_date, existing.frequency) : null;
+  const isHourly = existing.is_recurring && !!existing.due_date && (existing.frequency ?? "").trim().toLowerCase() === "hourly";
+  const nextDueDate = isHourly
+    ? existing.due_date
+    : existing.is_recurring && existing.due_date
+      ? computeNextDueDate(existing.due_date, existing.frequency)
+      : null;
 
   if (nextDueDate) {
     await supabaseAdmin.from("tm_task_completions").insert([

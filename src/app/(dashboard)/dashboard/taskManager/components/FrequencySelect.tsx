@@ -1,12 +1,14 @@
 "use client";
 
 // Fixed list instead of free text — keeps every recurring task's frequency
-// as a value taskRecurrence.ts actually recognizes (see parseFrequencyInterval
-// there), rather than something a typo or unusual phrasing turns into a task
-// that silently never auto-renews. "Hourly" is included since it's a value
-// Sheila wants selectable, but note it's not a recognized cadence there
-// today — due_date is a day-level field, so an hourly task won't auto-renew
-// like the others until that's addressed separately.
+// as a value the app actually knows how to handle, rather than something a
+// typo or unusual phrasing turns into a task that silently never auto-
+// renews. Every option here recurs on completion; "Hourly" works
+// differently from the rest (due_date is a day, not a time) — completing it
+// resets progress but leaves due_date on today, and due_date only ever
+// moves forward via the separate close-of-business rollover cron (see
+// src/lib/taskHourlyRollover.ts and taskManagerData.ts's
+// performTaskCompletion), not through taskRecurrence.ts like the others.
 export const FREQUENCY_OPTIONS = [
   "Hourly",
   "Daily",
