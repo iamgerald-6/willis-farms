@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Archive, X, Check, History, CheckSquare, Square } from "lucide-react";
+import { Pencil, Archive, X, Check, History, CheckSquare, Square, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMTask, TMProject, TaskType } from "@/types/taskManager";
@@ -9,6 +9,7 @@ import { User } from "@/types";
 import { STATUS_STYLES } from "../statusStyles";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
+import SubtaskPanel from "./SubtaskPanel";
 
 export default function TaskRow({
   task,
@@ -57,6 +58,7 @@ export default function TaskRow({
   const [editingProgress, setEditingProgress] = useState(false);
   const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -430,12 +432,16 @@ export default function TaskRow({
     </>
   );
 
+  // Subtasks (see SubtaskPanel) take over progress entirely once a task has
+  // any — ticking a leaf subtask is what moves this bar now, so the manual
+  // click-to-drag slider is disabled rather than removed, keeping the same
+  // visual in both modes.
   const progressBlock = isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) ? (
     <button
-      onClick={() => canEditProgress && setEditingProgress(true)}
-      disabled={!canEditProgress}
-      className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${canEditProgress ? "cursor-pointer" : "cursor-default"}`}
-      title={canEditProgress ? "Update progress" : undefined}
+      onClick={() => !task.has_subtasks && canEditProgress && setEditingProgress(true)}
+      disabled={task.has_subtasks || !canEditProgress}
+      className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${!task.has_subtasks && canEditProgress ? "cursor-pointer" : "cursor-default"}`}
+      title={task.has_subtasks ? "Driven by subtasks below" : canEditProgress ? "Update progress" : undefined}
     >
       <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
         <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
@@ -457,6 +463,19 @@ export default function TaskRow({
         </div>
       </div>
     </div>
+  ) : null;
+
+  // Shown for any task that already has subtasks (so anyone with progress
+  // access can open and tick them), or for Senior Management on any active
+  // task without them yet (so they have a way to start breaking one down).
+  const subtasksToggle = isLifecycleActive && (task.has_subtasks || isSeniorManagement) ? (
+    <button
+      onClick={() => setSubtasksOpen((v) => !v)}
+      className="flex items-center gap-1 mt-1 text-[10px] font-medium text-gray-400 hover:text-red-600"
+    >
+      {subtasksOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      Subtasks
+    </button>
   ) : null;
 
   const completeToggle = editMode && isLifecycleActive ? (
@@ -499,36 +518,50 @@ export default function TaskRow({
                 {status}
               </span>
               {progressBlock}
+              {subtasksToggle}
             </div>
+            {subtasksOpen && (
+              <div className="mt-2">
+                <SubtaskPanel task={task} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+              </div>
+            )}
             <div className="flex items-center gap-1.5 mt-3">{actionButtons}</div>
           </div>
         </div>
       </div>
 
       {/* Desktop row */}
-      <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
-      <div className="flex justify-center">
-        {completeToggle}
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-gray-900">{task.title}</p>
-        {metaLine && (
-          <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>
+      <div className="hidden md:block border-b border-gray-100 last:border-0">
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 hover:bg-gray-50/60 group">
+          <div className="flex justify-center">
+            {completeToggle}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{task.title}</p>
+            {metaLine && (
+              <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>
+            )}
+          </div>
+          <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
+          <p className="text-sm text-gray-500">{startLabel}</p>
+          <p className="text-sm text-gray-500">{dueLabel}</p>
+          <div>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+              {status}
+            </span>
+            {progressBlock}
+            {subtasksToggle}
+          </div>
+          <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
+            {actionButtons}
+          </div>
+        </div>
+        {subtasksOpen && (
+          <div className="px-3 pb-2.5 pl-[calc(2.5rem+0.75rem)]">
+            <SubtaskPanel task={task} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+          </div>
         )}
       </div>
-      <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
-      <p className="text-sm text-gray-500">{startLabel}</p>
-      <p className="text-sm text-gray-500">{dueLabel}</p>
-      <div>
-        <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
-          {status}
-        </span>
-        {progressBlock}
-      </div>
-      <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
-        {actionButtons}
-      </div>
-    </div>
     </>
   );
 }

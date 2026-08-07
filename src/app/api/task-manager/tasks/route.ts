@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { enrichTasks, fetchUserNames, fetchProjectNames, writeAuditLog } from "@/lib/taskManagerData";
+import { enrichTasks, fetchUserNames, fetchProjectNames, fetchTaskIdsWithSubtasks, writeAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
 // project_id is optional — omit it to get tasks across every active project
@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
     // Only look up project names when spanning multiple projects — a
     // single-project request already knows which project it's looking at.
     const projectNames = projectId ? undefined : await fetchProjectNames((tasks ?? []).map((t) => t.project_id));
+    const subtaskTaskIds = await fetchTaskIdsWithSubtasks((tasks ?? []).map((t) => t.id));
 
-    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames) });
+    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames, subtaskTaskIds) });
   } catch (err: any) {
     console.error("[GET /api/task-manager/tasks]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });

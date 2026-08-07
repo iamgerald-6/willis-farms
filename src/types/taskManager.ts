@@ -65,6 +65,37 @@ export interface TMTask {
   owner_name?: string | null;
   display_status?: DisplayStatus;
   project_name?: string | null;
+  // Whether this task has any subtasks defined. When true, progress_percent
+  // is a computed rollup (see subtaskProgress.ts) driven by ticking leaf
+  // subtasks, not the manual slider — only accurate on responses from
+  // GET /api/task-manager/tasks (the list view); other routes that return a
+  // single task (progress/lifecycle updates) don't compute it and default
+  // to false, since the client always refetches the list afterward anyway.
+  has_subtasks?: boolean;
+}
+
+/**
+ * A node in a task's subtask tree, up to 4 levels deep (depth 1 = a direct
+ * child of the task, depth 4 = the deepest allowed level). Only leaf nodes
+ * (no children) are ever ticked directly via is_done — a parent's own
+ * completion is always computed client/server-side as the weighted sum of
+ * its children (see src/lib/subtaskProgress.ts), never stored.
+ *
+ * `children` is populated when the API returns the tree (GET .../subtasks);
+ * it's absent on the raw row shape used for create/update payloads.
+ */
+export interface TMSubtask {
+  id: string;
+  task_id: string;
+  parent_id: string | null;
+  title: string;
+  weight_percent: number;
+  is_done: boolean;
+  depth: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
+  children?: TMSubtask[];
 }
 
 export interface TMAuditLogEntry {

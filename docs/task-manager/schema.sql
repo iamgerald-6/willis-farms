@@ -88,6 +88,30 @@ create table if not exists tm_task_audit_log (
 create index if not exists tm_audit_task_id_idx on tm_task_audit_log(task_id);
 create index if not exists tm_audit_project_id_idx on tm_task_audit_log(project_id);
 
+-- ── Subtasks ─────────────────────────────────────────────────────────────
+-- Nested up to 4 levels deep; each sibling group's weight_percent values
+-- must sum to exactly 100 (enforced in the API — see docs/task-manager/
+-- subtasks.sql for the full rationale). Only leaf nodes are directly
+-- tickable; a parent's completion is the weighted sum of its children,
+-- rolled up onto the task's own progress_percent.
+create table if not exists tm_subtasks (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tm_tasks(id) on delete cascade,
+  parent_id uuid references tm_subtasks(id) on delete cascade,
+
+  title text not null,
+  weight_percent int not null check (weight_percent between 0 and 100),
+  is_done boolean not null default false,
+  depth int not null check (depth between 1 and 4),
+  position int not null default 0,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists tm_subtasks_task_id_idx on tm_subtasks(task_id);
+create index if not exists tm_subtasks_parent_id_idx on tm_subtasks(parent_id);
+
 -- ── AI document-extraction jobs ─────────────────────────────────────────
 -- A staging area: Claude proposes tasks from an uploaded document, a Senior
 -- Management user reviews/edits them in the UI, then they're saved as real

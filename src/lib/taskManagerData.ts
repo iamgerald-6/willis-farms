@@ -32,18 +32,29 @@ export async function fetchProjectNames(projectIds: string[]): Promise<Record<st
   return map;
 }
 
-/** Attaches owner_name + the computed display_status (and, optionally, project_name) to raw task rows. */
+/** Attaches owner_name + the computed display_status (and, optionally, project_name / has_subtasks) to raw task rows. */
 export function enrichTasks(
   tasks: any[],
   userNames: Record<string, string>,
   projectNames?: Record<string, string>,
+  subtaskTaskIds?: Set<string>,
 ): TMTask[] {
   return tasks.map((t) => ({
     ...t,
     owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
     display_status: computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent),
     ...(projectNames ? { project_name: projectNames[t.project_id] ?? null } : {}),
+    has_subtasks: subtaskTaskIds ? subtaskTaskIds.has(t.id) : false,
   }));
+}
+
+/** Which of the given task ids have at least one subtask row (any depth). Used to decide whether a task's progress is subtask-driven. */
+export async function fetchTaskIdsWithSubtasks(taskIds: string[]): Promise<Set<string>> {
+  const uniqueIds = [...new Set(taskIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Set();
+
+  const { data } = await supabaseAdmin.from("tm_subtasks").select("task_id").in("task_id", uniqueIds);
+  return new Set((data ?? []).map((r) => r.task_id));
 }
 
 const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
