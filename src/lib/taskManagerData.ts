@@ -57,6 +57,12 @@ export async function fetchTaskIdsWithSubtasks(taskIds: string[]): Promise<Set<s
   return new Set((data ?? []).map((r) => r.task_id));
 }
 
+/** "YYYY-MM-DD" + N days (N may be negative), in UTC — same approach as taskRecurrence.ts's private addDaysUTC. */
+function shiftDateByDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
   archived: "archived",
   deleted: "deleted",
@@ -77,7 +83,10 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
  * row cycles instead: due_date jumps to the next occurrence, progress
  * resets to 0, lifecycle_status stays active. This cycle's completion is
  * preserved in tm_task_completions (so reporting doesn't lose it just
- * because the task itself didn't stay "completed").
+ * because the task itself didn't stay "completed"). start_date, if the task
+ * has one, shifts forward by the same number of days due_date just moved —
+ * keeping the same start-to-due gap each cycle — rather than staying
+ * anchored to the first-ever occurrence.
  *
  * If is_recurring is true but the frequency text isn't recognizable, this
  * falls back to the ordinary close-it-out behavior — silently guessing at
@@ -98,9 +107,18 @@ async function performTaskCompletion(existing: any, performedBy: RequestUser) {
       },
     ]);
 
+    let nextStartDate = existing.start_date ?? null;
+    if (existing.start_date) {
+      const deltaDays = Math.round(
+        (new Date(`${nextDueDate}T00:00:00Z`).getTime() - new Date(`${existing.due_date}T00:00:00Z`).getTime()) / 86_400_000,
+      );
+      nextStartDate = shiftDateByDays(existing.start_date, deltaDays);
+    }
+
     return {
       updates: {
         due_date: nextDueDate,
+        start_date: nextStartDate,
         progress_percent: 0,
         lifecycle_status: "active",
         completed_at: null,
@@ -172,12 +190,12 @@ export async function applyLifecycleChange(
     task_id: updated.id,
     project_id: updated.project_id,
     action,
-    changed_fields: recurred ? ["due_date", "progress_percent"] : ["lifecycle_status"],
+    changed_fields: recurred ? ["due_date", "start_date", "progress_percent"] : ["lifecycle_status"],
     previous_values: recurred
-      ? { due_date: existing.due_date, progress_percent: existing.progress_percent }
+      ? { due_date: existing.due_date, start_date: existing.start_date, progress_percent: existing.progress_percent }
       : { lifecycle_status: existing.lifecycle_status },
     new_values: recurred
-      ? { due_date: updated.due_date, progress_percent: updated.progress_percent }
+      ? { due_date: updated.due_date, start_date: updated.start_date, progress_percent: updated.progress_percent }
       : { lifecycle_status: updated.lifecycle_status },
     performedBy,
   });
@@ -240,9 +258,9 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
     task_id: updated.id,
     project_id: updated.project_id,
     action: autoCompleting ? "completed" : "edited",
-    changed_fields: autoCompleting ? (recurred ? ["due_date", "progress_percent"] : ["progress_percent", "lifecycle_status"]) : ["progress_percent"],
-    previous_values: { progress_percent: existing.progress_percent, ...(recurred ? { due_date: existing.due_date } : {}) },
-    new_values: { progress_percent: updated.progress_percent, ...(recurred ? { due_date: updated.due_date } : {}) },
+    changed_fields: autoCompleting ? (recurred ? ["due_date", "start_date", "progress_percent"] : ["progress_percent", "lifecycle_status"]) : ["progress_percent"],
+    previous_values: { progress_percent: existing.progress_percent, ...(recurred ? { due_date: existing.due_date, start_date: existing.start_date } : {}) },
+    new_values: { progress_percent: updated.progress_percent, ...(recurred ? { due_date: updated.due_date, start_date: updated.start_date } : {}) },
     performedBy,
   });
 
