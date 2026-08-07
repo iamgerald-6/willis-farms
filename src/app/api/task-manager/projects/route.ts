@@ -10,7 +10,8 @@ import { computeDisplayStatus } from "@/lib/taskAccessControl";
 // users via the Users page. Everyone else only sees a project if they own
 // at least one non-deleted task inside it — per Sheila's instruction that
 // employees shouldn't see a tab they have no tasks under, not just a
-// grayed-out one.
+// grayed-out one — or if they created the project themselves (so a brand
+// new, still-empty project isn't invisible to the person who just made it).
 export async function GET(req: NextRequest) {
   try {
     // Archived projects are only ever shown in the "Manage Projects" modal
@@ -66,8 +67,15 @@ export async function GET(req: NextRequest) {
     // Manage Projects is an administrative surface (Senior Management
     // only, enforced above) — it needs to list every project regardless of
     // task ownership, not just the ones the caller happens to own tasks in.
+    //
+    // A project the caller just created has no tasks in it yet, so it can
+    // never appear in visibleProjectIds (that set is built from task
+    // ownership) — without created_by here, creating a project made it
+    // invisible to its own creator until they added a task or were granted
+    // tm_can_view_all_tasks. The creator should always see their own
+    // project.
     const result = (projects ?? [])
-      .filter((p) => includeArchived || canSeeAll || visibleProjectIds.has(p.id))
+      .filter((p) => includeArchived || canSeeAll || p.created_by === user.id || visibleProjectIds.has(p.id))
       .map((p) => ({
         ...p,
         task_count: statsByProject[p.id]?.total ?? 0,
