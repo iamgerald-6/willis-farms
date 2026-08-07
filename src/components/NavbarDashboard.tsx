@@ -74,7 +74,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
 
   const pageInfo = PAGE_TITLES[pathname ?? ""] ?? {
     title: "Dashboard",
-    subtitle: "WillsFarm Management Portal",
+    subtitle: "Wills Farms Management Portal",
   };
 
   const { data: session } = useQuery({

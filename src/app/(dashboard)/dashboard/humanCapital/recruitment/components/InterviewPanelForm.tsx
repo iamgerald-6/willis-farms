@@ -13,6 +13,7 @@ import {
   type InterviewFormData,
 } from "@/lib/careers/types";
 import { Loader2, Save, X } from "lucide-react";
+import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 import { toast } from "sonner";
 import PanelSetupStep from "./interview/PanelSetupStep";
 import Stage1ScreeningQuestions from "./interview/Stage1ScreeningQuestions";
@@ -176,9 +177,7 @@ export default function InterviewPanelForm({
 
         <div className="overflow-y-auto flex-1 p-6">
           {isLoading || !guide ? (
-            <div className="py-20 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-            </div>
+            <ListRowsSkeleton rows={4} />
           ) : activeStep === "panel" ? (
             <PanelSetupStep
               guide={guide}

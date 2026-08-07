@@ -8,6 +8,7 @@ import NavbarDashboard from "@/components/NavbarDashboard";
 import QueryProvider from "@/components/QueryProvider";
 import ReduxProvider from "@/components/Provider";
 import RouteAccessGuard from "@/components/RouteAccessGuard";
+import { AuthLayoutSkeleton } from "@/components/skeletons/PageSkeletons";
 import { Toaster } from "sonner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -34,9 +35,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         {!authChecked ? (
-          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#C62828]" />
-          </div>
+          <AuthLayoutSkeleton />
         ) : (
           <ReduxProvider>
             <QueryProvider>

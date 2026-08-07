@@ -28,6 +28,7 @@ import {
 import { Quarter, isSupervisorGrade } from "@/lib/appraisal/sections";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
 import { DeadlineBanner } from "./DeadlineBanner";
+import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 
 export interface Appraisal {
   id: string;
@@ -966,12 +967,7 @@ export default function AppraisalLandingPage({
         ))}
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-24 text-gray-400">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          <span className="text-xs sm:text-sm">Loading appraisals...</span>
-        </div>
-      )}
+      {isLoading && <ListRowsSkeleton rows={6} />}
 
       {isError && (
         <div className="text-center py-24 text-red-500 text-xs sm:text-sm">

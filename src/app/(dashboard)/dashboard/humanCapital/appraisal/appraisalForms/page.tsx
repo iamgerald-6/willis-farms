@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
@@ -103,11 +104,7 @@ function AppraisalFormPageContent() {
 export default function AppraisalFormPage() {
   return (
     <Suspense
-      fallback={
-        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
-      }
+      fallback={<FormPageSkeleton />}
     >
       <AppraisalFormPageContent />
     </Suspense>

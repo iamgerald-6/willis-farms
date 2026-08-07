@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { TMProject, TMTask, DisplayStatus } from "@/types/taskManager";
 import { STATUS_STYLES } from "../statusStyles";
+import { SummaryCardsSkeleton } from "@/components/skeletons/PageSkeletons";
 
 const STATUS_ORDER: DisplayStatus[] = ["Overdue", "In Progress", "Not Started", "Compliant / Ongoing"];
 
@@ -25,7 +26,7 @@ export default function SummaryView({ project }: { project: TMProject }) {
     .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
     .slice(0, 5);
 
-  if (isLoading) return <p className="text-sm text-gray-400">Loading…</p>;
+  if (isLoading) return <SummaryCardsSkeleton />;
 
   return (
     <div>
@@ -51,12 +52,12 @@ export default function SummaryView({ project }: { project: TMProject }) {
           {upcoming.map((t) => {
             const style = STATUS_STYLES[t.display_status ?? "Not Started"];
             return (
-              <div key={t.id} className="flex items-center justify-between text-sm">
-                <div>
+              <div key={t.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm py-1">
+                <div className="min-w-0">
                   <p className="font-medium text-gray-800">{t.title}</p>
                   <p className="text-xs text-gray-400">{t.owner_name ?? "Unassigned"}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                   <span className="text-xs text-gray-500">
                     {new Date(t.due_date!).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                   </span>

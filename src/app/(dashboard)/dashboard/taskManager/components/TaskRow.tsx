@@ -177,7 +177,82 @@ export default function TaskRow({
 
   if (editing) {
     return (
-      <div className="bg-red-50/60 rounded-lg px-3 py-2.5 space-y-2">
+      <div className="bg-red-50/60 rounded-lg px-3 py-2.5 space-y-3 border-b border-gray-100 md:border-0">
+        {/* Mobile edit form */}
+        <div className="md:hidden space-y-3">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm font-medium focus:outline-none"
+            autoFocus
+          />
+          <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+          />
+          <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+            {status}
+          </span>
+          {projects && projects.length > 1 && (
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Project</label>
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="text-[10px] text-gray-400 block mb-0.5">Move to</label>
+            <select
+              value={taskType === "monitoring" ? "monitoring" : "register"}
+              onChange={(e) =>
+                setTaskType(e.target.value === "monitoring" ? "monitoring" : task.task_type !== "monitoring" ? task.task_type : "general")
+              }
+              className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
+            >
+              <option value="register">Obligation Register</option>
+              <option value="monitoring">Monitoring Schedule</option>
+            </select>
+          </div>
+          {taskType === "monitoring" && (
+            <div className="space-y-2">
+              <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Indicator" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              <input value={methodProvider} onChange={(e) => setMethodProvider(e.target.value)} placeholder="Method / provider" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+            </div>
+          )}
+          {taskType !== "monitoring" && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} className="accent-red-600 w-3.5 h-3.5 cursor-pointer" />
+                Recurring
+              </label>
+              {isRecurring && (
+                <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-1 bg-red-600 text-white text-xs font-semibold px-3 py-2 rounded-md hover:bg-red-700 disabled:opacity-60">
+              <Check className="w-3.5 h-3.5" /> {saving ? "Saving…" : "Save"}
+            </button>
+            <button onClick={() => { resetDraft(); setEditing(false); }} disabled={saving} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop edit form */}
+        <div className="hidden md:block space-y-2">
         <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
           <div />
           <input
@@ -303,115 +378,136 @@ export default function TaskRow({
             <div />
           </div>
         )}
+        </div>
       </div>
     );
   }
 
+  const metaLine = (variant === "monitoring" ? [task.indicator, task.frequency, task.method_provider] : [task.frequency]).filter(Boolean).join(" · ");
+  const dueLabel = task.due_date
+    ? new Date(task.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "—";
+
+  const actionButtons = (
+    <>
+      <button onClick={() => onOpenAudit(task)} title="History" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400">
+        <History className="w-3.5 h-3.5" />
+      </button>
+      {editMode && isLifecycleActive && (
+        <>
+          <button onClick={() => setEditing(true)} title="Edit" className="p-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={handleArchive} title="Archive" className="p-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={handleDelete} title="Delete" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </>
+      )}
+      {editMode && !isLifecycleActive && (
+        <button onClick={handleRestore} className="text-xs font-semibold text-red-600 hover:text-red-700 px-2">
+          Restore
+        </button>
+      )}
+    </>
+  );
+
+  const progressBlock = isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) ? (
+    <button
+      onClick={() => canEditProgress && setEditingProgress(true)}
+      disabled={!canEditProgress}
+      className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${canEditProgress ? "cursor-pointer" : "cursor-default"}`}
+      title={canEditProgress ? "Update progress" : undefined}
+    >
+      <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+        <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
+      </span>
+      <span className="text-[10px] text-gray-400">{task.progress_percent}%</span>
+    </button>
+  ) : isLifecycleActive && editingProgress ? (
+    <div className="mt-1.5 max-w-[150px]">
+      <input type="range" min={0} max={100} step={5} value={progressDraft} onChange={(e) => setProgressDraft(Number(e.target.value))} className="w-full" autoFocus />
+      <div className="flex items-center justify-between mt-0.5">
+        <span className="text-[10px] text-gray-500">{progressDraft}%</span>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSaveProgress} disabled={savingProgress} className="text-[10px] font-semibold text-red-600 hover:text-red-700">
+            {savingProgress ? "Saving…" : "Save"}
+          </button>
+          <button onClick={() => { setProgressDraft(task.progress_percent ?? 0); setEditingProgress(false); }} disabled={savingProgress} className="text-[10px] text-gray-400 hover:text-gray-600">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const completeToggle = editMode && isLifecycleActive ? (
+    <button onClick={handleToggleComplete} title="Mark complete" className="text-gray-300 hover:text-green-600">
+      <Square className="w-4 h-4" />
+    </button>
+  ) : task.lifecycle_status === "completed" ? (
+    <button onClick={handleToggleComplete} title="Mark active again" className="text-green-600">
+      <CheckSquare className="w-4 h-4" />
+    </button>
+  ) : (
+    <span className="w-4 h-4 block" />
+  );
+
   return (
-    <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
+    <>
+      {/* Mobile card */}
+      <div className="md:hidden px-3 py-3 border-b border-gray-100 last:border-0 bg-white">
+        <div className="flex items-start gap-2">
+          <div className="pt-0.5 shrink-0">{completeToggle}</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900">{task.title}</p>
+            {metaLine && <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs">
+              <div>
+                <span className="text-gray-400">Owner</span>
+                <p className="text-gray-700 font-medium">{task.owner_name ?? "Unassigned"}</p>
+              </div>
+              <div>
+                <span className="text-gray-400">{variant === "monitoring" ? "Next Due" : "Due Date"}</span>
+                <p className="text-gray-700 font-medium">{dueLabel}</p>
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+                {status}
+              </span>
+              {progressBlock}
+            </div>
+            <div className="flex items-center gap-1.5 mt-3">{actionButtons}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop row */}
+      <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
       <div className="flex justify-center">
-        {editMode && isLifecycleActive ? (
-          <button onClick={handleToggleComplete} title="Mark complete" className="text-gray-300 hover:text-green-600">
-            <Square className="w-4 h-4" />
-          </button>
-        ) : task.lifecycle_status === "completed" ? (
-          <button onClick={handleToggleComplete} title="Mark active again" className="text-green-600">
-            <CheckSquare className="w-4 h-4" />
-          </button>
-        ) : (
-          <span className="w-4 h-4 block" />
-        )}
+        {completeToggle}
       </div>
       <div>
         <p className="text-sm font-semibold text-gray-900">{task.title}</p>
-        {/* Indicator/method-provider are monitoring-specific concepts (what's
-            being measured, and by what lab/method) — meaningless for an
-            Obligation Register item, so only show them on the Monitoring
-            Schedule. Frequency still shows either way: it's genuinely
-            relevant for a recurring register task too (e.g. "Annual"). */}
-        {(variant === "monitoring" ? task.indicator || task.frequency || task.method_provider : task.frequency) && (
-          <p className="text-xs text-gray-400 mt-0.5">
-            {(variant === "monitoring" ? [task.indicator, task.frequency, task.method_provider] : [task.frequency]).filter(Boolean).join(" · ")}
-          </p>
+        {metaLine && (
+          <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>
         )}
       </div>
       <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
-      <p className="text-sm text-gray-500">
-        {task.due_date ? new Date(task.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-      </p>
+      <p className="text-sm text-gray-500">{dueLabel}</p>
       <div>
         <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
           {status}
         </span>
-        {isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) && (
-          <button
-            onClick={() => canEditProgress && setEditingProgress(true)}
-            disabled={!canEditProgress}
-            className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${canEditProgress ? "cursor-pointer" : "cursor-default"}`}
-            title={canEditProgress ? "Update progress" : undefined}
-          >
-            <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-              <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
-            </span>
-            <span className="text-[10px] text-gray-400">{task.progress_percent}%</span>
-          </button>
-        )}
-        {isLifecycleActive && editingProgress && (
-          <div className="mt-1.5 max-w-[150px]">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={progressDraft}
-              onChange={(e) => setProgressDraft(Number(e.target.value))}
-              className="w-full"
-              autoFocus
-            />
-            <div className="flex items-center justify-between mt-0.5">
-              <span className="text-[10px] text-gray-500">{progressDraft}%</span>
-              <div className="flex items-center gap-2">
-                <button onClick={handleSaveProgress} disabled={savingProgress} className="text-[10px] font-semibold text-red-600 hover:text-red-700">
-                  {savingProgress ? "Saving…" : "Save"}
-                </button>
-                <button
-                  onClick={() => {
-                    setProgressDraft(task.progress_percent ?? 0);
-                    setEditingProgress(false);
-                  }}
-                  disabled={savingProgress}
-                  className="text-[10px] text-gray-400 hover:text-gray-600"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {progressBlock}
       </div>
       <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
-        <button onClick={() => onOpenAudit(task)} title="History" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400">
-          <History className="w-3.5 h-3.5" />
-        </button>
-        {editMode && isLifecycleActive && (
-          <>
-            <button onClick={() => setEditing(true)} title="Edit" className="p-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={handleArchive} title="Archive" className="p-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
-              <Archive className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={handleDelete} title="Delete" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
-        {editMode && !isLifecycleActive && (
-          <button onClick={handleRestore} className="text-xs font-semibold text-red-600 hover:text-red-700 px-2">
-            Restore
-          </button>
-        )}
+        {actionButtons}
       </div>
     </div>
+    </>
   );
 }

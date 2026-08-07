@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
+import api from "@/lib/api";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -47,6 +48,17 @@ function LoginForm() {
     if (error) {
       alert(error.message);
       return;
+    }
+
+    try {
+      const res = await api.get("/me");
+      if (res.data?.is_disabled) {
+        await supabase.auth.signOut();
+        alert("Your account has been disabled. Contact an administrator.");
+        return;
+      }
+    } catch {
+      // If /me fails, RouteAccessGuard will still enforce on dashboard
     }
 
     router.push(redirectTo);

@@ -25,6 +25,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
 import ConfirmDeleteDialog from "./components/deletModal";
 import UploadManualModal from "./components/uploadModal";
+import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -602,9 +603,7 @@ export default function PoliciesPage() {
       {/* ── Content (Fills vertical viewport evenly to block empty spaces) ── */}
       <div className="flex-1 flex flex-col justify-start">
         {isLoading ? (
-          <div className="flex items-center justify-center py-24 flex-1">
-            <Loader2 className="w-6 h-6 text-red-600 animate-spin" />
-          </div>
+          <CardGridSkeleton count={6} />
         ) : isAdmin && viewMode === "table" ? (
           <AdminTableView
             manuals={filtered}

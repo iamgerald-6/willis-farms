@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { ShieldAlert, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 
 interface AppraisalSummary {
   id: string;
@@ -108,8 +109,9 @@ function SubmitJustificationPageContent() {
         </p>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-10 text-gray-400">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
+          <div className="space-y-3 py-4">
+            <div className="h-16 bg-gray-100 animate-pulse rounded-xl" />
+            <div className="h-32 bg-gray-100 animate-pulse rounded-xl" />
           </div>
         ) : appraisal ? (
           <div className="bg-gray-50 rounded-xl border border-gray-100 p-4 mb-5 text-sm">
@@ -165,11 +167,7 @@ function SubmitJustificationPageContent() {
 export default function SubmitJustificationPage() {
   return (
     <Suspense
-      fallback={
-        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
-      }
+      fallback={<FormPageSkeleton />}
     >
       <SubmitJustificationPageContent />
     </Suspense>

@@ -26,6 +26,8 @@ export interface User {
   page_permissions?: string[];
   access_updated_at?: string | null;
   access_updated_by?: string | null;
+  /** When true, user cannot sign in or use the dashboard */
+  is_disabled?: boolean;
   created_at?: string;
   // Task Manager: can this user see every task/project, or only their own?
   // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to

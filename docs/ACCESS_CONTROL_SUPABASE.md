@@ -32,6 +32,9 @@ SET
   access_tier = COALESCE(access_tier, 'standard'),
   page_permissions = COALESCE(page_permissions, '[]'::jsonb)
 WHERE access_tier IS NULL OR page_permissions IS NULL;
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS is_disabled boolean NOT NULL DEFAULT false;
 ```
 
 ---
@@ -57,9 +60,9 @@ Super admin rows cannot be changed from Access Control.
 
 **UI:** Profile dropdown → **Access Control** (not on Users page).
 
-**Route:** `/dashboard/access-control`
+**Route:** `/dashboard/access-control` (listing) · `/dashboard/access-control/[userId]` (manage user)
 
-**API:** `PATCH /api/access-control`
+**API:** `PATCH /api/access-control` · `GET /api/me` (current user status)
 
 ---
 
@@ -68,11 +71,20 @@ Super admin rows cannot be changed from Access Control.
 Defined in `src/lib/pagePermissions.ts`:
 
 - `dashboard`, `users`, `notifications`
-- `hc:leave`, `hc:appraisal`, `hc:justifications`, `hc:skillLog`, `hc:schedule`, `hc:promotion`, `hc:recruitment`
+- `hc:leave`, `hc:appraisal`, `hc:justifications`, `hc:skillLog`, `hc:promotion`, `hc:recruitment`
+- `tm:tasks`, `tm:calendar` (includes former Schedule Planner: off days, leave on calendar)
 - `policies`, `sop:view`, `sop:add`
 
 ---
 
 ## 5) User creation unchanged
 
-Create User still inserts without `access_tier` / `page_permissions` — DB defaults apply (`standard`, `[]`).
+Create User still inserts without `access_tier` / `page_permissions` — DB defaults apply (`standard`, `[]`, `is_disabled = false`).
+
+---
+
+## 6) Disable account
+
+- Column: `users.is_disabled` (boolean, default `false`)
+- Managed from **Access Control → Manage User**
+- Disabled users are banned in Supabase Auth and blocked at login + dashboard routes

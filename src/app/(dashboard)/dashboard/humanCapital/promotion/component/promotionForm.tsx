@@ -562,8 +562,10 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
             />
           </div>
           {isLoading && (
-            <div className="flex justify-center py-8 text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
+            <div className="space-y-2 py-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-12 bg-gray-100 animate-pulse rounded-xl" />
+              ))}
             </div>
           )}
           {!isLoading && filtered.length === 0 && (

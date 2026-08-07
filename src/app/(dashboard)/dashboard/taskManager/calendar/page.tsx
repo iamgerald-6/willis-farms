@@ -1,19 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Clock, Users, CalendarDays, ListChecks } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, Clock, Users, CalendarDays, ListChecks, Calendar } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { TMTask } from "@/types/taskManager";
 import { STATUS_STYLES } from "../statusStyles";
+import OffDaySelector from "../components/OffDaySelector";
+import { CalendarPageSkeleton } from "@/components/skeletons/PageSkeletons";
 
-// A company-wide calendar — same event types Human Capital's Schedule
-// Planner shows (recurring off days, leave, appraisal review dates), plus
-// task due dates from Task Manager, all on one read-only grid. Deliberately
-// NOT a replacement for Schedule Planner: the off-day picker and the "my
-// leave applications" list are self-service tools that stay there — this
-// page is purely for seeing everything at a glance across the company.
+// Company-wide calendar: off days, leave, appraisal reviews, and task deadlines.
+// Includes self-service off-day selection (formerly Schedule Planner).
 
 // ─── Types ──────────────────────────────────────────────────────────────
 interface Leave {
@@ -271,6 +269,7 @@ function DayDetailPanel({ date, events, onClose }: { date: string; events: DayEv
 
 // ─── Main Page ──────────────────────────────────────────────────────────
 export default function CalendarPage() {
+  const queryClient = useQueryClient();
   const today = new Date().toISOString().split("T")[0];
   const [viewMode, setViewMode] = useState<"month" | "week">("month");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -352,6 +351,53 @@ export default function CalendarPage() {
     });
     return activeByDow.size;
   }, [userOffDayMap, userId, today]);
+
+  const { myOffDays, myCurrentRows, myHistory } = useMemo(() => {
+    const userRows = userOffDayMap.get(userId ?? "") ?? [];
+    const activeByDow = new Map<number, OffDay>();
+    userRows.forEach((row) => {
+      if (!activeByDow.has(row.day_of_week) && row.effective_from <= today) {
+        activeByDow.set(row.day_of_week, row);
+      }
+    });
+    return {
+      myOffDays: Array.from(activeByDow.keys()),
+      myCurrentRows: Array.from(activeByDow.values()),
+      myHistory: userRows,
+    };
+  }, [userOffDayMap, userId, today]);
+
+  const { mutate: saveOffDay, isPending: savingOffDays } = useMutation({
+    mutationFn: async ({ day, add }: { day: number; add: boolean }) => {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        throw new Error("You must be logged in to modify off days.");
+      }
+
+      if (add) {
+        await api.post("/offday/create_offDay", {
+          user_id: user.id,
+          day_of_week: day,
+        });
+      } else {
+        await api.delete(`/offday/${day}`, {
+          data: { user_id: user.id },
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["off_days_all"] });
+    },
+  });
+
+  const handleToggleOffDay = (day: number) => {
+    const isOn = myOffDays.includes(day);
+    saveOffDay({ day, add: !isOn });
+  };
 
   // Colors are assigned per project in the order projects first appear —
   // stable enough for a session, and needs no separate projects fetch since
@@ -465,11 +511,7 @@ export default function CalendarPage() {
   const myUpcomingTasks = tasks.filter((t) => t.due_date && t.due_date >= today);
 
   if (tasksLoading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse text-sm text-gray-400">Loading Calendar…</div>
-      </div>
-    );
+    return <CalendarPageSkeleton />;
   }
 
   return (
@@ -479,7 +521,9 @@ export default function CalendarPage() {
         <div className="w-1 h-8 sm:h-10 rounded-full shrink-0" style={{ background: BRAND }} />
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Calendar</h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Off days, leave, appraisal reviews, and task deadlines — everything in one place.</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+            Off days, leave, appraisal reviews, and task deadlines — set your weekly off days and see everything in one place.
+          </p>
         </div>
       </div>
 
@@ -532,6 +576,17 @@ export default function CalendarPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ── Off day selector (from Schedule Planner) ── */}
+      <div className="mb-6">
+        <OffDaySelector
+          selectedDays={myOffDays}
+          onToggle={handleToggleOffDay}
+          saving={savingOffDays}
+          currentActiveRows={myCurrentRows}
+          allHistory={myHistory}
+        />
       </div>
 
       {/* ── Calendar ── */}
@@ -592,6 +647,55 @@ export default function CalendarPage() {
           <WeekView weekDates={weekDates} events={events} today={today} />
         )}
       </div>
+
+      {/* ── My leave applications (from Schedule Planner) ── */}
+      {myLeaves.length > 0 && (
+        <div className="mt-6 bg-white rounded-2xl border border-gray-200 p-4 sm:p-5">
+          <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Calendar className="w-4 h-4" style={{ color: BRAND }} />
+            My Leave Applications
+          </h3>
+          <div className="space-y-2">
+            {myLeaves.map((leave) => (
+              <div
+                key={leave.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100 gap-2"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {leave.leave_type}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {new Date(leave.start_date).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                    {" — "}
+                    {new Date(leave.end_date).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                    {" · "}
+                    {leave.total_days} days
+                  </p>
+                  {leave.reason && (
+                    <p className="text-xs text-gray-400 italic mt-0.5 break-words">
+                      &ldquo;{leave.reason}&rdquo;
+                    </p>
+                  )}
+                </div>
+                <span
+                  className={`text-xs px-3 py-1 rounded-full font-semibold border self-start sm:self-auto ${STATUS_COLORS[leave.status] ?? ""}`}
+                >
+                  {leave.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {selectedDay && <DayDetailPanel date={selectedDay.date} events={selectedDay.events} onClose={() => setSelectedDay(null)} />}
     </div>

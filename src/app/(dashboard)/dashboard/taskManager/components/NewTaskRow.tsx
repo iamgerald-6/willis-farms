@@ -71,7 +71,53 @@ export default function NewTaskRow({
   };
 
   return (
-    <div className="bg-red-50/40 rounded-lg border border-dashed border-red-200 px-3 py-2.5 space-y-2">
+    <div className="bg-red-50/40 rounded-lg border border-dashed border-red-200 px-3 py-2.5 space-y-3">
+      {/* Mobile */}
+      <div className="md:hidden space-y-2">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={variant === "monitoring" ? "New monitoring item…" : "New task name…"}
+          className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm font-medium focus:outline-none"
+          autoFocus
+        />
+        <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+        />
+        {variant === "monitoring" && (
+          <div className="space-y-2">
+            <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Indicator" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+            <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+            <input value={methodProvider} onChange={(e) => setMethodProvider(e.target.value)} placeholder="Method / provider" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+          </div>
+        )}
+        {variant === "register" && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} className="accent-red-600 w-3.5 h-3.5 cursor-pointer" />
+              Recurring
+            </label>
+            {isRecurring && (
+              <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <button onClick={handleCreate} disabled={saving} className="flex-1 flex items-center justify-center gap-1 bg-red-600 text-white text-xs font-semibold px-3 py-2 rounded-md hover:bg-red-700 disabled:opacity-60">
+            <Plus className="w-3.5 h-3.5" /> {saving ? "Adding…" : "Add"}
+          </button>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 p-2">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop */}
+      <div className="hidden md:block space-y-2">
       <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
         <div />
         <input
@@ -151,6 +197,7 @@ export default function NewTaskRow({
           <div />
         </div>
       )}
+      </div>
     </div>
   );
 }

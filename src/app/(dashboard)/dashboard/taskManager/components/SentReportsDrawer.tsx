@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { X, History } from "lucide-react";
 import api from "@/lib/api";
+import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMMonthlyReport } from "@/types/taskManager";
 
 // Same right-side drawer pattern as a task's "History" (see
@@ -35,7 +36,7 @@ export default function SentReportsDrawer({ onClose }: { onClose: () => void }) 
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {isLoading && <p className="text-sm text-gray-400">Loading…</p>}
+          {isLoading && <ModalListSkeleton rows={4} />}
           {!isLoading && (data?.reports.length ?? 0) === 0 && <p className="text-sm text-gray-400">No reports sent yet.</p>}
           {data?.reports.map((r) => (
             <div key={r.id} className="border-l-2 border-red-200 pl-4 pb-1">

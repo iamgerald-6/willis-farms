@@ -348,9 +348,11 @@ export default function DocumentExtractionModal({
                   />
                   <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
                     {docsLoading && (
-                      <p className="text-sm text-gray-400 text-center py-6">
-                        Loading documents…
-                      </p>
+                      <div className="p-3 space-y-2">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="h-10 bg-gray-100 animate-pulse rounded-lg" />
+                        ))}
+                      </div>
                     )}
                     {!docsLoading && filteredDocs.length === 0 && (
                       <p className="text-sm text-gray-400 text-center py-6">
@@ -406,9 +408,11 @@ export default function DocumentExtractionModal({
           )}
 
           {step === "extracting" && (
-            <div className="py-16 flex flex-col items-center gap-3 text-gray-500">
-              <Loader2 className="w-6 h-6 animate-spin text-red-600" />
-              <p className="text-sm">
+            <div className="py-8 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-12 bg-gray-100 animate-pulse rounded-lg" />
+              ))}
+              <p className="text-sm text-gray-500 text-center pt-2">
                 {batchSize > 1
                   ? "Reading the documents together and identifying obligations…"
                   : "Reading the document and identifying obligations…"}

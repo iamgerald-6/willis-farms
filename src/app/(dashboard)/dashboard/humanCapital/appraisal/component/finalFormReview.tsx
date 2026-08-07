@@ -24,6 +24,7 @@ import {
 } from "@/lib/appraisal/scoring";
 import { Quarter, sectionsFor } from "@/lib/appraisal/sections";
 import { DeadlineBanner } from "./DeadlineBanner";
+import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 
 interface Appraisal {
   id: string | number;
@@ -250,12 +251,7 @@ export default function FinalReviewForm({
   };
 
   if (isLoading || !appraisal || !finalRatings) {
-    return (
-      <div className="flex items-center justify-center py-24 text-gray-400">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        <span className="text-sm">Loading appraisal...</span>
-      </div>
-    );
+    return <FormPageSkeleton />;
   }
 
   const period =

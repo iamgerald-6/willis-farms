@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Loader2,
 } from "lucide-react";
+import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
@@ -685,11 +686,7 @@ function SkillLogFormPageContent() {
   const logSections = watchedLogType ? (LOG_TYPES[watchedLogType] ?? []) : [];
 
   if (isEditMode && loadingExisting) {
-    return (
-      <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: BRAND }} />
-      </div>
-    );
+    return <FormPageSkeleton />;
   }
 
   return (
@@ -1033,11 +1030,7 @@ function SkillLogFormPageContent() {
 export default function SkillLogFormPage() {
   return (
     <Suspense
-      fallback={
-        <div className="p-6 min-h-screen bg-gray-50 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
-      }
+      fallback={<FormPageSkeleton />}
     >
       <SkillLogFormPageContent />
     </Suspense>

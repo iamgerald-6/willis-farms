@@ -14,6 +14,7 @@ import GanttView from "../components/GanttView";
 import MonthlyReportModal from "../components/MonthlyReportModal";
 import AutomationSettingsModal from "../components/AutomationSettingsModal";
 import ManageProjectsModal from "../components/ManageProjectsModal";
+import { TaskManagerTasksSkeleton } from "@/components/skeletons/PageSkeletons";
 
 type Tab = "summary" | "gantt" | "register" | "monitoring";
 
@@ -60,51 +61,46 @@ export default function TaskManagerTasksPage() {
     projects.find((p) => p.id === selectedProjectId) ?? null;
 
   if (userLoading || projectsLoading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse text-sm text-gray-400">
-          Loading Task Manager…
-        </div>
-      </div>
-    );
+    return <TaskManagerTasksSkeleton />;
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between gap-4 mb-1">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-1">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Task Manager</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Task Manager</h1>
           <p className="text-sm text-gray-500 mt-1">
             Projects, tasks and deadlines — built from documents or entered by
             hand.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {isSeniorManagement && (
+        {isSeniorManagement && (
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowReport(true)}
-              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50"
+              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg hover:bg-gray-50 whitespace-nowrap"
             >
-              <FileBarChart className="w-4 h-4" /> Monthly Report
+              <FileBarChart className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Monthly Report</span>
+              <span className="sm:hidden">Report</span>
             </button>
-          )}
-          {isSeniorManagement && (
             <button
               onClick={() => setShowAutomation(true)}
-              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50"
+              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg hover:bg-gray-50 whitespace-nowrap"
             >
-              <Settings2 className="w-4 h-4" /> Automation
+              <Settings2 className="w-4 h-4 shrink-0" />
+              Automation
             </button>
-          )}
-          {isSeniorManagement && (
             <button
               onClick={() => setShowManageProjects(true)}
-              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50"
+              className="flex items-center gap-2 border border-gray-200 text-gray-700 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg hover:bg-gray-50 whitespace-nowrap"
             >
-              <FolderCog className="w-4 h-4" /> Manage Projects
+              <FolderCog className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Manage Projects</span>
+              <span className="sm:hidden">Projects</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6">
@@ -134,9 +130,9 @@ export default function TaskManagerTasksPage() {
               canCreate={isSeniorManagement}
             />
 
-            {selectedProject && (
+            {selectedProject ? (
               <>
-                <div className="flex items-center gap-1 mt-4 mb-5 border-b border-gray-100 overflow-x-auto">
+                <div className="flex items-center gap-1 mt-4 mb-5 border-b border-gray-100 overflow-x-auto -mx-1 px-1 pb-0.5">
                   {(
                     [
                       ["summary", "Summary"],
@@ -148,13 +144,30 @@ export default function TaskManagerTasksPage() {
                     <button
                       key={key}
                       onClick={() => setTab(key)}
-                      className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition whitespace-nowrap ${
+                      className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 -mb-px transition whitespace-nowrap shrink-0 ${
                         tab === key
                           ? "border-red-600 text-red-600"
                           : "border-transparent text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      {label}
+                      {key === "gantt" ? (
+                        <>
+                          <span className="sm:hidden">Gantt</span>
+                          <span className="hidden sm:inline">{label}</span>
+                        </>
+                      ) : key === "register" ? (
+                        <>
+                          <span className="sm:hidden">Register</span>
+                          <span className="hidden sm:inline">{label}</span>
+                        </>
+                      ) : key === "monitoring" ? (
+                        <>
+                          <span className="sm:hidden">Monitoring</span>
+                          <span className="hidden sm:inline">{label}</span>
+                        </>
+                      ) : (
+                        label
+                      )}
                     </button>
                   ))}
                 </div>
@@ -182,7 +195,7 @@ export default function TaskManagerTasksPage() {
                   />
                 )}
               </>
-            )}
+            ) : null}
           </>
         )}
       </div>

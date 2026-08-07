@@ -12,7 +12,6 @@ export const PAGE_PERMISSION_KEYS = [
   "hc:appraisal",
   "hc:justifications",
   "hc:skillLog",
-  "hc:schedule",
   "hc:promotion",
   "hc:recruitment",
   "tm:tasks",
@@ -45,7 +44,6 @@ export const PAGE_PERMISSION_LABELS: Record<
   "hc:appraisal": { label: "Appraisal", group: "Human Capital" },
   "hc:justifications": { label: "Justifications", group: "Human Capital" },
   "hc:skillLog": { label: "Skill Logs", group: "Human Capital" },
-  "hc:schedule": { label: "Schedule Planner", group: "Human Capital" },
   "hc:promotion": { label: "Promotion", group: "Human Capital" },
   "hc:recruitment": { label: "Recruitment", group: "Human Capital" },
   "tm:tasks": { label: "Tasks", group: "Task Manager" },
@@ -72,12 +70,11 @@ export function canManageAccessControl(
   return false;
 }
 
-const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [
+export const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [
   "dashboard",
   "hc:leave",
   "hc:appraisal",
   "hc:skillLog",
-  "hc:schedule",
   "tm:tasks",
   "tm:calendar",
   "policies",
@@ -106,6 +103,9 @@ export function canAccessPage(
   if (isFullRoleAccess(role)) return true;
 
   if (tier === "delegated") {
+    if (pageKey === "tm:calendar" && perms.includes("hc:schedule")) {
+      return true;
+    }
     return perms.includes(pageKey);
   }
 
@@ -129,7 +129,7 @@ export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
     return "hc:skillLog";
   }
   if (pathname.startsWith("/dashboard/humanCapital/schedule")) {
-    return "hc:schedule";
+    return "tm:calendar";
   }
   if (pathname.startsWith("/dashboard/humanCapital/promotion")) {
     return "hc:promotion";
@@ -188,4 +188,25 @@ export function hasUnrestrictedAccess(
 ): boolean {
   const role = profile?.role ?? sessionRole;
   return isSuperAdmin(role);
+}
+
+/** Pages the user can access today (for Access Control pre-tick UI). */
+export function getEffectivePagePermissions(
+  profile: AccessProfile,
+): PagePermissionKey[] {
+  return PAGE_PERMISSION_KEYS.filter((key) => canAccessPage(profile, key));
+}
+
+function sortedKeys(keys: PagePermissionKey[]): string[] {
+  return [...keys].sort();
+}
+
+export function isStandardEmployeePageSet(perms: PagePermissionKey[]): boolean {
+  const a = sortedKeys(perms);
+  const b = sortedKeys(STANDARD_EMPLOYEE_PAGES);
+  return a.length === b.length && a.every((k, i) => k === b[i]);
+}
+
+export function isFullPageSet(perms: PagePermissionKey[]): boolean {
+  return PAGE_PERMISSION_KEYS.every((k) => perms.includes(k));
 }

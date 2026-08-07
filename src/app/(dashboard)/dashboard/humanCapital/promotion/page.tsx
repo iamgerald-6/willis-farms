@@ -23,6 +23,7 @@ import {
 import PromotionFormPage from "./component/promotionForm";
 import { PromotionFormSections } from "./component/PromotionDetailSections";
 import type { PromotionFormData } from "./component/promotionFormConfigs";
+import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -567,8 +568,10 @@ function PromotionHistoryTable({
 }) {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center text-gray-400 text-sm">
-        Loading promotion history...
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 animate-pulse">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-10 bg-gray-100 rounded-lg" />
+        ))}
       </div>
     );
   }
@@ -1038,11 +1041,7 @@ export default function PromotionViewPage() {
         <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3">
           Awaiting Assessment
         </h2>
-        {isLoading && (
-          <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
-            Loading promotions...
-          </div>
-        )}
+        {isLoading && <ListRowsSkeleton rows={3} />}
         {!isLoading && filteredPending.length === 0 && (
           <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
             <Clock className="w-10 h-10 mx-auto mb-3 opacity-20" />

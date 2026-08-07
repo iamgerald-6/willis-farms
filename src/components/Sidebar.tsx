@@ -15,7 +15,6 @@ import {
   CalendarCheck,
   Star,
   ClipboardList,
-  CalendarRange,
   TrendingUp,
   GanttChartSquare,
   UserCheck,
@@ -101,12 +100,6 @@ const NAV_ITEMS: NavItem[] = [
         permissionKey: "hc:skillLog",
       },
       {
-        label: "Schedule Planner",
-        href: "/dashboard/humanCapital/schedule",
-        icon: CalendarRange,
-        permissionKey: "hc:schedule",
-      },
-      {
         label: "Promotion",
         href: "/dashboard/humanCapital/promotion",
         icon: TrendingUp,
@@ -124,7 +117,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Task Manager",
     href: "/dashboard/taskManager",
     icon: ListChecks,
-    badge: "NEW",
+
     children: [
       {
         label: "Calendar",
@@ -235,7 +228,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           <div className="w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden">
             <Image
               src="/brand/logo.svg"
-              alt="WillsFarm"
+              alt="Wills Farms"
               width={32}
               height={32}
               className="object-contain"
@@ -370,7 +363,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       {/* Footer */}
       <div className="px-4 py-4 border-t border-gray-100">
         <p className="text-xs text-gray-400 text-center">
-          WillsFarm &copy; {new Date().getFullYear()}
+          Wills Farms &copy; {new Date().getFullYear()}
         </p>
       </div>
     </>

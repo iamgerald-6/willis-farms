@@ -10,6 +10,7 @@ import TaskRow from "./TaskRow";
 import NewTaskRow from "./NewTaskRow";
 import AuditLogDrawer from "./AuditLogDrawer";
 import DocumentExtractionModal from "./DocumentExtractionModal";
+import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // "Active" deliberately includes completed tasks too — Sheila wants
 // finished work to stay visible on the dashboard (so a manager can see
@@ -75,11 +76,11 @@ export default function TaskListView({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h3 className="text-sm font-bold text-gray-900">{project.name} — {title}</h3>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between mb-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-gray-900 break-words">{project.name} — {title}</h3>
           {isSeniorManagement && (
-            <div className="flex items-center gap-1 mt-2">
+            <div className="flex flex-wrap items-center gap-1 mt-2">
               {LIFECYCLE_VIEWS.map((v) => (
                 <button
                   key={v.key}
@@ -96,7 +97,7 @@ export default function TaskListView({
         </div>
 
         {isSeniorManagement && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {editMode && lifecycleView === "active,completed" && (
               <>
                 {variant === "register" && (
@@ -139,7 +140,8 @@ export default function TaskListView({
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+        {/* Desktop table header */}
+        <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <div />
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Indicator" : "Task"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Owner</p>
@@ -149,7 +151,11 @@ export default function TaskListView({
         </div>
 
         <div className="px-1 py-1">
-          {isLoading && <p className="text-sm text-gray-400 px-3 py-6 text-center">Loading tasks…</p>}
+          {isLoading && (
+            <div className="px-1 py-2">
+              <TableSkeleton rows={4} cols={5} />
+            </div>
+          )}
           {!isLoading && tasks.length === 0 && !addingTask && (
             <p className="text-sm text-gray-400 px-3 py-8 text-center">No tasks here yet.</p>
           )}

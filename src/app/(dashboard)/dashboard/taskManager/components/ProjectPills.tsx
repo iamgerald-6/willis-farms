@@ -17,14 +17,15 @@ export default function ProjectPills({
   canCreate: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="overflow-x-auto pb-1">
+    <div className="flex flex-wrap items-center gap-2 min-w-0">
       {projects.map((p) => {
         const active = p.id === selectedId;
         return (
           <button
             key={p.id}
             onClick={() => onSelect(p.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition border ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition border whitespace-nowrap shrink-0 ${
               active ? "bg-red-600 text-white border-red-600" : "text-gray-600 border-gray-200 hover:bg-gray-50"
             }`}
           >
@@ -45,6 +46,7 @@ export default function ProjectPills({
           <Plus className="w-3.5 h-3.5" /> New Project
         </button>
       )}
+    </div>
     </div>
   );
 }

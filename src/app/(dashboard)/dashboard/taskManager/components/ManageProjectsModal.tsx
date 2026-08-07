@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, FolderCog, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMProject } from "@/types/taskManager";
 
 // Confirm-by-typing-the-name before a permanent delete goes through — the
@@ -159,7 +160,7 @@ export default function ManageProjectsModal({ onClose }: { onClose: () => void }
         </div>
 
         <div className="p-5 space-y-5">
-          {isLoading && <p className="text-sm text-gray-400 text-center py-6">Loading…</p>}
+          {isLoading && <ModalListSkeleton rows={5} />}
 
           {!isLoading && (
             <>

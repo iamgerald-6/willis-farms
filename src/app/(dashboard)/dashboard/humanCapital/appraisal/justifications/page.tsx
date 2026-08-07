@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
+import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 
 interface Justification {
   id: string;
@@ -252,12 +253,7 @@ export default function JustificationsInboxPage() {
         ))}
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-24 text-gray-400">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          <span className="text-sm">Loading justifications...</span>
-        </div>
-      )}
+      {isLoading && <ListRowsSkeleton rows={4} />}
 
       {!isLoading && (justifications?.length ?? 0) === 0 && (
         <div className="text-center py-24 text-gray-400 bg-white rounded-2xl border border-gray-100">

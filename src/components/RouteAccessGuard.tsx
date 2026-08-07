@@ -14,7 +14,7 @@ import {
   resolveAccessProfile,
 } from "@/lib/pagePermissions";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { RouteGuardSkeleton } from "@/components/skeletons/PageSkeletons";
 
 export default function RouteAccessGuard({
   children,
@@ -55,6 +55,14 @@ export default function RouteAccessGuard({
     if (loading) return;
     if (unrestricted) return;
 
+    if (!accessProfile && !profile) return;
+
+    if (profile?.is_disabled) {
+      toast.error("Your account has been disabled.");
+      supabase.auth.signOut().then(() => router.replace("/login"));
+      return;
+    }
+
     if (!accessProfile) return;
 
     if (isAccessControlRoute) {
@@ -75,6 +83,7 @@ export default function RouteAccessGuard({
   }, [
     loading,
     accessProfile,
+    profile,
     unrestricted,
     pathname,
     router,
@@ -82,15 +91,15 @@ export default function RouteAccessGuard({
   ]);
 
   if (loading && !unrestricted) {
-    return (
-      <div className="p-10 flex justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-      </div>
-    );
+    return <RouteGuardSkeleton />;
   }
 
   if (unrestricted) {
     return <>{children}</>;
+  }
+
+  if (profile?.is_disabled) {
+    return null;
   }
 
   if (

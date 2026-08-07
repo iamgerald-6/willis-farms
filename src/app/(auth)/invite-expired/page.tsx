@@ -36,7 +36,7 @@ export default function InviteExpiredPage() {
           </p>
         </div>
 
-        <p className="text-xs text-gray-400">WillsFarm · Invite System</p>
+        <p className="text-xs text-gray-400">Wills Farms · Invite System</p>
       </div>
     </div>
   );

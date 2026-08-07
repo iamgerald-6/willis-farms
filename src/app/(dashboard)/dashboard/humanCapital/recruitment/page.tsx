@@ -21,6 +21,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import { PageShell, PageHeaderSkeleton, ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 
 const STATUS_STYLES: Record<ApplicationStatus, string> = {
   applied: "bg-blue-50 text-blue-700 border border-blue-200",
@@ -338,9 +339,10 @@ function RecruitmentPageContent() {
 
   if (!session) {
     return (
-      <div className="p-6 flex justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-      </div>
+      <PageShell>
+        <PageHeaderSkeleton />
+        <ListRowsSkeleton rows={5} />
+      </PageShell>
     );
   }
 
@@ -428,11 +430,13 @@ function RecruitmentPageContent() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
-                  <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                </td>
-              </tr>
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
@@ -499,9 +503,10 @@ export default function RecruitmentPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-6 flex justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
+        <PageShell>
+          <PageHeaderSkeleton />
+          <ListRowsSkeleton rows={5} />
+        </PageShell>
       }
     >
       <RecruitmentPageContent />

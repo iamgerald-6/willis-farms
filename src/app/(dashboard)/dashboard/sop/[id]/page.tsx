@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { DetailHeroSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // ─── Category badge colours ───────────────────────────────────────────────────
 const CATEGORY_COLORS: Record<string, string> = {
@@ -123,11 +124,7 @@ export default function ContentDetailPage() {
   });
 
   if (isLoading || !id) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <Loader2 className="w-8 h-8 text-red-600 animate-spin" />
-      </div>
-    );
+    return <DetailHeroSkeleton />;
   }
 
   if (isError || !content) {

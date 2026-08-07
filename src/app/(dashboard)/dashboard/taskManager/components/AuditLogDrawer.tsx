@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { X, History } from "lucide-react";
 import api from "@/lib/api";
+import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMAuditLogEntry, TMTask } from "@/types/taskManager";
 
 const ACTION_LABEL: Record<string, string> = {
@@ -84,7 +85,7 @@ export default function AuditLogDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {isLoading && <p className="text-sm text-gray-400">Loading…</p>}
+          {isLoading && <ModalListSkeleton rows={4} />}
           {!isLoading && (data?.entries.length ?? 0) === 0 && (
             <p className="text-sm text-gray-400">No changes logged yet.</p>
           )}

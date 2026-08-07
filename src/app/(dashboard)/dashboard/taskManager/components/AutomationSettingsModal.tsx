@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMReportSchedule, TMReminderSettings } from "@/types/taskManager";
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
@@ -137,7 +138,7 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
             </p>
 
             {scheduleLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <ModalListSkeleton rows={3} />
             ) : (
               <>
                 <div>
@@ -199,7 +200,7 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
             </p>
 
             {reminderLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <ModalListSkeleton rows={3} />
             ) : (
               <>
                 <div>
