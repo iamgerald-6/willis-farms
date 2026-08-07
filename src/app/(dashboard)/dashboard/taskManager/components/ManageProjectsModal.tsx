@@ -2,11 +2,78 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, FolderCog, Archive, ArchiveRestore, Trash2, AlertTriangle } from "lucide-react";
+import { X, FolderCog, Archive, ArchiveRestore, Trash2, AlertTriangle, Pencil, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMProject } from "@/types/taskManager";
+
+// Rename a project — catches the exact-name mistake this was built for
+// (typo at creation, wrong department, etc.) without needing to delete and
+// recreate it, which would also orphan every task already filed under it.
+// The server re-applies the same no-duplicate-names guardrail used on
+// creation, so this can't quietly collide with another project either.
+function EditProjectForm({ project, onCancel, onSaved }: { project: TMProject; onCancel: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error("Project name is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.patch(`/task-manager/projects/${project.id}`, {
+        name: name.trim(),
+        description: description.trim(),
+      });
+      toast.success("Project updated");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Failed to update project");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 border border-gray-200 bg-gray-50 rounded-lg p-3 space-y-2.5">
+      <div>
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Project Name</label>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full border border-gray-200 p-2 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide block mb-1">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          className="w-full border border-gray-200 p-2 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-1.5 bg-red-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-red-700 disabled:opacity-60"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button onClick={onCancel} disabled={saving} className="text-xs font-medium text-gray-500 hover:text-gray-700">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Confirm-by-typing-the-name before a permanent delete goes through — the
 // same server route re-checks this text server-side too (see
@@ -64,6 +131,7 @@ function DeleteConfirm({ project, onCancel, onDeleted }: { project: TMProject; o
 function ProjectRow({ project, onChanged }: { project: TMProject; onChanged: () => void }) {
   const [archiving, setArchiving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const toggleArchive = async () => {
     setArchiving(true);
@@ -99,6 +167,13 @@ function ProjectRow({ project, onChanged }: { project: TMProject; onChanged: () 
 
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
+            onClick={() => setEditing((v) => !v)}
+            title="Edit name / description"
+            className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
             onClick={toggleArchive}
             disabled={archiving}
             title={project.status === "active" ? "Archive" : "Restore"}
@@ -115,6 +190,17 @@ function ProjectRow({ project, onChanged }: { project: TMProject; onChanged: () 
           </button>
         </div>
       </div>
+
+      {editing && (
+        <EditProjectForm
+          project={project}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onChanged();
+          }}
+        />
+      )}
 
       {confirmingDelete && (
         <DeleteConfirm

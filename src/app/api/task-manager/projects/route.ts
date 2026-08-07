@@ -98,10 +98,25 @@ export async function POST(req: NextRequest) {
 
     const { name, description } = await req.json();
     if (!name?.trim()) return NextResponse.json({ error: "Project name is required" }, { status: 400 });
+    const trimmedName = name.trim();
+
+    // Guardrail: no two projects (active or archived — a name should stay
+    // unambiguous even after archiving) share a name, case-insensitively.
+    // ilike with no wildcards is an exact match ignoring case, so this
+    // catches "Q3 Compliance" vs "q3 compliance" too, not just literal dupes.
+    const { data: existing, error: dupeError } = await supabaseAdmin
+      .from("tm_projects")
+      .select("id")
+      .ilike("name", trimmedName)
+      .limit(1);
+    if (dupeError) throw dupeError;
+    if (existing && existing.length > 0) {
+      return NextResponse.json({ error: `A project named "${trimmedName}" already exists.` }, { status: 409 });
+    }
 
     const { data, error } = await supabaseAdmin
       .from("tm_projects")
-      .insert([{ name: name.trim(), description: description ?? null, created_by: user.id }])
+      .insert([{ name: trimmedName, description: description ?? null, created_by: user.id }])
       .select()
       .single();
     if (error) throw error;

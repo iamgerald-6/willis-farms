@@ -2,21 +2,57 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
 
 // PATCH /api/task-manager/projects/[id] — Senior Management only.
-// Archives or restores a project. Archiving never touches the tasks inside
-// it — they're just no longer reachable from the active project pills,
-// same as the project itself. Fully reversible.
+// Archives/restores a project (status), and/or renames it (name,
+// description) — either can be sent alone or together. Archiving never
+// touches the tasks inside it — they're just no longer reachable from the
+// active project list, same as the project itself. Both are fully
+// reversible; renaming just overwrites the name/description columns, the
+// project's id (and everything linked to it) is untouched.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const user = await requireSeniorManagement(req);
     if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
 
-    const { status } = await req.json();
-    if (status !== "active" && status !== "archived") {
-      return NextResponse.json({ error: "status must be 'active' or 'archived'" }, { status: 400 });
+    const body = await req.json();
+    const update: Record<string, unknown> = {};
+
+    if ("status" in body) {
+      if (body.status !== "active" && body.status !== "archived") {
+        return NextResponse.json({ error: "status must be 'active' or 'archived'" }, { status: 400 });
+      }
+      update.status = body.status;
     }
 
-    const { data, error } = await supabaseAdmin.from("tm_projects").update({ status }).eq("id", id).select().single();
+    if ("name" in body) {
+      const trimmedName = typeof body.name === "string" ? body.name.trim() : "";
+      if (!trimmedName) return NextResponse.json({ error: "Project name is required" }, { status: 400 });
+
+      // Same guardrail as creation — no two projects share a name,
+      // case-insensitively, excluding this project itself.
+      const { data: existing, error: dupeError } = await supabaseAdmin
+        .from("tm_projects")
+        .select("id")
+        .ilike("name", trimmedName)
+        .neq("id", id)
+        .limit(1);
+      if (dupeError) throw dupeError;
+      if (existing && existing.length > 0) {
+        return NextResponse.json({ error: `A project named "${trimmedName}" already exists.` }, { status: 409 });
+      }
+
+      update.name = trimmedName;
+    }
+
+    if ("description" in body) {
+      update.description = typeof body.description === "string" ? body.description.trim() || null : null;
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+    }
+
+    const { data, error } = await supabaseAdmin.from("tm_projects").update(update).eq("id", id).select().single();
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
