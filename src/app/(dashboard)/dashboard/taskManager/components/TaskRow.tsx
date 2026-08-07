@@ -55,8 +55,6 @@ export default function TaskRow({
   // of this state (see handleSave below).
   const [isRecurring, setIsRecurring] = useState(task.is_recurring);
 
-  const [editingProgress, setEditingProgress] = useState(false);
-  const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
   const [savingProgress, setSavingProgress] = useState(false);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
 
@@ -160,16 +158,23 @@ export default function TaskRow({
     }
   };
 
-  const handleSaveProgress = async () => {
+  // A task with no subtasks is, in effect, a single leaf worth 100% of
+  // itself — so there's nothing to drag, just a tick. Unticking goes back
+  // to 0 rather than whatever it was before, since there's no partial state
+  // to preserve without subtasks to track it. Tasks WITH subtasks never
+  // call this — their progress is fully computed from ticking those (see
+  // SubtaskPanel), never set directly.
+  const handleToggleTaskDone = async () => {
+    if (!canEditProgress || task.has_subtasks) return;
+    const nextDone = task.progress_percent < 100;
     setSavingProgress(true);
     try {
-      const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: progressDraft });
-      if (progressDraft >= 100) {
+      const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: nextDone ? 100 : 0 });
+      if (nextDone) {
         toast.success(
           res.data?.recurred ? `Recurring task — next due date set to ${fmtDate(res.data.next_due_date)}` : "Marked complete",
         );
       }
-      setEditingProgress(false);
       onChanged();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to update progress");
@@ -432,36 +437,27 @@ export default function TaskRow({
     </>
   );
 
-  // Subtasks (see SubtaskPanel) take over progress entirely once a task has
-  // any — ticking a leaf subtask is what moves this bar now, so the manual
-  // click-to-drag slider is disabled rather than removed, keeping the same
-  // visual in both modes.
-  const progressBlock = isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) ? (
-    <button
-      onClick={() => !task.has_subtasks && canEditProgress && setEditingProgress(true)}
-      disabled={task.has_subtasks || !canEditProgress}
-      className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${!task.has_subtasks && canEditProgress ? "cursor-pointer" : "cursor-default"}`}
-      title={task.has_subtasks ? "Driven by subtasks below" : canEditProgress ? "Update progress" : undefined}
-    >
+  // The bar is never manually draggable — it's always automatic. A task
+  // with subtasks shows a read-only rollup of them (see SubtaskPanel); a
+  // task without any is effectively its own single leaf worth 100% of
+  // itself, so the only control is a plain tick that flips it between 0
+  // and 100 (see handleToggleTaskDone).
+  const progressBlock = isLifecycleActive && (canEditProgress || task.progress_percent > 0) ? (
+    <div className="flex items-center gap-1.5 mt-1.5 w-full max-w-[110px]">
+      {!task.has_subtasks && (
+        <input
+          type="checkbox"
+          checked={task.progress_percent >= 100}
+          disabled={!canEditProgress || savingProgress}
+          onChange={handleToggleTaskDone}
+          title={canEditProgress ? "Mark complete" : undefined}
+          className="accent-red-600 w-3.5 h-3.5 cursor-pointer disabled:cursor-default shrink-0"
+        />
+      )}
       <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
         <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
       </span>
       <span className="text-[10px] text-gray-400">{task.progress_percent}%</span>
-    </button>
-  ) : isLifecycleActive && editingProgress ? (
-    <div className="mt-1.5 max-w-[150px]">
-      <input type="range" min={0} max={100} step={5} value={progressDraft} onChange={(e) => setProgressDraft(Number(e.target.value))} className="w-full" autoFocus />
-      <div className="flex items-center justify-between mt-0.5">
-        <span className="text-[10px] text-gray-500">{progressDraft}%</span>
-        <div className="flex items-center gap-2">
-          <button onClick={handleSaveProgress} disabled={savingProgress} className="text-[10px] font-semibold text-red-600 hover:text-red-700">
-            {savingProgress ? "Saving…" : "Save"}
-          </button>
-          <button onClick={() => { setProgressDraft(task.progress_percent ?? 0); setEditingProgress(false); }} disabled={savingProgress} className="text-[10px] text-gray-400 hover:text-gray-600">
-            Cancel
-          </button>
-        </div>
-      </div>
     </div>
   ) : null;
 
