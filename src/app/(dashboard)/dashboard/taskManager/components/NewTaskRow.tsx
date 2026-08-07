@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { User } from "@/types";
 import OwnerSelect from "./OwnerSelect";
+import FrequencySelect from "./FrequencySelect";
 
 export default function NewTaskRow({
   projectId,
@@ -22,6 +23,7 @@ export default function NewTaskRow({
 }) {
   const [title, setTitle] = useState("");
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [indicator, setIndicator] = useState("");
   const [frequency, setFrequency] = useState("");
@@ -45,6 +47,7 @@ export default function NewTaskRow({
         project_id: projectId,
         title: title.trim(),
         owner_id: ownerId,
+        start_date: startDate || null,
         due_date: dueDate || null,
         task_type: variant === "monitoring" ? "monitoring" : "general",
         is_recurring: recurring,
@@ -57,6 +60,7 @@ export default function NewTaskRow({
       toast.success("Task added");
       setTitle("");
       setOwnerId(null);
+      setStartDate("");
       setDueDate("");
       setIndicator("");
       setFrequency("");
@@ -82,16 +86,30 @@ export default function NewTaskRow({
           autoFocus
         />
         <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
-        <input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-gray-400 block mb-0.5">Start Date</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 block mb-0.5">Due Date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+            />
+          </div>
+        </div>
         {variant === "monitoring" && (
           <div className="space-y-2">
             <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Indicator" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
-            <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+            <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             <input value={methodProvider} onChange={(e) => setMethodProvider(e.target.value)} placeholder="Method / provider" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
           </div>
         )}
@@ -102,7 +120,7 @@ export default function NewTaskRow({
               Recurring
             </label>
             {isRecurring && (
-              <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             )}
           </div>
         )}
@@ -118,7 +136,7 @@ export default function NewTaskRow({
 
       {/* Desktop */}
       <div className="hidden md:block space-y-2">
-      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
         <div />
         <input
           value={title}
@@ -130,8 +148,16 @@ export default function NewTaskRow({
         <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
         <input
           type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          title="Start date"
+          className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+        />
+        <input
+          type="date"
           value={dueDate}
           onChange={(e) => setDueDate(e.target.value)}
+          title="Due date"
           className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
         />
         <span className="text-[11px] text-gray-400 italic">Not Started</span>

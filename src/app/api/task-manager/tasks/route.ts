@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
 
     const body = await req.json();
-    const { project_id, title, owner_id, due_date, is_recurring, task_type, frequency, indicator, method_provider, description } = body;
+    const { project_id, title, owner_id, start_date, due_date, is_recurring, task_type, frequency, indicator, method_provider, description } = body;
 
     if (!project_id || !title?.trim()) {
       return NextResponse.json({ error: "project_id and title are required" }, { status: 400 });
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
           title: title.trim(),
           description: description ?? null,
           owner_id: owner_id ?? null,
+          start_date: start_date ?? null,
           due_date: due_date ?? null,
           is_recurring: !!is_recurring,
           task_type: task_type ?? "general",

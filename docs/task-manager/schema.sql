@@ -31,6 +31,7 @@ create table if not exists tm_tasks (
   title text not null,
   description text,
   owner_id uuid,                 -- references public.users.user_id
+  start_date date,
   due_date date,
   is_recurring boolean not null default false,
 

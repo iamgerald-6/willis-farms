@@ -44,6 +44,7 @@ export interface TMTask {
   title: string;
   description?: string | null;
   owner_id?: string | null;
+  start_date?: string | null; // ISO date, e.g. "2026-01-15"
   due_date?: string | null; // ISO date, e.g. "2026-12-31"
   is_recurring: boolean;
   task_type: TaskType;

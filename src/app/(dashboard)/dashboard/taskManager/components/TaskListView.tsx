@@ -139,10 +139,11 @@ export default function TaskListView({
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Desktop table header */}
-        <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+        <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
           <div />
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Indicator" : "Task"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Owner</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Start Date</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Next Due" : "Due Date"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Status</p>
           <div />

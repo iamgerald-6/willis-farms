@@ -8,6 +8,7 @@ import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
 import { STATUS_STYLES } from "../statusStyles";
 import OwnerSelect from "./OwnerSelect";
+import FrequencySelect from "./FrequencySelect";
 
 export default function TaskRow({
   task,
@@ -37,6 +38,7 @@ export default function TaskRow({
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [ownerId, setOwnerId] = useState<string | null>(task.owner_id ?? null);
+  const [startDate, setStartDate] = useState(task.start_date ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [indicator, setIndicator] = useState(task.indicator ?? "");
   const [frequency, setFrequency] = useState(task.frequency ?? "");
@@ -62,6 +64,7 @@ export default function TaskRow({
   const resetDraft = () => {
     setTitle(task.title);
     setOwnerId(task.owner_id ?? null);
+    setStartDate(task.start_date ?? "");
     setDueDate(task.due_date ?? "");
     setIndicator(task.indicator ?? "");
     setFrequency(task.frequency ?? "");
@@ -84,6 +87,7 @@ export default function TaskRow({
       await api.patch(`/task-manager/tasks/${task.id}`, {
         title: title.trim(),
         owner_id: ownerId,
+        start_date: startDate || null,
         due_date: dueDate || null,
         is_recurring: recurring,
         frequency: recurring ? frequency || null : null,
@@ -187,12 +191,26 @@ export default function TaskRow({
             autoFocus
           />
           <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Due Date</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+              />
+            </div>
+          </div>
           <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
             {status}
           </span>
@@ -226,7 +244,7 @@ export default function TaskRow({
           {taskType === "monitoring" && (
             <div className="space-y-2">
               <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Indicator" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
-              <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
               <input value={methodProvider} onChange={(e) => setMethodProvider(e.target.value)} placeholder="Method / provider" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
             </div>
           )}
@@ -237,7 +255,7 @@ export default function TaskRow({
                 Recurring
               </label>
               {isRecurring && (
-                <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+                <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
               )}
             </div>
           )}
@@ -253,7 +271,7 @@ export default function TaskRow({
 
         {/* Desktop edit form */}
         <div className="hidden md:block space-y-2">
-        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
           <div />
           <input
             value={title}
@@ -264,8 +282,16 @@ export default function TaskRow({
           <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
           <input
             type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            title="Start date"
+            className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+          />
+          <input
+            type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
+            title="Due date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
           />
           <div>
@@ -338,12 +364,7 @@ export default function TaskRow({
               placeholder="Indicator (e.g. Air Quality)"
               className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
             />
-            <input
-              value={frequency}
-              onChange={(e) => setFrequency(e.target.value)}
-              placeholder="Frequency (e.g. Quarterly)"
-              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
-            />
+            <FrequencySelect value={frequency} onChange={setFrequency} className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             <input
               value={methodProvider}
               onChange={(e) => setMethodProvider(e.target.value)}
@@ -366,12 +387,7 @@ export default function TaskRow({
               Recurring
             </label>
             {isRecurring ? (
-              <input
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                placeholder="Frequency (e.g. Annual, Quarterly)"
-                className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
-              />
+              <FrequencySelect value={frequency} onChange={setFrequency} className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             ) : (
               <div />
             )}
@@ -384,9 +400,9 @@ export default function TaskRow({
   }
 
   const metaLine = (variant === "monitoring" ? [task.indicator, task.frequency, task.method_provider] : [task.frequency]).filter(Boolean).join(" · ");
-  const dueLabel = task.due_date
-    ? new Date(task.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "—";
+  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const startLabel = task.start_date ? fmtShort(task.start_date) : "—";
+  const dueLabel = task.due_date ? fmtShort(task.due_date) : "—";
 
   const actionButtons = (
     <>
@@ -470,6 +486,10 @@ export default function TaskRow({
                 <p className="text-gray-700 font-medium">{task.owner_name ?? "Unassigned"}</p>
               </div>
               <div>
+                <span className="text-gray-400">Start Date</span>
+                <p className="text-gray-700 font-medium">{startLabel}</p>
+              </div>
+              <div>
                 <span className="text-gray-400">{variant === "monitoring" ? "Next Due" : "Due Date"}</span>
                 <p className="text-gray-700 font-medium">{dueLabel}</p>
               </div>
@@ -486,7 +506,7 @@ export default function TaskRow({
       </div>
 
       {/* Desktop row */}
-      <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
+      <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
       <div className="flex justify-center">
         {completeToggle}
       </div>
@@ -497,6 +517,7 @@ export default function TaskRow({
         )}
       </div>
       <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
+      <p className="text-sm text-gray-500">{startLabel}</p>
       <p className="text-sm text-gray-500">{dueLabel}</p>
       <div>
         <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>

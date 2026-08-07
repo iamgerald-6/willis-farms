@@ -37,7 +37,9 @@ export function parseFrequencyInterval(raw: string | null | undefined): Recurren
   }
 
   if (/\bdaily\b/.test(f)) return { unit: "day", amount: 1 };
-  if (/\bfortnightly\b|\bbiweekly\b/.test(f)) return { unit: "day", amount: 14 };
+  // .? tolerates "biweekly", "bi-weekly", and "bi weekly" alike — same
+  // flexible-separator style already used below for semi/bi-annual.
+  if (/\bfortnightly\b|\bbi.?weekly\b/.test(f)) return { unit: "day", amount: 14 };
   if (/\bweekly\b/.test(f)) return { unit: "day", amount: 7 };
   if (/\bbimonthly\b/.test(f)) return { unit: "month", amount: 2 };
   if (/\bmonthly\b/.test(f)) return { unit: "month", amount: 1 };
