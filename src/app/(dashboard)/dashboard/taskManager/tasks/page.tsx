@@ -6,7 +6,7 @@ import { FileBarChart, Settings2, FolderCog } from "lucide-react";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { useCurrentUser } from "../useCurrentUser";
-import ProjectPills from "../components/ProjectPills";
+import ProjectSelect from "../components/ProjectSelect";
 import NewProjectModal from "../components/NewProjectModal";
 import TaskListView from "../components/TaskListView";
 import SummaryView from "../components/SummaryView";
@@ -122,7 +122,7 @@ export default function TaskManagerTasksPage() {
           </div>
         ) : (
           <>
-            <ProjectPills
+            <ProjectSelect
               projects={projects}
               selectedId={selectedProjectId}
               onSelect={setSelectedProjectId}
