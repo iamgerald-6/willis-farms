@@ -226,7 +226,7 @@ export default function TaskManagerTasksPage() {
         />
       )}
       {showAutomation && (
-        <AutomationSettingsModal onClose={() => setShowAutomation(false)} />
+        <AutomationSettingsModal users={allUsers} onClose={() => setShowAutomation(false)} />
       )}
       {showManageProjects && (
         <ManageProjectsModal onClose={() => setShowManageProjects(false)} />
