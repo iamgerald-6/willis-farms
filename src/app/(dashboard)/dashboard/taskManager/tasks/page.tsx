@@ -11,6 +11,7 @@ import NewProjectModal from "../components/NewProjectModal";
 import TaskListView from "../components/TaskListView";
 import SummaryView from "../components/SummaryView";
 import GanttView from "../components/GanttView";
+import ProjectSpanCard from "../components/ProjectSpanCard";
 import MonthlyReportModal from "../components/MonthlyReportModal";
 import AutomationSettingsModal from "../components/AutomationSettingsModal";
 import ManageProjectsModal from "../components/ManageProjectsModal";
@@ -139,6 +140,8 @@ export default function TaskManagerTasksPage() {
               onNewProject={() => setShowNewProject(true)}
               canCreate={isSeniorManagement}
             />
+
+            {selectedProject && <ProjectSpanCard project={selectedProject} />}
 
             {selectedProject ? (
               <>

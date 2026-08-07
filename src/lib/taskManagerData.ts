@@ -57,12 +57,6 @@ export async function fetchTaskIdsWithSubtasks(taskIds: string[]): Promise<Set<s
   return new Set((data ?? []).map((r) => r.task_id));
 }
 
-/** "YYYY-MM-DD" + N days (N may be negative), in UTC — same approach as taskRecurrence.ts's private addDaysUTC. */
-function shiftDateByDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
 const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
   archived: "archived",
   deleted: "deleted",
@@ -80,13 +74,14 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
  *
  * For a recurring task (is_recurring = true) whose `frequency` text is
  * recognizable (see taskRecurrence.ts), it does NOT close — the same task
- * row cycles instead: due_date jumps to the next occurrence, progress
- * resets to 0, lifecycle_status stays active. This cycle's completion is
- * preserved in tm_task_completions (so reporting doesn't lose it just
- * because the task itself didn't stay "completed"). start_date, if the task
- * has one, shifts forward by the same number of days due_date just moved —
- * keeping the same start-to-due gap each cycle — rather than staying
- * anchored to the first-ever occurrence.
+ * row cycles instead: progress resets to 0, lifecycle_status stays active,
+ * and (per Sheila's explicit choice) the new cycle's start_date is the day
+ * it was marked complete, while due_date is computed from frequency applied
+ * to the PREVIOUS due_date (not from today) — so a monthly task due the
+ * 1st stays due the 1st every cycle, regardless of when it's actually
+ * ticked. This cycle's completion is preserved in tm_task_completions (so
+ * reporting doesn't lose it just because the task itself didn't stay
+ * "completed").
  *
  * If is_recurring is true but the frequency text isn't recognizable, this
  * falls back to the ordinary close-it-out behavior — silently guessing at
@@ -107,18 +102,10 @@ async function performTaskCompletion(existing: any, performedBy: RequestUser) {
       },
     ]);
 
-    let nextStartDate = existing.start_date ?? null;
-    if (existing.start_date) {
-      const deltaDays = Math.round(
-        (new Date(`${nextDueDate}T00:00:00Z`).getTime() - new Date(`${existing.due_date}T00:00:00Z`).getTime()) / 86_400_000,
-      );
-      nextStartDate = shiftDateByDays(existing.start_date, deltaDays);
-    }
-
     return {
       updates: {
         due_date: nextDueDate,
-        start_date: nextStartDate,
+        start_date: new Date().toISOString().slice(0, 10),
         progress_percent: 0,
         lifecycle_status: "active",
         completed_at: null,
