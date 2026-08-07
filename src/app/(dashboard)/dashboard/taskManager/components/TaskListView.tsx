@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Check, Plus, FileUp } from "lucide-react";
 import api from "@/lib/api";
-import { TMProject, TMTask } from "@/types/taskManager";
+import { TMProject, TMTask, DisplayStatus } from "@/types/taskManager";
 import { User } from "@/types";
 import TaskRow from "./TaskRow";
 import NewTaskRow from "./NewTaskRow";
@@ -12,17 +12,36 @@ import AuditLogDrawer from "./AuditLogDrawer";
 import DocumentExtractionModal from "./DocumentExtractionModal";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 
-// "Active" deliberately includes completed tasks too — Sheila wants
-// finished work to stay visible on the dashboard (so a manager can see
-// what's been completed at a glance) rather than disappearing the moment
-// it's marked done. It only drops off once the task itself is archived,
-// or the whole project is closed. "Completed" still exists as its own
-// filter for anyone who wants to see only what's finished.
-const LIFECYCLE_VIEWS: { key: string; label: string }[] = [
-  { key: "active,completed", label: "Active" },
-  { key: "completed", label: "Completed" },
-  { key: "archived", label: "Archived" },
-  { key: "deleted", label: "Deleted" },
+type LifecycleViewKey = "all" | "overdue" | "not_started" | "in_progress" | "ongoing" | "completed" | "archived" | "deleted";
+
+// Filters by the same computed display_status shown everywhere else in
+// Task Manager (the badge on each row, the Summary page's buckets) rather
+// than raw lifecycle_status — "Active" used to mean "not archived/deleted",
+// which lumped Overdue, In Progress, Not Started, and Compliant/Ongoing
+// tasks together with no way to narrow further. Everyone can use these
+// tabs now (not just Senior Management, per Sheila) — only Archived and
+// Deleted stay manager-only, since those are the two that expose removed
+// work rather than just narrowing what's currently open.
+//
+// Tabs sharing the same serverInclude fetch from ONE shared query and
+// narrow client-side (see `tasks` below) — All/Overdue/Not Started/In
+// Progress/Ongoing/Completed all read from the same active+completed
+// fetch, so switching between them is instant, no extra request.
+const LIFECYCLE_VIEWS: {
+  key: LifecycleViewKey;
+  label: string;
+  serverInclude: string;
+  statusFilter: DisplayStatus | null;
+  managerOnly?: boolean;
+}[] = [
+  { key: "all", label: "All", serverInclude: "active,completed", statusFilter: null },
+  { key: "overdue", label: "Overdue", serverInclude: "active,completed", statusFilter: "Overdue" },
+  { key: "not_started", label: "Not Started", serverInclude: "active,completed", statusFilter: "Not Started" },
+  { key: "in_progress", label: "In Progress", serverInclude: "active,completed", statusFilter: "In Progress" },
+  { key: "ongoing", label: "Ongoing / Compliant", serverInclude: "active,completed", statusFilter: "Compliant / Ongoing" },
+  { key: "completed", label: "Completed", serverInclude: "active,completed", statusFilter: "Completed" },
+  { key: "archived", label: "Archived", serverInclude: "archived", statusFilter: null, managerOnly: true },
+  { key: "deleted", label: "Deleted", serverInclude: "deleted", statusFilter: null, managerOnly: true },
 ];
 
 type Variant = "register" | "monitoring";
@@ -46,15 +65,16 @@ export default function TaskListView({
 }) {
   const [editMode, setEditMode] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
-  const [lifecycleView, setLifecycleView] = useState("active,completed");
+  const [lifecycleView, setLifecycleView] = useState<LifecycleViewKey>("all");
   const [auditTask, setAuditTask] = useState<TMTask | null>(null);
   const [extractOpen, setExtractOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const queryKey = ["tm-tasks", project.id, lifecycleView];
+  const activeView = LIFECYCLE_VIEWS.find((v) => v.key === lifecycleView) ?? LIFECYCLE_VIEWS[0];
+  const queryKey = ["tm-tasks", project.id, activeView.serverInclude];
   const { data, isLoading } = useQuery<{ tasks: TMTask[] }>({
     queryKey,
-    queryFn: async () => (await api.get(`/task-manager/tasks?project_id=${project.id}&include=${lifecycleView}`)).data,
+    queryFn: async () => (await api.get(`/task-manager/tasks?project_id=${project.id}&include=${activeView.serverInclude}`)).data,
   });
 
   const refresh = () => {
@@ -71,32 +91,32 @@ export default function TaskListView({
   };
 
   const allTasks = data?.tasks ?? [];
-  const tasks = allTasks.filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"));
+  const tasks = allTasks
+    .filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"))
+    .filter((t) => !activeView.statusFilter || (t.display_status ?? "Not Started") === activeView.statusFilter);
 
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between mb-4">
         <div className="min-w-0">
-          {isSeniorManagement && (
-            <div className="flex flex-wrap items-center gap-1">
-              {LIFECYCLE_VIEWS.map((v) => (
-                <button
-                  key={v.key}
-                  onClick={() => setLifecycleView(v.key)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                    lifecycleView === v.key ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-100"
-                  }`}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1">
+            {LIFECYCLE_VIEWS.filter((v) => !v.managerOnly || isSeniorManagement).map((v) => (
+              <button
+                key={v.key}
+                onClick={() => setLifecycleView(v.key)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                  lifecycleView === v.key ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {isSeniorManagement && (
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {editMode && lifecycleView === "active,completed" && (
+            {editMode && lifecycleView === "all" && (
               <>
                 {variant === "register" && (
                   <button
