@@ -21,6 +21,7 @@ import {
   ExtractionJobFile,
 } from "@/types/taskManager";
 import { User } from "@/types";
+import { minTaskDate } from "@/lib/taskDateLimits";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 
@@ -73,6 +74,7 @@ export default function DocumentExtractionModal({
   const [proposals, setProposals] = useState<ExtractedTaskProposal[]>([]);
   const [saving, setSaving] = useState(false);
   const [sourceFileNames, setSourceFileNames] = useState<string[]>([]);
+  const minDate = minTaskDate();
 
   const { data: docsData, isLoading: docsLoading } = useQuery<{
     documents: PortalDocument[];
@@ -203,6 +205,13 @@ export default function DocumentExtractionModal({
 
   const handleSave = async () => {
     if (!jobId || proposals.length === 0) return;
+    const tooOld = proposals.find(
+      (p) => (p.start_date && p.start_date < minDate) || (p.due_date && p.due_date < minDate),
+    );
+    if (tooOld) {
+      toast.error(`"${tooOld.title}" has a start or due date more than a year in the past — fix it before saving`);
+      return;
+    }
     setSaving(true);
     try {
       await api.post(`/task-manager/extract/${jobId}/save`, {
@@ -483,6 +492,7 @@ export default function DocumentExtractionModal({
                         <input
                           type="date"
                           value={p.start_date ?? ""}
+                          min={minDate}
                           onChange={(e) =>
                             updateProposal(idx, {
                               start_date: e.target.value || null,
@@ -496,6 +506,7 @@ export default function DocumentExtractionModal({
                         <input
                           type="date"
                           value={p.due_date ?? ""}
+                          min={minDate}
                           onChange={(e) =>
                             updateProposal(idx, {
                               due_date: e.target.value || null,

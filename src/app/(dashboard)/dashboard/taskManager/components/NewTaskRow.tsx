@@ -5,6 +5,7 @@ import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { minTaskDate } from "@/lib/taskDateLimits";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 
@@ -34,10 +35,15 @@ export default function NewTaskRow({
   // should cycle forward when completed instead of just closing.
   const [isRecurring, setIsRecurring] = useState(variant === "monitoring");
   const [saving, setSaving] = useState(false);
+  const minDate = minTaskDate();
 
   const handleCreate = async () => {
     if (!title.trim()) {
       toast.error("Task name can't be empty");
+      return;
+    }
+    if ((startDate && startDate < minDate) || (dueDate && dueDate < minDate)) {
+      toast.error("Start and due dates can't be more than a year in the past");
       return;
     }
     const recurring = variant === "monitoring" ? true : isRecurring;
@@ -92,6 +98,7 @@ export default function NewTaskRow({
             <input
               type="date"
               value={startDate}
+              min={minDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
             />
@@ -101,6 +108,7 @@ export default function NewTaskRow({
             <input
               type="date"
               value={dueDate}
+              min={minDate}
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
             />
@@ -149,6 +157,7 @@ export default function NewTaskRow({
         <input
           type="date"
           value={startDate}
+          min={minDate}
           onChange={(e) => setStartDate(e.target.value)}
           title="Start date"
           className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
@@ -156,6 +165,7 @@ export default function NewTaskRow({
         <input
           type="date"
           value={dueDate}
+          min={minDate}
           onChange={(e) => setDueDate(e.target.value)}
           title="Due date"
           className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
+import { minTaskDate } from "@/lib/taskDateLimits";
 import { STATUS_STYLES } from "../statusStyles";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
@@ -57,6 +58,7 @@ export default function TaskRow({
 
   const [savingProgress, setSavingProgress] = useState(false);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const minDate = minTaskDate();
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -77,6 +79,10 @@ export default function TaskRow({
   const handleSave = async () => {
     if (!title.trim()) {
       toast.error("Task name can't be empty");
+      return;
+    }
+    if ((startDate && startDate < minDate) || (dueDate && dueDate < minDate)) {
+      toast.error("Start and due dates can't be more than a year in the past");
       return;
     }
     const recurring = taskType === "monitoring" ? true : isRecurring;
@@ -204,6 +210,7 @@ export default function TaskRow({
               <input
                 type="date"
                 value={startDate}
+                min={minDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
               />
@@ -213,6 +220,7 @@ export default function TaskRow({
               <input
                 type="date"
                 value={dueDate}
+                min={minDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
               />
@@ -290,6 +298,7 @@ export default function TaskRow({
           <input
             type="date"
             value={startDate}
+            min={minDate}
             onChange={(e) => setStartDate(e.target.value)}
             title="Start date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
@@ -297,6 +306,7 @@ export default function TaskRow({
           <input
             type="date"
             value={dueDate}
+            min={minDate}
             onChange={(e) => setDueDate(e.target.value)}
             title="Due date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
