@@ -110,9 +110,10 @@ const EXTRACTION_TOOL = {
           properties: {
             title: { type: "string", description: "Short, actionable task name" },
             description: { type: "string", description: "Relevant detail/context copied or summarized from the document(s)" },
+            start_date: { type: "string", description: "ISO date YYYY-MM-DD if the document states when work on this obligation should begin — separate from its deadline. Omit this field if no start date is stated." },
             due_date: { type: "string", description: "ISO date YYYY-MM-DD if a specific deadline is stated, otherwise omit this field" },
             is_recurring: { type: "boolean", description: "True if this is a recurring obligation (e.g. quarterly monitoring), false for a one-off deadline" },
-            frequency: { type: "string", description: "e.g. Quarterly, Monthly, Annual — only when is_recurring is true" },
+            frequency: { type: "string", description: "One of: Hourly, Daily, Weekly, Bi-Weekly, Monthly, Quarterly, Semi-Annually, Annually, Bi-Annually — only when is_recurring is true. Pick whichever of these matches the document's stated cadence most closely." },
             indicator: { type: "string", description: "What is being measured or monitored, if this is a monitoring requirement" },
             method_provider: { type: "string", description: "The lab, test kit, or method used to check a monitoring requirement (e.g. 'Accredited lab', 'In-house test kit') — only for monitoring/testing tasks. Never a person's name; use owner_name for who is responsible." },
             owner_name: { type: "string", description: "The name of the person responsible, exactly as written in the document(s) — omit if no name is stated. This is matched against real user accounts server-side, not used directly." },
@@ -120,6 +121,19 @@ const EXTRACTION_TOOL = {
               type: "string",
               description:
                 "When more than one document was provided: the file name this task was primarily drawn from, exactly as given in that document's label (e.g. 'Document 2: policy.pdf' → 'policy.pdf'). Omit if this task synthesizes information from more than one document, or if only one document was provided.",
+            },
+            subtasks: {
+              type: "array",
+              description:
+                "Only include this when the document clearly breaks the obligation down into multiple distinct steps or components (e.g. 'submit application, pay fee, attend inspection'). Omit entirely for a simple, single-action obligation — most tasks should NOT have subtasks. Every subtask's weight_percent must be that step's share of the whole obligation, and all of a task's subtasks together must add up to 100.",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string", description: "A short, actionable subtask name" },
+                  weight_percent: { type: "number", description: "This subtask's share of the overall task's completion — every task's subtasks must sum to 100" },
+                },
+                required: ["title", "weight_percent"],
+              },
             },
           },
           required: ["title"],
@@ -184,7 +198,7 @@ export async function POST(req: NextRequest) {
         : "This is a compliance document (e.g. a permit, licence, or regulatory notice) for a farm operation in Ghana. Read it and extract every distinct obligation, deadline, renewal date, and recurring monitoring/reporting requirement as a task.";
 
     const instructions =
-      `${baseInstructions} Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document(s). If a date is written in a purely numeric, ambiguous format (e.g. 03/04/2026), read it as day/month/year — Ghana's convention — not month/day/year, unless the document clearly indicates otherwise (e.g. a month spelled out, or a US-format document). If this is a photo or scan of a handwritten page, some words may be genuinely illegible — for anything you can't read with confidence (a date, a number, a name), say so directly in that task's description rather than guessing at a value. If a person's name is written next to a task (an owner, responsible person, etc.), capture it in owner_name exactly as written — don't try to guess who it maps to in any system.`;
+      `${baseInstructions} Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document(s). If a date is written in a purely numeric, ambiguous format (e.g. 03/04/2026), read it as day/month/year — Ghana's convention — not month/day/year, unless the document clearly indicates otherwise (e.g. a month spelled out, or a US-format document). If this is a photo or scan of a handwritten page, some words may be genuinely illegible — for anything you can't read with confidence (a date, a number, a name), say so directly in that task's description rather than guessing at a value. If a person's name is written next to a task (an owner, responsible person, etc.), capture it in owner_name exactly as written — don't try to guess who it maps to in any system. If the document states both when work should begin and a separate deadline, capture the former as start_date and the latter as due_date — don't invent a start_date when only a deadline is given. Only use subtasks when the document itself clearly lays out multiple distinct steps or components for an obligation — most tasks should have none; don't invent a breakdown for a simple single-action obligation just to fill the field.`;
 
     // Word docs: pull the text out with mammoth and send it as plain text —
     // Claude's document blocks only read PDFs and images natively, and

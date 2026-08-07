@@ -136,6 +136,7 @@ export interface TMExtractionJob {
 export interface ExtractedTaskProposal {
   title: string;
   description?: string;
+  start_date?: string | null;
   due_date?: string | null;
   is_recurring?: boolean;
   task_type?: TaskType;
@@ -155,6 +156,13 @@ export interface ExtractedTaskProposal {
   // synthesizes information across several files rather than coming from
   // just one. Display-only, not saved onto the task itself.
   source_file_name?: string | null;
+  // Only present when the document describes multiple distinct steps this
+  // obligation breaks down into — each weight_percent is that step's share
+  // of the whole, meant to sum to 100 (see normalizeSubtaskWeights in
+  // subtaskProgress.ts, which forgives small rounding drift from the model
+  // and drops the set entirely rather than saving something invalid). The
+  // reviewer can edit titles/weights or add/remove rows before saving.
+  subtasks?: { title: string; weight_percent: number }[];
 }
 
 /** An already-uploaded document elsewhere in the portal, offered as an extraction source instead of uploading a fresh file. */

@@ -22,6 +22,7 @@ import {
 } from "@/types/taskManager";
 import { User } from "@/types";
 import OwnerSelect from "./OwnerSelect";
+import FrequencySelect from "./FrequencySelect";
 
 type Step = "upload" | "extracting" | "review";
 type SourceMode = "upload" | "existing";
@@ -165,6 +166,34 @@ export default function DocumentExtractionModal({
   ) => {
     setProposals((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    );
+  };
+
+  const updateSubtask = (
+    idx: number,
+    subIdx: number,
+    patch: Partial<{ title: string; weight_percent: number }>,
+  ) => {
+    setProposals((prev) =>
+      prev.map((p, i) =>
+        i === idx
+          ? { ...p, subtasks: (p.subtasks ?? []).map((s, j) => (j === subIdx ? { ...s, ...patch } : s)) }
+          : p,
+      ),
+    );
+  };
+
+  const addSubtask = (idx: number) => {
+    setProposals((prev) =>
+      prev.map((p, i) =>
+        i === idx ? { ...p, subtasks: [...(p.subtasks ?? []), { title: "", weight_percent: 0 }] } : p,
+      ),
+    );
+  };
+
+  const removeSubtask = (idx: number, subIdx: number) => {
+    setProposals((prev) =>
+      prev.map((p, i) => (i === idx ? { ...p, subtasks: (p.subtasks ?? []).filter((_, j) => j !== subIdx) } : p)),
     );
   };
 
@@ -449,31 +478,47 @@ export default function DocumentExtractionModal({
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-2">
-                      <input
-                        type="date"
-                        value={p.due_date ?? ""}
-                        onChange={(e) =>
-                          updateProposal(idx, {
-                            due_date: e.target.value || null,
-                          })
-                        }
-                        className="text-xs border border-gray-200 rounded-md px-2 py-1.5"
-                      />
-                      <div className="text-xs">
-                        <OwnerSelect
-                          users={users}
-                          value={p.owner_id ?? null}
-                          onChange={(id) =>
-                            updateProposal(idx, { owner_id: id })
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-0.5">Start Date</label>
+                        <input
+                          type="date"
+                          value={p.start_date ?? ""}
+                          onChange={(e) =>
+                            updateProposal(idx, {
+                              start_date: e.target.value || null,
+                            })
                           }
+                          className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5"
                         />
-                        {p.owner_name && (
-                          <p className="text-[11px] text-gray-400 mt-1">
-                            Written as "{p.owner_name}"
-                            {!p.owner_id && " — no confident match, pick above"}
-                          </p>
-                        )}
                       </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-0.5">Due Date</label>
+                        <input
+                          type="date"
+                          value={p.due_date ?? ""}
+                          onChange={(e) =>
+                            updateProposal(idx, {
+                              due_date: e.target.value || null,
+                            })
+                          }
+                          className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs">
+                      <OwnerSelect
+                        users={users}
+                        value={p.owner_id ?? null}
+                        onChange={(id) =>
+                          updateProposal(idx, { owner_id: id })
+                        }
+                      />
+                      {p.owner_name && (
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          Written as "{p.owner_name}"
+                          {!p.owner_id && " — no confident match, pick above"}
+                        </p>
+                      )}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <label className="flex items-center gap-1.5 text-xs text-gray-600">
@@ -488,20 +533,93 @@ export default function DocumentExtractionModal({
                         />
                         Recurring
                       </label>
+                      {p.is_recurring && (
+                        <FrequencySelect
+                          value={p.frequency ?? ""}
+                          onChange={(f) => updateProposal(idx, { frequency: f })}
+                          className="text-xs border border-gray-200 rounded-md px-2 py-1.5 bg-white"
+                        />
+                      )}
                       {sourceFileNames.length > 1 && p.source_file_name && (
                         <span
-                          className="text-[10px] text-gray-400 truncate max-w-[55%]"
+                          className="text-[10px] text-gray-400 truncate max-w-[40%]"
                           title={p.source_file_name}
                         >
                           From: {p.source_file_name}
                         </span>
                       )}
                     </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <input
+                        value={p.indicator ?? ""}
+                        onChange={(e) => updateProposal(idx, { indicator: e.target.value || null })}
+                        placeholder="Indicator (monitoring only)"
+                        className="text-xs border border-gray-200 rounded-md px-2 py-1.5"
+                      />
+                      <input
+                        value={p.method_provider ?? ""}
+                        onChange={(e) => updateProposal(idx, { method_provider: e.target.value || null })}
+                        placeholder="Method / provider (monitoring only)"
+                        className="text-xs border border-gray-200 rounded-md px-2 py-1.5"
+                      />
+                    </div>
                     {p.description && (
                       <p className="text-xs text-gray-400 mt-2 line-clamp-2">
                         {p.description}
                       </p>
                     )}
+
+                    {/* Subtasks — Claude proposes a breakdown when the
+                        document itself describes distinct steps; the
+                        reviewer can edit, remove, or add rows here before
+                        saving. Weights don't need to sum to exactly 100 at
+                        this stage (unlike the manual subtask editor) — the
+                        save endpoint proportionally rescales them, and drops
+                        the breakdown entirely if it can't be salvaged, so a
+                        bad number here never blocks the rest of the batch. */}
+                    <div className="mt-2.5 border-t border-gray-100 pt-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Subtasks</p>
+                        <button
+                          onClick={() => addSubtask(idx)}
+                          className="text-[11px] font-semibold text-red-600 hover:text-red-700"
+                        >
+                          + Add subtask
+                        </button>
+                      </div>
+                      {(!p.subtasks || p.subtasks.length === 0) && (
+                        <p className="text-[11px] text-gray-400">None — this will use the plain progress checkbox.</p>
+                      )}
+                      {(p.subtasks ?? []).length > 0 && (
+                        <div className="space-y-1.5">
+                          {(p.subtasks ?? []).map((s, subIdx) => (
+                            <div key={subIdx} className="flex items-center gap-1.5">
+                              <input
+                                value={s.title}
+                                onChange={(e) => updateSubtask(idx, subIdx, { title: e.target.value })}
+                                placeholder="Subtask name"
+                                className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={s.weight_percent}
+                                onChange={(e) => updateSubtask(idx, subIdx, { weight_percent: Number(e.target.value) })}
+                                className="w-14 shrink-0 text-xs border border-gray-200 rounded-md px-1.5 py-1 text-right"
+                              />
+                              <span className="text-[10px] text-gray-400 shrink-0">%</span>
+                              <button onClick={() => removeSubtask(idx, subIdx)} className="text-gray-300 hover:text-red-600 px-0.5 shrink-0">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          <p className="text-[10px] text-gray-400 text-right">
+                            {(p.subtasks ?? []).reduce((sum, s) => sum + (Number(s.weight_percent) || 0), 0)}% of 100%
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
                 {proposals.length === 0 && (

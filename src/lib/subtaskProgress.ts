@@ -54,3 +54,40 @@ export function computeTaskRollup(tree: TMSubtask[]): number | null {
 export function sumWeights(items: { weight_percent: number }[]): number {
   return items.reduce((sum, item) => sum + (Number(item.weight_percent) || 0), 0);
 }
+
+/**
+ * Cleans up a raw, possibly-imperfect list of {title, weight_percent} —
+ * e.g. straight from document extraction, where Claude's percentages are a
+ * best-effort read of the document and won't always add up to exactly 100 —
+ * into a set that does, or returns null if it can't be salvaged (fewer than
+ * two usable rows, or the weights are all zero/missing). Unlike the manual
+ * subtask editor (which hard-blocks a save until the reviewer's numbers sum
+ * to exactly 100), this is meant for a one-time bulk import: it's better to
+ * proportionally rescale Claude's numbers to fit than to reject an
+ * otherwise-good breakdown over rounding, and better to silently drop a
+ * genuinely unusable breakdown than to save something that violates the
+ * "siblings sum to 100" invariant everywhere else in the app relies on.
+ */
+export function normalizeSubtaskWeights(
+  raw: { title?: string; weight_percent?: number }[] | undefined | null,
+): { title: string; weight_percent: number }[] | null {
+  if (!raw || raw.length < 2) return null;
+
+  const valid = raw
+    .map((r) => ({ title: (r.title ?? "").trim(), weight_percent: Number(r.weight_percent) }))
+    .filter((r) => r.title && Number.isFinite(r.weight_percent) && r.weight_percent > 0);
+  if (valid.length < 2) return null;
+
+  const total = valid.reduce((sum, r) => sum + r.weight_percent, 0);
+  if (total <= 0) return null;
+
+  const rounded = valid.map((r) => Math.max(1, Math.round((r.weight_percent / total) * 100)));
+  const drift = 100 - rounded.reduce((sum, n) => sum + n, 0);
+  if (drift !== 0) {
+    const maxIdx = rounded.reduce((best, val, i) => (val > rounded[best] ? i : best), 0);
+    rounded[maxIdx] += drift;
+  }
+  if (rounded.some((w) => w < 1) || rounded.reduce((sum, n) => sum + n, 0) !== 100) return null;
+
+  return valid.map((r, i) => ({ title: r.title, weight_percent: rounded[i] }));
+}
