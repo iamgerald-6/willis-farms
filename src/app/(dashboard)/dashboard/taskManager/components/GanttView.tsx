@@ -33,9 +33,6 @@ export default function GanttView({ project }: { project: TMProject }) {
 
   return (
     <div>
-      <h3 className="text-sm font-bold text-gray-900 mb-1">{project.name} — Dashboard / Gantt</h3>
-      <p className="text-xs text-gray-400 mb-4">At a glance: how complete each task is, not when it's due.</p>
-
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
         {tasks.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No tasks yet.</p>}
         <div className="space-y-3">

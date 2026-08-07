@@ -29,8 +29,6 @@ export default function ProjectSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const selected = projects.find((p) => p.id === selectedId) ?? null;
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
@@ -59,11 +57,14 @@ export default function ProjectSelect({
     <div ref={containerRef} className="relative w-full sm:w-80">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-between gap-2 w-full border border-gray-200 rounded-xl px-3.5 py-2.5 bg-white text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 transition"
+        className="flex items-center gap-2 w-full border border-gray-200 rounded-xl px-3.5 py-2.5 bg-white text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 transition"
       >
-        <span className="text-sm font-semibold text-gray-900 truncate">
-          {selected ? selected.name : "Select a project"}
-        </span>
+        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        {/* The selected project's name is shown once, as the page heading
+            above this control — this trigger is purely the way to search
+            and switch, so it always reads "Search projects" rather than
+            echoing the current selection. */}
+        <span className="flex-1 text-sm text-gray-400 truncate">Search projects</span>
         <ChevronDown
           className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
         />
@@ -75,15 +76,15 @@ export default function ProjectSelect({
           text, and a rounded, inset blue highlight on the hovered row
           rather than a full-width bar. */}
       {open && (
-        <div className="absolute z-20 mt-2 w-full bg-[#2c2c2e] border border-[#3f3f42] rounded-xl shadow-lg overflow-hidden">
+        <div className="absolute z-20 mt-2 w-full bg-[#3a3a3c] border border-[#4a4a4d] rounded-xl shadow-lg overflow-hidden">
           <div className="px-3.5 pt-3 pb-2">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+            <p className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">
               Projects
             </p>
           </div>
 
           <div className="px-2.5 pb-2.5">
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#3a3a3c] border border-[#4a4a4d] focus-within:border-[#0a84ff]">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#2c2c2e] border border-[#4a4a4d] focus-within:border-[#0a84ff]">
               <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
               <input
                 ref={searchRef}
@@ -95,7 +96,7 @@ export default function ProjectSelect({
             </div>
           </div>
 
-          <div className="max-h-72 overflow-y-auto pb-1.5 px-1.5 border-t border-[#3f3f42]">
+          <div className="max-h-72 overflow-y-auto pb-1.5 px-1.5 border-t border-[#4a4a4d]">
             {filtered.length === 0 ? (
               <p className="px-2 py-3 text-sm text-gray-400">
                 No projects match &quot;{query}&quot;
@@ -125,7 +126,7 @@ export default function ProjectSelect({
           </div>
 
           {canCreate && (
-            <div className="px-1.5 pb-1.5 pt-1 border-t border-[#3f3f42]">
+            <div className="px-1.5 pb-1.5 pt-1 border-t border-[#4a4a4d]">
               <button
                 onClick={() => {
                   setOpen(false);

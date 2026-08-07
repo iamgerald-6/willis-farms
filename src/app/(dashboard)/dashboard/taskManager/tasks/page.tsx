@@ -123,9 +123,14 @@ export default function TaskManagerTasksPage() {
         ) : (
           <>
             {selectedProject && (
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3">
-                {selectedProject.name}
-              </h2>
+              <div className="mb-3">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                  {selectedProject.name}
+                </h2>
+                {selectedProject.description && (
+                  <p className="text-sm text-gray-500 mt-1">{selectedProject.description}</p>
+                )}
+              </div>
             )}
             <ProjectSelect
               projects={projects}
