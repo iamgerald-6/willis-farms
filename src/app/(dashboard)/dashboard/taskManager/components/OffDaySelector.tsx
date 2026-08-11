@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Clock } from "lucide-react";
+import { DAY_NAMES, DAY_NAMES_FULL, TASK_MANAGER_BRAND_COLOR as BRAND } from "@/lib/taskManagerConstants";
 
 export interface OffDayRow {
   id: string;
@@ -9,19 +10,6 @@ export interface OffDayRow {
   day_of_week: number;
   effective_from: string;
 }
-
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_NAMES_FULL = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
-const BRAND = "#C62828";
 
 function fmtOffDate(d: string): string {
   return new Date(d + "T00:00:00").toLocaleDateString("en-GB", {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
+import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/projects
 // Anyone with the tm_can_view_all_tasks grant (or who's super_admin) sees
@@ -120,6 +121,13 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
     if (error) throw error;
+
+    await writeProjectAuditLog({
+      project_id: data.id,
+      action: "created",
+      new_values: { name: data.name },
+      performedBy: user,
+    });
 
     return NextResponse.json({ project: data });
   } catch (err: any) {

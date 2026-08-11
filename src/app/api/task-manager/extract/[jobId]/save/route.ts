@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { writeAuditLog, enrichTasks, fetchUserNames } from "@/lib/taskManagerData";
-import { normalizeSubtaskWeights } from "@/lib/subtaskProgress";
 import type { ExtractedTaskProposal } from "@/types/taskManager";
 
 // POST /api/task-manager/extract/[jobId]/save — Senior Management only.
@@ -77,9 +76,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
       };
     });
 
-    // A single INSERT ... VALUES (...), (...) ... RETURNING * always returns
-    // rows in the same order they were listed — relied on below to zip each
-    // created row back up with the proposal (and its subtasks) it came from.
     const { data: created, error } = await supabaseAdmin.from("tm_tasks").insert(rowsToInsert).select();
     if (error) throw error;
 
@@ -89,35 +85,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
           task_id: task.id,
           project_id: task.project_id,
           action: "created",
-          new_values: { title: task.title, due_date: task.due_date, source: "ai_extracted" },
+          // source_document_name rides along here so the History drawer can
+          // show which document a task came from, not just that it was
+          // AI-extracted (see AuditLogDrawer.tsx) — task.source_document_name
+          // is already set above from the matched/joined file name(s).
+          new_values: { title: task.title, due_date: task.due_date, source: "ai_extracted", source_document_name: task.source_document_name },
           performedBy: user,
         }),
       ),
     );
 
-    // Any proposal the reviewer kept a subtask breakdown on gets those saved
-    // as real tm_subtasks rows (depth 1, straight under the task) — the
-    // weights are re-normalized here rather than trusted as-is, since a
-    // reviewer could've left them not quite summing to 100. A proposal whose
-    // breakdown can't be salvaged (see normalizeSubtaskWeights) just saves
-    // as a plain task with no subtasks rather than failing the whole batch.
-    const subtaskRows = (created ?? []).flatMap((task, i) => {
-      const normalized = normalizeSubtaskWeights(tasks[i]?.subtasks);
-      if (!normalized) return [];
-      return normalized.map((s, position) => ({
-        task_id: task.id,
-        parent_id: null,
-        title: s.title,
-        weight_percent: s.weight_percent,
-        depth: 1,
-        position,
-      }));
-    });
-    if (subtaskRows.length > 0) {
-      const { error: subtaskError } = await supabaseAdmin.from("tm_subtasks").insert(subtaskRows);
-      if (subtaskError) console.error("[extract/save] failed to save subtasks", subtaskError);
-    }
-
+    // Subtasks are never proposed or saved as part of this flow anymore —
+    // Claude no longer suggests a breakdown (see EXTRACTION_TOOL in
+    // extract/route.ts), and a reviewer adds them the normal way, after the
+    // fact, via the Subtasks panel on the saved task (same one used for any
+    // manually-created task) — not in this pre-save review window.
     const userNames = await fetchUserNames((created ?? []).map((t) => t.owner_id));
     return NextResponse.json({ tasks: enrichTasks(created ?? [], userNames) });
   } catch (err: any) {

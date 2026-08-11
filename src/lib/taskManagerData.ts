@@ -1,7 +1,8 @@
 import { supabaseAdmin, type RequestUser } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import { computeNextDueDate } from "@/lib/taskRecurrence";
-import type { TMTask, AuditAction } from "@/types/taskManager";
+import { buildSubtaskTree, computeSubtaskGroupStatus } from "@/lib/subtaskProgress";
+import type { TMTask, TMSubtask, AuditAction, ProjectAuditAction } from "@/types/taskManager";
 
 /** Looks up display names for a set of user ids from the `users` table. */
 export async function fetchUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -32,29 +33,98 @@ export async function fetchProjectNames(projectIds: string[]): Promise<Record<st
   return map;
 }
 
-/** Attaches owner_name + the computed display_status (and, optionally, project_name / has_subtasks) to raw task rows. */
+/**
+ * Attaches owner_name + the computed display_status (and, optionally,
+ * project_name / has_subtasks) to raw task rows.
+ *
+ * `subtaskTrees` — when passed — lets a task with subtasks get its
+ * display_status from computeSubtaskGroupStatus instead of the ordinary
+ * due-date-driven computeDisplayStatus, per the client's rule that a task's
+ * own due date stops driving its status once it has subtasks. lifecycle
+ * still wins either way (a deleted/archived/completed task shows that,
+ * regardless of what its subtasks say) — computeDisplayStatus already
+ * short-circuits on lifecycle_status before it ever looks at due_date, so
+ * that's reused here for the "does lifecycle override?" check rather than
+ * duplicating it.
+ *
+ * Only the list route (GET /api/task-manager/tasks) currently passes
+ * subtaskTrees — the same caveat as has_subtasks already documented on
+ * TMTask applies here too: other routes that return a single task default
+ * to the plain due-date status, since the client always refetches the list
+ * afterward anyway.
+ */
 export function enrichTasks(
   tasks: any[],
   userNames: Record<string, string>,
   projectNames?: Record<string, string>,
-  subtaskTaskIds?: Set<string>,
+  subtaskTrees?: Map<string, TMSubtask[]>,
 ): TMTask[] {
-  return tasks.map((t) => ({
-    ...t,
-    owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
-    display_status: computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent),
-    ...(projectNames ? { project_name: projectNames[t.project_id] ?? null } : {}),
-    has_subtasks: subtaskTaskIds ? subtaskTaskIds.has(t.id) : false,
-  }));
+  return tasks.map((t) => {
+    const tree = subtaskTrees?.get(t.id);
+    const dueDateStatus = computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent);
+    const lifecycleOverrides = t.lifecycle_status !== "active";
+    const subtaskStatus = !lifecycleOverrides && tree && tree.length > 0 ? computeSubtaskGroupStatus(tree) : null;
+
+    return {
+      ...t,
+      owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
+      display_status: subtaskStatus ?? dueDateStatus,
+      ...(projectNames ? { project_name: projectNames[t.project_id] ?? null } : {}),
+      has_subtasks: !!tree && tree.length > 0,
+    };
+  });
 }
 
-/** Which of the given task ids have at least one subtask row (any depth). Used to decide whether a task's progress is subtask-driven. */
-export async function fetchTaskIdsWithSubtasks(taskIds: string[]): Promise<Set<string>> {
+/**
+ * Fetches every subtask row for the given task ids and groups them into a
+ * per-task tree (task_id -> nested TMSubtask[], statuses already attached —
+ * see attachSubtaskStatuses). A task id with no subtask rows simply has no
+ * entry in the returned map. Used by the tasks list route so enrichTasks can
+ * derive both has_subtasks and the subtask-aggregated display_status without
+ * a second round trip per task.
+ */
+export async function fetchSubtaskTreesByTaskId(taskIds: string[]): Promise<Map<string, TMSubtask[]>> {
   const uniqueIds = [...new Set(taskIds.filter(Boolean))];
-  if (uniqueIds.length === 0) return new Set();
+  const map = new Map<string, TMSubtask[]>();
+  if (uniqueIds.length === 0) return map;
 
-  const { data } = await supabaseAdmin.from("tm_subtasks").select("task_id").in("task_id", uniqueIds);
-  return new Set((data ?? []).map((r) => r.task_id));
+  const { data } = await supabaseAdmin
+    .from("tm_subtasks")
+    .select("*")
+    .in("task_id", uniqueIds)
+    .order("position", { ascending: true });
+
+  const byTask = new Map<string, any[]>();
+  for (const row of data ?? []) {
+    if (!byTask.has(row.task_id)) byTask.set(row.task_id, []);
+    byTask.get(row.task_id)!.push(row);
+  }
+  for (const [taskId, rows] of byTask) {
+    map.set(taskId, buildSubtaskTree(rows));
+  }
+  return map;
+}
+
+/** Every owner_id used anywhere in a subtask tree (any depth), for a single fetchUserNames call. */
+export function collectSubtaskOwnerIds(nodes: TMSubtask[]): string[] {
+  const ids: string[] = [];
+  const walk = (list: TMSubtask[]) => {
+    for (const n of list) {
+      if (n.owner_id) ids.push(n.owner_id);
+      if (n.children) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return ids;
+}
+
+/** Stamps owner_name onto every node in a subtask tree, same idea as enrichTasks does for a task's owner_id. */
+export function attachSubtaskOwnerNames(nodes: TMSubtask[], userNames: Record<string, string>): TMSubtask[] {
+  return nodes.map((n) => ({
+    ...n,
+    owner_name: n.owner_id ? (userNames[n.owner_id] ?? "Unknown") : null,
+    children: n.children ? attachSubtaskOwnerNames(n.children, userNames) : n.children,
+  }));
 }
 
 const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
@@ -211,8 +281,23 @@ export async function applyLifecycleChange(
  * to touch themselves, without full edit permission. Hitting 100 auto-
  * completes the task (same effect as Senior Management clicking Complete).
  * Caller is responsible for the owner-or-Senior-Management permission check.
+ *
+ * `allowReopen` — set by the subtask routes (see subtasks/route.ts and
+ * subtasks/[subtaskId]/route.ts), never by the plain manual-slider route.
+ * A task with subtasks auto-completes the moment its rollup hits 100%
+ * (lifecycle_status -> "completed"), same as this function's own
+ * autoCompleting branch below. Unchecking a subtask afterward recomputes a
+ * LOWER rollup — without this flag, the guard right below would reject that
+ * write outright because the task is no longer "active", silently freezing
+ * the main progress bar at 100% even though the reviewer just unticked
+ * something. allowReopen lets that one case through and back into the
+ * ordinary non-autoCompleting branch, which already sets lifecycle_status
+ * back to "active" and clears completed_at — i.e. it un-completes the task
+ * to match what the subtasks now actually show. A task that's archived or
+ * deleted (an explicit lifecycle action, not just a rollup side effect)
+ * still can't have its progress touched this way.
  */
-export async function updateTaskProgress(taskId: string, rawProgress: number, performedBy: RequestUser) {
+export async function updateTaskProgress(taskId: string, rawProgress: number, performedBy: RequestUser, options?: { allowReopen?: boolean }) {
   const progress = Math.max(0, Math.min(100, Math.round(rawProgress)));
 
   const { data: existing, error: fetchError } = await supabaseAdmin
@@ -221,10 +306,11 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
     .eq("id", taskId)
     .single();
   if (fetchError || !existing) return { error: "Task not found", status: 404 as const };
-  if (existing.lifecycle_status !== "active") {
+  const canReopen = options?.allowReopen && existing.lifecycle_status === "completed" && progress < 100;
+  if (existing.lifecycle_status !== "active" && !canReopen) {
     return { error: "Only active tasks can have their progress updated", status: 400 as const };
   }
-  if (existing.progress_percent === progress) {
+  if (existing.lifecycle_status === "active" && existing.progress_percent === progress) {
     const userNames = await fetchUserNames([existing.owner_id]);
     return { task: enrichTasks([existing], userNames)[0] };
   }
@@ -293,4 +379,28 @@ export async function writeAuditLog(params: {
     },
   ]);
   if (error) console.error("[writeAuditLog]", error);
+}
+
+/** Mirrors writeAuditLog above, but for tm_project_audit_log — see projects/route.ts and projects/[id]/route.ts for call sites. */
+export async function writeProjectAuditLog(params: {
+  project_id: string;
+  action: ProjectAuditAction;
+  changed_fields?: string[];
+  previous_values?: Record<string, unknown> | null;
+  new_values?: Record<string, unknown> | null;
+  performedBy: RequestUser;
+}) {
+  const { error } = await supabaseAdmin.from("tm_project_audit_log").insert([
+    {
+      project_id: params.project_id,
+      action: params.action,
+      changed_fields: params.changed_fields ?? null,
+      previous_values: params.previous_values ?? null,
+      new_values: params.new_values ?? null,
+      performed_by: params.performedBy.id,
+      performed_by_name: params.performedBy.name,
+      performed_at: new Date().toISOString(),
+    },
+  ]);
+  if (error) console.error("[writeProjectAuditLog]", error);
 }

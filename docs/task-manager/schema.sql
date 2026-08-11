@@ -88,6 +88,47 @@ create table if not exists tm_task_audit_log (
 create index if not exists tm_audit_task_id_idx on tm_task_audit_log(task_id);
 create index if not exists tm_audit_project_id_idx on tm_task_audit_log(project_id);
 
+-- ── Project audit log ────────────────────────────────────────────────────
+-- Added by project-audit-log.sql. Mirrors tm_task_audit_log above, but for
+-- the project itself: created, renamed (name and/or description), archived,
+-- restored. No AI-extracted vs manual distinction — only tasks can be
+-- AI-extracted. Deletion is NOT tracked here (these rows cascade-delete with
+-- their project) — see tm_project_deletions below instead.
+create table if not exists tm_project_audit_log (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references tm_projects(id) on delete cascade,
+
+  action text not null check (action in ('created', 'renamed', 'archived', 'restored')),
+  changed_fields jsonb,          -- e.g. ["name", "description"]
+  previous_values jsonb,
+  new_values jsonb,
+
+  performed_by uuid not null,
+  performed_by_name text not null,
+  performed_at timestamptz not null default now()
+);
+
+create index if not exists tm_project_audit_project_id_idx on tm_project_audit_log(project_id);
+
+-- ── Project deletion tombstone ──────────────────────────────────────────
+-- Added by project-audit-log.sql. A permanent record of who deleted a
+-- project and when — deliberately NOT a FK to tm_projects, so it survives
+-- the project's own hard/cascading delete. Shown as a short "Recently
+-- Deleted Projects" read-only list in Manage Projects. Deletion stays
+-- instant and permanent — this is just a record of who did it and when, not
+-- a soft-delete/restore mechanism.
+create table if not exists tm_project_deletions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null,      -- not a FK — the project row is gone by the time this is read
+  project_name text not null,
+
+  deleted_by uuid not null,
+  deleted_by_name text not null,
+  deleted_at timestamptz not null default now()
+);
+
+create index if not exists tm_project_deletions_deleted_at_idx on tm_project_deletions(deleted_at);
+
 -- ── Subtasks ─────────────────────────────────────────────────────────────
 -- Nested up to 4 levels deep; each sibling group's weight_percent values
 -- must sum to exactly 100 (enforced in the API — see docs/task-manager/
@@ -105,12 +146,24 @@ create table if not exists tm_subtasks (
   depth int not null check (depth between 1 and 4),
   position int not null default 0,
 
+  -- Added by subtask-fields.sql. Optional per node; a node's dates are
+  -- meant to fall within its immediate parent's dates (task, or one level
+  -- up for a nested subtask) — enforced in the API, not here. Status is
+  -- never stored for a subtask either, same as tm_tasks.display_status —
+  -- it's computed at read time from these dates + is_done (leaves) or from
+  -- aggregating children's statuses (any node with children). See
+  -- src/lib/subtaskProgress.ts.
+  owner_id uuid,                 -- references public.users.user_id; no role restriction
+  start_date date,
+  due_date date,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists tm_subtasks_task_id_idx on tm_subtasks(task_id);
 create index if not exists tm_subtasks_parent_id_idx on tm_subtasks(parent_id);
+create index if not exists tm_subtasks_owner_id_idx on tm_subtasks(owner_id);
 
 -- ── AI document-extraction jobs ─────────────────────────────────────────
 -- A staging area: Claude proposes tasks from an uploaded document, a Senior

@@ -61,10 +61,15 @@ export default function ProjectSelect({
       >
         <Search className="w-4 h-4 text-gray-400 shrink-0" />
         {/* The selected project's name is shown once, as the page heading
-            above this control — this trigger is purely the way to search
-            and switch, so it always reads "Search projects" rather than
-            echoing the current selection. */}
-        <span className="flex-1 text-sm text-gray-400 truncate">Search projects</span>
+            above this control — this trigger is purely the way to search,
+            switch, or (for Senior Management) create a project, so it
+            always reads this same prompt rather than echoing the current
+            selection. Wording depends on canCreate so it never promises
+            "create" to someone who won't actually see that option once the
+            dropdown opens. */}
+        <span className="flex-1 text-sm text-gray-400">
+          {canCreate ? "Click here to create/search project" : "Click here to search for a project"}
+        </span>
         <ChevronDown
           className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
         />

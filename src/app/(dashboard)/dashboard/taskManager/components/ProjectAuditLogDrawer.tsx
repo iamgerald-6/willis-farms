@@ -4,62 +4,36 @@ import { useQuery } from "@tanstack/react-query";
 import { X, History } from "lucide-react";
 import api from "@/lib/api";
 import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
-import { TMAuditLogEntry, TMTask } from "@/types/taskManager";
+import { TMProjectAuditLogEntry, TMProject } from "@/types/taskManager";
 
 const ACTION_LABEL: Record<string, string> = {
   created: "Created",
-  edited: "Edited",
+  renamed: "Renamed",
   archived: "Archived",
-  deleted: "Deleted",
   restored: "Restored",
-  completed: "Marked complete",
 };
 
 const FIELD_LABEL: Record<string, string> = {
-  title: "Task",
-  owner_id: "Owner",
-  due_date: "Due date",
+  name: "Name",
   description: "Description",
-  lifecycle_status: "Status",
-
-  project_id: "Project",
-  task_type: "Tab",
 };
 
-const TASK_TYPE_LABEL: Record<string, string> = {
-  obligation: "Obligation Register",
-  monitoring: "Monitoring Schedule",
-  general: "General",
-};
-
-function formatValue(field: string, value: unknown): string {
+function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
-  if (field === "due_date") {
-    const d = new Date(String(value));
-    return isNaN(d.getTime())
-      ? String(value)
-      : d.toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        });
-  }
-  if (field === "task_type")
-    return TASK_TYPE_LABEL[String(value)] ?? String(value);
   return String(value);
 }
 
-export default function AuditLogDrawer({
-  task,
+export default function ProjectAuditLogDrawer({
+  project,
   onClose,
 }: {
-  task: TMTask;
+  project: TMProject;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useQuery<{ entries: TMAuditLogEntry[] }>({
-    queryKey: ["task-audit", task.id],
+  const { data, isLoading } = useQuery<{ entries: TMProjectAuditLogEntry[] }>({
+    queryKey: ["project-audit", project.id],
     queryFn: async () =>
-      (await api.get(`/task-manager/tasks/${task.id}/audit`)).data,
+      (await api.get(`/task-manager/projects/${project.id}/audit`)).data,
   });
 
   return (
@@ -73,7 +47,7 @@ export default function AuditLogDrawer({
             </div>
             <div>
               <h3 className="text-sm font-bold text-gray-900">History</h3>
-              <p className="text-xs text-gray-500 mt-0.5">{task.title}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{project.name}</p>
             </div>
           </div>
           <button
@@ -89,32 +63,11 @@ export default function AuditLogDrawer({
           {!isLoading && (data?.entries.length ?? 0) === 0 && (
             <p className="text-sm text-gray-400">No changes logged yet.</p>
           )}
-          {data?.entries.map((entry) => {
-            // A "created" entry never sets changed_fields (nothing to diff
-            // against) — this was the only place `source: "ai_extracted"`,
-            // already written by the extraction save route, could actually
-            // be surfaced. Without this check every task's history just
-            // said "Created", whether it came from a document or was typed
-            // in by hand.
-            const isAiCreated = entry.action === "created" && entry.new_values?.source === "ai_extracted";
-            const sourceDocName = entry.new_values?.source_document_name;
-            return (
+          {data?.entries.map((entry) => (
             <div key={entry.id} className="border-l-2 border-red-200 pl-4 pb-1">
-              {isAiCreated ? (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-sm font-semibold text-gray-900">Created</p>
-                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">
-                    AI extracted
-                  </span>
-                </div>
-              ) : (
-                <p className="text-sm font-semibold text-gray-900">
-                  {ACTION_LABEL[entry.action] ?? entry.action}
-                </p>
-              )}
-              {isAiCreated && !!sourceDocName && (
-                <p className="text-xs text-gray-500 mt-0.5">From: {String(sourceDocName)}</p>
-              )}
+              <p className="text-sm font-semibold text-gray-900">
+                {ACTION_LABEL[entry.action] ?? entry.action}
+              </p>
               <p className="text-xs text-gray-500 mt-0.5">
                 {entry.performed_by_name} &middot;{" "}
                 {new Date(entry.performed_at).toLocaleString("en-GB")}
@@ -127,19 +80,18 @@ export default function AuditLogDrawer({
                         {FIELD_LABEL[field] ?? field}:
                       </span>{" "}
                       <span className="line-through text-gray-400">
-                        {formatValue(field, entry.previous_values?.[field])}
+                        {formatValue(entry.previous_values?.[field])}
                       </span>{" "}
                       →{" "}
                       <span className="text-gray-800">
-                        {formatValue(field, entry.new_values?.[field])}
+                        {formatValue(entry.new_values?.[field])}
                       </span>
                     </p>
                   ))}
                 </div>
               )}
             </div>
-            );
-          })}
+          ))}
         </div>
       </div>
     </div>

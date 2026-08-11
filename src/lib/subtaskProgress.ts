@@ -1,4 +1,4 @@
-import type { TMSubtask } from "@/types/taskManager";
+import type { DisplayStatus, TMSubtask } from "@/types/taskManager";
 
 /** Subtasks can nest this many levels deep (depth 1 = a direct child of the task). */
 export const MAX_SUBTASK_DEPTH = 4;
@@ -25,24 +25,44 @@ export function buildSubtaskTree(rows: SubtaskRow[]): TMSubtask[] {
 /**
  * A node's own completion, 0-100. Leaf (no children) = 100 if ticked done,
  * else 0 — the only place a human's tick actually counts. Any node WITH
- * children ignores its own is_done entirely and is instead the weighted sum
- * of its children's completion, cascading all the way up. Matches Sheila's
- * "build a house" example: buy materials (10%) + hire staff (10%) + paint
- * house (50%) + pay contractors (30%) = 100% once every leaf is ticked.
+ * children ignores its own is_done entirely and is instead derived from its
+ * children, cascading all the way up. Matches Sheila's "build a house"
+ * example: buy materials (10%) + hire staff (10%) + paint house (50%) + pay
+ * contractors (30%) = 100% once every leaf is ticked.
+ *
+ * weight_percent is ABSOLUTE at every depth — each node's own share of the
+ * WHOLE task, not a fraction of its immediate parent. A group of siblings'
+ * weights sum to their immediate parent's own weight_percent (enforced at
+ * save time — see the subtasks PUT route), with the task itself standing in
+ * as an implicit "parent" of weight 100 for the top-level group. So a 30%
+ * subtask broken into 4 even children gets children weighing ~7.5% each
+ * (rounded), not 25% each — they add up to 30, not to 100.
+ *
+ * Because of that, a parent node's own 0-100 completion has to be expressed
+ * relative to ITS OWN weight, not to 100: sum up how much of the node's
+ * absolute weight is actually done (each child's weight × that child's own
+ * completion), then divide by the node's own weight_percent to turn it back
+ * into a plain 0-100 "how much of what I'm allocated is finished" number —
+ * e.g. one of four ~7.5%-weight children done = 7.5 of the parent's 30 done
+ * = 25% complete, the same number a reviewer would expect from "1 of 4".
  */
 export function computeNodeCompletion(node: TMSubtask): number {
   if (!node.children || node.children.length === 0) {
     return node.is_done ? 100 : 0;
   }
-  const weighted = node.children.reduce((sum, child) => sum + (child.weight_percent / 100) * computeNodeCompletion(child), 0);
-  return Math.round(weighted);
+  if (!node.weight_percent) return 0;
+  const doneAbsolute = node.children.reduce((sum, child) => sum + (child.weight_percent / 100) * computeNodeCompletion(child), 0);
+  return Math.round((doneAbsolute / node.weight_percent) * 100);
 }
 
 /**
  * The task-level rollup: the weighted completion of the top-level subtask
- * group. Returns null when the task has no subtasks at all — callers should
- * treat null as "this task isn't using subtasks, leave progress_percent
- * alone / fall back to the manual slider" rather than as 0%.
+ * group. Unchanged by the switch to absolute nested weights above — the
+ * top-level group's own weights were already absolute (they sum to 100,
+ * the task's own "weight"), so this formula reads the same either way.
+ * Returns null when the task has no subtasks at all — callers should treat
+ * null as "this task isn't using subtasks, leave progress_percent alone /
+ * fall back to the manual slider" rather than as 0%.
  */
 export function computeTaskRollup(tree: TMSubtask[]): number | null {
   if (tree.length === 0) return null;
@@ -56,38 +76,121 @@ export function sumWeights(items: { weight_percent: number }[]): number {
 }
 
 /**
- * Cleans up a raw, possibly-imperfect list of {title, weight_percent} —
- * e.g. straight from document extraction, where Claude's percentages are a
- * best-effort read of the document and won't always add up to exactly 100 —
- * into a set that does, or returns null if it can't be salvaged (fewer than
- * two usable rows, or the weights are all zero/missing). Unlike the manual
- * subtask editor (which hard-blocks a save until the reviewer's numbers sum
- * to exactly 100), this is meant for a one-time bulk import: it's better to
- * proportionally rescale Claude's numbers to fit than to reject an
- * otherwise-good breakdown over rounding, and better to silently drop a
- * genuinely unusable breakdown than to save something that violates the
- * "siblings sum to 100" invariant everywhere else in the app relies on.
+ * Splits `total` into `count` whole-number shares as evenly as possible
+ * (e.g. 100 over 4 -> [25,25,25,25], 100 over 3 -> [34,33,33], 30 over 4 ->
+ * [8,8,7,7]) — any remainder from the division goes to the first few shares
+ * so the total is always exactly `total`, never off by a point of rounding.
+ * `total` defaults to 100 for a top-level group; a nested group passes the
+ * parent subtask's own weight_percent instead, since children now weigh a
+ * share of their parent's allocation rather than always summing to 100 (see
+ * computeNodeCompletion). Used to auto-populate a sibling group's weights
+ * whenever a row is added or removed, so the common "just split evenly"
+ * case never requires typing numbers by hand; a reviewer can still type
+ * over any individual weight afterward for an intentionally uneven split.
  */
-export function normalizeSubtaskWeights(
-  raw: { title?: string; weight_percent?: number }[] | undefined | null,
-): { title: string; weight_percent: number }[] | null {
-  if (!raw || raw.length < 2) return null;
+export function evenSplitWeights(count: number, total: number = 100): number[] {
+  if (count <= 0 || total <= 0) return [];
+  const base = Math.floor(total / count);
+  const remainder = total - base * count;
+  return Array.from({ length: count }, (_, i) => (i < remainder ? base + 1 : base));
+}
 
-  const valid = raw
-    .map((r) => ({ title: (r.title ?? "").trim(), weight_percent: Number(r.weight_percent) }))
-    .filter((r) => r.title && Number.isFinite(r.weight_percent) && r.weight_percent > 0);
-  if (valid.length < 2) return null;
+/**
+ * Does `date` fall within [boundStart, boundEnd]? Either bound being
+ * null/undefined means "no constraint on that side" — e.g. a task with no
+ * due_date set yet imposes no ceiling on its subtasks' dates. A missing
+ * `date` always passes — an unset date has nothing to validate. Dates are
+ * plain ISO "YYYY-MM-DD" strings throughout this app, which sort/compare
+ * correctly as strings.
+ */
+export function isDateWithin(
+  date: string | null | undefined,
+  boundStart: string | null | undefined,
+  boundEnd: string | null | undefined,
+): boolean {
+  if (!date) return true;
+  if (boundStart && date < boundStart) return false;
+  if (boundEnd && date > boundEnd) return false;
+  return true;
+}
 
-  const total = valid.reduce((sum, r) => sum + r.weight_percent, 0);
-  if (total <= 0) return null;
+/**
+ * A LEAF subtask's own status — the subtask equivalent of
+ * computeDisplayStatus (taskAccessControl.ts), but working off is_done +
+ * start_date/due_date instead of progress_percent, since a leaf subtask has
+ * no percentage field of its own (only a tick). Ticked always wins; past due
+ * and not ticked is Overdue regardless of whether it's "started"; otherwise
+ * a start_date that's already arrived reads as In Progress (the closest
+ * subtask-level analogue of progress_percent > 0), and anything else —
+ * including a subtask with no dates set at all — is Not Started. Never
+ * returns "Compliant / Ongoing", "Archived", or "Deleted" — those are
+ * task-only lifecycle states that don't apply to a subtask.
+ */
+export function computeLeafSubtaskStatus(node: Pick<TMSubtask, "is_done" | "start_date" | "due_date">): DisplayStatus {
+  if (node.is_done) return "Completed";
 
-  const rounded = valid.map((r) => Math.max(1, Math.round((r.weight_percent / total) * 100)));
-  const drift = 100 - rounded.reduce((sum, n) => sum + n, 0);
-  if (drift !== 0) {
-    const maxIdx = rounded.reduce((best, val, i) => (val > rounded[best] ? i : best), 0);
-    rounded[maxIdx] += drift;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (node.due_date) {
+    const due = new Date(node.due_date);
+    due.setHours(0, 0, 0, 0);
+    if (due.getTime() < today.getTime()) return "Overdue";
   }
-  if (rounded.some((w) => w < 1) || rounded.reduce((sum, n) => sum + n, 0) !== 100) return null;
 
-  return valid.map((r, i) => ({ title: r.title, weight_percent: rounded[i] }));
+  if (node.start_date) {
+    const start = new Date(node.start_date);
+    start.setHours(0, 0, 0, 0);
+    if (start.getTime() <= today.getTime()) return "In Progress";
+  }
+
+  return "Not Started";
+}
+
+/**
+ * The priority rule a client meeting confirmed for rolling a set of sibling
+ * statuses up to their parent's (or the task's own): any Overdue wins
+ * outright; otherwise all-Completed -> Completed, all-Not-Started -> Not
+ * Started; any other mix (some done, some not, some in progress, etc.) ->
+ * In Progress. Used both to aggregate a subtask node's children into that
+ * node's own status, and to aggregate a task's top-level subtask group into
+ * the task's own display_status.
+ */
+function computeGroupStatus(statuses: DisplayStatus[]): DisplayStatus {
+  if (statuses.some((s) => s === "Overdue")) return "Overdue";
+  if (statuses.every((s) => s === "Completed")) return "Completed";
+  if (statuses.every((s) => s === "Not Started")) return "Not Started";
+  return "In Progress";
+}
+
+/**
+ * Walks the tree bottom-up, stamping a `status` onto every node — leaves via
+ * computeLeafSubtaskStatus, any node with children via computeGroupStatus
+ * over its (already-stamped) children. Returns a new tree; doesn't mutate
+ * the input. This is what the subtask API routes run their trees through
+ * before returning them, so the client never has to recompute status itself.
+ */
+export function attachSubtaskStatuses(nodes: TMSubtask[]): TMSubtask[] {
+  return nodes.map((node) => {
+    const children = node.children && node.children.length > 0 ? attachSubtaskStatuses(node.children) : node.children;
+    const status =
+      children && children.length > 0
+        ? computeGroupStatus(children.map((c) => c.status as DisplayStatus))
+        : computeLeafSubtaskStatus(node);
+    return { ...node, children, status };
+  });
+}
+
+/**
+ * The task-level rollup, status edition — the subtask-tree equivalent of
+ * computeDisplayStatus. Returns null when the task has no subtasks at all
+ * (mirrors computeTaskRollup's null convention), so callers know to fall
+ * back to the ordinary due-date-driven status instead. Once a task has
+ * subtasks, its own due_date stops driving its status — this is what drives
+ * it instead, same priority rule as any other node in the tree.
+ */
+export function computeSubtaskGroupStatus(tree: TMSubtask[]): DisplayStatus | null {
+  if (tree.length === 0) return null;
+  const statused = attachSubtaskStatuses(tree);
+  return computeGroupStatus(statused.map((n) => n.status as DisplayStatus));
 }

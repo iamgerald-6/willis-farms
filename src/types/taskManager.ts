@@ -24,6 +24,12 @@ export type AuditAction =
   | "restored"
   | "completed";
 
+// Deliberately narrower than AuditAction above — a project is never
+// AI-extracted or "completed", and its deletion is tracked separately (see
+// TMProjectDeletion) rather than as a row in its own audit log, since that
+// log cascade-deletes along with the project.
+export type ProjectAuditAction = "created" | "renamed" | "archived" | "restored";
+
 export interface TMProject {
   id: string;
   name: string;
@@ -96,6 +102,28 @@ export interface TMSubtask {
   created_at: string;
   updated_at: string;
   children?: TMSubtask[];
+
+  // Owner can be anyone with an account — no Senior-Management restriction,
+  // unlike task ownership. A node's dates are meant to fall within its
+  // immediate parent's dates (the task's, for a top-level subtask; the
+  // parent subtask's, one level up, for a nested one) — enforced server-side
+  // in the subtasks PUT route.
+  owner_id?: string | null;
+  start_date?: string | null; // ISO date, e.g. "2026-01-15"
+  due_date?: string | null; // ISO date, e.g. "2026-12-31"
+
+  // Attached by the API — not stored columns.
+  owner_name?: string | null;
+  // A leaf's status comes from its own dates + is_done (see
+  // computeLeafSubtaskStatus in subtaskProgress.ts); any node with children
+  // gets its status by aggregating its direct children's statuses via the
+  // same priority rule used for the task-level rollup (Overdue > all-
+  // Completed > all-Not-Started > else In Progress) — a separate
+  // computation entirely from the weighted weight_percent/is_done completion
+  // percentage above. Only "Not Started" | "In Progress" | "Overdue" |
+  // "Completed" are ever produced for a subtask — never the task-only
+  // "Compliant / Ongoing", "Archived", or "Deleted" values.
+  status?: DisplayStatus;
 }
 
 export interface TMAuditLogEntry {
@@ -111,9 +139,37 @@ export interface TMAuditLogEntry {
   performed_at: string;
 }
 
+export interface TMProjectAuditLogEntry {
+  id: string;
+  project_id: string;
+  action: ProjectAuditAction;
+  changed_fields?: string[] | null;
+  previous_values?: Record<string, unknown> | null;
+  new_values?: Record<string, unknown> | null;
+  performed_by: string;
+  performed_by_name: string;
+  performed_at: string;
+}
+
+/** A tombstone row for a permanently-deleted project — see tm_project_deletions in schema.sql. */
+export interface TMProjectDeletion {
+  id: string;
+  project_id: string;
+  project_name: string;
+  deleted_by: string;
+  deleted_by_name: string;
+  deleted_at: string;
+}
+
 export interface ExtractionJobFile {
   file_name: string;
   file_url: string;
+  // 1-indexed pages to read, for a PDF the reviewer trimmed down in the
+  // page picker. Omitted (or absent) means "read the whole document",
+  // which is still the default for images, Word docs, and any PDF the
+  // reviewer didn't restrict. The server re-validates and hard-caps this
+  // at MAX_EXTRACTION_PAGES regardless of what's sent here.
+  pages?: number[];
 }
 
 export interface TMExtractionJob {
@@ -156,13 +212,6 @@ export interface ExtractedTaskProposal {
   // synthesizes information across several files rather than coming from
   // just one. Display-only, not saved onto the task itself.
   source_file_name?: string | null;
-  // Only present when the document describes multiple distinct steps this
-  // obligation breaks down into — each weight_percent is that step's share
-  // of the whole, meant to sum to 100 (see normalizeSubtaskWeights in
-  // subtaskProgress.ts, which forgives small rounding drift from the model
-  // and drops the set entirely rather than saving something invalid). The
-  // reviewer can edit titles/weights or add/remove rows before saving.
-  subtasks?: { title: string; weight_percent: number }[];
 }
 
 /** An already-uploaded document elsewhere in the portal, offered as an extraction source instead of uploading a fresh file. */

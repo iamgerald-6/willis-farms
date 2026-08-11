@@ -22,10 +22,12 @@ import {
 } from "@/types/taskManager";
 import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
+import { MAX_EXTRACTION_PAGES, MAX_DOCUMENT_PAGES, MAX_EXTRACTION_FILES as MAX_FILES, getPdfPageCount } from "@/lib/pdfPages";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
+import PdfPagePicker from "./PdfPagePicker";
 
-type Step = "upload" | "extracting" | "review";
+type Step = "upload" | "extracting" | "selectPages" | "review";
 type SourceMode = "upload" | "existing";
 
 async function uploadToCloudinary(file: File): Promise<{ secure_url: string }> {
@@ -47,7 +49,24 @@ async function uploadToCloudinary(file: File): Promise<{ secure_url: string }> {
   return { secure_url: json.secure_url };
 }
 
-const MAX_FILES = 5;
+// Checks a filename/MIME-type pair, but also takes an optional second
+// candidate (a URL) — SOP-library documents come back from
+// /task-manager/documents with file_name set to the content's *title*, not
+// its actual filename (see documents/route.ts), so ".pdf" only shows up on
+// the file's own URL for those. Uploaded files always have a real name +
+// MIME type from the browser, so the second candidate is unused there.
+function isPdfFile(name: string, secondary?: string) {
+  const looksLikePdf = (s?: string) => !!s && (s === "application/pdf" || s.toLowerCase().split("?")[0].endsWith(".pdf"));
+  return looksLikePdf(name) || looksLikePdf(secondary);
+}
+
+// One entry per PDF that needed narrowing down, keyed by its file_url (set
+// once a document's already uploaded, so it's stable across a retry).
+// `pages` is empty while a selection hasn't been made yet. `unrestricted`
+// means the picker couldn't load a preview/page count for this file —
+// extraction falls back to reading it in full rather than blocking on a
+// selection that was never possible to make.
+type PdfSelection = { pages: number[]; unrestricted: boolean };
 
 export default function DocumentExtractionModal({
   project,
@@ -70,6 +89,21 @@ export default function DocumentExtractionModal({
   const [files, setFiles] = useState<File[]>([]);
   const [selectedDocs, setSelectedDocs] = useState<PortalDocument[]>([]);
   const [docSearch, setDocSearch] = useState("");
+  // The batch (already-uploaded file_url/file_name pairs, no page
+  // restriction) that Claude couldn't finish reading in one pass — set only
+  // when extraction fails with "too many obligations", which is what drives
+  // the "selectPages" step. Everything is read in full by default; page
+  // selection is a recovery step, not something the reviewer has to think
+  // about up front.
+  const [pendingBatch, setPendingBatch] = useState<ExtractionJobFile[] | null>(null);
+  // Why the reviewer landed on the "selectPages" step — "pages" means a
+  // document was over MAX_DOCUMENT_PAGES and got flagged before extraction
+  // was even attempted; "obligations" means extraction actually ran and got
+  // cut off. Only changes the wording shown, not the picker itself.
+  const [selectPagesReason, setSelectPagesReason] = useState<"pages" | "obligations" | null>(null);
+  // Per-PDF page selection from the page picker, keyed by file_url — see
+  // PdfSelection above.
+  const [pdfSelections, setPdfSelections] = useState<Record<string, PdfSelection>>({});
   const [jobId, setJobId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ExtractedTaskProposal[]>([]);
   const [saving, setSaving] = useState(false);
@@ -92,6 +126,20 @@ export default function DocumentExtractionModal({
     sourceMode === "upload" ? files.length : selectedDocs.length;
   const canExtract = batchSize > 0 && batchSize <= MAX_FILES;
 
+  // Gates the "selectPages" retry button — every PDF in the failed batch
+  // needs a resolved selection first: either the picker settled on 1-2
+  // pages, or it couldn't preview the file at all (unrestricted, reads in
+  // full). While a picker is still loading its page count, there's no entry
+  // yet for that key, which blocks the button rather than racing ahead.
+  const retryGateOk =
+    !!pendingBatch &&
+    pendingBatch.every((f) => {
+      if (!isPdfFile(f.file_name, f.file_url)) return true;
+      const sel = pdfSelections[f.file_url];
+      if (!sel) return false;
+      return sel.unrestricted || sel.pages.length >= 1;
+    });
+
   const addFiles = (picked: FileList | null) => {
     if (!picked) return;
     setFiles((prev) => {
@@ -108,38 +156,48 @@ export default function DocumentExtractionModal({
     });
   };
 
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, j) => j !== idx));
+  };
+
   const toggleDoc = (doc: PortalDocument) => {
     setSelectedDocs((prev) =>
-      prev.some((d) => d.id === doc.id)
-        ? prev.filter((d) => d.id !== doc.id)
-        : [...prev, doc],
+      prev.some((d) => d.id === doc.id) ? prev.filter((d) => d.id !== doc.id) : [...prev, doc],
     );
   };
 
-  const handleExtract = async () => {
-    if (!canExtract) return;
+  // Checks each PDF in a batch against MAX_DOCUMENT_PAGES before extraction
+  // is even attempted — a document this long is very likely to blow through
+  // Claude's output limit anyway, so there's no point spending a full call
+  // just to find that out via the "too many obligations" failure. Uses the
+  // local File when we still have one (upload tab, no network round trip);
+  // falls back to fetching the URL otherwise (existing-document tab, or a
+  // retry). Can't tell either way (e.g. a fetch/parse failure) just lets
+  // the normal extraction attempt run rather than guessing.
+  const findOversizedPdf = async (batch: ExtractionJobFile[], localFiles?: File[]): Promise<boolean> => {
+    for (const entry of batch) {
+      if (!isPdfFile(entry.file_name, entry.file_url)) continue;
+      try {
+        const localFile = localFiles?.find((f) => f.name === entry.file_name);
+        const bytes = localFile ? await localFile.arrayBuffer() : await (await fetch(entry.file_url)).arrayBuffer();
+        const count = await getPdfPageCount(bytes);
+        if (count > MAX_DOCUMENT_PAGES) return true;
+      } catch {
+        // Ignore — fall through to a normal extraction attempt.
+      }
+    }
+    return false;
+  };
+
+  // Shared by the initial attempt and a page-restricted retry. Every
+  // document is read in full by default — page selection only ever enters
+  // the picture as a recovery step, triggered either by the page-count
+  // precheck above or by the server's "too many obligations" signal (see
+  // extract/route.ts), never as something the reviewer has to plan for up
+  // front.
+  const runExtraction = async (batch: ExtractionJobFile[]) => {
     setStep("extracting");
     try {
-      let batch: ExtractionJobFile[];
-      if (sourceMode === "upload") {
-        const uploaded = await Promise.all(
-          files.map(async (f) => {
-            try {
-              const { secure_url } = await uploadToCloudinary(f);
-              return { file_url: secure_url, file_name: f.name };
-            } catch (err: any) {
-              throw new Error(`"${f.name}": ${err.message ?? "upload failed"}`);
-            }
-          }),
-        );
-        batch = uploaded;
-      } else {
-        batch = selectedDocs.map((d) => ({
-          file_url: d.url,
-          file_name: d.file_name,
-        }));
-      }
-
       setSourceFileNames(batch.map((f) => f.file_name));
       const res = await api.post("/task-manager/extract", {
         project_id: project.id,
@@ -147,8 +205,19 @@ export default function DocumentExtractionModal({
       });
       setJobId(res.data.job.id);
       setProposals(res.data.job.extracted_tasks ?? []);
+      setPendingBatch(null);
+      setSelectPagesReason(null);
       setStep("review");
     } catch (err: any) {
+      if (err?.response?.data?.reason === "too_many_obligations") {
+        // Keep the original (unrestricted) batch around so the picker
+        // starts fresh from each document's real page count, then let the
+        // reviewer narrow it down and try again.
+        setPendingBatch(batch.map(({ file_url, file_name }) => ({ file_url, file_name })));
+        setSelectPagesReason("obligations");
+        setStep("selectPages");
+        return;
+      }
       // A blank error (no err.response.data.error) usually means the
       // request never got a proper response at all — most often a
       // platform timeout on an unusually large/high-resolution file,
@@ -162,40 +231,60 @@ export default function DocumentExtractionModal({
     }
   };
 
+  const handleExtract = async () => {
+    if (!canExtract) return;
+    setStep("extracting");
+    try {
+      let batch: ExtractionJobFile[];
+      if (sourceMode === "upload") {
+        batch = await Promise.all(
+          files.map(async (f) => {
+            try {
+              const { secure_url } = await uploadToCloudinary(f);
+              return { file_url: secure_url, file_name: f.name };
+            } catch (err: any) {
+              throw new Error(`"${f.name}": ${err.message ?? "upload failed"}`);
+            }
+          }),
+        );
+      } else {
+        batch = selectedDocs.map((d) => ({ file_url: d.url, file_name: d.file_name }));
+      }
+
+      if (await findOversizedPdf(batch, sourceMode === "upload" ? files : undefined)) {
+        setPendingBatch(batch);
+        setSelectPagesReason("pages");
+        setStep("selectPages");
+        return;
+      }
+
+      await runExtraction(batch);
+    } catch (err: any) {
+      // Upload to Cloudinary itself failed — we never got as far as calling
+      // /extract, so there's nothing more specific to report.
+      toast.error(err.message ?? "Upload failed");
+      setStep("upload");
+    }
+  };
+
+  const handleRetryWithPages = async () => {
+    if (!pendingBatch) return;
+    const batch = pendingBatch.map((f) => {
+      const sel = pdfSelections[f.file_url];
+      return {
+        ...f,
+        ...(sel && !sel.unrestricted && sel.pages.length > 0 ? { pages: sel.pages } : {}),
+      };
+    });
+    await runExtraction(batch);
+  };
+
   const updateProposal = (
     idx: number,
     patch: Partial<ExtractedTaskProposal>,
   ) => {
     setProposals((prev) =>
       prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
-    );
-  };
-
-  const updateSubtask = (
-    idx: number,
-    subIdx: number,
-    patch: Partial<{ title: string; weight_percent: number }>,
-  ) => {
-    setProposals((prev) =>
-      prev.map((p, i) =>
-        i === idx
-          ? { ...p, subtasks: (p.subtasks ?? []).map((s, j) => (j === subIdx ? { ...s, ...patch } : s)) }
-          : p,
-      ),
-    );
-  };
-
-  const addSubtask = (idx: number) => {
-    setProposals((prev) =>
-      prev.map((p, i) =>
-        i === idx ? { ...p, subtasks: [...(p.subtasks ?? []), { title: "", weight_percent: 0 }] } : p,
-      ),
-    );
-  };
-
-  const removeSubtask = (idx: number, subIdx: number) => {
-    setProposals((prev) =>
-      prev.map((p, i) => (i === idx ? { ...p, subtasks: (p.subtasks ?? []).filter((_, j) => j !== subIdx) } : p)),
     );
   };
 
@@ -266,6 +355,9 @@ export default function DocumentExtractionModal({
                   onClick={() => {
                     setSourceMode("upload");
                     setSelectedDocs([]);
+                    setPdfSelections({});
+                    setPendingBatch(null);
+                    setSelectPagesReason(null);
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
                     sourceMode === "upload"
@@ -279,6 +371,9 @@ export default function DocumentExtractionModal({
                   onClick={() => {
                     setSourceMode("existing");
                     setFiles([]);
+                    setPdfSelections({});
+                    setPendingBatch(null);
+                    setSelectPagesReason(null);
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
                     sourceMode === "existing"
@@ -298,8 +393,11 @@ export default function DocumentExtractionModal({
                     pages). If you upload more than one, Claude reads them
                     together as a single set (e.g. a policy and a separate
                     document describing it) instead of one at a time. Up to{" "}
-                    {MAX_FILES} at once. You review and edit the proposed tasks
-                    before anything is saved.
+                    {MAX_FILES} at once. Each document is read in full — a PDF
+                    longer than {MAX_DOCUMENT_PAGES} pages, or one with too many
+                    obligations for Claude to get through in one pass, will
+                    instead ask you to pick which pages to read. You review
+                    and edit the proposed tasks before anything is saved.
                   </p>
                   <div
                     className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition ${
@@ -358,9 +456,7 @@ export default function DocumentExtractionModal({
                             </span>
                           </div>
                           <button
-                            onClick={() =>
-                              setFiles((prev) => prev.filter((_, j) => j !== i))
-                            }
+                            onClick={() => removeFile(i)}
                             className="p-1 text-gray-300 hover:text-red-600 flex-shrink-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -461,6 +557,70 @@ export default function DocumentExtractionModal({
                   : "Reading the document and identifying obligations…"}
               </p>
             </div>
+          )}
+
+          {step === "selectPages" && pendingBatch && (
+            <>
+              <p className="text-sm text-gray-500 mb-1">
+                {selectPagesReason === "pages"
+                  ? `${pendingBatch.length > 1 ? "One of these documents is" : "This document is"} longer than ${MAX_DOCUMENT_PAGES} pages.`
+                  : `${pendingBatch.length > 1 ? "These documents have" : "This document has"} too many obligations for Claude to read in one pass.`}
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                Pick up to {MAX_EXTRACTION_PAGES} pages per PDF below, then try again — anything
+                that isn't a PDF will still be read in full.
+              </p>
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {pendingBatch.map((f) => (
+                  <div key={f.file_url} className="border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <FileText className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                      <p className="text-xs font-semibold text-gray-700 truncate">{f.file_name}</p>
+                    </div>
+                    {isPdfFile(f.file_name, f.file_url) ? (
+                      <PdfPagePicker
+                        source={f.file_url}
+                        pages={pdfSelections[f.file_url]?.pages ?? []}
+                        onChange={(pages) =>
+                          setPdfSelections((prev) => ({
+                            ...prev,
+                            [f.file_url]: { pages, unrestricted: false },
+                          }))
+                        }
+                        onUnavailable={() =>
+                          setPdfSelections((prev) => ({
+                            ...prev,
+                            [f.file_url]: { pages: [], unrestricted: true },
+                          }))
+                        }
+                      />
+                    ) : (
+                      <p className="text-xs text-gray-400">Not a PDF — will be read in full.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setPendingBatch(null);
+                    setSelectPagesReason(null);
+                    setPdfSelections({});
+                    setStep("upload");
+                  }}
+                  className="flex-1 border border-gray-200 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleRetryWithPages}
+                  disabled={!retryGateOk}
+                  className="flex-1 bg-red-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                >
+                  Try Again
+                </button>
+              </div>
+            </>
           )}
 
           {step === "review" && (
@@ -585,57 +745,6 @@ export default function DocumentExtractionModal({
                       </p>
                     )}
 
-                    {/* Subtasks — Claude proposes a breakdown when the
-                        document itself describes distinct steps; the
-                        reviewer can edit, remove, or add rows here before
-                        saving. Weights don't need to sum to exactly 100 at
-                        this stage (unlike the manual subtask editor) — the
-                        save endpoint proportionally rescales them, and drops
-                        the breakdown entirely if it can't be salvaged, so a
-                        bad number here never blocks the rest of the batch. */}
-                    <div className="mt-2.5 border-t border-gray-100 pt-2.5">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Subtasks</p>
-                        <button
-                          onClick={() => addSubtask(idx)}
-                          className="text-[11px] font-semibold text-red-600 hover:text-red-700"
-                        >
-                          + Add subtask
-                        </button>
-                      </div>
-                      {(!p.subtasks || p.subtasks.length === 0) && (
-                        <p className="text-[11px] text-gray-400">None — this will use the plain progress checkbox.</p>
-                      )}
-                      {(p.subtasks ?? []).length > 0 && (
-                        <div className="space-y-1.5">
-                          {(p.subtasks ?? []).map((s, subIdx) => (
-                            <div key={subIdx} className="flex items-center gap-1.5">
-                              <input
-                                value={s.title}
-                                onChange={(e) => updateSubtask(idx, subIdx, { title: e.target.value })}
-                                placeholder="Subtask name"
-                                className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1"
-                              />
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={s.weight_percent}
-                                onChange={(e) => updateSubtask(idx, subIdx, { weight_percent: Number(e.target.value) })}
-                                className="w-14 shrink-0 text-xs border border-gray-200 rounded-md px-1.5 py-1 text-right"
-                              />
-                              <span className="text-[10px] text-gray-400 shrink-0">%</span>
-                              <button onClick={() => removeSubtask(idx, subIdx)} className="text-gray-300 hover:text-red-600 px-0.5 shrink-0">
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                          <p className="text-[10px] text-gray-400 text-right">
-                            {(p.subtasks ?? []).reduce((sum, s) => sum + (Number(s.weight_percent) || 0), 0)}% of 100%
-                          </p>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 ))}
                 {proposals.length === 0 && (

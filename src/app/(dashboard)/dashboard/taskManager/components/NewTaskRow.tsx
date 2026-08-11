@@ -8,6 +8,7 @@ import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
+import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 
 export default function NewTaskRow({
   projectId,
@@ -151,7 +152,7 @@ export default function NewTaskRow({
 
       {/* Desktop */}
       <div className="hidden md:block space-y-2">
-      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+      <div className={`grid ${TASK_TABLE_GRID_COLS} gap-3 items-center`}>
         <div />
         <input
           value={title}

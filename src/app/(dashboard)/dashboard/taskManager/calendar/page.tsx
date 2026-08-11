@@ -9,6 +9,7 @@ import { TMTask } from "@/types/taskManager";
 import { STATUS_STYLES } from "../statusStyles";
 import OffDaySelector from "../components/OffDaySelector";
 import { CalendarPageSkeleton } from "@/components/skeletons/PageSkeletons";
+import { DAY_NAMES, DAY_NAMES_FULL, TASK_MANAGER_BRAND_COLOR as BRAND, PROJECT_COLOR_PALETTE } from "@/lib/taskManagerConstants";
 
 // Company-wide calendar: off days, leave, appraisal reviews, and task deadlines.
 // Includes self-service off-day selection (formerly Schedule Planner).
@@ -51,11 +52,8 @@ interface DayEvent {
 
 // ─── Constants ──────────────────────────────────────────────────────────
 const DAY_NAMES_MIN = ["S", "M", "T", "W", "T", "F", "S"];
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_NAMES_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -65,16 +63,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 // Cycled by project so every project gets a consistent chip color across
-// the whole calendar, however many projects there are — same palette the
-// old task-only calendar used.
-const TASK_CHIP_COLORS = [
-  "bg-red-50 text-red-700",
-  "bg-blue-50 text-blue-700",
-  "bg-green-50 text-green-700",
-  "bg-amber-50 text-amber-700",
-  "bg-purple-50 text-purple-700",
-  "bg-teal-50 text-teal-700",
-];
+// the whole calendar, however many projects there are — derived from the
+// same PROJECT_COLOR_PALETTE CalendarView.tsx uses for its dots/chips, so
+// a project can't show up as one color there and a different color here.
+const TASK_CHIP_COLORS = PROJECT_COLOR_PALETTE.map((c) => `${c.chipBg} ${c.chipText}`);
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 function getDaysInMonth(year: number, month: number) {

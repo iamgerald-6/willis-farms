@@ -6,17 +6,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import api from "@/lib/api";
 import { TMProject, TMTask } from "@/types/taskManager";
 import { STATUS_STYLES } from "../statusStyles";
-
-// Cycled by project so every project gets a consistent dot/chip color
-// across the whole calendar, however many projects there are.
-const PROJECT_COLORS = [
-  { dot: "bg-red-500", chipBg: "bg-red-50", chipText: "text-red-700" },
-  { dot: "bg-blue-500", chipBg: "bg-blue-50", chipText: "text-blue-700" },
-  { dot: "bg-green-500", chipBg: "bg-green-50", chipText: "text-green-700" },
-  { dot: "bg-amber-500", chipBg: "bg-amber-50", chipText: "text-amber-700" },
-  { dot: "bg-purple-500", chipBg: "bg-purple-50", chipText: "text-purple-700" },
-  { dot: "bg-teal-500", chipBg: "bg-teal-50", chipText: "text-teal-700" },
-];
+import { PROJECT_COLOR_PALETTE as PROJECT_COLORS } from "@/lib/taskManagerConstants";
 
 export default function CalendarView({ projects }: { projects: TMProject[] }) {
   const [cursor, setCursor] = useState(() => {

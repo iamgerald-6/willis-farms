@@ -8,6 +8,7 @@ import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
 import { STATUS_STYLES } from "../statusStyles";
+import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 import SubtaskPanel from "./SubtaskPanel";
@@ -293,7 +294,7 @@ export default function TaskRow({
 
         {/* Desktop edit form */}
         <div className="hidden md:block space-y-2">
-        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+        <div className={`grid ${TASK_TABLE_GRID_COLS} gap-3 items-center`}>
           <div />
           <input
             value={title}
@@ -484,9 +485,9 @@ export default function TaskRow({
   const subtasksToggle = isLifecycleActive && (task.has_subtasks || isSeniorManagement) ? (
     <button
       onClick={() => setSubtasksOpen((v) => !v)}
-      className="flex items-center gap-1 mt-1 text-[10px] font-medium text-gray-400 hover:text-red-600"
+      className="flex items-center gap-1.5 mt-1.5 text-xs font-bold text-red-600 hover:text-red-700"
     >
-      {subtasksOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      {subtasksOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       Subtasks
     </button>
   ) : null;
@@ -535,7 +536,7 @@ export default function TaskRow({
             </div>
             {subtasksOpen && (
               <div className="mt-2">
-                <SubtaskPanel task={task} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+                <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
               </div>
             )}
             <div className="flex items-center gap-1.5 mt-3">{actionButtons}</div>
@@ -545,7 +546,7 @@ export default function TaskRow({
 
       {/* Desktop row */}
       <div className="hidden md:block border-b border-gray-100 last:border-0">
-        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 hover:bg-gray-50/60 group">
+        <div className={`grid ${TASK_TABLE_GRID_COLS} gap-3 items-center px-3 py-2.5 hover:bg-gray-50/60 group`}>
           <div className="flex justify-center">
             {completeToggle}
           </div>
@@ -571,7 +572,7 @@ export default function TaskRow({
         </div>
         {subtasksOpen && (
           <div className="px-3 pb-2.5 pl-[calc(2.5rem+0.75rem)]">
-            <SubtaskPanel task={task} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+            <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
           </div>
         )}
       </div>

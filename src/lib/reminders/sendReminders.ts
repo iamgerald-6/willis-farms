@@ -1,6 +1,8 @@
 import { Resend } from "resend";
 import { supabaseAdmin } from "@/lib/taskManagerAuth";
 import { fetchProjectNames } from "@/lib/taskManagerData";
+import { TASK_MANAGER_FROM_EMAIL } from "@/lib/taskManagerEmail";
+import { getAppBaseUrl } from "@/lib/appUrl";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -108,7 +110,7 @@ export async function sendDeadlineReminders(options?: { force?: boolean }) {
     byOwner.set(t.owner_id, bucket);
   }
 
-  const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://willsfarms.com"}/dashboard/taskManager`;
+  const dashboardUrl = `${getAppBaseUrl()}/dashboard/taskManager`;
   let dueSoonSent = 0;
   let overdueSent = 0;
 
@@ -139,7 +141,7 @@ export async function sendDeadlineReminders(options?: { force?: boolean }) {
 
     if (process.env.RESEND_API_KEY) {
       await resend.emails.send({
-        from: "Wills Farms Task Manager <onboarding@resend.dev>",
+        from: TASK_MANAGER_FROM_EMAIL,
         to: [owner.email],
         cc: ccRecipients.length > 0 ? ccRecipients : undefined,
         subject: bucket.overdue.length > 0 ? "Task Manager: your weekly task summary (overdue items)" : "Task Manager: your weekly task summary",

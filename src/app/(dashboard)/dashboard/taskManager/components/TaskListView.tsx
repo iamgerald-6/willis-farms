@@ -11,8 +11,9 @@ import NewTaskRow from "./NewTaskRow";
 import AuditLogDrawer from "./AuditLogDrawer";
 import DocumentExtractionModal from "./DocumentExtractionModal";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
+import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 
-type LifecycleViewKey = "all" | "overdue" | "not_started" | "in_progress" | "ongoing" | "completed" | "archived" | "deleted";
+export type LifecycleViewKey = "all" | "overdue" | "not_started" | "in_progress" | "ongoing" | "completed" | "archived" | "deleted";
 
 // Filters by the same computed display_status shown everywhere else in
 // Task Manager (the badge on each row, the Summary page's buckets) rather
@@ -53,6 +54,7 @@ export default function TaskListView({
   isSeniorManagement,
   currentUserId,
   variant = "register",
+  initialFilter,
 }: {
   project: TMProject;
   // Every active project — threaded down to TaskRow's "Project" move
@@ -62,10 +64,16 @@ export default function TaskListView({
   isSeniorManagement: boolean;
   currentUserId: string | null;
   variant?: Variant;
+  // Which filter tab to open on, e.g. when arriving here from a Summary
+  // page stat card ("2 overdue" -> lands straight on the Overdue tab
+  // instead of All). Only read once, on mount — the caller is expected to
+  // force a remount (change this component's `key`) if it needs to jump to
+  // a different filter while already on this tab; see tasks/page.tsx.
+  initialFilter?: LifecycleViewKey;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
-  const [lifecycleView, setLifecycleView] = useState<LifecycleViewKey>("all");
+  const [lifecycleView, setLifecycleView] = useState<LifecycleViewKey>(initialFilter ?? "all");
   const [auditTask, setAuditTask] = useState<TMTask | null>(null);
   const [extractOpen, setExtractOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -159,7 +167,7 @@ export default function TaskListView({
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {/* Desktop table header */}
-        <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
+        <div className={`hidden md:grid ${TASK_TABLE_GRID_COLS} gap-3 px-3 py-2 border-b border-gray-100 bg-gray-50/60`}>
           <div />
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{variant === "monitoring" ? "Indicator" : "Task"}</p>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Owner</p>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
 // PATCH /api/task-manager/projects/[id] — Senior Management only.
 // Archives/restores a project (status), and/or renames it (name,
@@ -13,6 +14,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { id } = await params;
     const user = await requireSeniorManagement(req);
     if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+
+    // Fetched up front so the audit log below can record what actually
+    // changed (previous vs. new name/description/status), not just what the
+    // client asked to update.
+    const { data: existing, error: existingError } = await supabaseAdmin.from("tm_projects").select("*").eq("id", id).single();
+    if (existingError || !existing) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
     const body = await req.json();
     const update: Record<string, unknown> = {};
@@ -30,14 +37,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       // Same guardrail as creation — no two projects share a name,
       // case-insensitively, excluding this project itself.
-      const { data: existing, error: dupeError } = await supabaseAdmin
+      const { data: dupe, error: dupeError } = await supabaseAdmin
         .from("tm_projects")
         .select("id")
         .ilike("name", trimmedName)
         .neq("id", id)
         .limit(1);
       if (dupeError) throw dupeError;
-      if (existing && existing.length > 0) {
+      if (dupe && dupe.length > 0) {
         return NextResponse.json({ error: `A project named "${trimmedName}" already exists.` }, { status: 409 });
       }
 
@@ -55,6 +62,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data, error } = await supabaseAdmin.from("tm_projects").update(update).eq("id", id).select().single();
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+    // A status change and a rename can't both happen in one request from
+    // this UI (EditProjectForm and the archive/restore button are separate
+    // actions), but this stays correct either way — one audit row per kind
+    // of change that actually occurred, not one row per request.
+    if ("status" in update && update.status !== existing.status) {
+      await writeProjectAuditLog({
+        project_id: id,
+        action: update.status === "archived" ? "archived" : "restored",
+        performedBy: user,
+      });
+    }
+    const renamedFields = ["name", "description"].filter((f) => f in update && update[f] !== existing[f]);
+    if (renamedFields.length > 0) {
+      await writeProjectAuditLog({
+        project_id: id,
+        action: "renamed",
+        changed_fields: renamedFields,
+        previous_values: Object.fromEntries(renamedFields.map((f) => [f, existing[f]])),
+        new_values: Object.fromEntries(renamedFields.map((f) => [f, update[f]])),
+        performedBy: user,
+      });
+    }
 
     return NextResponse.json({ project: data });
   } catch (err: any) {
@@ -85,6 +115,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (typeof confirm_name !== "string" || confirm_name.trim() !== project.name) {
       return NextResponse.json({ error: "Confirmation text didn't match the project name — nothing was deleted." }, { status: 400 });
     }
+
+    // Written BEFORE the cascade delete below, and deliberately not a FK to
+    // tm_projects (see tm_project_deletions in schema.sql) — this is the one
+    // record of the deletion that survives it. Deletion itself stays
+    // instant and permanent; this is a tombstone, not an undo mechanism.
+    const { error: tombstoneError } = await supabaseAdmin.from("tm_project_deletions").insert([
+      {
+        project_id: project.id,
+        project_name: project.name,
+        deleted_by: user.id,
+        deleted_by_name: user.name,
+        deleted_at: new Date().toISOString(),
+      },
+    ]);
+    if (tombstoneError) throw tombstoneError;
 
     const { error: deleteError } = await supabaseAdmin.from("tm_projects").delete().eq("id", id);
     if (deleteError) throw deleteError;
