@@ -135,6 +135,110 @@ export function currentQuarterAndYear(now: Date = new Date()): {
   return { quarter: "Q4", year };
 }
 
+const QUARTER_START_MONTH: Record<Quarter, number> = {
+  Q1: 0,
+  Q2: 3,
+  Q3: 6,
+  Q4: 9,
+};
+
+/** First instant of the quarter (00:00:00 UTC). */
+export function quarterStartDate(quarter: Quarter, year: number): Date {
+  return new Date(Date.UTC(year, QUARTER_START_MONTH[quarter], 1, 0, 0, 0, 0));
+}
+
+export function previousQuarter(
+  quarter: Quarter,
+  year: number,
+): { quarter: Quarter; year: number } {
+  if (quarter === "Q1") return { quarter: "Q4", year: year - 1 };
+  if (quarter === "Q2") return { quarter: "Q1", year };
+  if (quarter === "Q3") return { quarter: "Q2", year };
+  return { quarter: "Q3", year };
+}
+
+export function nextQuarter(
+  quarter: Quarter,
+  year: number,
+): { quarter: Quarter; year: number } {
+  if (quarter === "Q1") return { quarter: "Q2", year };
+  if (quarter === "Q2") return { quarter: "Q3", year };
+  if (quarter === "Q3") return { quarter: "Q4", year };
+  return { quarter: "Q1", year: year + 1 };
+}
+
+export interface ActiveAppraisalPeriod {
+  quarter: Quarter;
+  year: number;
+  /** End of the completion window (quarter end + grace). */
+  lockDate: Date;
+  /** True when calendar has moved on but the previous quarter's grace is still open. */
+  inGracePeriod: boolean;
+  /** The calendar quarter for `now` — may differ from `quarter` during grace. */
+  calendarQuarter: Quarter;
+  calendarYear: number;
+}
+
+/**
+ * The single appraisal period that is open right now.
+ *
+ * While a quarter's grace/lock window is still active, that quarter remains
+ * the only applicable period — even after the next calendar quarter has
+ * started. Example: on 5 Apr, Q1 grace is still open (locks 10 Apr), so the
+ * active period stays Q1 and Q2 must not open yet.
+ */
+export function getActiveAppraisalPeriod(
+  now: Date = new Date(),
+): ActiveAppraisalPeriod {
+  const calendar = currentQuarterAndYear(now);
+  const prev = previousQuarter(calendar.quarter, calendar.year);
+  const prevLock = computeLockDate(prev.quarter, prev.year);
+
+  if (now.getTime() <= prevLock.getTime()) {
+    const pastPrevQuarterEnd =
+      daysUntilQuarterEnd(prev.quarter, prev.year, now) < 0;
+    return {
+      quarter: prev.quarter,
+      year: prev.year,
+      lockDate: prevLock,
+      inGracePeriod: pastPrevQuarterEnd,
+      calendarQuarter: calendar.quarter,
+      calendarYear: calendar.year,
+    };
+  }
+
+  const lockDate = computeLockDate(calendar.quarter, calendar.year);
+  const pastQuarterEnd =
+    daysUntilQuarterEnd(calendar.quarter, calendar.year, now) < 0;
+  return {
+    quarter: calendar.quarter,
+    year: calendar.year,
+    lockDate,
+    inGracePeriod: pastQuarterEnd,
+    calendarQuarter: calendar.quarter,
+    calendarYear: calendar.year,
+  };
+}
+
+/** Can a brand-new appraisal be started for this quarter/year right now? */
+export function isPeriodOpenForNewAppraisal(
+  quarter: Quarter,
+  year: number,
+  now: Date = new Date(),
+): boolean {
+  const active = getActiveAppraisalPeriod(now);
+  return active.quarter === quarter && active.year === year;
+}
+
+/** Statuses that mean this quarter is already closed for a new submission. */
+export function isPeriodAlreadyAppraised(status: string | null | undefined): boolean {
+  return status === "final_reviewed" || status === "locked";
+}
+
+export function periodLabel(quarter: Quarter, year: number): string {
+  return quarter === "Q4" ? `Q4 (Annual) ${year}` : `${quarter} ${year}`;
+}
+
 export type DeadlinePhase = "before_quarter_end" | "after_quarter_end" | "reopened";
 
 export interface DeadlineDisplay {

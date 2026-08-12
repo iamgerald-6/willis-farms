@@ -10,6 +10,7 @@ import ReduxProvider from "@/components/Provider";
 import RouteAccessGuard from "@/components/RouteAccessGuard";
 import { AuthLayoutSkeleton } from "@/components/skeletons/PageSkeletons";
 import { Toaster } from "sonner";
+import { AppNavigationProvider } from "@/lib/navigation/appNavigation";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
-        router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+        router.replace(`/login?redirect=${encodeURIComponent(pathname ?? "")}`);
       } else {
         setAuthChecked(true);
       }
@@ -34,27 +35,29 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <title>Wills Farms Management</title>
       </head>
       <body>
-        {!authChecked ? (
-          <AuthLayoutSkeleton />
-        ) : (
-          <ReduxProvider>
-            <QueryProvider>
-              <Toaster richColors position="top-center" />
-              <div className="flex min-h-screen md:h-screen md:overflow-hidden bg-gray-50">
-                <Sidebar
-                  mobileOpen={mobileOpen}
-                  onClose={() => setMobileOpen(false)}
-                />
-                <div className="flex-1 flex flex-col md:ml-64 min-h-screen md:h-screen md:pt-0">
-                  <NavbarDashboard onMenuClick={() => setMobileOpen(true)} />
-                  <main className="flex-1 overflow-y-auto bg-gray-50">
-                    <RouteAccessGuard>{children}</RouteAccessGuard>
-                  </main>
+        <AppNavigationProvider>
+          {!authChecked ? (
+            <AuthLayoutSkeleton />
+          ) : (
+            <ReduxProvider>
+              <QueryProvider>
+                <Toaster richColors position="top-center" />
+                <div className="flex min-h-screen md:h-screen md:overflow-hidden bg-gray-50">
+                  <Sidebar
+                    mobileOpen={mobileOpen}
+                    onClose={() => setMobileOpen(false)}
+                  />
+                  <div className="flex-1 flex flex-col md:ml-64 min-h-screen md:h-screen md:pt-0">
+                    <NavbarDashboard onMenuClick={() => setMobileOpen(true)} />
+                    <main className="flex-1 overflow-y-auto bg-gray-50">
+                      <RouteAccessGuard>{children}</RouteAccessGuard>
+                    </main>
+                  </div>
                 </div>
-              </div>
-            </QueryProvider>
-          </ReduxProvider>
-        )}
+              </QueryProvider>
+            </ReduxProvider>
+          )}
+        </AppNavigationProvider>
       </body>
     </html>
   );

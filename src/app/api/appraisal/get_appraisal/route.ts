@@ -5,7 +5,11 @@ import {
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
-import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import {
+  canViewAllAppraisalPeriods,
+  hasFullAppraisalAccess,
+} from "@/lib/accessControl";
+import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -25,11 +29,28 @@ export async function GET(req: NextRequest) {
     const company_id = searchParams.get("company_id");
     const cycle = searchParams.get("cycle");
     const grade_band = searchParams.get("grade_band");
-    const review_year = searchParams.get("review_year");
-    const review_quarter = searchParams.get("review_quarter");
+    let review_year = searchParams.get("review_year");
+    let review_quarter = searchParams.get("review_quarter");
     const status = searchParams.get("status");
+    let archived = searchParams.get("archived");
 
     const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+    const canBrowsePeriods = canViewAllAppraisalPeriods(caller.role);
+
+    // Employees (any grade) are locked to the single active period. Manager /
+    // Admin / Super Admin may request other quarters or the archived list.
+    if (!canBrowsePeriods) {
+      const active = getActiveAppraisalPeriod();
+      review_quarter = active.quarter;
+      review_year = String(active.year);
+      // Employees never browse the archived filing cabinet.
+      if (archived === "true") {
+        return jsonForbidden(
+          "Only managers and admins can view archived appraisals.",
+        );
+      }
+      if (archived !== "all") archived = "false";
+    }
 
     if (!fullAccess) {
       if (company_id && caller.company_id && company_id !== caller.company_id) {
@@ -49,14 +70,28 @@ export async function GET(req: NextRequest) {
     if (review_quarter) query = query.eq("review_quarter", review_quarter);
     if (status) query = query.eq("status", status);
 
+    // Archived records are filed away — excluded unless explicitly requested.
+    // "is not true" rather than "= false" so rows predating the column show up.
+    if (archived === "true") {
+      query = query.eq("archived", true);
+    } else if (archived !== "all") {
+      query = query.not("archived", "is", true);
+    }
+
+    // Without full access you see your own record plus any record you are the
+    // named supervisor on — mirrors canAccessAppraisalRecord(). Supervisors
+    // below L5 rely on this to complete the evaluations assigned to them.
     if (!fullAccess) {
-      if (caller.company_id) {
-        query = query.eq("company_id", caller.company_id);
-      } else {
-        query = query.or(
-          `employee_user_id.eq.${caller.id},supervisor_id.eq.${caller.id}`,
-        );
+      const visibleTo = [
+        caller.company_id ? `company_id.eq.${caller.company_id}` : null,
+        caller.id ? `employee_user_id.eq.${caller.id}` : null,
+        caller.id ? `supervisor_id.eq.${caller.id}` : null,
+      ].filter(Boolean) as string[];
+
+      if (visibleTo.length === 0) {
+        return NextResponse.json({ data: [] });
       }
+      query = query.or(visibleTo.join(","));
     }
 
     const { data, error } = await query;

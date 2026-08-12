@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { computeDeadline } from "@/lib/appraisal/deadlines";
-import type { Quarter } from "@/lib/appraisal/sections";
+import {
+  computeDeadline,
+  getActiveAppraisalPeriod,
+  isPeriodAlreadyAppraised,
+  isPeriodOpenForNewAppraisal,
+  periodLabel,
+} from "@/lib/appraisal/deadlines";
+import { canRate, type Quarter } from "@/lib/appraisal/sections";
 import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
 import {
   requireAuth,
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
-import { hasFullAppraisalAccess, isSupervisor } from "@/lib/accessControl";
 
 const QUARTERS: Quarter[] = ["Q1", "Q2", "Q3", "Q4"];
 
@@ -85,6 +90,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Only the single active period (grace-aware) can receive a new submission.
+    // Example: during Q1's post-quarter window that overlaps calendar Q2, Q2
+    // must not open yet — keep everyone on Q1.
+    if (
+      !isPeriodOpenForNewAppraisal(
+        review_quarter as Quarter,
+        Number(review_year),
+      )
+    ) {
+      const active = getActiveAppraisalPeriod();
+      return NextResponse.json(
+        {
+          error: `Only ${periodLabel(active.quarter, active.year)} is open right now. ${periodLabel(review_quarter as Quarter, Number(review_year))} cannot be started yet.`,
+        },
+        { status: 409 },
+      );
+    }
+
     // Q4 = Annual. No separate "cycle" choice exists anywhere in the UI —
     // it's fully derived from the quarter.
     const cycle = review_quarter === "Q4" ? "annual" : "quarterly";
@@ -117,20 +140,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
     const isEmployeeSubmit = (submitted_by ?? "employee") === "employee";
+    const ownsRecord =
+      (employee_user_id && employee_user_id === caller.id) ||
+      (caller.company_id && caller.company_id === company_id);
 
-    if (!fullAccess) {
-      if (isEmployeeSubmit) {
-        const ownsRecord =
-          (employee_user_id && employee_user_id === caller.id) ||
-          (caller.company_id && caller.company_id === company_id);
-        if (!ownsRecord) {
-          return jsonForbidden("You can only submit your own self-assessment.");
-        }
-      } else if (!isSupervisor(caller.grade_level)) {
+    if (isEmployeeSubmit) {
+      // Everyone fills their own self-assessment — grade is irrelevant here.
+      if (!ownsRecord) {
+        return jsonForbidden("You can only submit your own self-assessment.");
+      }
+    } else {
+      // The supervisor side must be filled by someone strictly senior. Super
+      // Admin is the sole exception, since L7 has nobody above them.
+      if (ownsRecord) {
         return jsonForbidden(
-          "Only supervisors (L4+) or managers can submit supervisor evaluations.",
+          "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
+        );
+      }
+      const isSuperAdminCaller = caller.role === "super_admin";
+      if (!isSuperAdminCaller && !canRate(caller.grade_level, current_grade)) {
+        return jsonForbidden(
+          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
         );
       }
     }
@@ -167,25 +198,78 @@ export async function POST(req: NextRequest) {
     // the start of the quarter window.
     const { data: existingOpen } = await supabaseAdmin
       .from("appraisals")
-      .select("id, status, employee_email, supervisor_email, supervisor_id, employee_user_id, deadline_at")
+      .select(
+        "id, status, submitted_by, employee_email, supervisor_email, supervisor_id, employee_user_id, deadline_at",
+      )
       .eq("company_id", company_id)
       .eq("review_quarter", review_quarter)
       .eq("review_year", review_year)
       .maybeSingle();
 
-    if (existingOpen && existingOpen.status === "locked") {
+    if (existingOpen && isPeriodAlreadyAppraised(existingOpen.status)) {
+      if (existingOpen.status === "locked") {
+        return NextResponse.json(
+          {
+            error:
+              "This quarter's appraisal is locked. A justification must be approved before it can be reopened.",
+          },
+          { status: 423 },
+        );
+      }
       return NextResponse.json(
         {
-          error:
-            "This quarter's appraisal is locked. A justification must be approved before it can be reopened.",
+          error: `${periodLabel(review_quarter as Quarter, Number(review_year))} has already been completed for this employee. Duplicate appraisals for the same period are not allowed.`,
         },
-        { status: 423 },
+        { status: 409 },
       );
+    }
+
+    // One submission per side per quarter — do not let a POST overwrite an
+    // already-filed self-assessment or supervisor evaluation.
+    if (existingOpen) {
+      const alreadyEmployee =
+        existingOpen.submitted_by === "employee" ||
+        existingOpen.submitted_by === "both";
+      const alreadySupervisor =
+        existingOpen.submitted_by === "supervisor" ||
+        existingOpen.submitted_by === "both";
+
+      if (isEmployeeSubmit && alreadyEmployee) {
+        return NextResponse.json(
+          {
+            error: `You have already submitted your self-assessment for ${periodLabel(review_quarter as Quarter, Number(review_year))}. Open the existing appraisal instead of starting a new one.`,
+          },
+          { status: 409 },
+        );
+      }
+      if (!isEmployeeSubmit && alreadySupervisor) {
+        return NextResponse.json(
+          {
+            error: `The supervisor evaluation for ${periodLabel(review_quarter as Quarter, Number(review_year))} has already been submitted.`,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const deadlineAt =
       existingOpen?.deadline_at ??
       computeDeadline(review_quarter as Quarter, Number(review_year)).toISOString();
+
+    // Merge submitted_by when the other side already filed on a seeded row.
+    const priorSubmittedBy = existingOpen?.submitted_by ?? null;
+    let nextSubmittedBy: string = submitted_by ?? "employee";
+    if (
+      isEmployeeSubmit &&
+      (priorSubmittedBy === "supervisor" || priorSubmittedBy === "both")
+    ) {
+      nextSubmittedBy = "both";
+    } else if (
+      !isEmployeeSubmit &&
+      (priorSubmittedBy === "employee" || priorSubmittedBy === "both")
+    ) {
+      nextSubmittedBy = "both";
+    }
 
     const basePayload: Record<string, unknown> = {
       company_id,
@@ -211,23 +295,29 @@ export async function POST(req: NextRequest) {
       development_plan_next_year: development_plan_next_year ?? null,
       promotion_readiness_assessment: promotion_readiness_assessment ?? null,
       compensation_review_input: compensation_review_input ?? null,
-      employee_ratings: employee_ratings ?? null,
-      supervisor_ratings: supervisor_ratings ?? null,
-      employee_weighted_score: employee_weighted_score ?? null,
-      supervisor_weighted_score: supervisor_weighted_score ?? null,
-      submitted_by: submitted_by ?? "employee",
-      final_review_date: final_review_date ?? null,
+      // Only write the side being submitted — never null out the other party.
+      ...(isEmployeeSubmit
+        ? {
+            employee_ratings: employee_ratings ?? null,
+            employee_weighted_score: employee_weighted_score ?? null,
+            employee_submitted_at: new Date().toISOString(),
+          }
+        : {
+            supervisor_ratings: supervisor_ratings ?? null,
+            supervisor_weighted_score: supervisor_weighted_score ?? null,
+            supervisor_submitted_at: new Date().toISOString(),
+            supervisor_reviewed_by: caller.id,
+            supervisor_reviewed_by_name: caller.name,
+            final_review_date: final_review_date ?? null,
+          }),
+      submitted_by: nextSubmittedBy,
       deadline_at: deadlineAt,
       employee_user_id: employee_user_id ?? existingOpen?.employee_user_id ?? null,
       supervisor_id: resolvedSupervisorId ?? existingOpen?.supervisor_id ?? null,
-      employee_penalty_points: 0,
-      appeal_exhausted: false,
-      // Still only one party done on first submission — "open" until both
-      // employee and supervisor have submitted (see [id]/route.ts PATCH).
-      status: "open",
-      ...(submitted_by === "employee"
-        ? { employee_submitted_at: new Date().toISOString() }
-        : { supervisor_submitted_at: new Date().toISOString() }),
+      status: nextSubmittedBy === "both" ? "submitted" : "open",
+      ...(!existingOpen
+        ? { employee_penalty_points: 0, appeal_exhausted: false }
+        : {}),
     };
 
     let data;
@@ -265,6 +355,7 @@ export async function POST(req: NextRequest) {
         quarter: review_quarter,
         year: review_year,
         deadlineAt: data.deadline_at,
+        appraisalId: data.id,
       }).then((result) => {
         if (!result.sent) {
           console.warn(

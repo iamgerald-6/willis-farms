@@ -18,7 +18,34 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data });
+    const creatorIds = [
+      ...new Set(
+        (data ?? []).map((c) => c.created_by).filter((id): id is string => !!id),
+      ),
+    ];
+
+    let creatorNameById: Record<string, string> = {};
+    if (creatorIds.length > 0) {
+      const { data: creators } = await supabaseAdmin
+        .from("users")
+        .select("user_id, first_name, last_name")
+        .in("user_id", creatorIds);
+      creatorNameById = Object.fromEntries(
+        (creators ?? []).map((u) => [
+          u.user_id,
+          `${u.first_name} ${u.last_name}`.trim(),
+        ]),
+      );
+    }
+
+    const enriched = (data ?? []).map((c) => ({
+      ...c,
+      created_by_name: c.created_by
+        ? creatorNameById[c.created_by] ?? "Unknown"
+        : null,
+    }));
+
+    return NextResponse.json({ data: enriched });
   } catch (err) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

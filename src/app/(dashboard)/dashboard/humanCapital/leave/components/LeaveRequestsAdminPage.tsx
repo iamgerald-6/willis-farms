@@ -22,6 +22,9 @@ interface LeaveRequest {
   status: "pending" | "approved" | "rejected";
   admin_note: string | null;
   created_at: string;
+  reviewed_by: string | null;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
   users: {
     email: string;
     first_name: string | null;
@@ -47,6 +50,13 @@ function formatDate(iso: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function reviewStampLabel(r: LeaveRequest): string | null {
+  if (r.status === "pending" || !r.reviewed_at) return null;
+  const verb = r.status === "approved" ? "Approved" : "Rejected";
+  const who = r.reviewed_by_name ? ` by ${r.reviewed_by_name}` : "";
+  return `${verb}${who} · ${formatDate(r.reviewed_at)}`;
 }
 
 // ─── Review Modal ─────────────────────────────────────────────────────────────
@@ -270,6 +280,16 @@ function LeaveCard({
         )}
       </div>
 
+      {reviewStampLabel(r) && (
+        <p
+          className={`text-xs font-medium ${
+            r.status === "approved" ? "text-green-600" : "text-red-600"
+          }`}
+        >
+          {reviewStampLabel(r)}
+        </p>
+      )}
+
       {/* Action */}
       {r.status === "pending" && (
         <button
@@ -472,9 +492,22 @@ export default function LeaveRequestsAdminPage() {
                           Review
                         </button>
                       ) : (
-                        <span className="text-xs text-gray-400">
-                          {r.admin_note ?? "—"}
-                        </span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span
+                            className={`text-xs font-medium ${
+                              r.status === "approved"
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {reviewStampLabel(r)}
+                          </span>
+                          {r.admin_note && (
+                            <span className="text-xs text-gray-400 max-w-[160px] truncate">
+                              {r.admin_note}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>

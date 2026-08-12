@@ -93,6 +93,16 @@ function ContentCard({ content }: { content: Content }) {
               </span>
             )}
           </div>
+          {content.created_by_name && (
+            <p className="text-[11px] text-gray-400 mt-2">
+              Added by {content.created_by_name} ·{" "}
+              {new Date(content.created_at).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </p>
+          )}
         </div>
       </div>
     </Link>

@@ -8,13 +8,18 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import {
   canAccessPage,
-  canManageAccessControl,
   hasUnrestrictedAccess,
   pageKeyFromPath,
   resolveAccessProfile,
 } from "@/lib/pagePermissions";
+import {
+  canManageUserAccounts,
+  canOpenUserManagement,
+} from "@/lib/permissionLevels";
 import { toast } from "sonner";
 import { RouteGuardSkeleton } from "@/components/skeletons/PageSkeletons";
+import { isEmailVerified } from "@/lib/userAccountStatus";
+import { staffAuthBlockMessage } from "@/lib/staffAccount";
 
 export default function RouteAccessGuard({
   children,
@@ -50,6 +55,8 @@ export default function RouteAccessGuard({
   const isAccessControlRoute = pathname?.startsWith(
     "/dashboard/access-control",
   );
+  const isManageUserRoute =
+    isAccessControlRoute && pathname !== "/dashboard/access-control";
 
   useEffect(() => {
     if (loading) return;
@@ -57,8 +64,20 @@ export default function RouteAccessGuard({
 
     if (!accessProfile && !profile) return;
 
-    if (profile?.is_disabled) {
-      toast.error("Your account has been disabled.");
+    if (!profile) {
+      toast.error(staffAuthBlockMessage("not_found"));
+      supabase.auth.signOut().then(() => router.replace("/login"));
+      return;
+    }
+
+    if (profile.is_disabled) {
+      toast.error(staffAuthBlockMessage("disabled"));
+      supabase.auth.signOut().then(() => router.replace("/login"));
+      return;
+    }
+
+    if (!isEmailVerified(profile)) {
+      toast.error(staffAuthBlockMessage("pending"));
       supabase.auth.signOut().then(() => router.replace("/login"));
       return;
     }
@@ -66,11 +85,17 @@ export default function RouteAccessGuard({
     if (!accessProfile) return;
 
     if (isAccessControlRoute) {
-      if (
-        !canManageAccessControl(accessProfile.role, accessProfile.grade_level)
-      ) {
-        toast.error("You do not have permission to open Access Control.");
+      if (!canOpenUserManagement(accessProfile, sessionRole)) {
+        toast.error("You do not have permission to open User Management.");
         router.replace("/dashboard");
+        return;
+      }
+      if (
+        isManageUserRoute &&
+        !canManageUserAccounts(accessProfile, sessionRole)
+      ) {
+        toast.error("Edit access is required to manage a user.");
+        router.replace("/dashboard/access-control");
       }
       return;
     }
@@ -98,16 +123,21 @@ export default function RouteAccessGuard({
     return <>{children}</>;
   }
 
-  if (profile?.is_disabled) {
+  if (!profile || profile.is_disabled || !isEmailVerified(profile)) {
     return null;
   }
 
-  if (
-    isAccessControlRoute &&
-    accessProfile &&
-    !canManageAccessControl(accessProfile.role, accessProfile.grade_level)
-  ) {
-    return null;
+  if (isAccessControlRoute) {
+    if (accessProfile && !canOpenUserManagement(accessProfile, sessionRole)) {
+      return null;
+    }
+    if (
+      isManageUserRoute &&
+      accessProfile &&
+      !canManageUserAccounts(accessProfile, sessionRole)
+    ) {
+      return null;
+    }
   }
 
   const pageKey = pageKeyFromPath(pathname || "");

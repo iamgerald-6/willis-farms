@@ -7,60 +7,125 @@ import { Bell, LogOut, User, Menu, ShieldCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { User as UserType } from "@/types";
-import { canManageAccessControl } from "@/lib/pagePermissions";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canOpenUserManagement } from "@/lib/permissionLevels";
 
 // ── Page title map ────────────────────────────────────────────────────────────
-const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
-  "/dashboard": {
-    title: "Overview",
-    subtitle: "Welcome back — here's what's happening today",
+// Ordered longest-path-first so nested routes (e.g. justifications/new,
+// skillLogForms, appraisalForms) resolve to the right section instead of
+// falling through to the generic default.
+const PAGE_TITLE_ENTRIES: { path: string; title: string; subtitle: string }[] = [
+  {
+    path: "/dashboard/humanCapital/appraisal/justifications",
+    title: "Justifications",
+    subtitle: "Appraisal score justifications and disputes",
   },
-  "/dashboard/training": {
-    title: "Learning Hub",
-    subtitle: "Browse and complete your training materials",
+  {
+    path: "/dashboard/humanCapital/appraisal",
+    title: "Appraisal",
+    subtitle: "Quarterly and annual performance reviews",
   },
-  "/dashboard/users": {
-    title: "Users",
-    subtitle: "Manage employee accounts and roles",
+  {
+    path: "/dashboard/humanCapital/skillLog",
+    title: "Skill Logs",
+    subtitle: "Track skills learned and certifications",
   },
-  "/dashboard/content": {
-    title: "Content",
-    subtitle: "Upload and manage learning materials",
+  {
+    path: "/dashboard/humanCapital/promotion",
+    title: "Promotion",
+    subtitle: "Grade and promotion assessments",
   },
-  "/dashboard/notifications": {
-    title: "Notifications",
-    subtitle: "Stay up to date with farm updates",
+  {
+    path: "/dashboard/humanCapital/recruitment",
+    title: "Recruitment",
+    subtitle: "Applicants, interviews and hiring pipeline",
   },
-  // "/dashboard/settings": {
-  //   title: "Settings",
-  //   subtitle: "Manage your account and preferences",
-  // },
-  "/dashboard/policies": {
-    title: "Policies & Ops",
-    subtitle: "Procedures, manuals and operational policies",
+  {
+    path: "/dashboard/humanCapital/leave",
+    title: "Leave",
+    subtitle: "Apply for leave and review requests",
   },
-  "/dashboard/sop": {
-    title: "SOPs",
-    subtitle: "Standard operating procedures",
-  },
-  "/dashboard/lms": {
-    title: "Learning Management",
-    subtitle: "Training and development resources",
-  },
-  "/dashboard/access-control": {
-    title: "Access Control",
-    subtitle: "Grant roles and page-level access",
-  },
-  "/dashboard/taskManager/calendar": {
+  {
+    path: "/dashboard/humanCapital/schedule",
     title: "Schedule Tracker",
     subtitle:
       "Leave, off-days, appraisal reviews and task deadlines in one view",
   },
-  "/dashboard/taskManager/tasks": {
+  {
+    path: "/dashboard/taskManager/calendar",
+    title: "Schedule Tracker",
+    subtitle:
+      "Leave, off-days, appraisal reviews and task deadlines in one view",
+  },
+  {
+    path: "/dashboard/taskManager/tasks",
     title: "Tasks Dashboard",
     subtitle: "Manage projects, tasks and compliance monitoring",
   },
+  {
+    path: "/dashboard/training",
+    title: "Learning Hub",
+    subtitle: "Browse and complete your training materials",
+  },
+  {
+    path: "/dashboard/access-control",
+    title: "User Management",
+    subtitle: "Manage staff accounts, access, and disabled status",
+  },
+  {
+    path: "/dashboard/users",
+    title: "User Management",
+    subtitle: "Manage staff accounts, access, and disabled status",
+  },
+  {
+    path: "/dashboard/content",
+    title: "Content",
+    subtitle: "Upload and manage learning materials",
+  },
+  {
+    path: "/dashboard/notifications",
+    title: "Notifications",
+    subtitle: "Stay up to date with farm updates",
+  },
+  {
+    path: "/dashboard/policies",
+    title: "Policies & Ops",
+    subtitle: "Procedures, manuals and operational policies",
+  },
+  {
+    path: "/dashboard/addSop",
+    title: "Add SOP",
+    subtitle: "Create a new standard operating procedure",
+  },
+  {
+    path: "/dashboard/sop",
+    title: "SOPs",
+    subtitle: "Standard operating procedures",
+  },
+  {
+    path: "/dashboard/lms",
+    title: "Learning Management",
+    subtitle: "Training and development resources",
+  },
+  {
+    path: "/dashboard/settings",
+    title: "Account Settings",
+    subtitle: "View your profile and update your password",
+  },
+].sort((a, b) => b.path.length - a.path.length);
+
+const DEFAULT_PAGE_INFO = {
+  title: "Dashboard",
+  subtitle: "Wills Farms Management Portal",
 };
+
+function getPageInfo(pathname: string) {
+  if (pathname === "/dashboard") {
+    return { title: "Overview", subtitle: "Welcome back — here's what's happening today" };
+  }
+  const match = PAGE_TITLE_ENTRIES.find((entry) => pathname.startsWith(entry.path));
+  return match ?? DEFAULT_PAGE_INFO;
+}
 
 interface NavbarDashboardProps {
   onMenuClick: () => void;
@@ -72,10 +137,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const pageInfo = PAGE_TITLES[pathname ?? ""] ?? {
-    title: "Dashboard",
-    subtitle: "Wills Farms Management Portal",
-  };
+  const pageInfo = getPageInfo(pathname ?? "");
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -95,6 +157,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const displayName = profile
     ? `${profile.first_name} ${profile.last_name}`.trim()
     : (session?.user?.email ?? "");
@@ -102,10 +165,8 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
     ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase()
     : (session?.user?.email?.slice(0, 2).toUpperCase() ?? "?");
 
-  const showAccessControl = canManageAccessControl(
-    profile?.role ?? (session?.user?.user_metadata?.role as string | undefined),
-    profile?.grade_level,
-  );
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const showUserManagement = canOpenUserManagement(accessProfile, sessionRole);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -191,7 +252,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                   <User className="w-4 h-4 text-gray-400" />
                   Account Settings
                 </button>
-                {showAccessControl && (
+                {showUserManagement && (
                   <button
                     className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
                     onClick={() => {
@@ -200,7 +261,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                     }}
                   >
                     <ShieldCheck className="w-4 h-4 text-red-500" />
-                    Access Control
+                    User Management
                   </button>
                 )}
                 <button

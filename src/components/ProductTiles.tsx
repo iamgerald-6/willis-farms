@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Button } from "./Button";
 import Image from "next/image";
-
 export function ProductTiles({
   tiles,
 }: {

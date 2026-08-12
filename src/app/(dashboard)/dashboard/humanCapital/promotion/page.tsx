@@ -54,6 +54,7 @@ interface CompletedPromotion {
   decision_comments?: string;
   conditions?: string;
   submitted_by_grade: string;
+  submitted_by_name?: string | null;
 }
 
 // A pending promotion (from appraisals table — flagged ready but not yet assessed)
@@ -445,7 +446,8 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
       <PromotionFormSections promotion={promotion} />
 
       <p className="text-[10px] sm:text-xs text-gray-300 text-right pb-2">
-        Submitted {formatDate(promotion.created_at)}
+        Submitted{promotion.submitted_by_name ? ` by ${promotion.submitted_by_name}` : ""}{" "}
+        · {formatDate(promotion.created_at)}
       </p>
     </div>
   );

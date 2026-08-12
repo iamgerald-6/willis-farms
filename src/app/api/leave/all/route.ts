@@ -35,7 +35,35 @@ export async function GET(req: NextRequest) {
     if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ data });
+    // Resolve reviewer names (reviewed_by is a plain uuid column, no FK join).
+    const reviewerIds = [
+      ...new Set(
+        (data ?? []).map((r) => r.reviewed_by).filter((id): id is string => !!id),
+      ),
+    ];
+
+    let reviewerNameById: Record<string, string> = {};
+    if (reviewerIds.length > 0) {
+      const { data: reviewers } = await supabaseAdmin
+        .from("users")
+        .select("user_id, first_name, last_name")
+        .in("user_id", reviewerIds);
+      reviewerNameById = Object.fromEntries(
+        (reviewers ?? []).map((u) => [
+          u.user_id,
+          `${u.first_name} ${u.last_name}`.trim(),
+        ]),
+      );
+    }
+
+    const enriched = (data ?? []).map((r) => ({
+      ...r,
+      reviewed_by_name: r.reviewed_by
+        ? reviewerNameById[r.reviewed_by] ?? "Unknown"
+        : null,
+    }));
+
+    return NextResponse.json({ data: enriched });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

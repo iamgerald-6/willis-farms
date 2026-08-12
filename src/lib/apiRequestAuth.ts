@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
 import { isSeniorManagement, canViewAllTasks } from "@/lib/taskAccessControl";
+import {
+  canAddUser,
+  canManageUserAccounts,
+  canOpenUserManagement,
+  type PermissionLevel,
+} from "@/lib/permissionLevels";
+import {
+  resolveAccessProfile,
+  type AccessProfile,
+} from "@/lib/pagePermissions";
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -20,6 +30,9 @@ export interface ApiRequestUser {
   authOnly: boolean;
   tm_can_view_all_tasks: boolean | null;
   canViewAllTasks: boolean;
+  access_tier?: string | null;
+  page_permissions?: string[] | null;
+  page_permission_levels?: AccessProfile["page_permission_levels"];
 }
 
 let _admin: SupabaseClient | null = null;
@@ -65,7 +78,7 @@ export async function getApiRequestUser(
   const { data: profile } = await supabaseAdmin
     .from("users")
     .select(
-      "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks",
+      "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels",
     )
     .eq("user_id", authUser.id)
     .maybeSingle();
@@ -86,7 +99,41 @@ export async function getApiRequestUser(
     authOnly: !profile,
     tm_can_view_all_tasks: profile?.tm_can_view_all_tasks ?? null,
     canViewAllTasks: canViewAllTasks(role, profile?.tm_can_view_all_tasks),
+    access_tier: profile?.access_tier ?? null,
+    page_permissions: profile?.page_permissions ?? null,
+    page_permission_levels: profile?.page_permission_levels ?? null,
   };
+}
+
+function callerAccessProfile(user: ApiRequestUser): AccessProfile {
+  return resolveAccessProfile(
+    {
+      role: user.role,
+      grade_level: user.grade_level,
+      access_tier: user.access_tier,
+      page_permissions: user.page_permissions,
+      page_permission_levels: user.page_permission_levels,
+    },
+    user.role,
+  )!;
+}
+
+export async function requireUserManagementAccess(
+  req: NextRequest,
+  minimum: PermissionLevel = "view",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const profile = callerAccessProfile(user);
+  const ok =
+    minimum === "view"
+      ? canOpenUserManagement(profile, user.role)
+      : minimum === "add"
+        ? canAddUser(profile, user.role)
+        : canManageUserAccounts(profile, user.role);
+
+  return ok ? user : null;
 }
 
 export async function requireAuth(req: NextRequest): Promise<ApiRequestUser | null> {

@@ -551,7 +551,7 @@ export default function DashboardPage() {
   });
 
   const adminQuickActions: QuickActionProps[] = [
-    { label: "Manage Users", href: "/dashboard/users", icon: Users },
+    { label: "User Management", href: "/dashboard/access-control", icon: Users },
     { label: "Leave", href: "/dashboard/humanCapital/leave", icon: CalendarCheck },
     { label: "Appraisals", href: "/dashboard/humanCapital/appraisal", icon: Star },
     { label: "Skill Logs", href: "/dashboard/humanCapital/skillLog", icon: ClipboardList },
@@ -615,7 +615,7 @@ export default function DashboardPage() {
                     />
                     <HeroChip
                       label={`${users?.length ?? 0} staff`}
-                      href="/dashboard/users"
+                      href="/dashboard/access-control"
                     />
                   </>
                 ) : (

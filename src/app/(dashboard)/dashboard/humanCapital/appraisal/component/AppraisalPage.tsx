@@ -33,16 +33,22 @@ import {
 } from "@/lib/appraisal/scoring";
 import {
   Quarter,
-  QUARTERS,
   GRADE_OPTIONS,
   GRADE_BAND_COVERS,
   canRate,
   canAppraiseOthers,
-  isSupervisorGrade,
-  availableGradeBands,
+  gradeBandForGrade,
+  supervisableGradeBands,
   sectionsFor,
 } from "@/lib/appraisal/sections";
-import { computeDeadline } from "@/lib/appraisal/deadlines";
+import { isOwnAppraisal } from "@/lib/appraisal/roles";
+import {
+  computeDeadline,
+  getActiveAppraisalPeriod,
+  isPeriodAlreadyAppraised,
+  isPeriodOpenForNewAppraisal,
+  periodLabel as appraisalPeriodLabel,
+} from "@/lib/appraisal/deadlines";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 
@@ -63,6 +69,7 @@ interface ExistingAppraisal {
   reviewing_manager?: string | null;
   period_covered?: string | null;
   section_authorisations_held?: string | null;
+  employee_user_id?: string | null;
   submitted_by?: "employee" | "supervisor" | "both";
   employee_ratings?: Ratings | null;
   supervisor_ratings?: Ratings | null;
@@ -289,28 +296,31 @@ const PROMOTION_OPTIONS = [
 
 // ─── Main Form ────────────────────────────────────────────────────────────────
 interface AppraisalFormProps {
-  /** grade_level of the person currently logged in, e.g. "L4".
-   *  Supervisor mode is derived from this: L4+ = supervisor. */
+  /** grade_level of the person currently logged in, e.g. "L4". Used only as a
+   *  fallback until their profile loads — which side of the form they fill is
+   *  decided by who the appraisal is for, not by their grade. */
   viewerGradeLevel?: string | null;
   /** If set, the form is in "second-party fill" mode:
    *  it fetches this appraisal, pre-fills read-only fields,
    *  and PATCHes on submit instead of POSTing. */
   existingAppraisalId?: string | null;
-  /** Quarter to start a fresh appraisal in (ignored once an existing
-   *  appraisal is loaded — the quarter is locked from that record). */
+  /** Quarter / year for a fresh appraisal. Always the single active period
+   *  (grace-aware). Ignored once an existing appraisal is loaded. */
   defaultQuarter?: Quarter;
+  defaultYear?: number;
   onSuccess?: () => void;
 }
 
 export default function AppraisalForm({
   viewerGradeLevel = null,
   existingAppraisalId = null,
-  defaultQuarter = "Q1",
+  defaultQuarter,
+  defaultYear,
   onSuccess,
 }: AppraisalFormProps) {
-  // ── Derive supervisor mode from grade, not role ──
-  const supervisorMode = isSupervisorGrade(viewerGradeLevel);
-
+  const activePeriod = getActiveAppraisalPeriod();
+  const lockedQuarter = defaultQuarter ?? activePeriod.quarter;
+  const lockedYear = defaultYear ?? activePeriod.year;
   // ── Auth ──
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -338,8 +348,11 @@ export default function AppraisalForm({
 
   // ── Local state ──
   const [gradeBand, setGradeBand] = useState<string>("L1");
-  const [quarter, setQuarter] = useState<Quarter>(defaultQuarter);
+  // Fresh fills are locked to the single active period — never free-picked.
+  const [quarter, setQuarter] = useState<Quarter>(lockedQuarter);
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
+  /** Fresh fills only: is this my own appraisal, or one I supervise? */
+  const [fillTarget, setFillTarget] = useState<"self" | "other">("self");
   const [ratings, setRatings] = useState<Ratings>({});
   const [promotionReadiness, setPromotionReadiness] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -358,7 +371,7 @@ export default function AppraisalForm({
       immediate_supervisor: "",
       supervisor_email: "",
       employee_email: "",
-      review_year: new Date().getFullYear(),
+      review_year: lockedYear,
       reviewing_manager: "",
       period_covered: "",
       strengths_observed: "",
@@ -387,11 +400,42 @@ export default function AppraisalForm({
     () => allUsers.find((u) => u.user_id === userId),
     [allUsers, userId],
   );
-  const currentUserGrade = currentUserProfile?.grade_level ?? null;
+  const currentUserGrade =
+    currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
+  const isSuperAdmin = currentUserProfile?.role === "super_admin";
 
-  // canSelectForOthers: supervisor filling fresh (no existing appraisal)
-  const canSelectForOthers = supervisorMode && !isFillingSecond;
-  const selfAppraisalMode = !supervisorMode && !isFillingSecond;
+  // ── Which side of the form am I filling? ──
+  // Everyone — supervisors included — completes their own self-assessment, so
+  // this depends on WHO the appraisal is for, never on the viewer's own grade.
+  const viewer = useMemo(
+    () => ({
+      userId,
+      role: currentUserProfile?.role,
+      gradeLevel: currentUserGrade,
+      companyId: currentUserProfile?.company_id,
+    }),
+    [userId, currentUserProfile, currentUserGrade],
+  );
+
+  const subject = isFillingSecond
+    ? {
+        employee_user_id: existingAppraisal?.employee_user_id,
+        company_id: existingAppraisal?.company_id,
+        current_grade: existingAppraisal?.current_grade,
+      }
+    : {
+        employee_user_id: selectedEmployee?.user_id,
+        company_id: selectedEmployee?.company_id,
+        current_grade: selectedEmployee?.grade_level,
+      };
+
+  const hasSubject = isFillingSecond || !!selectedEmployee;
+  const supervisorMode = hasSubject && !isOwnAppraisal(viewer, subject);
+  const selfAppraisalMode = hasSubject && !supervisorMode;
+
+  // Can this viewer appraise anyone other than themselves at all? (L3+)
+  const canSelectForOthers =
+    !isFillingSecond && (canAppraiseOthers(currentUserGrade) || isSuperAdmin);
 
   const watchedReviewYear = watch("review_year");
   const effectiveReviewYear =
@@ -411,9 +455,13 @@ export default function AppraisalForm({
         existingAppraisal?.status !== "final_reviewed"));
 
   const allowedGradeBands = useMemo(
-    () => availableGradeBands(currentUserGrade),
-    [currentUserGrade],
+    () =>
+      isSuperAdmin ? GRADE_OPTIONS : supervisableGradeBands(currentUserGrade),
+    [currentUserGrade, isSuperAdmin],
   );
+
+  const ownGradeBand = gradeBandForGrade(currentUserGrade);
+  const fillingForSelf = !isFillingSecond && fillTarget === "self";
 
   // ── Pre-fill from existing appraisal when filling second ──
   useEffect(() => {
@@ -442,60 +490,120 @@ export default function AppraisalForm({
     if (emp) setSelectedEmployee(emp);
   }, [existingAppraisal, allUsers, setValue]);
 
-  // ── Filter employees for fresh supervisor fill ──
+  // ── Filter employees for a fresh supervisor fill ──
   const filteredEmployees = useMemo(() => {
-    if (isFillingSecond) return [];
+    if (isFillingSecond || fillingForSelf) return [];
     const gradeBandGrades = GRADE_BAND_COVERS[gradeBand] ?? [];
     return allUsers.filter((u) => {
       if (!u.grade_level || !gradeBandGrades.includes(u.grade_level))
         return false;
-      if (selfAppraisalMode) return u.user_id === userId;
       if (u.user_id === userId) return false;
-      return canRate(currentUserGrade, u.grade_level);
+      return isSuperAdmin || canRate(currentUserGrade, u.grade_level);
     });
   }, [
     allUsers,
     gradeBand,
     userId,
     currentUserGrade,
-    selfAppraisalMode,
+    isSuperAdmin,
+    fillingForSelf,
     isFillingSecond,
   ]);
 
   const sections = sectionsFor(gradeBand, quarter);
 
-  // Keep grade band within allowed range (only applies to fresh fills)
+  // Nobody to supervise → the only appraisal available is your own
+  useEffect(() => {
+    if (!canSelectForOthers && fillTarget === "other") setFillTarget("self");
+  }, [canSelectForOthers, fillTarget]);
+
+  // Keep fresh fills pinned to the active period (grace-aware).
   useEffect(() => {
     if (isFillingSecond) return;
+    setQuarter(lockedQuarter);
+    setValue("review_year", lockedYear);
+  }, [isFillingSecond, lockedQuarter, lockedYear, setValue]);
+
+  // Keep the grade band valid: your own band for a self-appraisal, otherwise
+  // one of the bands you are senior enough to rate.
+  useEffect(() => {
+    if (isFillingSecond) return;
+    if (fillingForSelf) {
+      setGradeBand(ownGradeBand);
+      return;
+    }
     if (
       allowedGradeBands.length > 0 &&
       !allowedGradeBands.some((b) => b.value === gradeBand)
     ) {
       setGradeBand(allowedGradeBands[0].value);
     }
-  }, [allowedGradeBands, gradeBand, isFillingSecond]);
+  }, [
+    allowedGradeBands,
+    gradeBand,
+    isFillingSecond,
+    fillingForSelf,
+    ownGradeBand,
+  ]);
 
-  // Self-appraisal: auto-select self on load, pre-fill email from profile
+  // Self-appraisal: lock the subject to yourself and pre-fill your email
   useEffect(() => {
-    if (selfAppraisalMode && currentUserProfile) {
-      setSelectedEmployee(currentUserProfile);
-      setGradeBand("L1");
-      if (currentUserProfile.email) {
-        setValue("employee_email", currentUserProfile.email);
-      }
+    if (!fillingForSelf || !currentUserProfile) return;
+    setSelectedEmployee(currentUserProfile);
+    if (currentUserProfile.email) {
+      setValue("employee_email", currentUserProfile.email);
     }
-  }, [selfAppraisalMode, currentUserProfile, setValue]);
+  }, [fillingForSelf, currentUserProfile, setValue]);
 
-  // Reset ratings and employee when grade band or quarter changes (fresh fill only)
+  // Detect a prior self-submission for the active period (supervisors using
+  // "Myself" after already filing — pure employees are gated on the page).
+  const { data: ownPeriodAppraisal } = useQuery<{
+    id: string | number;
+    status?: string | null;
+    submitted_by?: string | null;
+  } | null>({
+    queryKey: [
+      "appraisal-own-period",
+      currentUserProfile?.company_id,
+      lockedQuarter,
+      lockedYear,
+    ],
+    enabled:
+      fillingForSelf && !isFillingSecond && !!currentUserProfile?.company_id,
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        company_id: currentUserProfile!.company_id!,
+        review_quarter: lockedQuarter,
+        review_year: String(lockedYear),
+        archived: "all",
+      });
+      const res = await api.get(`/appraisal/get_appraisal?${params}`);
+      const rows = (res.data.data ?? []) as Array<{
+        id: string | number;
+        status?: string | null;
+        submitted_by?: string | null;
+        employee_user_id?: string | null;
+      }>;
+      return (
+        rows.find((r) => r.employee_user_id === userId) ?? rows[0] ?? null
+      );
+    },
+  });
+
+  const selfAlreadyFiled =
+    fillingForSelf &&
+    !isFillingSecond &&
+    !!ownPeriodAppraisal &&
+    (isPeriodAlreadyAppraised(ownPeriodAppraisal.status) ||
+      ownPeriodAppraisal.submitted_by === "employee" ||
+      ownPeriodAppraisal.submitted_by === "both");
+
+  // Reset ratings when the section set changes (fresh fill only)
   useEffect(() => {
     if (isFillingSecond) return;
     setRatings({});
-    if (selfAppraisalMode && currentUserProfile) {
-      setSelectedEmployee(currentUserProfile);
-    } else if (!isFillingSecond) {
-      setSelectedEmployee(null);
-    }
-  }, [gradeBand, quarter]);
+    if (!fillingForSelf) setSelectedEmployee(null);
+  }, [gradeBand, quarter, fillTarget]);
 
   // ── Live score ──
   const { weightedScore, sectionAverages, completionPct } = useMemo(
@@ -608,6 +716,18 @@ export default function AppraisalForm({
   const onSubmit = (formData: any) => {
     if (!validateForm()) return;
 
+    // Fresh fills can only target the single active period. Continuing an
+    // existing record (second-party fill) is allowed regardless of calendar.
+    if (
+      !isFillingSecond &&
+      !isPeriodOpenForNewAppraisal(quarter, lockedYear)
+    ) {
+      toast.error(
+        `${appraisalPeriodLabel(quarter, lockedYear)} is not the open appraisal period right now.`,
+      );
+      return;
+    }
+
     mutate({
       company_id: selectedEmployee!.company_id,
       employee_name: `${selectedEmployee!.first_name} ${selectedEmployee!.last_name}`,
@@ -619,7 +739,9 @@ export default function AppraisalForm({
       employee_email: formData.employee_email || null,
       grade_band: gradeBand,
       review_quarter: quarter,
-      review_year: Number(formData.review_year),
+      review_year: isFillingSecond
+        ? Number(formData.review_year)
+        : lockedYear,
       reviewing_manager: formData.reviewing_manager || null,
       period_covered: formData.period_covered || null,
       ...(supervisorMode
@@ -648,15 +770,67 @@ export default function AppraisalForm({
   };
 
   // ── Grade warning ──
-  const gradeWarning =
-    currentUserGrade === null
-      ? selfAppraisalMode
-        ? "Your grade level is not set in your profile. Please contact HR."
-        : "Your grade level is not set in your profile. Please contact HR to set your grade before rating employees."
-      : null;
+  const gradeWarning = !currentUserGrade
+    ? fillingForSelf
+      ? "Your grade level is not set in your profile, so the correct rating sections cannot be loaded. Please contact HR."
+      : "Your grade level is not set in your profile. Please contact HR to set your grade before rating employees."
+    : null;
 
   if (loadingExisting) {
     return <FormPageSkeleton />;
+  }
+
+  const fillTargetToggle = canSelectForOthers ? (
+    <div className="mb-4">
+      <FieldLabel required>Who is this appraisal for?</FieldLabel>
+      <div className="flex gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1 w-fit mt-1">
+        {(
+          [
+            { value: "self", label: "Myself" },
+            { value: "other", label: "Someone I supervise" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setFillTarget(opt.value)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+              fillTarget === opt.value
+                ? "bg-red-600 text-white shadow-sm"
+                : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  if (selfAlreadyFiled && ownPeriodAppraisal) {
+    return (
+      <div className="space-y-4">
+        {fillTargetToggle}
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm font-semibold text-gray-800">
+            You have already submitted{" "}
+            {appraisalPeriodLabel(lockedQuarter, lockedYear)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1.5 max-w-md mx-auto">
+            Each quarter can only be appraised once.
+            {canSelectForOthers
+              ? ' Switch to "Someone I supervise" to evaluate others for this period, or open your existing record.'
+              : " Open the existing record to track progress — the next period opens after this one's completion window closes."}
+          </p>
+          <a
+            href={`/dashboard/humanCapital/appraisal/${ownPeriodAppraisal.id}`}
+            className="inline-block mt-5 px-5 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition"
+          >
+            View my appraisal
+          </a>
+        </div>
+      </div>
+    );
   }
 
   if (isLocked) {
@@ -680,7 +854,7 @@ export default function AppraisalForm({
       {/* ── Mode Banner ── */}
       <div
         className={`rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-medium ${
-          supervisorMode || canSelectForOthers
+          supervisorMode
             ? "bg-blue-50 border border-blue-200 text-blue-700"
             : "bg-amber-50 border border-amber-200 text-amber-700"
         }`}
@@ -690,11 +864,11 @@ export default function AppraisalForm({
           ? supervisorMode
             ? "Completing your supervisor evaluation. Employee details and review period are locked from the original submission."
             : "Completing your self-appraisal. Details from your supervisor's submission are pre-filled and locked."
-          : supervisorMode
-            ? `As grade ${viewerGradeLevel}, you are initiating a supervisor evaluation. Select the employee below.`
-            : canSelectForOthers
-              ? `As ${currentUserGrade}, select a grade band and employee below your level to complete their appraisal.`
-              : "Self-appraisal — complete your own review first. Once you submit, your supervisor is notified by email and your ratings stay hidden from them until they submit theirs."}
+          : fillingForSelf
+            ? `Self-appraisal for your own ${currentUserGrade ?? ""} record. Once you submit, your supervisor is notified by email and your ratings stay hidden from them until they submit theirs.`
+            : supervisorMode
+              ? `Supervisor evaluation for ${selectedEmployee?.first_name} ${selectedEmployee?.last_name} (${selectedEmployee?.grade_level}).`
+              : `As ${currentUserGrade}, choose a grade band and an employee below your level to appraise.`}
       </div>
 
       {existingAppraisal?.status === "reopened" && (
@@ -744,15 +918,17 @@ export default function AppraisalForm({
           )}
         </h3>
 
+        {fillTargetToggle}
+
         {!isFillingSecond && (
           <div
-            className={`grid gap-4 mb-4 ${selfAppraisalMode ? "grid-cols-1" : "grid-cols-2"}`}
+            className={`grid gap-4 mb-4 ${fillingForSelf ? "grid-cols-1" : "grid-cols-2"}`}
           >
             <div>
               <FieldLabel required>Grade Band</FieldLabel>
-              {selfAppraisalMode ? (
+              {fillingForSelf ? (
                 <p className="text-sm font-medium text-gray-800 py-2">
-                  {GRADE_OPTIONS.find((o) => o.value === "L1")?.label}
+                  {GRADE_OPTIONS.find((o) => o.value === ownGradeBand)?.label}
                 </p>
               ) : (
                 <select
@@ -769,7 +945,7 @@ export default function AppraisalForm({
               )}
             </div>
 
-            {!selfAppraisalMode && (
+            {!fillingForSelf && (
               <div>
                 <FieldLabel required>Select Employee</FieldLabel>
                 <select
@@ -838,7 +1014,7 @@ export default function AppraisalForm({
         )}
 
         {/* Employee email + Section authorisations — self-assessment only */}
-        {!isFillingSecond && !supervisorMode && (
+        {fillingForSelf && (
           <div className="mb-4">
             <FieldLabel required>Your Email Address</FieldLabel>
             <p className="text-xs text-gray-400 mb-1.5">
@@ -894,7 +1070,7 @@ export default function AppraisalForm({
         </div>
 
         {/* Supervisor email — self-assessment only (routes the notification) */}
-        {!isFillingSecond && !supervisorMode && (
+        {fillingForSelf && (
           <div className="mt-4">
             <FieldLabel required>Supervisor's Email Address</FieldLabel>
             <p className="text-xs text-gray-400 mb-1.5">
@@ -948,30 +1124,12 @@ export default function AppraisalForm({
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <FieldLabel required>Quarter</FieldLabel>
-              <select
-                value={quarter}
-                onChange={(e) => setQuarter(e.target.value as Quarter)}
-                className={inputCls()}
-              >
-                {QUARTERS.map((q) => (
-                  <option key={q} value={q}>
-                    {q === "Q4" ? "Q4 (Annual)" : q}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel required>Year</FieldLabel>
-              <input
-                type="number"
-                min={2020}
-                max={2100}
-                {...register("review_year", { required: true })}
-                className={inputCls(!!errors.review_year)}
-              />
-            </div>
+            {/* Only the single active period is available — no free picker. */}
+            <ReadOnlyField
+              label="Quarter"
+              value={quarter === "Q4" ? "Q4 (Annual)" : quarter}
+            />
+            <ReadOnlyField label="Year" value={String(lockedYear)} />
             {quarter === "Q4" && (
               <>
                 <div>

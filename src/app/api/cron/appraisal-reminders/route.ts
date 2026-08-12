@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   computeDeadline,
+  getActiveAppraisalPeriod,
   isOverdue,
   isPostQuarterNoticeDay,
   preQuarterReminderDueToday,
@@ -33,12 +34,6 @@ const GRADE_BAND_FOR_LEVEL: Record<string, string> = {
   L6: "L5_L6_L7",
   L7: "L5_L6_L7",
 };
-
-function isQuarterStartDate(now: Date): boolean {
-  const month = now.getUTCMonth();
-  const day = now.getUTCDate();
-  return day === 1 && [0, 3, 6, 9].includes(month);
-}
 
 function pendingAudience(
   submittedBy: string | null | undefined,
@@ -89,12 +84,12 @@ export async function GET(req: NextRequest) {
   };
 
   try {
-    // ── 1. Seed quarter rows ────────────────────────────────────────────
-    if (isQuarterStartDate(now)) {
-      const month = now.getUTCMonth();
-      const year = now.getUTCFullYear();
-      const quarter: Quarter =
-        month === 0 ? "Q1" : month === 3 ? "Q2" : month === 6 ? "Q3" : "Q4";
+    // ── 1. Seed rows for the single active period ───────────────────────
+    // Uses the grace-aware active period so Q2 is not seeded on 1 Apr while
+    // Q1's completion window is still open (locks ~10 Apr).
+    {
+      const active = getActiveAppraisalPeriod(now);
+      const { quarter, year } = active;
 
       const { data: allUsers } = await supabaseAdmin.from("users").select("*");
       const { data: existingRows } = await supabaseAdmin
@@ -103,34 +98,41 @@ export async function GET(req: NextRequest) {
         .eq("review_quarter", quarter)
         .eq("review_year", year);
 
-      const existingCompanyIds = new Set((existingRows ?? []).map((r) => r.company_id));
+      const existingCompanyIds = new Set(
+        (existingRows ?? []).map((r) => r.company_id),
+      );
       const deadlineAt = computeDeadline(quarter, year).toISOString();
 
       for (const user of allUsers ?? []) {
         if (!user.company_id || existingCompanyIds.has(user.company_id)) continue;
 
         const gradeBand = GRADE_BAND_FOR_LEVEL[user.grade_level ?? ""] ?? "L1";
-        const { error: insertError } = await supabaseAdmin.from("appraisals").insert({
-          company_id: user.company_id,
-          employee_name: `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim(),
-          job_title: user.job_position ?? "",
-          current_grade: user.grade_level ?? "L1",
-          grade_band: gradeBand,
-          cycle: quarter === "Q4" ? "annual" : "quarterly",
-          review_quarter: quarter,
-          review_year: year,
-          immediate_supervisor: "Not yet specified",
-          promotion_readiness: "not_yet_ready",
-          status: "open",
-          deadline_at: deadlineAt,
-          employee_user_id: user.user_id,
-          employee_email: user.email ?? null,
-          employee_penalty_points: 0,
-          appeal_exhausted: false,
-        });
+        const { error: insertError } = await supabaseAdmin
+          .from("appraisals")
+          .insert({
+            company_id: user.company_id,
+            employee_name:
+              `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim(),
+            job_title: user.job_position ?? "",
+            current_grade: user.grade_level ?? "L1",
+            grade_band: gradeBand,
+            cycle: quarter === "Q4" ? "annual" : "quarterly",
+            review_quarter: quarter,
+            review_year: year,
+            immediate_supervisor: "Not yet specified",
+            promotion_readiness: "not_yet_ready",
+            status: "open",
+            deadline_at: deadlineAt,
+            employee_user_id: user.user_id,
+            employee_email: user.email ?? null,
+            employee_penalty_points: 0,
+            appeal_exhausted: false,
+          });
 
         if (insertError) {
-          summary.errors.push(`seed ${user.company_id}: ${insertError.message}`);
+          summary.errors.push(
+            `seed ${user.company_id}: ${insertError.message}`,
+          );
           continue;
         }
         summary.seeded++;
@@ -138,12 +140,17 @@ export async function GET(req: NextRequest) {
         if (user.email) {
           const result = await sendAppraisalOpenNotice({
             employeeEmail: user.email,
-            employeeName: `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim(),
+            employeeName:
+              `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim(),
             quarter,
             year,
             deadlineAt,
           });
-          if (!result.sent) summary.errors.push(`open-notice ${user.company_id}: ${result.error}`);
+          if (!result.sent) {
+            summary.errors.push(
+              `open-notice ${user.company_id}: ${result.error}`,
+            );
+          }
         }
       }
     }
@@ -154,7 +161,9 @@ export async function GET(req: NextRequest) {
       .select(
         "id, employee_name, employee_email, supervisor_email, immediate_supervisor, submitted_by, review_quarter, review_year, deadline_at, reopened_deadline_at, supervisor_id, employee_user_id, employee_weighted_score, supervisor_weighted_score, final_quarter_score, employee_penalty_points, status, appeal_exhausted",
       )
-      .in("status", ["open", "submitted", "reopened"]);
+      .in("status", ["open", "submitted", "reopened"])
+      // Archived appraisals are out of the workflow: no reminders, no auto-lock.
+      .not("archived", "is", true);
 
     for (const appraisal of activeAppraisals ?? []) {
       const quarter = appraisal.review_quarter as Quarter;

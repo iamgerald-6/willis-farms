@@ -1,0 +1,1022 @@
+from flask import Blueprint, request, jsonify
+from datetime import datetime, timezone
+from pydantic import ValidationError
+from sqlalchemy import text
+from llm_suggestive.Schema import Recommendation
+from llm_suggestive.helper import ENGINE, get_published_address, normalize_record, run_query, insert_recommendations, call_gpt, insert_summary, send_summary_email, summary_prompt,LIQUIDITY_PROMPT, insert_liquidity_recommendations, get_llm_suggestive_recipients
+
+
+import json
+from dotenv import load_dotenv
+load_dotenv()
+
+bp = Blueprint("api", __name__)
+
+
+@bp.get("/health")
+def health():
+    return jsonify({"status": "ok", "ts": datetime.now(timezone.utc).isoformat()})
+
+
+@bp.get("/data/sql")
+def data_sql():
+  sql = """
+      ;WITH maxd AS (
+    SELECT MAX(TRY_CONVERT(date, [As of Date])) AS max_date
+    FROM [DBG_DATA].[dbo].[t_KRI_DATA]
+)
+SELECT
+    t.[KRI ID]              AS relatedEntityId,
+    t.[Key Risk Indidcator]            AS metricName,
+    t.[CurrentMth_Numeric] AS metricValue,
+    t.[As of Date]          AS observedAt,
+    t.[KRI Standard]        AS kriStandard,
+    t.[Risk Type]           AS riskType,
+    t.[Warning_Numeric]      AS warningLimit,
+    t.[Warning_Symbol] AS warningLimitOperator,
+    t.[Escalation_Numeric] AS escalationLimit,
+    t.[Escalation_Symbol] AS escalationLimitOperator,
+    t.[Threshold Limits]     AS thresholdLimit,
+    t.[Breached KRIs]          AS statusBand,
+    CASE
+        WHEN t.[Breached KRIs] = '2' THEN 2
+        WHEN t.[Breached KRIs] = '1'  THEN 1
+        ELSE 0
+    END AS breachLevel
+FROM [DBG_DATA].[dbo].[t_KRI_DATA] t
+WHERE
+    t.[TOP_KRIs] = 1
+    AND t.[Breached KRIs] > 0
+    AND TRY_CONVERT(date, t.[As of Date]) 
+        BETWEEN DATEADD(MONTH, -2, (SELECT max_date FROM maxd)) 
+            AND (SELECT max_date FROM maxd)
+ORDER BY
+    breachLevel DESC,
+    TRY_CONVERT(date, t.[As of Date]) DESC;
+
+      """
+  
+  rows = run_query(sql)
+  for r in rows:
+    print(f"{r['relatedEntityId']} — {r['metricName']}: {r['metricValue']} | "
+          f"status={r['statusBand']} | breachLevel={r['breachLevel']} | "
+          f"asOf={r['observedAt']}")
+  return jsonify({
+        "meta": {"rows": len(rows), "window": "last_12_months_from_max_AsOfDate"},
+        "data": {"source": "KRI", "rows": rows}
+    })
+
+
+@bp.post("/recommendations")
+def post_recommendations():
+    payload = request.get_json(force=True)
+    items = payload if isinstance(payload, list) else [payload]
+    validated = []
+    for it in items:
+        try:
+            r = Recommendation(**it)
+            rec = {
+                "source": r.source,
+                "relatedEntityId": r.relatedEntityId,
+                "metricName": r.metricName,
+                "metricValue": r.metricValue,
+                "recommendationText": r.recommendationText,
+                "actionType": r.actionType,
+                "confidence": r.confidence,
+                "riskType": r.riskType,
+                "referenceTimestamp": r.referenceTimestamp,
+                "observedAt": getattr(r, "observedAt", None) or datetime.today().date().isoformat(),
+                "metadata": r.metadata or {},
+                "postMitigationValue": getattr(r, "postMitigationValue", None)
+            }
+            validated.append(normalize_record(rec))
+
+        except ValidationError as ve:
+            return jsonify({"error": "validation_failed", "detail": ve.errors()}), 400
+    inserted = insert_recommendations(validated)
+    return jsonify({"inserted": inserted}), 201
+
+
+@bp.post("/gpt/run")
+def gpt_run():
+    sql = """
+WITH maxd AS (
+    SELECT MAX(CONVERT(date, [As of Date])) AS max_date
+    FROM v_KRI_Merge_values
+    WHERE TOP_KRIs = 1
+)
+SELECT
+    v.[KRI ID]          AS relatedEntityId,
+    v.KRI_Name          AS metricName,
+
+    -- 🔹 Add PFI name only for SOL (KRI-05112)
+    CASE
+        WHEN v.[KRI ID] = 'KRI-05112' THEN v.PFI
+        ELSE NULL
+    END AS pfiName,
+
+    -- 🔹 Main numeric value the LLM should reason on
+    CASE
+        WHEN v.[KRI ID] = 'KRI-05112' THEN v.Sol_Limit                                      -- SOL
+        WHEN v.[KRI ID] = 'KRI-05203' THEN v.Cap_ratio                                      -- CAR
+        WHEN v.[KRI ID] = 'KRI-05204' THEN v.Leverage_Ratio                                 -- Leverage
+        WHEN v.[KRI ID] = 'KRI-05207' AND v.KRI_Name LIKE '%EUR%' THEN v.NOP_EUR_Perc       -- NOP EUR
+        WHEN v.[KRI ID] = 'KRI-05207' AND v.KRI_Name LIKE '%USD%' THEN v.NOP_USD_Perc       -- NOP USD
+        ELSE v.CurrentMth_Val                                                               -- Other KRIs
+    END AS metricValue,
+
+    v.[As of Date]      AS observedAt,
+    v.[Risk Type]       AS riskType,
+
+    -- Thresholds (raw values, as required)
+    v.Warning_Numeric       AS warningLimit,
+    v.[Warning_Symbol]      AS warningLimitOperator,
+    v.Escalation_Numeric    AS escalationLimit,
+    v.[Escalation_Symbol]   AS escalationLimitOperator,
+
+    -- Final merged status band
+    v.KRI_Status        AS statusBand,
+
+    CASE
+        WHEN v.KRI_Status = 'Breached' THEN 2
+        WHEN v.KRI_Status = 'Warning'  THEN 1
+        ELSE 0
+    END AS breachLevel
+
+FROM v_KRI_Merge_values AS v
+CROSS JOIN maxd
+WHERE
+    v.TOP_KRIs = 1
+    AND v.KRI_Status IN ('Breached', 'Warning')   -- ignore Safe
+    AND YEAR(v.[As of Date]) = YEAR(maxd.max_date)
+    AND MONTH(v.[As of Date]) = 9                 -- you filtered month 1 (January)
+ORDER BY
+    breachLevel DESC,
+    CONVERT(date, v.[As of Date]) DESC;
+       """
+
+    rows = run_query(sql)
+    compact = {"source": "KRI", "window": "year_2025", "rows": rows}
+    recs = call_gpt(compact)
+
+    validated, errors = [], []
+
+    for it in recs:
+      try:
+        r = Recommendation(**it)
+        rec = {
+            "source": r.source,
+            "relatedEntityId": r.relatedEntityId,
+            "metricName": r.metricName,
+            "metricValue": r.metricValue,
+            "recommendationText": r.recommendationText,
+            "rootCause": r.rootCause,
+            "actionType": r.actionType,
+            "confidence": r.confidence,
+            "riskType": r.riskType,
+            "referenceTimestamp": r.referenceTimestamp,
+            "observedAt": getattr(r, "observedAt", None)
+                or next((row["observedAt"] for row in rows if row["relatedEntityId"] == r.relatedEntityId), None),
+            "metadata": r.metadata or {},
+            "postMitigationValue": getattr(r, "postMitigationValue", None)
+        }
+        validated.append(normalize_record(rec))
+      except Exception as e:
+        errors.append({"item": it, "error": str(e)})
+    count = insert_recommendations(validated) if validated else 0
+    return jsonify({"generated": len(recs), "inserted":count,  "errors": errors,  "recommendations": validated })
+
+
+@bp.post("/gpt/liquidity")
+def gpt_liquidity():
+    # For the first run: January → max date; later you can switch to max-date-only
+    sql = """
+       SELECT TOP 1
+    CAST(MonthEndDate AS date) AS observedAt,
+    Total_Liquid_Assets AS totalLiquidAssets,
+    Current_Liabilities AS currentLiabilities,
+    Liquid_Ratio AS liquidRatio
+FROM [DBG_DATA].[dbo].[t_CalculateCapitalAdequacyRatios]
+ORDER BY CAST(MonthEndDate AS date) DESC;
+
+    """
+
+    rows = run_query(sql)
+
+    # Transform into the long format the prompt expects: metricName + metricValue
+    series = []
+    for r in rows:
+        obs = r["observedAt"]
+        series.append({
+            "observedAt": obs,
+            "metricName": "Liquid_Ratio",
+            "metricValue": r["liquidRatio"],
+        })
+        series.append({
+            "observedAt": obs,
+            "metricName": "Current_Liabilities",
+            "metricValue": r["currentLiabilities"],
+        })
+
+    compact = {
+        "messages": [
+            {"role": "system", "content": LIQUIDITY_PROMPT},
+            {"role": "user", "content": json.dumps(series, ensure_ascii=False)},
+        ]
+    }
+
+    result = call_gpt(compact)
+
+    items = result if isinstance(result, list) else [result]
+
+    formatted = []
+    for it in items:
+        formatted.append({
+            "observedAt": it.get("observedAt"),
+            "metricName": it.get("metricName"),
+            "metricValue": it.get("metricValue"),
+            "rootCauses": it.get("rootCauses", []),
+            "recommendations": it.get("recommendations", []),
+        })
+
+    inserted = insert_liquidity_recommendations(formatted)
+
+    return jsonify({
+        "generated": len(formatted),
+        "inserted": inserted,
+        "items": formatted,
+    })
+
+
+@bp.post("/gpt/summary")
+def gpt_summary():
+    sql = """
+            ;WITH maxd AS (
+            SELECT MAX(TRY_CONVERT(date, [As of Date])) AS max_date
+            FROM [DBG_DATA].[dbo].[t_KRI_DATA]
+        )
+        SELECT
+            t.[KRI ID]                AS kriId,
+            t.[Key Risk Indidcator]              AS kriName,
+            t.[Adjusted Current Mth]  AS adjustedCurrentMth,
+            t.[Risk Type]             AS riskType,
+            t.[Warning_Numeric]      AS warningLimit,
+            t.[Warning_Symbol] AS warningLimitOperator,
+            t.[Escalation_Numeric] AS escalationLimit,
+            t.[Escalation_Symbol] AS escalationLimitOperator,
+            t.[Threshold Limits]     AS thresholdLimit,
+            t.[Breached KRIs]          AS statusBand,
+            TRY_CONVERT(date, t.[As of Date]) AS asOfDate,
+            CASE WHEN t.[Breached KRIs] = 'Breached' THEN 1 ELSE 0 END AS isBreached,
+            CASE WHEN t.[Breached KRIs] = 'Warning'  THEN 1 ELSE 0 END AS isWarning,
+            CASE WHEN t.[ImpactBin_Col] = 3 AND t.[LikelihoodBin_Col] = 5 THEN 1 ELSE 0 END AS highImpactHighLikelihood
+        FROM [DBG_DATA].[dbo].[t_KRI_DATA] t
+        CROSS JOIN maxd
+        WHERE TRY_CONVERT(date, t.[As of Date]) = maxd.max_date
+        AND t.[TOP_KRIs] = 1
+        ORDER BY t.[Risk Type], t.[Key Risk Indidcator];
+    """
+    
+    rows = run_query(sql)
+    compact = {"source": "KRI", "window": "current_month", "rows": rows}
+    summary_payload = {
+        "messages": [
+            {"role": "system", "content": summary_prompt},
+            {"role": "user", "content": json.dumps(compact, ensure_ascii=False)}
+        ]
+    }
+
+    summary_text = call_gpt(summary_payload)
+    as_of_date = rows[0]["asOfDate"]
+    insert_summary(summary_text, "KRI", as_of_date)
+
+    link_info = get_published_address("KRI")
+    print("📊 Dashboard link info:", link_info)
+
+    summary_html = summary_text.replace("\n", "<br>") 
+    email_body = f"""
+            <div style="font-family:Verdana, sans-serif; font-size:12px; color:#222; line-height:1.6;">
+                {summary_html}
+            </div>
+            """
+    if link_info:
+            dashboard_name, dashboard_link = link_info
+            email_body += f"""
+                <br><br>
+                <p style="font-size:14px; color:#333; line-height:1.6;">
+                    For more information, click the link to view the dashboard:
+                    <a href="{dashboard_link}" style="color:#0078D4; text-decoration:underline;">
+                        {dashboard_name}
+                    </a>
+                </p>
+            """
+    else:
+        email_body += """
+            <br><br>
+            <p style="font-size:14px; color:#999; line-height:1.6;">
+                Dashboard link currently unavailable.
+        </p>
+    """
+
+    email_body += """
+        <br><br>
+        <p style="font-size:14px; color:#333; line-height:1.6;">
+            Best regards,<br>
+            <strong>InsightView Monitoring System</strong>
+        </p>
+        <p style="font-size:12px; color:#777; line-height:1.4;">
+            This is a system-generated message from InsightView.<br>
+            Please do not reply to this email.
+        </p>
+    """
+
+    recipients = get_llm_suggestive_recipients()
+
+    subject = f"DBG KRI Summary Report – {as_of_date}"
+
+    success = send_summary_email(subject, email_body, recipients, is_html=True)
+
+    if success:
+        # Mark as emailed
+        update_sql = """
+            UPDATE [DBG_DATA].[dbo].[t_insightView_Email_Summaries]
+            SET IsEmailed = 1
+            WHERE SummaryType = 'KRI' AND AsOfDate = :asOfDate;
+        """
+        with ENGINE.begin() as conn:
+            conn.execute(text(update_sql), {"asOfDate": as_of_date})
+
+        print(f"✅ Summary for {as_of_date} emailed successfully.")
+    else:
+        print(f"⚠️ Email failed for summary {as_of_date}. Will remain IsEmailed = 0.")
+
+    return jsonify({
+        "summary_saved": True,
+        "emailed": success,
+        "asOfDate": as_of_date,
+        "summary": summary_text
+    })
+   
+# helper
+
+import os, json
+from dotenv import load_dotenv
+from sqlalchemy import text
+from datetime import date, datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from decimal import Decimal
+from datetime import datetime
+import time
+import requests
+from npl_src.db import DatabaseConnection
+
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE = os.getenv("OPENAI_BASE", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OWNER_ALLOW = {d.strip().lower() for d in os.getenv("OWNER_ALLOW_DOMAINS", "").split(",")}
+PORT_NUMBER = os.getenv("Port_Number", "8282")
+
+db = DatabaseConnection()
+ENGINE = db.get_db_connection()
+
+summary_prompt = """
+You are a Senior Risk Analyst at the Development Bank of Ghana (DBG), a wholesale development finance institution that channels funding to MSMEs through Participating Financial Institutions (PFIs).
+
+You are preparing the **Monthly Executive Risk Summary Report** for DBG Management.
+
+Input data:
+You will receive a compact JSON array containing detailed Key Risk Indicator (KRI) data per risk type, including fields such as:
+- kriId
+- kriName
+- riskType
+- riskLevel (derived from impact and likelihood ratings; reflects severity)
+- kriStatus (current state: Breached, Warning, or Safe)
+- adjustedCurrentMth (the latest measured value)
+- avgExposure
+- asOfDate (reporting date)
+
+Interpretation:
+- `riskLevel` represents potential severity: KRIs with impact ≥ 3 and likelihood ≥ 5 are considered High severity, even if not yet breached.
+- `kriStatus` indicates the current risk position: Breached or Warning. Ignore all records marked as Safe or Low risk.
+- Focus on active or emerging risks — those marked as Breached, Warning, or High/Moderate in overall risk level.
+
+Your task:
+Write a concise, data-driven, professional report (approximately six paragraphs) that:
+1. Clearly states the **reporting month and year** based on the `asOfDate` field.
+2. Summarizes the overall risk environment — indicating whether DBG’s risk profile is improving, stable, or worsening relative to prior months.
+3. Highlights the main **risk types and KRIs** showing breaches or warnings, identifying patterns or concentrations.
+4. Discusses **high-severity (riskLevel = High/Moderate)** indicators that may not yet be breached but represent material potential risk exposures.
+5. Explains how these emerging risks could affect DBG’s portfolio, PFIs, or regulatory compliance if not managed proactively.
+6. Concludes with **forward-looking insights** and proposed management focus areas, consistent with DBG’s Basel III and Bank of Ghana-aligned governance standards.
+
+DBG Context (for tone and realism):
+- DBG operates under Basel III and Bank of Ghana regulations.
+- The institution’s core teams include Risk, Treasury, Finance, Legal/Compliance, ESG, Monitoring & Evaluation (M&E), and Wholesale Lending.
+- Summaries must maintain a **neutral, factual, and analytical tone** suitable for internal board and executive-level reporting.
+
+Formatting:
+- Write in formal report prose — no markdown formatting (no **bold** or *italics*).
+- Include the reporting date in the opening line, e.g., “As of May 2025, DBG’s overall risk profile...”
+- Output plain text only — no JSON, no markup.
+
+Example opening:
+“As of May 2025, DBG’s overall risk profile reflected a moderate elevation in portfolio-level exposure, with heightened sensitivities in credit and liquidity risk categories. Breaches were concentrated in operational metrics, while several high-severity indicators signaled potential vulnerabilities requiring proactive oversight.”
+
+Your goal is to produce a **polished, regulatory-aligned, and forward-looking** summary that integrates both current risk positions and potential high-severity exposures, reflecting DBG’s professional reporting standards.
+
+---
+
+Output Format:
+The final output must be structured in three clearly separated sections, in this order:
+
+[One short paragraph summarizing overall trends and portfolio risk direction.]
+
+Key Highlights:
+[Generate one bullet point per active or emerging breach or warning from the data, beginning with  “•”. 
+Important: Explicitly compare the current month’s value against its threshold, warning, or escalation for all KRIs (respecting the correct operator  <, <=, >, or >= use the operators to help you understand whether they have breached or not do not use them directly on the text).
+Note: do not include the KRI Amount of single loss events or KRI IDs in the text.
+Each bullet should clearly and should have 1.5 space inbetween them, identify the risk type, the KRI name, do not add the KRI IDs and a short explanation of what the breach or warning indicates..]
+
+[One short closing paragraph summarizing systemic implications and forward-looking management actions.]
+"""
+LIQUIDITY_PROMPT = """
+You are a Senior Financial Analyst supporting DBG's Liquidity Dashboard.
+
+DBG Context:
+- DBG is a wholesale development finance institution regulated under the Bank of Ghana framework and aligned with Basel III liquidity principles.
+- DBG provides funds to PFIs (Participating Financial Institutions), who then on-lend to MSMEs.
+- Liquidity risk for DBG is influenced by PFI drawdowns, wholesale lending flows, treasury placements, current liabilities, operating cashflows, and external funding conditions.
+
+Input:
+You will receive a JSON array of rows. Each row contains:
+- observedAt  (Month-end date)
+- metricName  ("Current_Liabilities" or "Liquid_Ratio")
+- metricValue (numeric)
+
+Definitions:
+- Liquidity Ratio = Total Liquid Assets / Current Liabilities.
+- A decline in the Liquidity Ratio over time indicates either:
+  (a) liquid assets are decreasing, (b) current liabilities are rising, or (c) both.
+
+Your task:
+For the time series provided, you must:
+1. Identify whether liquidity conditions are improving, stable, or deteriorating over time, focusing especially on periods where the Liquidity Ratio is falling.
+2. For periods of deterioration (falling Liquidity Ratio), infer the most plausible root causes based strictly on DBG’s operating model, such as:
+   - Higher PFI drawdowns reducing DBG’s liquid assets (cash and near-cash).
+   - Slower or delayed PFI repayments, extending the liquidity cycle.
+   - Increases in current liabilities (payables, accruals, short-term obligations, deferred income).
+   - Shifts in treasury allocations away from highly liquid assets into longer-tenor placements or investments.
+   - Operating expenses growing faster than operating income, weakening cash generation.
+   - FX valuation losses on foreign currency liquid assets (USD/EUR) relative to GHS liabilities.
+3. For each deterioration period, propose concrete, realistic recommendations to improve or stabilise liquidity, such as:
+   - Tighter liquidity planning and cashflow forecasting.
+   - Rebalancing treasury placements towards more liquid instruments.
+   - Renegotiating tenors or drawdown schedules with PFIs.
+   - Strengthening collection and repayment discipline with PFIs.
+   - Setting internal liquidity buffers and early warning triggers.
+   - Aligning operating expenditure with cashflow capacity.
+4. Recommendations must be practical for DBG as a wholesale DFI in Ghana and consistent with Basel III and Bank of Ghana liquidity risk management expectations.
+5. Avoid generic textbook explanations or unrealistic actions. All root causes and recommendations must be financially credible in this context.
+
+Output format:
+- Return a JSON array of objects.
+- Each object must represent one key liquidity insight (typically for a date or short period) and must contain:
+
+  - observedAt    (ISO-8601 date string from the input, or the main month the insight refers to)
+  - metricName    ("Liquid_Ratio" or "Current_Liabilities", whichever is most relevant)
+  - metricValue   (numeric value for that metric at observedAt)
+  - rootCauses    (essay style, 2-3 paragraphs, This must explain the key financial reason(s) behind the liquidity movement, based strictly on DBG’s operating model.)
+  - recommendations (essay style, 2-3 paragraphs, This must provide one clear, realistic, and actionable step DBG should take to improve or stabilise liquidity.)
+
+Rules for rootCauses:
+1. Must identify the MAIN driver of liquidity change (e.g., rising current liabilities, falling liquid assets, FX losses, higher PFI drawdowns, delayed repayments, treasury reallocation).
+2. Must NOT list items. Must NOT be a bullet. Must NOT be an array.
+3. Must be a short, professional, financial explanation.
+
+Rules for recommendations:
+1. Must give one clear, realistic action (e.g., strengthen cashflow forecasting, rebalance treasury placements, tighten PFI repayments, manage operating expenses).
+2. Must NOT be a list or bullet. Must NOT be an array.
+3. Must align with Basel III and Bank of Ghana liquidity expectations
+
+Rules:
+- Do NOT include markdown, tables, or commentary outside JSON.
+- Do NOT invent data values that are not implied by the input.
+- Focus on DBG’s liquidity position and improvement actions, not on general banking theory.
+"""
+
+SYSTEM_PROMPT = """
+You are a seasoned Risk Analyst consultant for the Development Bank of Ghana (DBG), 
+a wholesale lending institution that provides funding to MSMEs through Participating Financial Institutions (PFIs).
+
+You will receive compact JSON rows describing Key Risk Indicators (KRIs) that have breached or are at warning levels. 
+Your task is to generate *specific, actionable, regulatory-compliant, and essay-style recommendations* for risk mitigation. 
+
+DBG Context:
+- DBG is structured with multiple specialized teams: Legal/Compliance, Risk, Finance, Treasury, Wholesale Lending, Investor Relations, ESG, Monitoring & Evaluation (M&E), HR, and Marketing.
+- Each team already exists and is functional. **Do not recommend creating new teams or roles.**
+- Recommendations should direct the **appropriate existing team(s)** to take targeted actions.
+- DBG adheres to **Basel III standards** and **Bank of Ghana regulations**, which must guide all mitigation and governance advice.
+- When coordinating actions across teams, refer to existing collaboration mechanisms (e.g., joint review sessions, escalation meetings, or cross-functional working groups), not “new task forces” or “new committees.”
+-Some KRI rows, especially those related to Single Obligor Limits (SOL), will include a pfiName field indicating the specific Participating Financial Institution. When pfiName is provided, you must explicitly refer to that PFI by name in the analysis and recommendations instead of using generic references such as “PFIs” or “participating institutions.”
+
+Tone and Style:
+- Write in a professional, neutral, and advisory tone suitable for executive summaries and Power BI dashboards.
+- Use clear, concise, and formal English — avoid conversational or overly narrative phrasing.
+- Frame recommendations as **forward-looking actions** (what DBG *will do* or *should do*), not as retrospective commentary.
+
+Guidelines:
+1. Base recommendations on **tested and proven tactics** that have been successfully applied in Ghana’s wholesale banking and MSME financing sector. The recommendation should consider other related ratios and metrics that may be indirectly relevant to the KRI breach.
+2. Ensure all suggestions comply with **Bank of Ghana** and **Basel III** regulatory frameworks, as well as DBG’s own internal governance and risk management structures.
+3. The `KRI_Name` (metricName) and `riskType` fields are the main drivers of your analysis. Use them to:
+   - Identify the **appropriate DBG team(s)** to take action (e.g., Legal/Compliance for regulatory breaches, Treasury for liquidity risks, Finance for reporting or capital issues, ESG for sustainability, etc.).
+   - Tailor the recommended actions to that team’s actual role and capacity within DBG.
+   - Be flexible: if the `metricName` implies another functional owner, adjust accordingly rather than following a fixed mapping.
+4. Each recommendation must clearly specify **which DBG team(s)** should take ownership of the mitigation actions, 
+and describe what those teams should *realistically do* within their mandate — e.g., investigation, adjustment, monitoring, reporting, or corrective action — 
+without restating obvious responsibilities or suggesting new teams.
+
+5. Recommendations must be written in concise **essay format (2–3 paragraphs max)**:
+   - First Provide the definition of the KRI.
+   - Compare the threshold, warning, or escalation limits (respect the operators `<`, `<=`, `>`, `>=`) against the current metric value.
+   - Explain the issue clearly in context.
+   - Outline its implications for DBG and PFIs.
+   - Provide a realistic and pragmatic mitigation plan, assigning clear responsibility to one or more DBG teams.
+
+6. Recommendations should aim to **reduce or eliminate the breach**, targeting a return of the KRI status to "Safe" (0).
+7. Be pragmatic and realistic: suggest actions that DBG and its PFIs *can actually implement* (e.g., enhanced monitoring, borrower due diligence, liquidity buffer reinforcement, ESG reporting, legal compliance checks).
+8. When suggesting a `postMitigationValue`, base it on the **threshold, warning, and escalation limits/operators** provided in the KRI row.
+   - Respect the operators (`<`, `<=`, `>`, `>=`) exactly as defined in the KRI input.
+   - If you are not confident about the appropriate post-mitigation value, leave `postMitigationValue` as `null`.
+9.When dealing with Shareholders Fund for Unsecured Loans (for each PFI) KRIs and a pfiName field is present, frame the recommendation specifically around that PFI (e.g., “PFI XYZ Bank”) rather than generic “PFIs,” and align actions to DBG’s relationship and exposure to that named PFI.
+**Additional Requirement (Root Cause Analysis):**
+- For each recommendation, briefly infer and describe the *most likely root cause(s)* of the KRI breach or warning, 
+  based on common operational, governance, or compliance lapses typically observed in wholesale and MSME banking contexts.  
+  Examples include: data quality gaps, delayed PFI reporting, inadequate stress testing, liquidity misalignment, credit concentration, policy non-compliance, weak borrower monitoring, or FX exposure volatility.  
+- This root cause insight should directly inform the recommended mitigation actions — showing how the proposed measures address or prevent recurrence of the underlying issue and be added to the rootCause.
+
+Output rules:
+- Output strictly in JSON format — no explanations, no prose outside of JSON, no markdown.
+- For every row in the input "rows" array, output exactly one recommendation object.
+- Do not skip rows and do not merge multiple rows into one recommendation.
+- Each recommendation must carry over `relatedEntityId`, `metricName`, `metricValue`, `observedAt`, and `riskType` exactly as provided.
+- The number of recommendations in your output must equal the number of input rows.
+
+Output fields per recommendation:
+- source  
+- relatedEntityId  
+- metricName  
+- metricValue  
+- recommendationText (essay style, 2-3 paragraphs with justification + actions)
+- rootCause
+- actionType (EmailStakeholders|RaiseStock|SlackNotify|Investigate|NoAction)  
+- confidence (0..1)  
+- referenceTimestamp (ISO-8601)  
+- observedAt (ISO-8601, from the KRI record)  
+- riskType  
+- metadata (object, {} if none)  
+- postMitigationValue (float or null)
+"""
+
+llm_suggestive_recipients = """
+    Select Distinct A.AuthenticationId 
+    from t_Authentication A Join t_AuthenticationDetails D on A.AuthenticationId = D.AuthenticationId 
+    Join t_PublishedDashboards P on D.DashboardId = P.DashboardId 
+    where AllowView = 1 and A.IsDisabled = 0 And P.DashboardId in ('P0012','P0013','P0016') 
+    and A.AuthenticationId not like '%dbg.com.gh'
+    """
+
+
+def get_llm_suggestive_recipients() -> list:
+    connection = DatabaseConnection.get_insightview_Connection()
+    with connection.begin() as conn:
+        res = conn.execute(text(llm_suggestive_recipients))
+        rows = []
+        for row in res.fetchall():
+            rows.append(row)
+        return rows
+
+
+def run_query(sql: str, params: dict | None = None) -> list[dict]:
+    with ENGINE.begin() as conn:
+        res = conn.execute(text(sql), params or {})
+        cols = res.keys()
+        rows = []
+        for row in res.fetchall():
+            row_dict = {}
+            for col, val in zip(cols, row):
+                if isinstance(val, (date, datetime)):
+                    row_dict[col] = val.isoformat()
+                elif isinstance(val, Decimal):
+                    row_dict[col] = float(val)
+                else:
+                    row_dict[col] = val
+            rows.append(row_dict)
+        return rows
+
+
+def normalize_record(r: dict) -> dict:
+    rec = dict(r)
+    # ReferenceTimestamp → datetime
+    if rec.get("referenceTimestamp"):
+        try:
+            rec["referenceTimestamp"] = datetime.fromisoformat(
+                rec["referenceTimestamp"].replace("Z", "")
+            )
+        except Exception:
+            rec["referenceTimestamp"] = None
+    # ObservedAt → date
+    if rec.get("observedAt"):
+        try:
+            rec["observedAt"] = datetime.fromisoformat(
+                str(rec["observedAt"]).replace("Z", "")
+            ).date()
+        except Exception:
+            try:
+                rec["observedAt"] = date.fromisoformat(str(rec["observedAt"]))
+            except Exception:
+                print(f"[WARN] Could not parse observedAt: {rec['observedAt']}, defaulting to today")
+                rec["observedAt"] = date.today()
+
+    # Metadata → JSON string
+    if isinstance(rec.get("metadata"), dict):
+        rec["metadata"] = json.dumps(rec["metadata"], ensure_ascii=False)
+    return rec
+
+
+def is_latest_kri_processed() -> bool:
+    """
+    Returns True if the latest KRI 'As of Date' already exists in Recommendations.
+    """
+    sql = """
+    ;WITH kri_max AS (
+        SELECT MAX(TRY_CONVERT(date, [As of Date])) AS kri_latest
+        FROM [DBG_DATA].[dbo].[t_KRI_DATA]
+    ),
+    rec_check AS (
+        SELECT MAX(TRY_CONVERT(date, ObservedAt)) AS rec_latest
+        FROM [DBG_DATA].[dbo].[t_insightView_Recommendations]
+    )
+    SELECT
+        CASE
+            WHEN kri_latest <= ISNULL(rec_latest, '1900-01-01') THEN 1
+            ELSE 0
+        END AS is_processed,
+        kri_latest, rec_latest
+    FROM kri_max CROSS JOIN rec_check;
+    """
+    result = run_query(sql)
+    if result:
+        row = result[0]
+        print(f"Latest KRI date: {row['kri_latest']}, Latest Recommendation: {row['rec_latest']}")
+        return row["is_processed"] == 1
+    return False
+
+
+def is_latest_summary_processed() -> bool:
+    """
+    Checks if the latest KRI 'As of Date' is already processed (emailed) in t_insightView_Email_Summaries.
+    Returns True if already emailed (skip), False if new or pending (trigger send).
+    """
+    sql = """
+    ;WITH kri_max AS (
+        SELECT MAX(TRY_CONVERT(date, [As of Date])) AS kri_latest
+        FROM [DBG_DATA].[dbo].[t_KRI_DATA]
+    ),
+    email_check AS (
+        SELECT MAX(TRY_CONVERT(date, AsOfDate)) AS email_latest,
+               MAX(CASE WHEN IsEmailed = 1 THEN 1 ELSE 0 END) AS emailed_flag
+        FROM [DBG_DATA].[dbo].[t_insightView_Email_Summaries]
+    )
+    SELECT 
+        CASE 
+            WHEN kri_latest <= ISNULL(email_latest, '1900-01-01') AND emailed_flag = 1 THEN 1
+            ELSE 0
+        END AS is_processed,
+        kri_latest, email_latest, emailed_flag
+    FROM kri_max CROSS JOIN email_check;
+    """
+
+    result = run_query(sql)
+    if result:
+        row = result[0]
+        print(
+            f"📅 Latest KRI Date: {row['kri_latest']}, Email Summary: {row['email_latest']} | Emailed Flag: {row['emailed_flag']}")
+        return row["is_processed"] == 1
+    return False
+
+
+def is_latest_liquidity_processed() -> bool:
+    """
+    Returns True ONLY if the latest liquidity MonthEndDate already exists 
+    as ObservedAt in t_recommendations_liquidity.
+    """
+    sql = """
+    ;WITH liq_max AS (
+        SELECT MAX(CAST(MonthEndDate AS date)) AS liq_latest
+        FROM [DBG_DATA].[dbo].[t_CalculateCapitalAdequacyRatios]
+    ),
+    rec_max AS (
+        SELECT MAX(CAST(ObservedAt AS date)) AS rec_latest
+        FROM [DBG_DATA].[dbo].[t_recommendations_liquidity]
+    )
+    SELECT 
+        CASE 
+            WHEN rec_latest IS NOT NULL 
+                 AND liq_latest = rec_latest THEN 1 
+            ELSE 0 
+        END AS is_processed,
+        liq_latest,
+        rec_latest
+    FROM liq_max
+    CROSS JOIN rec_max;
+    """
+
+    result = run_query(sql)
+    if result:
+        row = result[0]
+        print(f"Latest Liquidity Date: {row['liq_latest']}, "
+              f"Latest Recommendation Date: {row['rec_latest']}")
+        return row["is_processed"] == 1
+
+    return False
+
+
+def send_summary_email(subject: str, body: str, recipients: list[str], is_html: bool = True) -> bool:
+    """
+    Sends an email using Office 365 SMTP settings.
+    Returns True if successful, False otherwise.
+    """
+    try:
+        SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.office365.com")
+        SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+        SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+        SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+
+        msg = MIMEMultipart("alternative")
+        msg["From"] = SMTP_EMAIL
+        msg["To"] = ", ".join(recipients)
+        msg["Subject"] = subject
+
+        plain_body = body.replace("<br>", "\n").replace("<div>", "").replace("</div>", "")
+        msg.attach(MIMEText(plain_body, "plain"))
+        if is_html:
+            # wrap in minimal HTML for safe rendering
+            html_body = f"<html><body>{body}</body></html>"
+            msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_EMAIL, SMTP_PASSWORD)
+            server.send_message(msg)
+
+        print(f"📧 Email sent to: {', '.join(recipients)}")
+        return True
+
+    except Exception as e:
+        print(f"[EMAIL ERROR] {e}")
+        return False
+
+
+def get_published_address(summary_type: str) -> tuple[str, str] | None:
+    """
+    Returns (DashboardName, publishedAddress) for the given summary type.
+    Uses the t_PublishedDashboards table.
+    """
+    mapping = {
+        "KRI": "Key Risk Indicator Overview",
+        "Finance": "Financial Overview",
+        "ESG": "ESG Dashboard",
+        "Treasury": "Treasury Performance Dashboard"
+    }
+
+    dashboard_name = mapping.get(summary_type.upper())
+    if not dashboard_name:
+        return None
+
+    sql = """
+        SELECT TOP 1 DashboardName, publishedAddress
+        FROM [DBG_DATA].[dbo].[t_PublishedDashboards]
+        WHERE DashboardName = :dashboard_name;
+    """
+    rows = run_query(sql, {"dashboard_name": dashboard_name})
+    if rows:
+        return rows[0]["DashboardName"], rows[0]["publishedAddress"]
+    return None
+
+
+def auto_scheduler():
+    """
+    Scheduler that runs every Monday at 12:00 PM.
+    If the latest KRI date already has recommendations → skip rec generation.
+    If the latest KRI date already has an emailed summary → skip summary email.
+    Otherwise, → trigger GPT generation for both.
+    """
+    last_run_date = None
+
+    while True:
+        now = datetime.now()
+
+        if now.weekday() == 0 and now.hour >= 3:  # Monday = 0 (12 PM)
+            if last_run_date != now.date():
+                print("⏰ Monday 12:00 → Checking if new KRI data exists")
+
+                # --- STEP 1: Check Recommendations ---
+                if is_latest_kri_processed():
+                    print("✅ Latest KRI data already has recommendations → Skipping GPT run.")
+                else:
+                    print("🧠 New KRI data detected — triggering GPT recommendation generation...")
+                    try:
+                        requests.post("http://127.0.0.1:" + PORT_NUMBER + "/gpt/run", timeout=700)
+                        print("✅ Recommendations generated successfully.")
+                    except Exception as e:
+                        print(f"[RECOMMENDATION ERROR] {e}")
+
+                # --- STEP 2: Check Email Summaries ---
+                # try:
+                #     if is_latest_summary_processed():
+                #         print("✅ Latest summary already emailed → Skipping summary send.")
+                #     else:
+                #         print("🧾 New summary pending — triggering GPT summary and email send...")
+                #         requests.post("http://127.0.0.1:8080/gpt/summary", timeout=500)
+                #         print("✅ Summary generated and emailed successfully.")
+                # except Exception as e:
+                #     print(f"[SUMMARY ERROR] {e}")
+
+                try:
+                    if not is_latest_liquidity_processed():
+                        requests.post("http://127.0.0.1:" + PORT_NUMBER + "/gpt/liquidity", timeout=700)
+                    else:
+                        print("✅ Latest liquidity data already has recommendations → Skipping GPT run.")
+                except Exception as e:
+                    print(f"[Liquidity ERROR] {e}")
+
+                # --- STEP 3: Sleep after completion ---
+                last_run_date = now.date()
+                print("💤 Sleeping for 7 days (until next Monday)...")
+                time.sleep(7 * 24 * 3600)
+
+            else:
+                time.sleep(3600)
+
+        elif now.weekday() == 2 and now.hour < 17:
+            print("🕛 Monday but before 12:00 → Sleeping 1 hour")
+            time.sleep(3600)
+        else:
+            print("📆 Not Monday → Sleeping 1 day")
+            time.sleep(86400)
+
+
+def insert_recommendations(recs: list[dict]) -> int:
+    """
+    Insert a batch of recommendations into dbo.Recommendations.
+    Expects each dict in `recs` to have keys that match the placeholders.
+    """
+    if not recs:
+        return 0
+    clean_recs = [normalize_record(r) for r in recs]
+    sql = text("""
+    INSERT INTO dbo.t_insightView_Recommendations (
+        Source,
+        RelatedEntityId,
+        MetricName,
+        MetricValue,
+        RecommendationText,
+        RootCause,
+        ActionType,
+        RiskType,
+        Confidence,
+        ReferenceTimestamp,
+        ObservedAt,
+        Metadata,
+        PostMitigationValue
+    )
+    VALUES (
+        :source,
+        :relatedEntityId,
+        :metricName,
+        :metricValue,
+        :recommendationText,
+        :rootCause,
+        :actionType,
+        :riskType,               
+        :confidence,
+        :referenceTimestamp,
+        :observedAt,
+        :metadata,
+        :postMitigationValue
+    )
+""")
+
+    with ENGINE.begin() as conn:
+        conn.execute(sql, clean_recs)
+
+    return len(clean_recs)
+
+
+def insert_summary(summary_text: str, summary_type: str, as_of_date: str | date) -> int:
+    """
+    Inserts a GPT-generated summary into dbo.t_insightView_Summaries.
+    Automatically marks it as not emailed (IsEmailed = 0).
+    Returns the number of inserted rows (should be 1 on success).
+    """
+    sql = text("""
+        INSERT INTO dbo.t_insightView_Email_Summaries (SummaryType, SummaryText, AsOfDate, IsEmailed)
+        VALUES (:summaryType, :summaryText, :asOfDate, 0);
+    """)
+
+    with ENGINE.begin() as conn:
+        conn.execute(sql, {
+            "summaryType": summary_type,
+            "summaryText": summary_text,
+            "asOfDate": as_of_date
+        })
+
+    print(f"Summary saved → Type: {summary_type}, Date: {as_of_date}")
+    return 1
+
+
+def insert_liquidity_recommendations(recs: list[dict]) -> int:
+    """
+    Insert a batch of liquidity recommendations into dbo.t_recommendations_liquidity.
+    rootCauses and recommendations are stored as JSON strings.
+    """
+    if not recs:
+        return 0
+
+    payload = []
+    for r in recs:
+        # --- FIX: Strip timestamp -> keep only YYYY-MM-DD ---
+        obs = r.get("observedAt")
+        if isinstance(obs, str) and "T" in obs:
+            obs = obs.split("T")[0]
+
+        payload.append({
+            "observedAt": obs,
+            "metricName": r.get("metricName"),
+            "metricValue": r.get("metricValue"),
+            "rootCauses": json.dumps(r.get("rootCauses", []), ensure_ascii=False),
+            "recommendations": json.dumps(r.get("recommendations", []), ensure_ascii=False),
+        })
+
+    sql = text("""
+        INSERT INTO dbo.t_recommendations_liquidity (
+            ObservedAt,
+            MetricName,
+            MetricValue,
+            RootCauses,
+            Recommendations
+        )
+        VALUES (
+            :observedAt,
+            :metricName,
+            :metricValue,
+            :rootCauses,
+            :recommendations
+        )
+    """)
+
+    with ENGINE.begin() as conn:
+        conn.execute(sql, payload)
+
+    return len(payload)
+
+
+def owner_ok(email: str) -> bool:
+    return email.split("@")[-1].lower() in OWNER_ALLOW
+
+
+def call_gpt(compact_payload: dict) -> any:
+    """
+    Handles both recommendation JSON requests and text summaries.
+    If the compact_payload has `messages`, treat it as a direct GPT request (used for summaries).
+    Otherwise, use SYSTEM_PROMPT + KRI JSON logic.
+    """
+    url = f"{OPENAI_BASE}/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+
+    if "messages" in compact_payload:
+        body = {"model": OPENAI_MODEL, **compact_payload, "temperature": 0.1}
+    else:
+        body = {
+            "model": OPENAI_MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(compact_payload, ensure_ascii=False)}
+            ],
+            "temperature": 0.1
+        }
+    r = requests.post(url, headers=headers, json=body, timeout=300)
+    r.raise_for_status()
+    content = r.json()["choices"][0]["message"]["content"].strip()
+    if content.startswith("[") or content.startswith("{"):
+        try:
+            parsed = json.loads(content)
+            return parsed if isinstance(parsed, list) else parsed.get("recommendations", [])
+        except Exception:
+            return []
+    else:
+        return content

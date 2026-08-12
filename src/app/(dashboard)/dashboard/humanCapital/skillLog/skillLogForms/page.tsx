@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAppNavigation } from "@/lib/navigation/appNavigation";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import {
@@ -472,6 +473,7 @@ function RatingPicker({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 function SkillLogFormPageContent() {
   const router = useRouter();
+  const { goBack } = useAppNavigation();
   const searchParams = useSearchParams();
   const editId = searchParams?.get("edit");
   const isEditMode = !!editId;
@@ -695,7 +697,7 @@ function SkillLogFormPageContent() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => goBack("/dashboard/humanCapital/skillLog")}
           className="p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition"
         >
           <ChevronLeft className="w-4 h-4 text-gray-600" />

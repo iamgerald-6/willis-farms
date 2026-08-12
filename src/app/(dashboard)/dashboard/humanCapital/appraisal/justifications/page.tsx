@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAppNavigation } from "@/lib/navigation/appNavigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -170,7 +170,7 @@ function JustificationCard({ justification }: { justification: Justification }) 
 }
 
 export default function JustificationsInboxPage() {
-  const router = useRouter();
+  const { goBack } = useAppNavigation();
   const [filter, setFilter] = useState<"pending" | "approved" | "rejected" | "">("pending");
 
   const { data: session } = useQuery({
@@ -220,7 +220,7 @@ export default function JustificationsInboxPage() {
   return (
     <div className="p-6 min-h-screen bg-gray-50">
       <button
-        onClick={() => router.back()}
+        onClick={() => goBack("/dashboard/humanCapital/appraisal")}
         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition mb-6"
       >
         ← Back

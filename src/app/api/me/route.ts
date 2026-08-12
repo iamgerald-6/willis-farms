@@ -5,6 +5,11 @@ import {
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { isEmailVerified } from "@/lib/userAccountStatus";
+import {
+  getStaffAuthBlockReason,
+  lookupStaffByUserId,
+} from "@/lib/staffAccount";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -23,30 +28,29 @@ export async function GET(req: NextRequest) {
       user_id: caller.id,
       role: caller.role,
       is_disabled: false,
+      email_verified: true,
+      staff_account_exists: true,
     });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("user_id, role, is_disabled")
-    .eq("user_id", caller.id)
-    .maybeSingle();
+  const account = await lookupStaffByUserId(supabaseAdmin, caller.id);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  if (!data) {
+  if (!account) {
     return NextResponse.json({
       user_id: caller.id,
       role: caller.role,
       is_disabled: false,
+      email_verified: false,
+      staff_account_exists: false,
     });
   }
 
   return NextResponse.json({
-    user_id: data.user_id,
-    role: data.role,
-    is_disabled: !!data.is_disabled,
+    user_id: account.user_id,
+    role: caller.role,
+    is_disabled: !!account.is_disabled,
+    email_verified: isEmailVerified(account),
+    staff_account_exists: true,
+    auth_block: getStaffAuthBlockReason(account),
   });
 }

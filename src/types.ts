@@ -22,13 +22,22 @@ export interface User {
   promotion_eligible?: boolean;
   /** standard = normal; delegated = sub-admin / half_admin (Access Control only) */
   access_tier?: AccessTier;
-  /** Page keys when access_tier is delegated — see pagePermissions.ts */
+  /** Page keys when access_tier is delegated — legacy view list */
   page_permissions?: string[];
+  /** view | add | edit per page key */
+  page_permission_levels?: Partial<
+    Record<string, "view" | "add" | "edit">
+  > | null;
   access_updated_at?: string | null;
   access_updated_by?: string | null;
   /** When true, user cannot sign in or use the dashboard */
   is_disabled?: boolean;
+  /** Set to true once the invited user saves their password on first setup */
+  email_verified?: boolean;
+  email_confirm?: boolean;
   created_at?: string;
+  /** user_id of who added this account (via Add User) — null for pre-existing/seed rows */
+  created_by?: string | null;
   // Task Manager: can this user see every task/project, or only their own?
   // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
   // false except super_admin, who always has it regardless of this value.
@@ -48,6 +57,8 @@ export interface Content {
   document_read_minutes?: number;
   created_at: string;
   created_by: string;
+  /** Resolved display name of the creator — added by the API, not stored. */
+  created_by_name?: string | null;
 }
 
 // Appraisal-specific types (0–100% scoring, Q1–Q4 with Q4 = Annual) now

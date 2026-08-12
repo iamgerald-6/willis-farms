@@ -36,8 +36,20 @@ export async function GET(
       return NextResponse.json({ error: "Content not found" }, { status: 404 });
     }
 
+    let created_by_name: string | null = null;
+    if (data.created_by) {
+      const { data: creator } = await supabaseAdmin
+        .from("users")
+        .select("first_name, last_name")
+        .eq("user_id", data.created_by)
+        .maybeSingle();
+      created_by_name = creator
+        ? `${creator.first_name} ${creator.last_name}`.trim()
+        : "Unknown";
+    }
+
     // 3. Return the data object directly so res.data.data maps perfectly
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, created_by_name });
   } catch (err) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

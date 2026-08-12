@@ -121,6 +121,41 @@ alter table public.appraisals add constraint appraisals_status_check
 > "employee submitted → notify supervisor" email actually sends to, since
 > the existing schema has no reliable employee→supervisor user link.
 
+### 1a) Reviewer attribution + archiving
+
+`immediate_supervisor` is free text typed by the employee on their own
+self-assessment, and `supervisor_id` is only resolved from the email they
+gave — neither records who **actually** did the review. These columns
+capture that, plus the archive state:
+
+```sql
+alter table public.appraisals
+  add column if not exists supervisor_reviewed_by uuid,
+  add column if not exists supervisor_reviewed_by_name text,
+  add column if not exists final_reviewed_by uuid,
+  add column if not exists final_reviewed_by_name text,
+  add column if not exists final_reviewed_at timestamptz,
+  add column if not exists archived boolean not null default false,
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid,
+  add column if not exists archived_by_name text;
+
+create index if not exists appraisals_archived_idx
+  on public.appraisals (archived);
+```
+
+- `supervisor_reviewed_by(_name)` — written whenever the supervisor side is
+  submitted, from the authenticated caller.
+- `final_reviewed_by(_name)` / `final_reviewed_at` — written when the Final
+  Review Meeting is signed off.
+- The `_name` columns are denormalised snapshots so the list and detail views
+  do not need a join, and the attribution survives a later name change or
+  the reviewer leaving.
+- `archived` — archived appraisals are hidden from the default list, rejected
+  by every edit endpoint (HTTP 409), and skipped by the reminder/lock cron.
+  Nothing is deleted; only Manager / Admin / Super Admin / L5+ can archive or
+  restore, via `POST /api/appraisal/[id]/archive`.
+
 Recommended indexes for the reminder/lock cron:
 
 ```sql

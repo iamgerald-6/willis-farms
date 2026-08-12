@@ -1,5 +1,6 @@
 import type { Quarter } from "./sections";
 import { graceDaysAfterQuarterEnd } from "./deadlines";
+import { getAppBaseUrl } from "@/lib/careers/appUrl";
 
 /**
  * Transactional emails for the Appraisal System, sent via Resend (same
@@ -178,20 +179,61 @@ export async function sendSupervisorEvaluationDueEmail(params: {
   quarter: Quarter;
   year: number;
   deadlineAt: string | Date;
+  /** Deep-link to the appraisal so the supervisor can open their evaluation. */
+  appraisalId?: string | number | null;
 }): Promise<SendResult> {
-  const { supervisorEmail, supervisorName, employeeName, quarter, year, deadlineAt } = params;
-  const label = quarter === "Q4" ? `${quarter} (Annual) ${year}` : `${quarter} ${year}`;
+  const {
+    supervisorEmail,
+    supervisorName,
+    employeeName,
+    quarter,
+    year,
+    deadlineAt,
+    appraisalId,
+  } = params;
+  const label =
+    quarter === "Q4" ? `${quarter} (Annual) ${year}` : `${quarter} ${year}`;
+  const formUrl = appraisalId
+    ? `${getAppBaseUrl()}/dashboard/humanCapital/appraisal/appraisalForms?id=${appraisalId}`
+    : `${getAppBaseUrl()}/dashboard/humanCapital/appraisal`;
+  const loginUrl = `${getAppBaseUrl()}/login`;
+
   const html = wrapEmail(
-    `${employeeName} has completed their self-assessment`,
-    `<p>Hi ${escapeHtml(supervisorName)},</p>
-     <p><strong>${escapeHtml(employeeName)}</strong> has submitted their self-assessment for <strong>${escapeHtml(label)}</strong>. Your evaluation is now due.</p>
-     <p><strong>Deadline: ${formatDeadline(deadlineAt)}</strong></p>
-     <p>If you don't complete your evaluation by the deadline, the appraisal will lock and a 10-point deduction will apply to your own appraisal score for this quarter, unless you submit a justification that gets approved.</p>`,
+    `Supervisor evaluation required — ${label}`,
+    `<p>Dear ${escapeHtml(supervisorName)},</p>
+     <p><strong>${escapeHtml(employeeName)}</strong> has completed their self-assessment for the <strong>${escapeHtml(label)}</strong> performance appraisal.</p>
+     <p>Please sign in to the Wills Farms dashboard and complete your supervisor evaluation.</p>
+     <p style="margin: 20px 0;">
+       <a href="${escapeHtml(formUrl)}"
+          style="display:inline-block;background:#dc2626;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;font-size:14px;">
+         Complete supervisor evaluation
+       </a>
+     </p>
+     <p style="font-size:13px;color:#6b7280;">
+       Or <a href="${escapeHtml(loginUrl)}" style="color:#1e3a5f;">sign in here</a>, then open Appraisals from the sidebar.
+     </p>
+     <p><strong>Completion deadline: ${formatDeadline(deadlineAt)}</strong></p>
+     <p style="font-size:13px;color:#6b7280;">
+       If the supervisor evaluation is not completed by this date, the appraisal will lock automatically and a 10-point deduction may apply to your own appraisal for this quarter, unless a justification is approved.
+     </p>`,
   );
-  const text = `${employeeName} submitted their self-assessment for ${label}. Please complete your evaluation by ${formatDeadline(deadlineAt)}.`;
+  const text = [
+    `Dear ${supervisorName},`,
+    ``,
+    `${employeeName} has completed their self-assessment for the ${label} performance appraisal.`,
+    ``,
+    `Please sign in and complete your supervisor evaluation:`,
+    formUrl,
+    ``,
+    `Sign in: ${loginUrl}`,
+    `Completion deadline: ${formatDeadline(deadlineAt)}`,
+    ``,
+    `If the evaluation is not completed by this date, the appraisal will lock automatically.`,
+  ].join("\n");
+
   return sendViaResend({
     to: supervisorEmail,
-    subject: `Action needed: evaluate ${employeeName} — ${label}`,
+    subject: `Action required: supervisor evaluation for ${employeeName} — ${label}`,
     html,
     text,
   });

@@ -31,6 +31,10 @@ export interface AccessProfile {
   grade_level?: string | null;
   access_tier?: AccessTier | string | null;
   page_permissions?: string[] | null;
+  /** view | add | edit per page key — delegated users */
+  page_permission_levels?: Partial<
+    Record<PagePermissionKey, "view" | "add" | "edit">
+  > | null;
 }
 
 export const PAGE_PERMISSION_LABELS: Record<
@@ -38,7 +42,7 @@ export const PAGE_PERMISSION_LABELS: Record<
   { label: string; group: string }
 > = {
   dashboard: { label: "Overview", group: "General" },
-  users: { label: "Users", group: "General" },
+  users: { label: "User Management", group: "General" },
   notifications: { label: "Notifications", group: "General" },
   "hc:leave": { label: "Leave", group: "Human Capital" },
   "hc:appraisal": { label: "Appraisal", group: "Human Capital" },
@@ -60,12 +64,18 @@ export function isFullRoleAccess(role: string | null | undefined): boolean {
   );
 }
 
-/** Who may open the Access Control page */
+/**
+ * Unconditional (role-only) bypass for User Management. Super Admin and
+ * Manager L5+ always get full manage rights. Admin is deliberately NOT
+ * included here — their default is "view" on User Management (see
+ * ADMIN_DEFAULT_OVERRIDES in permissionLevels.ts) and can be raised to
+ * add/edit per-user via the permission matrix, but never full by default.
+ */
 export function canManageAccessControl(
   role: string | null | undefined,
   grade: string | null | undefined,
 ): boolean {
-  if (isSuperAdmin(role) || role === "admin") return true;
+  if (isSuperAdmin(role)) return true;
   if (role === "manager" && gradeIndex(grade) >= 4) return true;
   return false;
 }
@@ -106,6 +116,14 @@ export function canAccessPage(
     if (pageKey === "tm:calendar" && perms.includes("hc:schedule")) {
       return true;
     }
+    const levels = profile.page_permission_levels;
+    if (
+      levels &&
+      typeof levels === "object" &&
+      levels[pageKey as PagePermissionKey]
+    ) {
+      return true;
+    }
     return perms.includes(pageKey);
   }
 
@@ -117,7 +135,8 @@ export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
     return "dashboard";
   }
   if (pathname.startsWith("/dashboard/access-control")) return null;
-  if (pathname.startsWith("/dashboard/users")) return "users";
+  if (pathname.startsWith("/dashboard/settings")) return null;
+  if (pathname.startsWith("/dashboard/users")) return null;
   if (pathname.startsWith("/dashboard/humanCapital/leave")) return "hc:leave";
   if (pathname.startsWith("/dashboard/humanCapital/appraisal/justifications")) {
     return "hc:justifications";
@@ -170,6 +189,7 @@ export function resolveAccessProfile(
       grade_level: dbUser.grade_level,
       access_tier: dbUser.access_tier ?? "standard",
       page_permissions: dbUser.page_permissions ?? [],
+      page_permission_levels: dbUser.page_permission_levels ?? null,
     };
   }
   if (sessionRole) {
@@ -177,6 +197,7 @@ export function resolveAccessProfile(
       role: sessionRole,
       access_tier: "standard",
       page_permissions: [],
+      page_permission_levels: null,
     };
   }
   return null;

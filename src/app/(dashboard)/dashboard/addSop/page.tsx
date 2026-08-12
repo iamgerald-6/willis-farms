@@ -215,7 +215,7 @@ export default function ContentPage() {
               onClick={() => setModalOpen(true)}
               className="bg-red-600 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm w-full sm:w-auto"
             >
-              <Plus className="w-4 h-4" /> Add Content
+              <Plus className="w-4 h-4" /> Add SOP
             </button>
           </div>
         ) : (
@@ -270,7 +270,7 @@ export default function ContentPage() {
             ))
           ) : contents.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">
-              No content uploaded yet. Click <strong>Add Content</strong> to get
+              No content uploaded yet. Click <strong>Add SOP</strong> to get
               started.
             </div>
           ) : (
@@ -417,7 +417,7 @@ export default function ContentPage() {
                     colSpan={8}
                     className="px-4 py-12 text-center text-gray-400"
                   >
-                    No content uploaded yet. Click <strong>Add Content</strong>{" "}
+                    No content uploaded yet. Click <strong>Add SOP</strong>{" "}
                     to get started.
                   </td>
                 </tr>

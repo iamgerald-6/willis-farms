@@ -1,6 +1,15 @@
-export default function InviteExpiredPage() {
+"use client";
+
+import { Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+
+function ExpiredLinkCard() {
+  const searchParams = useSearchParams();
+  const isRecovery = searchParams?.get("type") === "recovery";
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <div className="bg-white p-8 rounded-xl shadow w-full max-w-md text-center">
         <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-6">
           <svg
@@ -19,11 +28,12 @@ export default function InviteExpiredPage() {
         </div>
 
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Invite Link Expired
+          {isRecovery ? "Reset link expired" : "Invite link expired"}
         </h1>
         <p className="text-gray-500 text-sm mb-6 leading-relaxed">
-          This invite link is no longer valid. It may have already been used or
-          has expired after 24 hours.
+          {isRecovery
+            ? "This password reset link is no longer valid. Reset links can only be opened once, and they expire after a short time."
+            : "This invite link is no longer valid. It may have already been used or has expired after 24 hours."}
         </p>
 
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-left mb-6">
@@ -31,13 +41,44 @@ export default function InviteExpiredPage() {
             What to do next
           </p>
           <p className="text-sm text-red-600 leading-relaxed">
-            Contact your administrator and ask them to resend your invite. A
-            fresh link will be sent to your email.
+            {isRecovery
+              ? "Request a new reset link below. Open the newest email — older reset links stop working as soon as a new one is sent."
+              : "Contact your administrator and ask them to resend your invite. A fresh link will be sent to your email."}
           </p>
         </div>
 
-        <p className="text-xs text-gray-400">Wills Farms · Invite System</p>
+        {isRecovery ? (
+          <Link
+            href="/forgot-password"
+            className="block w-full bg-[#C62828] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+          >
+            Request a new reset link
+          </Link>
+        ) : (
+          <Link
+            href="/login"
+            className="block w-full bg-[#C62828] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+          >
+            Back to login
+          </Link>
+        )}
+
+        <p className="text-xs text-gray-400 mt-6">Wills Farms · Staff Portal</p>
       </div>
     </div>
+  );
+}
+
+export default function InviteExpiredPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#C62828]" />
+        </div>
+      }
+    >
+      <ExpiredLinkCard />
+    </Suspense>
   );
 }

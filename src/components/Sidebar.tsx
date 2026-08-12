@@ -6,7 +6,6 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   BookOpen,
-  Users,
   FileStack,
   Bell,
   LeafyGreen,
@@ -63,12 +62,6 @@ const NAV_ITEMS: NavItem[] = [
     href: "/dashboard",
     icon: LayoutDashboard,
     permissionKey: "dashboard",
-  },
-  {
-    label: "Users",
-    href: "/dashboard/users",
-    icon: Users,
-    permissionKey: "users",
   },
   {
     label: "Human Capital",
@@ -146,7 +139,7 @@ const NAV_ITEMS: NavItem[] = [
     permissionKey: "sop:view",
   },
   {
-    label: "Add SOP",
+    label: "SOP Management",
     href: "/dashboard/addSop",
     icon: FileStack,
     permissionKey: "sop:add",

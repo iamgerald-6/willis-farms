@@ -40,6 +40,34 @@ export async function GET(req: NextRequest) {
     if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // Resolve reviewer names so employees can see who approved/rejected.
+    const reviewerIds = [
+      ...new Set(
+        (data ?? []).map((r) => r.reviewed_by).filter((id): id is string => !!id),
+      ),
+    ];
+
+    let reviewerNameById: Record<string, string> = {};
+    if (reviewerIds.length > 0) {
+      const { data: reviewers } = await supabaseAdmin
+        .from("users")
+        .select("user_id, first_name, last_name")
+        .in("user_id", reviewerIds);
+      reviewerNameById = Object.fromEntries(
+        (reviewers ?? []).map((u) => [
+          u.user_id,
+          `${u.first_name} ${u.last_name}`.trim(),
+        ]),
+      );
+    }
+
+    const enrichedData = (data ?? []).map((r) => ({
+      ...r,
+      reviewed_by_name: r.reviewed_by
+        ? reviewerNameById[r.reviewed_by] ?? "Unknown"
+        : null,
+    }));
+
     const usedDays =
       data
         ?.filter(
@@ -51,7 +79,7 @@ export async function GET(req: NextRequest) {
         .reduce((sum, r) => sum + r.total_days, 0) ?? 0;
 
     return NextResponse.json({
-      data,
+      data: enrichedData,
       balance: {
         total: 30,
         used: usedDays,

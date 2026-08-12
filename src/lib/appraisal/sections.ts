@@ -21,23 +21,30 @@ export function gradeIndex(g: string | null | undefined): number {
   return GRADE_ORDER.indexOf(clean);
 }
 
+/**
+ * Lowest grade allowed to rate anyone else's appraisal. L3 (index 2) —
+ * an L2 may not appraise an L1, but an L3 may appraise L1 and L2.
+ */
+export const MIN_SUPERVISOR_GRADE_INDEX = 2;
+
+/**
+ * Can `raterGrade` fill the SUPERVISOR side for someone on `targetGrade`?
+ * The rater must be L3+ and strictly above the person being appraised, so
+ * every grade (including supervisors) is appraised by someone senior.
+ */
 export function canRate(
   raterGrade: string | null | undefined,
   targetGrade: string | null | undefined,
 ): boolean {
   const rater = gradeIndex(raterGrade);
   const target = gradeIndex(targetGrade);
-  if (rater < 3 || target === -1) return false; // below L4 cannot rate others
-  return rater > target; // L4+ can only rate strictly lower grades
+  if (rater < MIN_SUPERVISOR_GRADE_INDEX || target === -1) return false;
+  return rater > target;
 }
 
+/** Can this grade supervise anybody at all? Self-appraisal is always allowed. */
 export function canAppraiseOthers(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= 3; // L4+ (index 3)
-}
-
-/** Supervisor = L4 and above (index 3) — line-supervisor threshold for appraisals. */
-export function isSupervisorGrade(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= 3;
+  return gradeIndex(grade) >= MIN_SUPERVISOR_GRADE_INDEX;
 }
 
 export const GRADE_OPTIONS = [
@@ -54,10 +61,17 @@ export const GRADE_BAND_COVERS: Record<string, string[]> = {
   L5_L6_L7: ["L5", "L6", "L7"],
 };
 
-export function availableGradeBands(raterGrade: string | null | undefined) {
-  if (!canAppraiseOthers(raterGrade)) {
-    return GRADE_OPTIONS.filter((o) => o.value === "L1");
-  }
+/** The rating-section band a given grade is appraised under. */
+export function gradeBandForGrade(grade: string | null | undefined): string {
+  const idx = gradeIndex(grade);
+  if (idx <= 0) return "L1";
+  if (idx <= 2) return "L2_L3";
+  if (idx === 3) return "L4";
+  return "L5_L6_L7";
+}
+
+/** Bands containing at least one grade this rater is allowed to appraise. */
+export function supervisableGradeBands(raterGrade: string | null | undefined) {
   return GRADE_OPTIONS.filter((opt) => {
     const grades = GRADE_BAND_COVERS[opt.value] ?? [];
     return grades.some((g) => canRate(raterGrade, g));

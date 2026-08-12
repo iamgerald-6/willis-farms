@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { recomputeFinalScore } from "@/lib/appraisal/server";
+import { canRate } from "@/lib/appraisal/sections";
+import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
+import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
+import { canViewAllAppraisalPeriods } from "@/lib/accessControl";
 import {
   requireAuth,
   canAccessAppraisalRecord,
@@ -46,6 +50,23 @@ export async function GET(
     return jsonForbidden("You do not have access to this appraisal.");
   }
 
+  // Employees may only open the current applicable period (or a record that
+  // is still mid-workflow). Past closed periods are Manager/Admin only.
+  if (!canViewAllAppraisalPeriods(caller.role)) {
+    const active = getActiveAppraisalPeriod();
+    const isActivePeriod =
+      data.review_quarter === active.quarter &&
+      Number(data.review_year) === active.year;
+    const stillInProgress = ["open", "submitted", "reopened"].includes(
+      data.status ?? "",
+    );
+    if (!isActivePeriod && !stillInProgress) {
+      return jsonForbidden(
+        "You can only view appraisals for the current period.",
+      );
+    }
+  }
+
   return NextResponse.json({ data });
 }
 
@@ -79,7 +100,7 @@ export async function PATCH(
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("appraisals")
       .select(
-        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score, company_id",
+        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score, company_id, current_grade, employee_name, immediate_supervisor, supervisor_email, deadline_at, archived",
       )
       .eq("id", appraisalId)
       .single();
@@ -93,6 +114,40 @@ export async function PATCH(
 
     if (!canAccessAppraisalRecord(caller, existing)) {
       return jsonForbidden("You do not have access to this appraisal.");
+    }
+
+    // Which side of this record is the caller on? Everyone owns their own
+    // self-assessment; the supervisor side requires a strictly senior grade
+    // (L3 minimum), with Super Admin as the only exception because L7 has
+    // nobody above them.
+    const isOwnRecord = Boolean(
+      (existing.employee_user_id && existing.employee_user_id === caller.id) ||
+        (caller.company_id && caller.company_id === existing.company_id),
+    );
+    const canActAsSupervisor =
+      !isOwnRecord &&
+      (caller.role === "super_admin" ||
+        canRate(caller.grade_level, existing.current_grade));
+
+    const rejectSupervisorAction = () =>
+      isOwnRecord
+        ? jsonForbidden(
+            "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
+          )
+        : jsonForbidden(
+            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
+          );
+
+    // Archiving is a filing action, not a workflow state — an archived record
+    // is frozen until someone restores it.
+    if (existing.archived) {
+      return NextResponse.json(
+        {
+          error:
+            "This appraisal is archived. Restore it before making any changes.",
+        },
+        { status: 409 },
+      );
     }
 
     // A locked appraisal cannot be edited by either party (Section 7).
@@ -111,6 +166,8 @@ export async function PATCH(
     // actually finalizes a quarter's score for the annual Final Score
     // average). Only allowed once both parties have submitted. ──────────
     if (body.status === "final_reviewed") {
+      if (!canActAsSupervisor) return rejectSupervisorAction();
+
       if (existing.submitted_by !== "both") {
         return NextResponse.json(
           {
@@ -149,6 +206,9 @@ export async function PATCH(
           supervisor_weighted_score: supervisor_weighted_score ?? null,
           final_review_notes: final_review_notes ?? null,
           promotion_readiness: promotion_readiness ?? undefined,
+          final_reviewed_by: caller.id,
+          final_reviewed_by_name: caller.name,
+          final_reviewed_at: new Date().toISOString(),
           status: "final_reviewed",
           final_quarter_score: supervisor_weighted_score ?? null,
           reopened_deadline_at: null,
@@ -178,7 +238,63 @@ export async function PATCH(
       return NextResponse.json({ data });
     }
 
+    // ── Employee completing their self-assessment on an existing record ──
+    // (the record was seeded by the cron, or the supervisor submitted first)
+    if (body.employee_ratings && !body.supervisor_ratings) {
+      if (!isOwnRecord) {
+        return jsonForbidden("You can only submit your own self-assessment.");
+      }
+
+      const employeeSubmittedBy =
+        existing.submitted_by === "supervisor" ? "both" : "employee";
+
+      const { data, error } = await supabaseAdmin
+        .from("appraisals")
+        .update({
+          employee_ratings: body.employee_ratings,
+          employee_weighted_score: body.employee_weighted_score ?? null,
+          employee_email: body.employee_email ?? undefined,
+          supervisor_email: body.supervisor_email ?? undefined,
+          promotion_readiness: body.promotion_readiness ?? undefined,
+          section_authorisations_held:
+            body.section_authorisations_held ?? undefined,
+          submitted_by: employeeSubmittedBy,
+          status: employeeSubmittedBy === "both" ? "submitted" : "open",
+          employee_submitted_at: new Date().toISOString(),
+        })
+        .eq("id", appraisalId)
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      if (employeeSubmittedBy === "employee" && data?.supervisor_email) {
+        sendSupervisorEvaluationDueEmail({
+          supervisorEmail: data.supervisor_email,
+          supervisorName: data.immediate_supervisor || "Supervisor",
+          employeeName: data.employee_name,
+          quarter: data.review_quarter,
+          year: data.review_year,
+          deadlineAt: data.deadline_at,
+          appraisalId: data.id ?? appraisalId,
+        }).then((result) => {
+          if (!result.sent) {
+            console.warn(
+              "[PATCH /api/appraisal/[id]] Supervisor notify email not sent:",
+              result.error,
+            );
+          }
+        });
+      }
+
+      return NextResponse.json({ data });
+    }
+
     // ── Step 2: supervisor submitting their evaluation ──────────────────
+    if (!canActAsSupervisor) return rejectSupervisorAction();
+
     const {
       supervisor_ratings,
       supervisor_weighted_score,
@@ -224,6 +340,8 @@ export async function PATCH(
         status: newSubmittedBy === "both" ? "submitted" : "open",
         supervisor_submitted_at: new Date().toISOString(),
         supervisor_id: existing.supervisor_id ?? supervisor_user_id ?? null,
+        supervisor_reviewed_by: caller.id,
+        supervisor_reviewed_by_name: caller.name,
       })
       .eq("id", appraisalId)
       .select()

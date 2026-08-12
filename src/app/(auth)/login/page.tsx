@@ -1,42 +1,48 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import Link from "next/link";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { toast } from "sonner";
+import PasswordInput, { inputClass } from "../components/PasswordInput";
+import { staffAuthBlockMessage, type StaffAuthBlockReason } from "@/lib/staffAccount";
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-// ── Reads the ?redirect param so it must live inside <Suspense> ──────────────
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Only allow internal paths to prevent open-redirect attacks
-  const raw = searchParams.get("redirect") ?? "";
+  const raw = searchParams?.get("redirect") ?? "";
   const redirectTo = raw.startsWith("/") ? raw : "/dashboard";
+  const passwordReset = searchParams?.get("reset") === "success";
+  const passwordSetup = searchParams?.get("setup") === "success";
+  const fromPasswordFlow = passwordReset || passwordSetup;
 
-  // If already logged in, skip the login screen
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace(redirectTo);
+      if (session && !fromPasswordFlow) router.replace(redirectTo);
     });
-  }, [redirectTo, router]);
+  }, [redirectTo, router, fromPasswordFlow]);
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
   });
 
   const onSubmit = async (data: LoginForm) => {
@@ -46,61 +52,119 @@ function LoginForm() {
     });
 
     if (error) {
-      alert(error.message);
+      toast.error(error.message);
       return;
     }
 
     try {
       const res = await api.get("/me");
-      if (res.data?.is_disabled) {
+      const block = res.data?.auth_block as StaffAuthBlockReason | null | undefined;
+
+      if (!res.data?.staff_account_exists) {
         await supabase.auth.signOut();
-        alert("Your account has been disabled. Contact an administrator.");
+        toast.error(staffAuthBlockMessage("not_found"));
+        return;
+      }
+      if (block === "disabled" || res.data?.is_disabled) {
+        await supabase.auth.signOut();
+        toast.error(staffAuthBlockMessage("disabled"));
+        return;
+      }
+      if (block === "pending" || !res.data?.email_verified) {
+        await supabase.auth.signOut();
+        toast.error(staffAuthBlockMessage("pending"));
         return;
       }
     } catch {
-      // If /me fails, RouteAccessGuard will still enforce on dashboard
+      await supabase.auth.signOut();
+      toast.error("Could not verify your account. Try again.");
+      return;
     }
 
-    router.push(redirectTo);
+    router.replace(redirectTo);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="bg-white p-6 rounded shadow w-full max-w-sm space-y-4"
+        className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 w-full max-w-sm space-y-4"
       >
-        <h1 className="text-xl font-semibold text-center">Login</h1>
+        <div className="text-center mb-2">
+          <h1 className="text-2xl font-bold text-gray-900">Staff login</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Wills Farms management portal
+          </p>
+        </div>
+
+        {(passwordReset || passwordSetup) && (
+          <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-800">
+            {passwordReset
+              ? "Your password was updated. Sign in with your new password."
+              : "Your account is ready. Sign in with your email and password."}
+          </div>
+        )}
 
         <div>
+          <label
+            htmlFor="email"
+            className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+          >
+            Email
+          </label>
           <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@willsfarms.com"
             {...register("email")}
-            placeholder="Email"
-            className="w-full border p-2 rounded"
+            className={inputClass}
           />
           {errors.email && (
-            <p className="text-sm text-red-600">{errors.email.message}</p>
+            <p className="text-sm text-red-600 mt-1">{errors.email.message}</p>
           )}
         </div>
 
         <div>
-          <input
-            type="password"
-            {...register("password")}
-            placeholder="Password"
-            className="w-full border p-2 rounded"
+          <div className="flex items-center justify-between mb-1.5">
+            <label
+              htmlFor="password"
+              className="text-xs font-semibold text-gray-500 uppercase tracking-wide"
+            >
+              Password
+            </label>
+          </div>
+          <Controller
+            name="password"
+            control={control}
+            render={({ field }) => (
+              <PasswordInput
+                id="password"
+                value={field.value}
+                onChange={field.onChange}
+                placeholder="Password"
+                autoComplete="current-password"
+              />
+            )}
           />
           {errors.password && (
-            <p className="text-sm text-red-600">{errors.password.message}</p>
+            <p className="text-sm text-red-600 mt-1">
+              {errors.password.message}
+            </p>
           )}
         </div>
-
+        <Link
+          href="/forgot-password"
+          className="text-xs font-medium text-[#C62828] hover:underline"
+        >
+          Forgot password?
+        </Link>
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-[#C62828] text-white py-2 rounded"
+          className="w-full bg-[#C62828] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
         >
-          {isSubmitting ? "Logging in..." : "Login"}
+          {isSubmitting ? "Signing in…" : "Sign in"}
         </button>
       </form>
     </div>

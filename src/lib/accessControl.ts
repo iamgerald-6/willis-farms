@@ -102,6 +102,9 @@ export function gradeBandsBelow(viewerGrade: string | null | undefined): Grade[]
  * (L4+) above, which govern who can act as a line supervisor on someone's
  * record for Promotion/Skill Logs. Appraisal "full access" is a different,
  * L5+ concept per the spec — do not conflate the two.
+ *
+ * Also separate from canViewAllAppraisalPeriods() — an L5 employee may see
+ * other people's current-period appraisals, but not browse past periods.
  */
 export function hasFullAppraisalAccess(
   role: string | null | undefined,
@@ -111,6 +114,39 @@ export function hasFullAppraisalAccess(
     return true;
   }
   return gradeIndex(grade) >= 4; // L5 = index 4
+}
+
+/**
+ * Who may browse appraisals outside the single active period.
+ * Employees (any grade) are locked to the current period only.
+ * Manager / Admin / Super Admin may open "All periods".
+ */
+export function canViewAllAppraisalPeriods(
+  role: string | null | undefined,
+): boolean {
+  return (
+    role === "manager" || role === "admin" || role === "super_admin"
+  );
+}
+
+/**
+ * Who may archive / restore an appraisal.
+ *   - Manager and Super Admin → yes
+ *   - Admin → no by default; only when Manage User has explicitly granted
+ *     Edit on the Appraisal module (stored in page_permission_levels)
+ *   - Everyone else → no
+ */
+export function canArchiveAppraisal(
+  role: string | null | undefined,
+  pagePermissionLevels?: Partial<
+    Record<string, "view" | "add" | "edit">
+  > | null,
+): boolean {
+  if (role === "super_admin" || role === "manager") return true;
+  if (role === "admin") {
+    return pagePermissionLevels?.["hc:appraisal"] === "edit";
+  }
+  return false;
 }
 
 /**

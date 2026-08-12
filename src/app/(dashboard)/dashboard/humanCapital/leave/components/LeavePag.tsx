@@ -31,6 +31,8 @@ interface LeaveRequest {
   status: "pending" | "approved" | "rejected";
   admin_note: string | null;
   created_at: string;
+  reviewed_by_name: string | null;
+  reviewed_at: string | null;
 }
 
 interface LeaveBalance {
@@ -112,6 +114,13 @@ function formatDate(iso: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function reviewStampLabel(r: LeaveRequest): string {
+  if (r.status === "pending" || !r.reviewed_at) return "—";
+  const verb = r.status === "approved" ? "Approved" : "Rejected";
+  const who = r.reviewed_by_name ? ` by ${r.reviewed_by_name}` : "";
+  return `${verb}${who} · ${formatDate(r.reviewed_at)}`;
 }
 
 function inputCls(hasError?: boolean) {
@@ -448,6 +457,9 @@ export default function LeavePage() {
               <th className="px-4 py-3 font-semibold text-gray-600">Reason</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
               <th className="px-4 py-3 font-semibold text-gray-600">
+                Reviewed
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
                 Admin Note
               </th>
             </tr>
@@ -456,7 +468,7 @@ export default function LeavePage() {
             {isLoading ? (
               [...Array(3)].map((_, i) => (
                 <tr key={i} className="border-b border-gray-100 animate-pulse">
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(8)].map((_, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-4 bg-gray-100 rounded w-3/4" />
                     </td>
@@ -466,7 +478,7 @@ export default function LeavePage() {
             ) : requests.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   No leave requests yet. Click <strong>Apply for Leave</strong>{" "}
@@ -502,6 +514,17 @@ export default function LeavePage() {
                       >
                         {s.icon} {s.label}
                       </span>
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-xs font-medium whitespace-nowrap ${
+                        r.status === "approved"
+                          ? "text-green-600"
+                          : r.status === "rejected"
+                            ? "text-red-600"
+                            : "text-gray-400"
+                      }`}
+                    >
+                      {reviewStampLabel(r)}
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs max-w-[160px] truncate">
                       {r.admin_note ?? "—"}

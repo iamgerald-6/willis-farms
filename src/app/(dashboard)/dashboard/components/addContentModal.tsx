@@ -19,7 +19,6 @@ import { Content } from "@/types";
 import { useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
 
-// ─── Schema ────────────────────────────────────────────────────────────────────
 const contentSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   category: z.string().min(1, "Category is required"),
@@ -124,7 +123,7 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/dmvr8ooz1/${resourceType}/upload`,
-    { method: "POST", body: formData }
+    { method: "POST", body: formData },
   );
   const json = await res.json();
   if (!json.secure_url) throw new Error("Cloudinary upload failed");
@@ -251,7 +250,7 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
 
   const selectedCategory = watch("category");
   const subOptions = selectedCategory
-    ? SUB_CATEGORIES[selectedCategory] ?? []
+    ? (SUB_CATEGORIES[selectedCategory] ?? [])
     : [];
 
   const validateFiles = () => {
@@ -526,7 +525,7 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
                     })}
                     className={inputCls(
                       !!errors.video_duration_minutes,
-                      !videoFile
+                      !videoFile,
                     )}
                   />
                 </Field>

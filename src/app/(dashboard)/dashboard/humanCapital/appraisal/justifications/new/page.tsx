@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useAppNavigation } from "@/lib/navigation/appNavigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -27,6 +28,7 @@ interface AppraisalSummary {
 function SubmitJustificationPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { goBack } = useAppNavigation();
   const appraisalId = searchParams?.get("appraisal_id");
 
   const [reasonText, setReasonText] = useState("");
@@ -91,7 +93,7 @@ function SubmitJustificationPageContent() {
   return (
     <div className="p-6 min-h-screen bg-gray-50">
       <button
-        onClick={() => router.back()}
+        onClick={() => goBack("/dashboard/humanCapital/appraisal/justifications")}
         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition mb-6"
       >
         ← Back

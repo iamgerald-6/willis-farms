@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useAppNavigation } from "@/lib/navigation/appNavigation";
 import { Content } from "@/types";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -92,7 +93,7 @@ function ReadingProgress({ minutes }: { minutes: number }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ContentDetailPage() {
-  const router = useRouter();
+  const { goBack } = useAppNavigation();
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [isSaved, setIsSaved] = useState(false);
@@ -132,7 +133,7 @@ export default function ContentDetailPage() {
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center gap-3 p-4 text-center">
         <p className="text-gray-500">Content not found.</p>
         <button
-          onClick={() => router.back()}
+          onClick={() => goBack("/dashboard/sop")}
           className="text-red-600 text-sm hover:underline flex items-center gap-1"
         >
           <ArrowLeft className="w-4 h-4" /> Go back
@@ -149,7 +150,7 @@ export default function ContentDetailPage() {
       {/* ── Back nav ── */}
       <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-2 shrink-0">
         <button
-          onClick={() => router.back()}
+          onClick={() => goBack("/dashboard/sop")}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 transition"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Learning Hub
@@ -233,6 +234,16 @@ export default function ContentDetailPage() {
                   </span>
                 </span>
               </div>
+              {content.created_by_name && (
+                <p className="text-xs text-gray-400 mt-3">
+                  Added by {content.created_by_name} ·{" "}
+                  {new Date(content.created_at).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </p>
+              )}
             </div>
           </div>
 
