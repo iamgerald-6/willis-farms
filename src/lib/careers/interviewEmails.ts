@@ -1,4 +1,4 @@
-import { recruitmentInterviewUrl } from "./appUrl";
+import { recruitmentInterviewUrl } from "@/lib/appUrl";
 
 type SendResult = { sent: boolean; error?: string };
 

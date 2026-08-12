@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
+import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/projects
 // Anyone with the tm_can_view_all_tasks grant (or who's super_admin) sees
@@ -10,7 +11,8 @@ import { computeDisplayStatus } from "@/lib/taskAccessControl";
 // users via the Users page. Everyone else only sees a project if they own
 // at least one non-deleted task inside it — per Sheila's instruction that
 // employees shouldn't see a tab they have no tasks under, not just a
-// grayed-out one.
+// grayed-out one — or if they created the project themselves (so a brand
+// new, still-empty project isn't invisible to the person who just made it).
 export async function GET(req: NextRequest) {
   try {
     // Archived projects are only ever shown in the "Manage Projects" modal
@@ -66,8 +68,15 @@ export async function GET(req: NextRequest) {
     // Manage Projects is an administrative surface (Senior Management
     // only, enforced above) — it needs to list every project regardless of
     // task ownership, not just the ones the caller happens to own tasks in.
+    //
+    // A project the caller just created has no tasks in it yet, so it can
+    // never appear in visibleProjectIds (that set is built from task
+    // ownership) — without created_by here, creating a project made it
+    // invisible to its own creator until they added a task or were granted
+    // tm_can_view_all_tasks. The creator should always see their own
+    // project.
     const result = (projects ?? [])
-      .filter((p) => includeArchived || canSeeAll || visibleProjectIds.has(p.id))
+      .filter((p) => includeArchived || canSeeAll || p.created_by === user.id || visibleProjectIds.has(p.id))
       .map((p) => ({
         ...p,
         task_count: statsByProject[p.id]?.total ?? 0,
@@ -90,13 +99,35 @@ export async function POST(req: NextRequest) {
 
     const { name, description } = await req.json();
     if (!name?.trim()) return NextResponse.json({ error: "Project name is required" }, { status: 400 });
+    const trimmedName = name.trim();
+
+    // Guardrail: no two projects (active or archived — a name should stay
+    // unambiguous even after archiving) share a name, case-insensitively.
+    // ilike with no wildcards is an exact match ignoring case, so this
+    // catches "Q3 Compliance" vs "q3 compliance" too, not just literal dupes.
+    const { data: existing, error: dupeError } = await supabaseAdmin
+      .from("tm_projects")
+      .select("id")
+      .ilike("name", trimmedName)
+      .limit(1);
+    if (dupeError) throw dupeError;
+    if (existing && existing.length > 0) {
+      return NextResponse.json({ error: `A project named "${trimmedName}" already exists.` }, { status: 409 });
+    }
 
     const { data, error } = await supabaseAdmin
       .from("tm_projects")
-      .insert([{ name: name.trim(), description: description ?? null, created_by: user.id }])
+      .insert([{ name: trimmedName, description: description ?? null, created_by: user.id }])
       .select()
       .single();
     if (error) throw error;
+
+    await writeProjectAuditLog({
+      project_id: data.id,
+      action: "created",
+      new_values: { name: data.name },
+      performedBy: user,
+    });
 
     return NextResponse.json({ project: data });
   } catch (err: any) {

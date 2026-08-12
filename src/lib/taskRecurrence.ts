@@ -1,8 +1,15 @@
-// Turns the free-text `frequency` field ("Quarterly", "Every 45 days", "Annual"
-// — it's a plain text input, not a fixed dropdown, see TaskRow.tsx) into an
-// actual interval, and advances a due date by it. Used when a recurring task
-// gets marked complete: instead of closing the task, its due date jumps
-// forward to the next cycle.
+// Turns the `frequency` value (picked from FrequencySelect.tsx's fixed
+// dropdown — Daily, Weekly, Monthly, etc.) into an actual interval, and
+// advances a due date by it. Used when a recurring task gets marked
+// complete: instead of closing the task, its due date jumps forward to the
+// next cycle.
+//
+// "Hourly" is deliberately NOT recognized here — due_date is a day, not a
+// time, so there's no per-hour interval that means anything on it. An
+// Hourly task is handled entirely separately in taskManagerData.ts's
+// performTaskCompletion (due_date stays put on completion) and the
+// close-of-business rollover cron (due_date advances once a day, on its
+// own schedule, regardless of completions) — see the comment there.
 
 export interface RecurrenceInterval {
   unit: "day" | "month";
@@ -10,11 +17,12 @@ export interface RecurrenceInterval {
 }
 
 /**
- * Best-effort parse of a free-text frequency into an interval. Recognizes
- * the common compliance/reporting cadences plus an "every N day/week/
- * month/year" fallback for anything more specific. Returns null when the
- * text doesn't match anything recognizable — callers should treat that as
- * "can't auto-renew this one" rather than guessing.
+ * Best-effort parse of a recognized frequency value into an interval.
+ * Recognizes the fixed set of cadences FrequencySelect.tsx offers, plus an
+ * "every N day/week/month/year" fallback for free text from older data or
+ * document extraction. Returns null when the text doesn't match anything
+ * recognizable (including "Hourly" — see above) — callers should treat that
+ * as "can't auto-renew this one" rather than guessing.
  */
 export function parseFrequencyInterval(raw: string | null | undefined): RecurrenceInterval | null {
   if (!raw) return null;
@@ -37,7 +45,9 @@ export function parseFrequencyInterval(raw: string | null | undefined): Recurren
   }
 
   if (/\bdaily\b/.test(f)) return { unit: "day", amount: 1 };
-  if (/\bfortnightly\b|\bbiweekly\b/.test(f)) return { unit: "day", amount: 14 };
+  // .? tolerates "biweekly", "bi-weekly", and "bi weekly" alike — same
+  // flexible-separator style already used below for semi/bi-annual.
+  if (/\bfortnightly\b|\bbi.?weekly\b/.test(f)) return { unit: "day", amount: 14 };
   if (/\bweekly\b/.test(f)) return { unit: "day", amount: 7 };
   if (/\bbimonthly\b/.test(f)) return { unit: "month", amount: 2 };
   if (/\bmonthly\b/.test(f)) return { unit: "month", amount: 1 };

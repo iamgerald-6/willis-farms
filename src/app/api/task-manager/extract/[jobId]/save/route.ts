@@ -62,6 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
         title: t.title.trim(),
         description: t.description ?? null,
         owner_id: t.owner_id ?? null,
+        start_date: t.start_date ?? null,
         due_date: t.due_date ?? null,
         is_recurring: !!t.is_recurring,
         task_type: isMonitoring ? "monitoring" : "obligation",
@@ -84,12 +85,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
           task_id: task.id,
           project_id: task.project_id,
           action: "created",
-          new_values: { title: task.title, due_date: task.due_date, source: "ai_extracted" },
+          // source_document_name rides along here so the History drawer can
+          // show which document a task came from, not just that it was
+          // AI-extracted (see AuditLogDrawer.tsx) — task.source_document_name
+          // is already set above from the matched/joined file name(s).
+          new_values: { title: task.title, due_date: task.due_date, source: "ai_extracted", source_document_name: task.source_document_name },
           performedBy: user,
         }),
       ),
     );
 
+    // Subtasks are never proposed or saved as part of this flow anymore —
+    // Claude no longer suggests a breakdown (see EXTRACTION_TOOL in
+    // extract/route.ts), and a reviewer adds them the normal way, after the
+    // fact, via the Subtasks panel on the saved task (same one used for any
+    // manually-created task) — not in this pre-save review window.
     const userNames = await fetchUserNames((created ?? []).map((t) => t.owner_id));
     return NextResponse.json({ tasks: enrichTasks(created ?? [], userNames) });
   } catch (err: any) {

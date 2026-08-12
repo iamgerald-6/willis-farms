@@ -5,7 +5,17 @@ import { X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 
-export default function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export default function NewProjectModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  // Passes back the id of the project that was just created, so the caller
+  // can switch straight to it — see tasks/page.tsx, which was otherwise
+  // leaving the reviewer sitting on whatever project they'd had selected
+  // before opening this modal.
+  onCreated: (newProjectId: string) => void;
+}) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
@@ -17,9 +27,9 @@ export default function NewProjectModal({ onClose, onCreated }: { onClose: () =>
     }
     setSaving(true);
     try {
-      await api.post("/task-manager/projects", { name: name.trim(), description: description.trim() || undefined });
+      const res = await api.post("/task-manager/projects", { name: name.trim(), description: description.trim() || undefined });
       toast.success(`"${name}" created`);
-      onCreated();
+      onCreated(res.data.project.id);
       onClose();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to create project");

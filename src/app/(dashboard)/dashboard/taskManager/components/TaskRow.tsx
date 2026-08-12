@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Archive, X, Check, History, CheckSquare, Square } from "lucide-react";
+import { Pencil, Archive, X, Check, History, CheckSquare, Square, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
+import { minTaskDate } from "@/lib/taskDateLimits";
 import { STATUS_STYLES } from "../statusStyles";
+import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 import OwnerSelect from "./OwnerSelect";
+import FrequencySelect from "./FrequencySelect";
+import SubtaskPanel from "./SubtaskPanel";
 
 export default function TaskRow({
   task,
@@ -37,6 +41,7 @@ export default function TaskRow({
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [ownerId, setOwnerId] = useState<string | null>(task.owner_id ?? null);
+  const [startDate, setStartDate] = useState(task.start_date ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [indicator, setIndicator] = useState(task.indicator ?? "");
   const [frequency, setFrequency] = useState(task.frequency ?? "");
@@ -52,9 +57,12 @@ export default function TaskRow({
   // of this state (see handleSave below).
   const [isRecurring, setIsRecurring] = useState(task.is_recurring);
 
-  const [editingProgress, setEditingProgress] = useState(false);
-  const [progressDraft, setProgressDraft] = useState(task.progress_percent ?? 0);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const minDate = minTaskDate();
+  // The due date picker's floor: never more than a year back, and never
+  // earlier than whatever start date is already chosen.
+  const dueMinDate = startDate && startDate > minDate ? startDate : minDate;
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -62,6 +70,7 @@ export default function TaskRow({
   const resetDraft = () => {
     setTitle(task.title);
     setOwnerId(task.owner_id ?? null);
+    setStartDate(task.start_date ?? "");
     setDueDate(task.due_date ?? "");
     setIndicator(task.indicator ?? "");
     setFrequency(task.frequency ?? "");
@@ -76,6 +85,14 @@ export default function TaskRow({
       toast.error("Task name can't be empty");
       return;
     }
+    if ((startDate && startDate < minDate) || (dueDate && dueDate < minDate)) {
+      toast.error("Start and due dates can't be more than a year in the past");
+      return;
+    }
+    if (startDate && dueDate && dueDate < startDate) {
+      toast.error("Due date can't be earlier than the start date");
+      return;
+    }
     const recurring = taskType === "monitoring" ? true : isRecurring;
     const movedProject = projectId !== task.project_id;
     const movedTab = taskType !== task.task_type;
@@ -84,6 +101,7 @@ export default function TaskRow({
       await api.patch(`/task-manager/tasks/${task.id}`, {
         title: title.trim(),
         owner_id: ownerId,
+        start_date: startDate || null,
         due_date: dueDate || null,
         is_recurring: recurring,
         frequency: recurring ? frequency || null : null,
@@ -154,16 +172,23 @@ export default function TaskRow({
     }
   };
 
-  const handleSaveProgress = async () => {
+  // A task with no subtasks is, in effect, a single leaf worth 100% of
+  // itself — so there's nothing to drag, just a tick. Unticking goes back
+  // to 0 rather than whatever it was before, since there's no partial state
+  // to preserve without subtasks to track it. Tasks WITH subtasks never
+  // call this — their progress is fully computed from ticking those (see
+  // SubtaskPanel), never set directly.
+  const handleToggleTaskDone = async () => {
+    if (!canEditProgress || task.has_subtasks) return;
+    const nextDone = task.progress_percent < 100;
     setSavingProgress(true);
     try {
-      const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: progressDraft });
-      if (progressDraft >= 100) {
+      const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: nextDone ? 100 : 0 });
+      if (nextDone) {
         toast.success(
           res.data?.recurred ? `Recurring task — next due date set to ${fmtDate(res.data.next_due_date)}` : "Marked complete",
         );
       }
-      setEditingProgress(false);
       onChanged();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to update progress");
@@ -187,12 +212,28 @@ export default function TaskRow({
             autoFocus
           />
           <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                min={minDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Due Date</label>
+              <input
+                type="date"
+                value={dueDate}
+                min={dueMinDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+              />
+            </div>
+          </div>
           <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
             {status}
           </span>
@@ -226,7 +267,7 @@ export default function TaskRow({
           {taskType === "monitoring" && (
             <div className="space-y-2">
               <input value={indicator} onChange={(e) => setIndicator(e.target.value)} placeholder="Indicator" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
-              <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+              <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
               <input value={methodProvider} onChange={(e) => setMethodProvider(e.target.value)} placeholder="Method / provider" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
             </div>
           )}
@@ -237,7 +278,7 @@ export default function TaskRow({
                 Recurring
               </label>
               {isRecurring && (
-                <input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="Frequency" className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none" />
+                <FrequencySelect value={frequency} onChange={setFrequency} className="w-full border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
               )}
             </div>
           )}
@@ -253,7 +294,7 @@ export default function TaskRow({
 
         {/* Desktop edit form */}
         <div className="hidden md:block space-y-2">
-        <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center">
+        <div className={`grid ${TASK_TABLE_GRID_COLS} gap-3 items-center`}>
           <div />
           <input
             value={title}
@@ -264,8 +305,18 @@ export default function TaskRow({
           <OwnerSelect users={users} value={ownerId} onChange={setOwnerId} />
           <input
             type="date"
+            value={startDate}
+            min={minDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            title="Start date"
+            className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
+          />
+          <input
+            type="date"
             value={dueDate}
+            min={dueMinDate}
             onChange={(e) => setDueDate(e.target.value)}
+            title="Due date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
           />
           <div>
@@ -338,12 +389,7 @@ export default function TaskRow({
               placeholder="Indicator (e.g. Air Quality)"
               className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
             />
-            <input
-              value={frequency}
-              onChange={(e) => setFrequency(e.target.value)}
-              placeholder="Frequency (e.g. Quarterly)"
-              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
-            />
+            <FrequencySelect value={frequency} onChange={setFrequency} className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             <input
               value={methodProvider}
               onChange={(e) => setMethodProvider(e.target.value)}
@@ -366,12 +412,7 @@ export default function TaskRow({
               Recurring
             </label>
             {isRecurring ? (
-              <input
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                placeholder="Frequency (e.g. Annual, Quarterly)"
-                className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
-              />
+              <FrequencySelect value={frequency} onChange={setFrequency} className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white" />
             ) : (
               <div />
             )}
@@ -384,9 +425,9 @@ export default function TaskRow({
   }
 
   const metaLine = (variant === "monitoring" ? [task.indicator, task.frequency, task.method_provider] : [task.frequency]).filter(Boolean).join(" · ");
-  const dueLabel = task.due_date
-    ? new Date(task.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "—";
+  const fmtShort = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const startLabel = task.start_date ? fmtShort(task.start_date) : "—";
+  const dueLabel = task.due_date ? fmtShort(task.due_date) : "—";
 
   const actionButtons = (
     <>
@@ -414,33 +455,41 @@ export default function TaskRow({
     </>
   );
 
-  const progressBlock = isLifecycleActive && !editingProgress && (canEditProgress || task.progress_percent > 0) ? (
-    <button
-      onClick={() => canEditProgress && setEditingProgress(true)}
-      disabled={!canEditProgress}
-      className={`flex items-center gap-1.5 mt-1.5 w-full max-w-[110px] ${canEditProgress ? "cursor-pointer" : "cursor-default"}`}
-      title={canEditProgress ? "Update progress" : undefined}
-    >
+  // The bar is never manually draggable — it's always automatic. A task
+  // with subtasks shows a read-only rollup of them (see SubtaskPanel); a
+  // task without any is effectively its own single leaf worth 100% of
+  // itself, so the only control is a plain tick that flips it between 0
+  // and 100 (see handleToggleTaskDone).
+  const progressBlock = isLifecycleActive && (canEditProgress || task.progress_percent > 0) ? (
+    <div className="flex items-center gap-1.5 mt-1.5 w-full max-w-[110px]">
+      {!task.has_subtasks && (
+        <input
+          type="checkbox"
+          checked={task.progress_percent >= 100}
+          disabled={!canEditProgress || savingProgress}
+          onChange={handleToggleTaskDone}
+          title={canEditProgress ? "Mark complete" : undefined}
+          className="accent-red-600 w-3.5 h-3.5 cursor-pointer disabled:cursor-default shrink-0"
+        />
+      )}
       <span className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
         <span className="block h-full bg-red-500 rounded-full" style={{ width: `${task.progress_percent}%` }} />
       </span>
       <span className="text-[10px] text-gray-400">{task.progress_percent}%</span>
-    </button>
-  ) : isLifecycleActive && editingProgress ? (
-    <div className="mt-1.5 max-w-[150px]">
-      <input type="range" min={0} max={100} step={5} value={progressDraft} onChange={(e) => setProgressDraft(Number(e.target.value))} className="w-full" autoFocus />
-      <div className="flex items-center justify-between mt-0.5">
-        <span className="text-[10px] text-gray-500">{progressDraft}%</span>
-        <div className="flex items-center gap-2">
-          <button onClick={handleSaveProgress} disabled={savingProgress} className="text-[10px] font-semibold text-red-600 hover:text-red-700">
-            {savingProgress ? "Saving…" : "Save"}
-          </button>
-          <button onClick={() => { setProgressDraft(task.progress_percent ?? 0); setEditingProgress(false); }} disabled={savingProgress} className="text-[10px] text-gray-400 hover:text-gray-600">
-            Cancel
-          </button>
-        </div>
-      </div>
     </div>
+  ) : null;
+
+  // Shown for any task that already has subtasks (so anyone with progress
+  // access can open and tick them), or for Senior Management on any active
+  // task without them yet (so they have a way to start breaking one down).
+  const subtasksToggle = isLifecycleActive && (task.has_subtasks || isSeniorManagement) ? (
+    <button
+      onClick={() => setSubtasksOpen((v) => !v)}
+      className="flex items-center gap-1.5 mt-1.5 text-xs font-bold text-red-600 hover:text-red-700"
+    >
+      {subtasksOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+      Subtasks
+    </button>
   ) : null;
 
   const completeToggle = editMode && isLifecycleActive ? (
@@ -470,6 +519,10 @@ export default function TaskRow({
                 <p className="text-gray-700 font-medium">{task.owner_name ?? "Unassigned"}</p>
               </div>
               <div>
+                <span className="text-gray-400">Start Date</span>
+                <p className="text-gray-700 font-medium">{startLabel}</p>
+              </div>
+              <div>
                 <span className="text-gray-400">{variant === "monitoring" ? "Next Due" : "Due Date"}</span>
                 <p className="text-gray-700 font-medium">{dueLabel}</p>
               </div>
@@ -479,35 +532,50 @@ export default function TaskRow({
                 {status}
               </span>
               {progressBlock}
+              {subtasksToggle}
             </div>
+            {subtasksOpen && (
+              <div className="mt-2">
+                <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+              </div>
+            )}
             <div className="flex items-center gap-1.5 mt-3">{actionButtons}</div>
           </div>
         </div>
       </div>
 
       {/* Desktop row */}
-      <div className="hidden md:grid grid-cols-[2.5rem_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-3 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50/60 group">
-      <div className="flex justify-center">
-        {completeToggle}
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-gray-900">{task.title}</p>
-        {metaLine && (
-          <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>
+      <div className="hidden md:block border-b border-gray-100 last:border-0">
+        <div className={`grid ${TASK_TABLE_GRID_COLS} gap-3 items-center px-3 py-2.5 hover:bg-gray-50/60 group`}>
+          <div className="flex justify-center">
+            {completeToggle}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{task.title}</p>
+            {metaLine && (
+              <p className="text-xs text-gray-400 mt-0.5">{metaLine}</p>
+            )}
+          </div>
+          <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
+          <p className="text-sm text-gray-500">{startLabel}</p>
+          <p className="text-sm text-gray-500">{dueLabel}</p>
+          <div>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
+              {status}
+            </span>
+            {progressBlock}
+            {subtasksToggle}
+          </div>
+          <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
+            {actionButtons}
+          </div>
+        </div>
+        {subtasksOpen && (
+          <div className="px-3 pb-2.5 pl-[calc(2.5rem+0.75rem)]">
+            <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+          </div>
         )}
       </div>
-      <p className="text-sm text-gray-500">{task.owner_name ?? "Unassigned"}</p>
-      <p className="text-sm text-gray-500">{dueLabel}</p>
-      <div>
-        <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${style.bg} ${style.text} ${style.border}`}>
-          {status}
-        </span>
-        {progressBlock}
-      </div>
-      <div className="flex items-center gap-1.5 justify-end opacity-0 group-hover:opacity-100 transition">
-        {actionButtons}
-      </div>
-    </div>
     </>
   );
 }
