@@ -23,17 +23,11 @@ import {
   reviewedBy,
   type Appraisal,
 } from "./appraisalTypes";
+import { QUARTER_FILTERS, getQuarterFilterLabel } from "@/lib/moduleRegistry";
 
 export type { Appraisal, ViewerContext } from "./appraisalTypes";
 
 import type { ViewerContext } from "./appraisalTypes";
-
-const QUARTER_FILTERS = ["", "Q1", "Q2", "Q3", "Q4"] as const;
-
-function quarterFilterLabel(q: "" | Quarter) {
-  if (q === "") return "All";
-  return q === "Q4" ? "Q4 (Annual)" : q;
-}
 
 function detailHref(a: Appraisal) {
   return `/dashboard/humanCapital/appraisal/${a.id}`;
@@ -297,7 +291,7 @@ export default function AppraisalLandingPage({
                       : "bg-white text-gray-600 border-gray-200 hover:border-red-300"
                   }`}
                 >
-                  {quarterFilterLabel(q)}
+                  {getQuarterFilterLabel(q)}
                 </button>
               ))}
             <span className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" />

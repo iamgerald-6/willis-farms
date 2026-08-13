@@ -18,6 +18,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import { getLeaveTypeLegacyValues, getLeaveTypeOptions } from "@/lib/moduleRegistry";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LeaveRequest {
@@ -41,15 +42,12 @@ interface LeaveBalance {
   remaining: number;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const LEAVE_TYPES = [
-  "Annual",
-  "Sick",
-  "Emergency",
-  "Maternity/Paternity",
-  "Unpaid",
-  "Other",
-] as const;
+// ─── Constants (from module registry taxonomy) ───────────────────────────────
+const LEAVE_TYPES = getLeaveTypeLegacyValues() as unknown as [
+  string,
+  ...string[],
+];
+const LEAVE_TYPE_OPTIONS = getLeaveTypeOptions();
 
 const STATUS_STYLES = {
   pending: {
@@ -227,9 +225,9 @@ function ApplyLeaveModal({
               className={inputCls(!!errors.leave_type)}
             >
               <option value="">Select leave type</option>
-              {LEAVE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {LEAVE_TYPE_OPTIONS.map((t) => (
+                <option key={t.id} value={t.legacyValue ?? t.label}>
+                  {t.label}
                 </option>
               ))}
             </select>

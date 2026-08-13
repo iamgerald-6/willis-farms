@@ -6,30 +6,13 @@ import { Search, Clock, Video, FileText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import Link from "next/link";
+import {
+  getSopCategoryBadgeClass,
+  getSopCategoryFilterPills,
+  SOP_BROWSE_COPY,
+} from "@/lib/moduleRegistry";
 
-const CATEGORY_COLORS: Record<string, string> = {
-  "Animal Health & Welfare":
-    "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  "Breeding & Reproduction": "bg-pink-50 text-pink-700 border border-pink-200",
-  "Nutrition & Feeding": "bg-amber-50 text-amber-700 border border-amber-200",
-  Biosecurity: "bg-blue-50 text-blue-700 border border-blue-200",
-  "Facility & Equipment":
-    "bg-orange-50 text-orange-700 border border-orange-200",
-  "Health & Safety": "bg-red-50 text-red-700 border border-red-200",
-  "HR & Administration":
-    "bg-purple-50 text-purple-700 border border-purple-200",
-};
-
-const FILTER_PILLS = [
-  "All",
-  "Animal Health & Welfare",
-  "Breeding & Reproduction",
-  "Nutrition & Feeding",
-  "Biosecurity",
-  "Facility & Equipment",
-  "Health & Safety",
-  "HR & Administration",
-];
+const FILTER_PILLS = getSopCategoryFilterPills();
 
 // ─── Skeleton card ─────────────────────────────────────────────────────────────
 function SkeletonCard() {
@@ -57,9 +40,7 @@ function ContentCard({ content }: { content: Content }) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
           <span
-            className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              CATEGORY_COLORS[content.category] ?? "bg-gray-100 text-gray-600"
-            }`}
+            className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium ${getSopCategoryBadgeClass(content.category)}`}
           >
             {content.category}
           </span>
@@ -142,10 +123,8 @@ export default function SOPHubPage() {
     <div className="p-6 min-h-screen bg-gray-50">
       {/* ── Header ── */}
       <div className="mb-8 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">SOPs</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Browse standard operating procedures across all farm areas
-        </p>
+        <h1 className="text-2xl font-bold text-gray-900">{SOP_BROWSE_COPY.title}</h1>
+        <p className="text-sm text-gray-500 mt-1">{SOP_BROWSE_COPY.subtitle}</p>
       </div>
 
       {/* ── Search ── */}
@@ -154,7 +133,7 @@ export default function SOPHubPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
-            placeholder="Search by title, category or topic..."
+            placeholder={SOP_BROWSE_COPY.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full border-2 border-red-500 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent"
@@ -193,8 +172,8 @@ export default function SOPHubPage() {
         ) : filtered.length === 0 ? (
           <div className="col-span-full text-center py-20 text-gray-400">
             <p className="text-4xl mb-3">📭</p>
-            <p className="font-medium">No SOPs found</p>
-            <p className="text-sm mt-1">Try a different search or filter</p>
+            <p className="font-medium">{SOP_BROWSE_COPY.emptyTitle}</p>
+            <p className="text-sm mt-1">{SOP_BROWSE_COPY.emptyDescription}</p>
           </div>
         ) : (
           filtered.map((content) => (

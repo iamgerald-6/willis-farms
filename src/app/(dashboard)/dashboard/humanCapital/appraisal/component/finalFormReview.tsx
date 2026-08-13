@@ -25,6 +25,7 @@ import {
 import { Quarter, sectionsFor } from "@/lib/appraisal/sections";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
+import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
 
 interface Appraisal {
   id: string | number;
@@ -47,16 +48,7 @@ interface Appraisal {
   reopened_deadline_at?: string | null;
 }
 
-const PROMOTION_OPTIONS = [
-  { value: "not_yet_ready", label: "Not yet ready" },
-  { value: "developing", label: "Developing toward next level" },
-  { value: "nearly_ready", label: "Nearly ready" },
-  { value: "ready_for_assessment", label: "Ready for promotion assessment" },
-  {
-    value: "ready_for_expanded_responsibility",
-    label: "Ready for expanded responsibility but not yet formal promotion",
-  },
-];
+const PROMOTION_OPTIONS = getPromotionReadinessOptions();
 
 function diffIndicator(emp: number | null, sup: number | null) {
   if (emp == null || sup == null || emp === sup) return null;

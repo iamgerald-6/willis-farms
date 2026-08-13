@@ -1,23 +1,17 @@
 "use client";
 import { useState } from "react";
-import {
-  Loader2,
-  Upload,
-  X,
-  BookOpen,
-  Shield,
-  ClipboardList,
-  Tag,
-  CheckCircle2,
-} from "lucide-react";
+import { Loader2, Upload, X, CheckCircle2 } from "lucide-react";
 
 import { toast } from "sonner";
 import api from "@/lib/api";
-type ManualCategory =
-  | "HR"
-  | "Biosecurity"
-  | "Finance Policies"
-  | "Breeding Operations";
+import {
+  getDefaultPolicyCategoryLegacyValue,
+  getPolicyCategoryLegacyValues,
+  POLICIES_PAGE_COPY,
+} from "@/lib/moduleRegistry";
+
+const POLICY_CATEGORY_SUGGESTIONS = getPolicyCategoryLegacyValues();
+const DEFAULT_CATEGORY = getDefaultPolicyCategoryLegacyValue();
 
 export default function UploadManualModal({
   open,
@@ -31,7 +25,7 @@ export default function UploadManualModal({
   uploadedById: string;
 }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>("HR");
+  const [category, setCategory] = useState<string>(DEFAULT_CATEGORY);
   const [description, setDescription] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [versionNotes, setVersionNotes] = useState("");
@@ -40,55 +34,12 @@ export default function UploadManualModal({
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const CATEGORIES: ManualCategory[] = [
-    "HR",
-    "Biosecurity",
-    "Finance Policies",
-    "Breeding Operations",
-  ];
-
-  interface ManualVersion {
-    version_id: string;
-    version_label: string;
-    cloudinary_url: string;
-    file_name: string;
-    file_size_bytes: number | null;
-    version_notes: string | null;
-    uploaded_by_id: string;
-    uploaded_by_name: string;
-    uploaded_at: string;
-  }
-
-  interface Manual {
-    manual_id: string;
-    title: string;
-    category: ManualCategory;
-    description: string | null;
-    created_at: string;
-    updated_at: string;
-    versions: ManualVersion[];
-  }
-
-  const CATEGORY_ICONS: Record<ManualCategory, React.ReactNode> = {
-    HR: <BookOpen className="w-4 h-4" />,
-    Biosecurity: <Shield className="w-4 h-4" />,
-    "Finance Policies": <ClipboardList className="w-4 h-4" />,
-    "Breeding Operations": <Tag className="w-4 h-4" />,
-  };
-
-  const CATEGORY_COLORS: Record<ManualCategory, string> = {
-    HR: "bg-blue-50 text-blue-700 border border-blue-200",
-    Biosecurity: "bg-green-50 text-green-700 border border-green-200",
-    "Finance Policies": "bg-amber-50 text-amber-700 border border-amber-200",
-    "Breeding Operations":
-      "bg-purple-50 text-purple-700 border border-purple-200",
-  };
-
   if (!open) return null;
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!title.trim()) e.title = "Title is required";
+    if (!category.trim()) e.category = "Category is required";
     if (!versionLabel.trim())
       e.versionLabel = "Version label is required (e.g. v1.0)";
     if (!file) e.file = "Please attach a PDF file";
@@ -107,7 +58,7 @@ export default function UploadManualModal({
   const handleClose = () => {
     if (isUploading) return;
     setTitle("");
-    setCategory("HR");
+    setCategory(DEFAULT_CATEGORY);
     setDescription("");
     setVersionLabel("");
     setVersionNotes("");
@@ -175,9 +126,11 @@ export default function UploadManualModal({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Upload Manual</h2>
+            <h2 className="text-lg font-bold text-gray-900">
+              {POLICIES_PAGE_COPY.uploadModalTitle}
+            </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Add a new manual or a new version of an existing one.
+              {POLICIES_PAGE_COPY.uploadModalSubtitle}
             </p>
           </div>
           <button
@@ -221,11 +174,16 @@ export default function UploadManualModal({
                 className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
               />
               <datalist id="manual-category-options">
-                {CATEGORIES.map((c) => (
+                {POLICY_CATEGORY_SUGGESTIONS.map((c) => (
                   <option key={c} value={c} />
                 ))}
               </datalist>
-              <p className="text-[11px] text-gray-400 mt-1">Pick an existing one or type a new category.</p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Pick an existing one or type a new category.
+              </p>
+              {errors.category && (
+                <p className="text-red-500 text-xs mt-1">{errors.category}</p>
+              )}
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
@@ -363,7 +321,7 @@ export default function UploadManualModal({
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4" /> Upload Manual
+                  <Upload className="w-4 h-4" /> {POLICIES_PAGE_COPY.uploadButton}
                 </>
               )}
             </button>

@@ -19,15 +19,7 @@ import {
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { DetailHeroSkeleton } from "@/components/skeletons/PageSkeletons";
-
-// ─── Category badge colours ───────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  SOP: "bg-blue-50 text-blue-700 border border-blue-200",
-  Clinical: "bg-purple-50 text-purple-700 border border-purple-200",
-  Training: "bg-amber-50 text-amber-700 border border-amber-200",
-  HR: "bg-green-50 text-green-700 border border-green-200",
-  "Health & Safety": "bg-red-50 text-red-700 border border-red-200",
-};
+import { getSopCategoryBadgeClass } from "@/lib/moduleRegistry";
 
 // ─── Progress tracker ─────────────────────────────────────────────────────────
 function ReadingProgress({ minutes }: { minutes: number }) {
@@ -170,9 +162,7 @@ export default function ContentDetailPage() {
         <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div className="min-w-0">
             <span
-              className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-1.5 ${
-                CATEGORY_COLORS[content.category] ?? "bg-gray-100 text-gray-600"
-              }`}
+              className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-1.5 ${getSopCategoryBadgeClass(content.category)}`}
             >
               {content.category}
             </span>

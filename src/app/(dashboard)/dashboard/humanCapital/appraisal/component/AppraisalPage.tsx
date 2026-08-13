@@ -51,6 +51,7 @@ import {
 } from "@/lib/appraisal/deadlines";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
+import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -283,16 +284,7 @@ function SectionBlock({
   );
 }
 
-const PROMOTION_OPTIONS = [
-  { value: "not_yet_ready", label: "Not yet ready" },
-  { value: "developing", label: "Developing toward next level" },
-  { value: "nearly_ready", label: "Nearly ready" },
-  { value: "ready_for_assessment", label: "Ready for promotion assessment" },
-  {
-    value: "ready_for_expanded_responsibility",
-    label: "Ready for expanded responsibility but not yet formal promotion",
-  },
-];
+const PROMOTION_OPTIONS = getPromotionReadinessOptions();
 
 // ─── Main Form ────────────────────────────────────────────────────────────────
 interface AppraisalFormProps {

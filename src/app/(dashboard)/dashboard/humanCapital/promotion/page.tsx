@@ -3,18 +3,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  Search,
-  ChevronRight,
-  Award,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  User,
-  Plus,
-} from "lucide-react";
+import { Search, ChevronRight, Award, TrendingUp, Clock, User, Plus } from "lucide-react";
 import api from "@/lib/api";
 import {
   canActOnOthers as canActOnOthersAccess,
@@ -24,6 +13,14 @@ import PromotionFormPage from "./component/promotionForm";
 import { PromotionFormSections } from "./component/PromotionDetailSections";
 import type { PromotionFormData } from "./component/promotionFormConfigs";
 import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
+import {
+  GENERAL_PROMOTION_CONDITIONS,
+  PROMOTION_DECISIONS,
+  PROMOTION_PAGE_COPY,
+  getPromotionDecisionDef,
+  getPromotionMatrixStep,
+  resolveNavIcon,
+} from "@/lib/moduleRegistry";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,157 +69,15 @@ interface PendingPromotion {
 type PromotionItem = CompletedPromotion | PendingPromotion;
 
 // ─── Promotion Matrix ─────────────────────────────────────────────────────────
-const PROMOTION_MATRIX = [
-  {
-    from: "L1",
-    to: "L2",
-    timeGuide: "12–18 months",
-    readinessStandard: "Reliable junior technical performance",
-    requiredEvidence: [
-      "Skills log",
-      "Attendance",
-      "Conduct",
-      "Practical sign-off",
-      "Theory/practical pass",
-      "Supervisor recommendation",
-    ],
-    decisionMakers: [
-      "Senior Swine Technician",
-      "Herd Supervisor/Manager",
-      "Breeding Farm Manager",
-      "HR",
-    ],
-  },
-  {
-    from: "L2",
-    to: "L3",
-    timeGuide: "12–24 months",
-    readinessStandard:
-      "Advanced routine execution, AI certification, coaching capability",
-    requiredEvidence: [
-      "Advanced section sign-off",
-      "Lead-AI-operator certification",
-      "Records quality",
-      "Coaching evidence",
-      "Technical assessment",
-    ],
-    decisionMakers: [
-      "Herd Supervisor/Manager",
-      "Assistant Farm Manager",
-      "Breeding Farm Manager",
-      "HR",
-      "GM",
-    ],
-  },
-  {
-    from: "L3",
-    to: "L4",
-    timeGuide: "18–30 months",
-    readinessStandard: "Section-control readiness",
-    requiredEvidence: [
-      "Floor coordination evidence",
-      "Task follow-up",
-      "First-line checking",
-      "Staff guidance",
-      "Reproductive KPI contribution",
-    ],
-    decisionMakers: [
-      "Assistant Farm Manager – Breeding",
-      "Breeding Farm Manager",
-      "HR",
-      "GM",
-    ],
-  },
-  {
-    from: "L4",
-    to: "L5",
-    timeGuide: "18–36 months",
-    readinessStandard: "Multi-area supervisory capability",
-    requiredEvidence: [
-      "Section performance history",
-      "People supervision quality",
-      "Breeding KPI Library management",
-      "Reporting quality",
-    ],
-    decisionMakers: [
-      "Breeding Farm Manager",
-      "Operations/Production Manager",
-      "HR",
-      "GM",
-    ],
-  },
-  {
-    from: "L5",
-    to: "L6",
-    timeGuide: "24–36 months",
-    readinessStandard: "Full farm-management readiness",
-    requiredEvidence: [
-      "Multi-section control",
-      "Planning ability",
-      "People-management maturity",
-      "Reporting",
-      "Resource-control evidence",
-    ],
-    decisionMakers: ["Operations/Production Manager", "Executive Leadership"],
-  },
-  {
-    from: "L6",
-    to: "L7",
-    timeGuide: "Role-based",
-    readinessStandard: "Enterprise operational leadership readiness",
-    requiredEvidence: [
-      "Farm leadership results",
-      "Enterprise coordination",
-      "Strategic reporting",
-      "Leadership maturity",
-    ],
-    decisionMakers: ["CEO", "Executive Leadership"],
-  },
-];
+// PROMOTION_MATRIX, GENERAL_PROMOTION_CONDITIONS, and decision badge styling
+// live in the module registry taxonomy (src/lib/moduleRegistry/taxonomy/promotion.ts).
 
-const GENERAL_CONDITIONS = [
-  "Satisfactory attendance",
-  "Acceptable conduct and discipline record",
-  "No serious unresolved disciplinary issue",
-  "No major biosecurity or tier-discipline breach",
-  "Satisfactory performance in current role, including reproductive KPI contribution where applicable",
-  "Four Quarterly Performance Reviews of the year showing readiness",
-  "Positive supervisor recommendation",
-  "Evidence of role readiness",
-  "Management approval",
-  "Available position / business need where applicable",
-];
-
-const DECISION_LABELS: Record<
-  string,
-  { label: string; color: string; icon: React.ReactNode }
-> = {
-  promote: {
-    label: "Promote",
-    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    icon: <CheckCircle2 className="w-4 h-4" />,
-  },
-  promote_with_conditions: {
-    label: "Promote with Conditions",
-    color: "bg-blue-50 text-blue-700 border-blue-200",
-    icon: <CheckCircle2 className="w-4 h-4" />,
-  },
-  defer_pending_skills: {
-    label: "Defer Pending Skills Completion",
-    color: "bg-amber-50 text-amber-700 border-amber-200",
-    icon: <Clock className="w-4 h-4" />,
-  },
-  retain_with_improvement: {
-    label: "Retain with Improvement Plan",
-    color: "bg-orange-50 text-orange-700 border-orange-200",
-    icon: <AlertCircle className="w-4 h-4" />,
-  },
-  not_ready: {
-    label: "Not Promotion-Ready",
-    color: "bg-red-50 text-red-700 border-red-200",
-    icon: <XCircle className="w-4 h-4" />,
-  },
-};
+function decisionBadge(value: string) {
+  const def = getPromotionDecisionDef(value);
+  if (!def) return null;
+  const Icon = resolveNavIcon(def.iconKey);
+  return { label: def.label, color: def.badgeClass, icon: <Icon className="w-4 h-4" /> };
+}
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-GB", {
@@ -275,7 +130,7 @@ function PromotionCard({
     );
   }
 
-  const decision = DECISION_LABELS[item.final_decision];
+  const decision = decisionBadge(item.final_decision);
   return (
     <button
       onClick={onClick}
@@ -306,10 +161,10 @@ function PromotionCard({
 
 // ─── Completed Promotion Detail ───────────────────────────────────────────────
 function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
-  const decision = DECISION_LABELS[promotion.final_decision];
-  const matrixStep = PROMOTION_MATRIX.find(
-    (m) =>
-      m.from === promotion.current_grade && m.to === promotion.proposed_grade,
+  const decision = decisionBadge(promotion.final_decision);
+  const matrixStep = getPromotionMatrixStep(
+    promotion.current_grade,
+    promotion.proposed_grade,
   );
 
   const avgRating = useMemo(() => {
@@ -461,9 +316,7 @@ function PendingDetail({
   item: PendingPromotion;
   onStartAssessment: () => void;
 }) {
-  const matrixStep = PROMOTION_MATRIX.find(
-    (m) => m.from === item.current_grade,
-  );
+  const matrixStep = getPromotionMatrixStep(item.current_grade);
 
   return (
     <div className="space-y-4">
@@ -542,7 +395,7 @@ function GeneralConditionsPanel() {
       {open && (
         <div className="px-4 pb-4 sm:px-5 border-t border-gray-100">
           <ul className="space-y-2 mt-3">
-            {GENERAL_CONDITIONS.map((c) => (
+            {GENERAL_PROMOTION_CONDITIONS.map((c) => (
               <li
                 key={c}
                 className="flex items-start gap-2 text-xs sm:text-sm text-gray-600"
@@ -595,7 +448,7 @@ function PromotionHistoryTable({
       {/* Mobile cards */}
       <div className="md:hidden space-y-3">
         {records.map((record) => {
-          const decision = DECISION_LABELS[record.final_decision];
+          const decision = decisionBadge(record.final_decision);
           const avg = avgAssessmentRating(record);
           const weighted = record.form_data?.readiness_summary?.total_weighted;
           return (
@@ -677,7 +530,7 @@ function PromotionHistoryTable({
           </thead>
           <tbody>
             {records.map((record) => {
-              const decision = DECISION_LABELS[record.final_decision];
+              const decision = decisionBadge(record.final_decision);
               const avg = avgAssessmentRating(record);
               const weighted =
                 record.form_data?.readiness_summary?.total_weighted;
@@ -926,12 +779,12 @@ export default function PromotionViewPage() {
       <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-            Promotion Records
+            {PROMOTION_PAGE_COPY.title}
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
             {canViewAll && !canActOnOthers
-              ? "View only — you need L4+ to approve promotions"
-              : "Grade and Promotion Tools · Promotion Step Matrix"}
+              ? PROMOTION_PAGE_COPY.readOnlySubtitle
+              : PROMOTION_PAGE_COPY.activeSubtitle}
           </p>
           {canViewAll && !canActOnOthers && (
             <span className="inline-flex items-center mt-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
@@ -944,7 +797,7 @@ export default function PromotionViewPage() {
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 transition shadow-sm shrink-0"
           >
-            <Plus className="w-4 h-4" /> New Promotion Assessment
+            <Plus className="w-4 h-4" /> {PROMOTION_PAGE_COPY.newAssessmentButton}
           </button>
         )}
       </div>
@@ -1029,8 +882,8 @@ export default function PromotionViewPage() {
             className="flex-1 sm:flex-initial text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
           >
             <option value="">All Decisions</option>
-            {Object.entries(DECISION_LABELS).map(([v, d]) => (
-              <option key={v} value={v}>
+            {PROMOTION_DECISIONS.map((d) => (
+              <option key={d.value} value={d.value}>
                 {d.label}
               </option>
             ))}
@@ -1041,7 +894,7 @@ export default function PromotionViewPage() {
       {/* Pending assessments */}
       <div className="mb-8">
         <h2 className="text-sm sm:text-base font-bold text-gray-800 mb-3">
-          Awaiting Assessment
+          {PROMOTION_PAGE_COPY.awaitingSectionTitle}
         </h2>
         {isLoading && <ListRowsSkeleton rows={3} />}
         {!isLoading && filteredPending.length === 0 && (
@@ -1072,7 +925,7 @@ export default function PromotionViewPage() {
       <div>
         <div className="mb-3">
           <h2 className="text-sm sm:text-base font-bold text-gray-800">
-            Promotion History
+            {PROMOTION_PAGE_COPY.historySectionTitle}
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {canViewAll

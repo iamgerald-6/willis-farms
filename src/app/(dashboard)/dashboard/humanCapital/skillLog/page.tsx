@@ -20,9 +20,27 @@ import {
   Lock,
   PenLine,
 } from "lucide-react";
+import { canSignOffSkillLog } from "@/lib/accessControl";
+import {
+  getModuleRoute,
+  getSkillLogStatusDef,
+  getSkillLogStatusFilterOptions,
+  parseSkillLogGradeLevel,
+  SKILL_LOG_MIN_FILLER_GRADE,
+  SKILL_LOG_PAGE_COPY,
+} from "@/lib/moduleRegistry";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
+const SKILL_LOG_ROUTE =
+  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
+const SKILL_LOG_FORM_ROUTE = `${SKILL_LOG_ROUTE}/skillLogForms`;
+
+const STATUS_ICONS = {
+  draft: Clock,
+  submitted: Clock,
+  signed_off: CheckCircle2,
+} as const;
 
 interface SkillLogUser {
   user_id: string;
@@ -57,41 +75,6 @@ interface UserProfile {
   grade_level: string;
   role?: string;
   company_id?: string;
-}
-
-const STATUS_CONFIG = {
-  draft: {
-    label: "Draft",
-    color: "bg-gray-100 text-gray-600 border-gray-200",
-    icon: Clock,
-  },
-  submitted: {
-    label: "Submitted",
-    color: "bg-amber-100 text-amber-700 border-amber-200",
-    icon: Clock,
-  },
-  signed_off: {
-    label: "Signed Off",
-    color: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    icon: CheckCircle2,
-  },
-};
-
-function gradeLevel(grade_level: string | undefined | null) {
-  if (!grade_level) return 0;
-  const n = parseInt(grade_level.replace(/\D/g, ""), 10);
-  return isNaN(n) ? 0 : n;
-}
-
-function canSignOff(
-  viewerGrade: string | undefined | null,
-  fillerGrade: string | undefined | null,
-): boolean {
-  const viewer = gradeLevel(viewerGrade);
-  const filler = gradeLevel(fillerGrade);
-  if (viewer < 4) return false; // L3 and below can never sign off
-  if (viewer >= 5) return true; // L5+ can sign off anything
-  return filler === 3; // L4 can only sign off L3-filled logs
 }
 
 function StatCard({
@@ -136,8 +119,10 @@ function LogCard({
   onSignOff?: (e: React.MouseEvent) => void;
   canSignOffLog?: boolean;
 }) {
-  const status = STATUS_CONFIG[log.status] ?? STATUS_CONFIG.draft;
-  const StatusIcon = status.icon;
+  const statusDef =
+    getSkillLogStatusDef(log.status) ?? getSkillLogStatusDef("draft")!;
+  const StatusIcon =
+    STATUS_ICONS[log.status as keyof typeof STATUS_ICONS] ?? Clock;
   const isLocked = log.status === "submitted" || log.status === "signed_off";
 
   const cardContent = (
@@ -188,10 +173,10 @@ function LogCard({
       {/* Right side */}
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <span
-          className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${status.color}`}
+          className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${statusDef.badgeClass}`}
         >
           <StatusIcon className="w-3 h-3" />
-          <span className="hidden sm:inline">{status.label}</span>
+          <span className="hidden sm:inline">{statusDef.label}</span>
         </span>
         {log.overall_rating && (
           <span className="text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-lg">
@@ -273,7 +258,7 @@ function SignOffModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-base font-bold text-gray-900 mb-3">
-          Sign Off Skills Log
+          {SKILL_LOG_PAGE_COPY.signOffTitle}
         </h2>
 
         <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 border border-gray-200 rounded-xl p-4 mb-5 italic">
@@ -302,8 +287,7 @@ function SignOffModal({
             className="mt-0.5 w-4 h-4 rounded accent-red-700 flex-shrink-0"
           />
           <span className="text-sm text-gray-700">
-            By checking this box I confirm I have reviewed this skills log and
-            agree to provide final sign-off.
+            {SKILL_LOG_PAGE_COPY.signOffConfirmLabel}
           </span>
         </label>
 
@@ -357,11 +341,11 @@ export default function SkillLogsPage() {
   });
 
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
-  const userGradeLevel = gradeLevel(currentUser?.grade_level);
+  const userGradeLevel = parseSkillLogGradeLevel(currentUser?.grade_level);
   const viewerRole = currentUser?.role ?? "";
 
   // Supervisor = L4+ (grade determines this, not role)
-  const canFill = userGradeLevel >= 4;
+  const canFill = userGradeLevel >= SKILL_LOG_MIN_FILLER_GRADE;
 
   // Can the viewer see ALL logs (even ones they didn't create/own)?
   const seeAll =
@@ -480,27 +464,27 @@ export default function SkillLogsPage() {
       <div className="flex items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            Skills Logs
+            {SKILL_LOG_PAGE_COPY.title}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {canAct
-              ? "Your team's competency records"
+              ? SKILL_LOG_PAGE_COPY.subtitleCanAct
               : seeAll
-                ? "All competency records (view only)"
-                : "Your competency records"}
+                ? SKILL_LOG_PAGE_COPY.subtitleSeeAll
+                : SKILL_LOG_PAGE_COPY.subtitleSelf}
           </p>
         </div>
         {canAct && (
           <button
-            onClick={() =>
-              router.push("/dashboard/humanCapital/skillLog/skillLogForms")
-            }
+            onClick={() => router.push(SKILL_LOG_FORM_ROUTE)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 transition flex-shrink-0"
             style={{ background: BRAND }}
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Fill Skills Log</span>
-            <span className="sm:hidden">New</span>
+            <span className="hidden sm:inline">
+              {SKILL_LOG_PAGE_COPY.fillButton}
+            </span>
+            <span className="sm:hidden">{SKILL_LOG_PAGE_COPY.fillButtonShort}</span>
           </button>
         )}
       </div>
@@ -528,7 +512,7 @@ export default function SkillLogsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by employee or log type…"
+            placeholder={SKILL_LOG_PAGE_COPY.searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
@@ -537,12 +521,7 @@ export default function SkillLogsPage() {
         </div>
 
         <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 overflow-x-auto">
-          {[
-            { key: "all", label: "All" },
-            { key: "draft", label: "Draft" },
-            { key: "submitted", label: "Pending" },
-            { key: "signed_off", label: "Signed Off" },
-          ].map(({ key, label }) => (
+          {getSkillLogStatusFilterOptions().map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setFilterStatus(key)}
@@ -573,22 +552,22 @@ export default function SkillLogsPage() {
         <div className="bg-white rounded-2xl border border-gray-200 p-10 md:p-12 text-center">
           <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm font-semibold text-gray-500">
-            No skills logs found
+            {SKILL_LOG_PAGE_COPY.emptyTitle}
           </p>
           <p className="text-xs text-gray-400 mt-1">
             {canAct
-              ? "Fill a skills log for one of your team members to get started."
-              : "Your supervisor hasn't filled a skills log for you yet."}
+              ? SKILL_LOG_PAGE_COPY.emptyCanAct
+              : SKILL_LOG_PAGE_COPY.emptySelf}
           </p>
           {canAct && (
             <button
               onClick={() =>
-                router.push("/dashboard/humanCapital/skillLog/skillLogForms")
+                router.push(SKILL_LOG_FORM_ROUTE)
               }
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ background: BRAND }}
             >
-              <Plus className="w-4 h-4" /> Fill First Log
+              <Plus className="w-4 h-4" /> {SKILL_LOG_PAGE_COPY.fillFirstLog}
             </button>
           )}
         </div>
@@ -630,7 +609,7 @@ export default function SkillLogsPage() {
                     (log.supervisor?.user_id ?? log.supervisor_id) === userId
                       ? () =>
                           router.push(
-                            `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
+                            `${SKILL_LOG_FORM_ROUTE}?edit=${log.id}`,
                           )
                       : undefined
                   }
@@ -656,7 +635,7 @@ export default function SkillLogsPage() {
                   canSignOffLog={
                     canAct &&
                     (log.supervisor?.user_id ?? log.supervisor_id) !== userId &&
-                    canSignOff(
+                    canSignOffSkillLog(
                       currentUser?.grade_level,
                       log.supervisor?.grade_level ?? log.supervisor_grade,
                     )

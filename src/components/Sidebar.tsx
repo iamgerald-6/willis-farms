@@ -2,32 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import {
-  LayoutDashboard,
-  BookOpen,
-  FileStack,
-  Bell,
-  LeafyGreen,
-  ChevronDown,
-  ChevronRight,
-  CalendarCheck,
-  Star,
-  ClipboardList,
-  TrendingUp,
-  GanttChartSquare,
-  UserCheck,
-  UserPlus,
-  ShieldAlert,
-  X,
-  ListChecks,
-  Calendar,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import {
+  buildSidebarNav,
+  type SidebarNavItem,
+} from "@/lib/moduleRegistry";
 import {
   canAccessPage,
   hasUnrestrictedAccess,
@@ -35,126 +20,16 @@ import {
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
 
-type SubItem = {
-  label: string;
-  href: string;
-  icon: React.ElementType;
-  permissionKey: PagePermissionKey;
-};
-
-type NavItem = {
-  label: string;
-  href: string;
-  icon: React.ElementType;
-  permissionKey?: PagePermissionKey;
-  children?: SubItem[];
-  badge?: string;
-};
-
 type SidebarProps = {
   mobileOpen: boolean;
   onClose: () => void;
 };
 
-const NAV_ITEMS: NavItem[] = [
-  {
-    label: "Overview",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    permissionKey: "dashboard",
-  },
-  {
-    label: "Human Capital",
-    href: "/dashboard/humanCapital",
-    icon: UserCheck,
-    children: [
-      {
-        label: "Leave",
-        href: "/dashboard/humanCapital/leave",
-        icon: CalendarCheck,
-        permissionKey: "hc:leave",
-      },
-      {
-        label: "Appraisal",
-        href: "/dashboard/humanCapital/appraisal",
-        icon: Star,
-        permissionKey: "hc:appraisal",
-      },
-      {
-        label: "Justifications",
-        href: "/dashboard/humanCapital/appraisal/justifications",
-        icon: ShieldAlert,
-        permissionKey: "hc:justifications",
-      },
-      {
-        label: "Skill Logs",
-        href: "/dashboard/humanCapital/skillLog",
-        icon: ClipboardList,
-        permissionKey: "hc:skillLog",
-      },
-      {
-        label: "Promotion",
-        href: "/dashboard/humanCapital/promotion",
-        icon: TrendingUp,
-        permissionKey: "hc:promotion",
-      },
-      {
-        label: "Recruitment",
-        href: "/dashboard/humanCapital/recruitment",
-        icon: UserPlus,
-        permissionKey: "hc:recruitment",
-      },
-    ],
-  },
-  {
-    label: "Task Manager",
-    href: "/dashboard/taskManager",
-    icon: ListChecks,
-
-    children: [
-      {
-        label: "Calendar",
-        href: "/dashboard/taskManager/calendar",
-        icon: Calendar,
-        permissionKey: "tm:calendar",
-      },
-      {
-        label: "Tasks",
-        href: "/dashboard/taskManager/tasks",
-        icon: ListChecks,
-        permissionKey: "tm:tasks",
-      },
-    ],
-  },
-  {
-    label: "Policies & Ops",
-    href: "/dashboard/policies",
-    icon: GanttChartSquare,
-    permissionKey: "policies",
-  },
-  {
-    label: "SOP",
-    href: "/dashboard/sop",
-    icon: LeafyGreen,
-    permissionKey: "sop:view",
-  },
-  {
-    label: "SOP Management",
-    href: "/dashboard/addSop",
-    icon: FileStack,
-    permissionKey: "sop:add",
-  },
-  {
-    label: "Notifications",
-    href: "/dashboard/notifications",
-    icon: Bell,
-    permissionKey: "notifications",
-  },
-];
-
 export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+
+  const navItems = useMemo(() => buildSidebarNav(), []);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const { data: session } = useQuery({
@@ -190,7 +65,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
     return pathname?.startsWith(href);
   };
 
-  const isParentActive = (item: NavItem) => {
+  const isParentActive = (item: SidebarNavItem) => {
     if (isActive(item.href)) return true;
     return item.children?.some((child) => isActive(child.href)) ?? false;
   };
@@ -199,16 +74,16 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
     setOpenMenus((prev) => ({ ...prev, [href]: !prev[href] }));
   };
 
-  const isOpen = (item: NavItem) => {
+  const isOpen = (item: SidebarNavItem) => {
     const childActive = item.children?.some((child) => isActive(child.href));
     return openMenus[item.href] ?? childActive ?? false;
   };
 
-  const visibleItems = NAV_ITEMS.filter((item) => {
+  const visibleItems = navItems.filter((item) => {
     if (item.children?.length) {
-      return item.children.some((c) => canSee(c.permissionKey));
+      return item.children.some((c) => canSee(c.legacyKey));
     }
-    if (item.permissionKey) return canSee(item.permissionKey);
+    if (item.legacyKey) return canSee(item.legacyKey);
     return true;
   });
 
@@ -237,20 +112,20 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         </button>
       </div>
 
-      {/* Nav items */}
+      {/* Nav items — labels/routes/icons from module registry */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
-          const { label, href, icon: Icon, children, badge } = item;
+          const { label, href, icon: Icon, children } = item;
           const active = isParentActive(item);
           const expanded = isOpen(item);
           const hasChildren = !!children?.length;
 
           const visibleChildren = children?.filter((c) =>
-            canSee(c.permissionKey),
+            canSee(c.legacyKey),
           );
 
           return (
-            <div key={href}>
+            <div key={item.moduleId ?? href}>
               {hasChildren ? (
                 <button
                   onClick={() => toggleMenu(href)}
@@ -268,11 +143,6 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     }`}
                   />
                   <span className="flex-1 text-left">{label}</span>
-                  {badge && !active && (
-                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
-                      {badge}
-                    </span>
-                  )}
                   {expanded ? (
                     <ChevronDown
                       className={`w-3.5 h-3.5 flex-shrink-0 ${active ? "text-white/70" : "text-gray-400"}`}
@@ -301,11 +171,6 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     }`}
                   />
                   <span className="flex-1">{label}</span>
-                  {badge && !active && (
-                    <span className="text-[9px] font-bold tracking-wide bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">
-                      {badge}
-                    </span>
-                  )}
                   {active && (
                     <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />
                   )}
@@ -323,7 +188,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                       const ChildIcon = child.icon;
                       return (
                         <Link
-                          key={child.href}
+                          key={child.moduleId}
                           href={child.href}
                           onClick={onClose}
                           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all group ${

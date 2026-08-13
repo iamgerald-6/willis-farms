@@ -18,15 +18,10 @@ import { Content } from "@/types";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
-
-// ─── Category badge colours ───────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  SOP: "bg-blue-50 text-blue-700 border border-blue-200",
-  Clinical: "bg-purple-50 text-purple-700 border border-purple-200",
-  Training: "bg-amber-50 text-amber-700 border border-amber-200",
-  HR: "bg-green-50 text-green-700 border border-green-200",
-  "Health & Safety": "bg-red-50 text-red-700 border border-red-200",
-};
+import {
+  getSopCategoryBadgeClass,
+  SOP_MANAGE_COPY,
+} from "@/lib/moduleRegistry";
 
 // ─── Media badge ──────────────────────────────────────────────────────────────
 function MediaBadge({ content }: { content: Content }) {
@@ -204,11 +199,10 @@ export default function ContentPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
-                Learning Materials
+                {SOP_MANAGE_COPY.title}
               </h2>
               <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-                {contents.length} content item
-                {contents.length !== 1 ? "s" : ""} uploaded
+                {SOP_MANAGE_COPY.subtitle}
               </p>
             </div>
             <button
@@ -301,10 +295,7 @@ export default function ContentPage() {
 
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span
-                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        CATEGORY_COLORS[c.category] ??
-                        "bg-gray-100 text-gray-600 border border-gray-200"
-                      }`}
+                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getSopCategoryBadgeClass(c.category)}`}
                     >
                       {c.category}
                     </span>
@@ -444,10 +435,7 @@ export default function ContentPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            CATEGORY_COLORS[c.category] ??
-                            "bg-gray-100 text-gray-600 border border-gray-200"
-                          }`}
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getSopCategoryBadgeClass(c.category)}`}
                         >
                           {c.category}
                         </span>

@@ -8,16 +8,9 @@ import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
-import {
-  ShieldAlert,
-  ShieldCheck,
-  ShieldX,
-  Loader2,
-  Clock,
-  CheckCircle2,
-  XCircle,
-} from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, ShieldAlert, ShieldCheck } from "lucide-react";
 import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
+import { getJustificationStatusDef, resolveNavIcon } from "@/lib/moduleRegistry";
 
 interface Justification {
   id: string;
@@ -39,23 +32,13 @@ interface Justification {
 }
 
 function StatusPill({ status }: { status: Justification["status"] }) {
-  if (status === "approved") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-        <ShieldCheck className="w-3.5 h-3.5" /> Approved
-      </span>
-    );
-  }
-  if (status === "rejected") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
-        <ShieldX className="w-3.5 h-3.5" /> Rejected
-      </span>
-    );
-  }
+  const def = getJustificationStatusDef(status);
+  const Icon = resolveNavIcon(def.iconKey);
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-      <Clock className="w-3.5 h-3.5" /> Pending
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${def.badgeClass}`}
+    >
+      <Icon className="w-3.5 h-3.5" /> {def.label}
     </span>
   );
 }
