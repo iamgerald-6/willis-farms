@@ -1,7 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { updateTaskProgress, fetchUserNames, collectSubtaskOwnerIds, attachSubtaskOwnerNames } from "@/lib/taskManagerData";
-import { buildSubtaskTree, computeTaskRollup, attachSubtaskStatuses, isDateWithin, MAX_SUBTASK_DEPTH, sumWeights } from "@/lib/subtaskProgress";
+import { buildSubtaskTree, computeTaskRollup, attachSubtaskStatuses, isDateWithin, MAX_SUBTASK_DEPTH, sumWeights, scaleWeightsToTotal } from "@/lib/subtaskProgress";
+
+// When an existing subtask's own weight_percent changes (e.g. a new sibling
+// was added, shrinking it from 50 to 33), any descendants already nested
+// under it are still sitting at whatever weights summed to its OLD value —
+// left alone, they'd keep adding up to 50 instead of 33. This walks down
+// from the changed row, one level at a time, rescaling each level's weights
+// to sum to its own (possibly just-rescaled) parent — see
+// scaleWeightsToTotal in subtaskProgress.ts.
+async function cascadeRescaleDescendants(
+  changedId: string,
+  newWeight: number,
+  rows: { id: string; parent_id: string | null; weight_percent: number }[],
+) {
+  const byParent = new Map<string, { id: string; weight_percent: number }[]>();
+  for (const row of rows) {
+    if (!row.parent_id) continue;
+    if (!byParent.has(row.parent_id)) byParent.set(row.parent_id, []);
+    byParent.get(row.parent_id)!.push({ id: row.id, weight_percent: row.weight_percent });
+  }
+
+  const updates: { id: string; weight_percent: number }[] = [];
+  const walk = (parentId: string, targetTotal: number) => {
+    const children = byParent.get(parentId);
+    if (!children || children.length === 0) return;
+    const rescaled = scaleWeightsToTotal(children, targetTotal);
+    for (const child of rescaled) {
+      updates.push(child);
+      walk(child.id, child.weight_percent);
+    }
+  };
+  walk(changedId, newWeight);
+
+  for (const row of updates) {
+    const { error } = await supabaseAdmin
+      .from("tm_subtasks")
+      .update({ weight_percent: row.weight_percent, updated_at: new Date().toISOString() })
+      .eq("id", row.id);
+    if (error) throw error;
+  }
+}
 
 // GET /api/task-manager/tasks/[id]/subtasks — the full nested tree for a task,
 // with owner_name and the computed status (see attachSubtaskStatuses) stamped
@@ -115,10 +155,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const parentFilter = parentId ? { parent_id: parentId } : null;
-    let existingQuery = supabaseAdmin.from("tm_subtasks").select("id").eq("task_id", id);
+    let existingQuery = supabaseAdmin.from("tm_subtasks").select("id, weight_percent").eq("task_id", id);
     existingQuery = parentFilter ? existingQuery.eq("parent_id", parentId) : existingQuery.is("parent_id", null);
     const { data: existingSiblings, error: existingError } = await existingQuery;
     if (existingError) throw existingError;
+
+    // Old weight per existing row, so we can tell after the save which ones
+    // actually changed and need their own descendants cascade-rescaled.
+    const oldWeightById = new Map((existingSiblings ?? []).map((r) => [r.id, r.weight_percent]));
 
     const incomingIds = new Set(items.filter((i) => i.id).map((i) => i.id));
     const idsToDelete = (existingSiblings ?? []).map((r) => r.id).filter((existingId) => !incomingIds.has(existingId));
@@ -162,6 +206,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
+    // Any item whose own weight_percent just changed from what it was before
+    // needs its descendants (if it has any) rescaled to match — see
+    // cascadeRescaleDescendants above. Snapshot the tree right after the
+    // sibling-group save (descendants are still at their pre-cascade values
+    // here, which is exactly the baseline the rescale needs).
+    const { data: rowsAfterSave, error: rowsAfterSaveError } = await supabaseAdmin
+      .from("tm_subtasks")
+      .select("id, parent_id, weight_percent")
+      .eq("task_id", id);
+    if (rowsAfterSaveError) throw rowsAfterSaveError;
+
+    for (const item of items) {
+      if (!item.id) continue;
+      const oldWeight = oldWeightById.get(item.id);
+      const newWeight = Math.round(item.weight_percent);
+      if (oldWeight !== undefined && oldWeight !== newWeight) {
+        await cascadeRescaleDescendants(item.id, newWeight, rowsAfterSave ?? []);
+      }
+    }
+
     const { data: allRows, error: refetchError } = await supabaseAdmin
       .from("tm_subtasks")
       .select("*")
@@ -188,19 +252,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       updatedTask = result.task ?? null;
 
       if (recurred) {
-        // Same reset as the leaf-tick route (subtasks/[subtaskId]/route.ts)
+        // Same idea as the leaf-tick route (subtasks/[subtaskId]/route.ts)
         // — editing a group's structure can also land the rollup on 100%
         // (e.g. renaming/reweighting without unchecking anything already
         // done), which cycles the task forward the same way ticking the
-        // last box does. Reset every checkbox for the new cycle rather
-        // than leaving them ticked from the cycle that just closed.
-        const { data: resetRows, error: resetError } = await supabaseAdmin
+        // last box does. performTaskCompletion (inside updateTaskProgress
+        // above) already reset every checkbox and shifted subtask dates for
+        // the new cycle, so just re-read the fresh rows.
+        const { data: freshRows, error: freshError } = await supabaseAdmin
           .from("tm_subtasks")
-          .update({ is_done: false, updated_at: new Date().toISOString() })
+          .select("*")
           .eq("task_id", id)
-          .select();
-        if (resetError) throw resetError;
-        finalTree = buildSubtaskTree(resetRows ?? []);
+          .order("position", { ascending: true });
+        if (freshError) throw freshError;
+        finalTree = buildSubtaskTree(freshRows ?? []);
       }
     }
 

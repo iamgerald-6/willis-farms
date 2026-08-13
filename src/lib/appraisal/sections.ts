@@ -22,14 +22,14 @@ export function gradeIndex(g: string | null | undefined): number {
 }
 
 /**
- * Lowest grade allowed to rate anyone else's appraisal. L3 (index 2) —
- * an L2 may not appraise an L1, but an L3 may appraise L1 and L2.
+ * Lowest grade allowed to rate anyone else's appraisal. L4 (index 3) —
+ * an L3 may not appraise an L1, but an L4 may appraise L1 through L3.
  */
-export const MIN_SUPERVISOR_GRADE_INDEX = 2;
+export const MIN_SUPERVISOR_GRADE_INDEX = 3;
 
 /**
  * Can `raterGrade` fill the SUPERVISOR side for someone on `targetGrade`?
- * The rater must be L3+ and strictly above the person being appraised, so
+ * The rater must be L4+ and strictly above the person being appraised, so
  * every grade (including supervisors) is appraised by someone senior.
  */
 export function canRate(

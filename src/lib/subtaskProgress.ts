@@ -96,6 +96,55 @@ export function evenSplitWeights(count: number, total: number = 100): number[] {
 }
 
 /**
+ * Proportionally rescales a set of sibling weights to a new total, keeping
+ * each item's relative SHARE the same as closely as whole numbers allow
+ * (largest-remainder rounding — same idea as evenSplitWeights, but weighted
+ * instead of even). Used when an existing subtask's own weight_percent
+ * changes (e.g. a new sibling was added, shrinking it from 50 to 33) and it
+ * already has children of its own — those children were saved summing to
+ * the OLD weight, so they need to be re-proportioned to sum to the NEW one,
+ * or the "children sum to their parent's weight_percent" invariant (see
+ * computeNodeCompletion above) silently breaks. See the PUT /subtasks route,
+ * which walks this down through every level of descendants — not just
+ * direct children — one level at a time, so each level's own sum-to-parent
+ * invariant holds all the way down.
+ */
+export function scaleWeightsToTotal<T extends { weight_percent: number }>(items: T[], newTotal: number): T[] {
+  if (items.length === 0 || newTotal <= 0) return items;
+  const oldTotal = items.reduce((sum, i) => sum + i.weight_percent, 0);
+  if (oldTotal <= 0) return items;
+
+  const raw = items.map((i) => (i.weight_percent / oldTotal) * newTotal);
+  const floors = raw.map((v) => Math.max(1, Math.floor(v)));
+  let remainder = newTotal - floors.reduce((sum, v) => sum + v, 0);
+
+  // Hand out any leftover points to whichever rows were closest to rounding
+  // up (largest fractional part first) so the total lands on newTotal
+  // exactly, never off by a point.
+  const byFractionDesc = raw
+    .map((v, idx) => ({ idx, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+
+  const result = [...floors];
+  for (let k = 0; remainder > 0 && k < byFractionDesc.length; k++) {
+    result[byFractionDesc[k % byFractionDesc.length].idx] += 1;
+    remainder--;
+  }
+  // Only possible when newTotal is smaller than the item count (not even
+  // one whole point each) — claw back from whichever rows can spare it.
+  for (let j = result.length - 1; remainder < 0 && j >= 0; ) {
+    if (result[j] > 1) {
+      result[j] -= 1;
+      remainder++;
+    } else {
+      j--;
+    }
+  }
+
+  return items.map((item, i) => ({ ...item, weight_percent: result[i] }));
+}
+
+/**
  * Does `date` fall within [boundStart, boundEnd]? Either bound being
  * null/undefined means "no constraint on that side" — e.g. a task with no
  * due_date set yet imposes no ceiling on its subtasks' dates. A missing

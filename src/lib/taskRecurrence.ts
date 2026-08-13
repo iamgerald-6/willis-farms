@@ -60,9 +60,24 @@ export function parseFrequencyInterval(raw: string | null | undefined): Recurren
 }
 
 /** "YYYY-MM-DD" + N days, in UTC (matches how the rest of Task Manager treats due_date). */
-function addDaysUTC(dateStr: string, days: number): string {
+export function addDaysUTC(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Whole days between two "YYYY-MM-DD" dates (b minus a), in UTC — negative
+ * when b is earlier than a. Used to work out how many days a recurring
+ * task's own start date just moved, so the same shift can be applied to
+ * every one of its subtasks' dates (see shiftAndResetSubtasks in
+ * taskManagerData.ts).
+ */
+export function daysBetweenUTC(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const aMs = Date.UTC(ay, am - 1, ad);
+  const bMs = Date.UTC(by, bm - 1, bd);
+  return Math.round((bMs - aMs) / 86400000);
 }
 
 /**
@@ -71,7 +86,7 @@ function addDaysUTC(dateStr: string, days: number): string {
  * not Mar 3) — the more sensible behavior for "due on this date every
  * month/quarter/year".
  */
-function addMonthsClamped(dateStr: string, months: number): string {
+export function addMonthsClamped(dateStr: string, months: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const totalMonths = (m - 1) + months;
   const targetYear = y + Math.floor(totalMonths / 12);
@@ -104,4 +119,23 @@ export function computeNextDueDate(currentDueDate: string, frequency: string | n
   } while (next <= todayStr);
 
   return next;
+}
+
+/**
+ * The LAST due date still consistent with a chosen start date and
+ * `frequency` — e.g. a Daily task's due date can only be the same day as
+ * its start (a 1-day window); a Weekly task's due date can be anywhere from
+ * the start date up to 6 days after it (a 7-day window); a Monthly task, up
+ * to a month (minus a day) after it. Lets the date pickers restrict the due
+ * date to whatever the frequency actually allows, once a start date has
+ * been chosen. Returns null when frequency isn't a recognizable cadence
+ * (including "Hourly", blank, or a non-recurring task) — callers should
+ * leave the due-date picker unrestricted in that case.
+ */
+export function maxDueDateForFrequency(startDate: string, frequency: string | null | undefined): string | null {
+  const interval = parseFrequencyInterval(frequency);
+  if (!interval) return null;
+  return interval.unit === "day"
+    ? addDaysUTC(startDate, interval.amount - 1)
+    : addDaysUTC(addMonthsClamped(startDate, interval.amount), -1);
 }

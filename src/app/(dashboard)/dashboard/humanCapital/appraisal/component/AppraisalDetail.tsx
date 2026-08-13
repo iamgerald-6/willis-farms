@@ -227,7 +227,7 @@ export default function AppraisalDetail({
   const statusSummary = getStatusSummary(appraisal);
 
   // Which side of THIS record the viewer occupies. Everyone owns their own
-  // self-assessment; the supervisor side needs a strictly senior grade (L3+).
+  // self-assessment; the supervisor side needs a strictly senior grade (L4+).
   const side = appraisalSideFor(viewer, appraisal);
   const viewerIsEmployee = side === "employee";
   const viewerIsSupervisor = side === "supervisor";

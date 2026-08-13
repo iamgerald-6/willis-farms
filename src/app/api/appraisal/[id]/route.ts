@@ -4,7 +4,7 @@ import { recomputeFinalScore } from "@/lib/appraisal/server";
 import { canRate } from "@/lib/appraisal/sections";
 import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
-import { canViewAllAppraisalPeriods } from "@/lib/accessControl";
+import { canViewAllAppraisalPeriods, isSuperAdmin } from "@/lib/accessControl";
 import {
   requireAuth,
   canAccessAppraisalRecord,
@@ -126,7 +126,7 @@ export async function PATCH(
     );
     const canActAsSupervisor =
       !isOwnRecord &&
-      (caller.role === "super_admin" ||
+      (isSuperAdmin(caller.role) ||
         canRate(caller.grade_level, existing.current_grade));
 
     const rejectSupervisorAction = () =>
@@ -135,7 +135,7 @@ export async function PATCH(
             "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
           )
         : jsonForbidden(
-            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
+            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
           );
 
     // Archiving is a filing action, not a workflow state — an archived record

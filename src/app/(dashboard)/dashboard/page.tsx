@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { isFullRoleAccess } from "@/lib/pagePermissions";
 import {
   Users,
   BookOpen,
@@ -325,8 +326,7 @@ export default function DashboardPage() {
 
   const profile = users?.find((u) => u.user_id === userId);
   const role = profile?.role ?? metaRole;
-  const isAdmin =
-    role === "admin" || role === "super_admin" || role === "manager";
+  const isAdmin = isFullRoleAccess(role);
 
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],

@@ -1,6 +1,7 @@
 import type { Quarter } from "./sections";
 import { graceDaysAfterQuarterEnd } from "./deadlines";
-import { getAppBaseUrl } from "@/lib/careers/appUrl";
+import { getAppBaseUrl } from "@/lib/appUrl";
+import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
 /**
  * Transactional emails for the Appraisal System, sent via Resend (same
@@ -42,15 +43,14 @@ async function sendViaResend(params: {
   try {
     const { Resend } = await import("resend");
     const resend = new Resend(apiKey);
-    const from =
-      process.env.RESEND_FROM_EMAIL ?? "Wills Farms HR <onboarding@resend.dev>";
+    const from = getResendFromAddress("Wills Farms HR");
     const { error } = await resend.emails.send({
       from,
       to: params.to,
       subject: params.subject,
       html: params.html,
       text: params.text,
-      replyTo: process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com",
+      replyTo: getReplyToEmail(),
     });
     if (error) return { sent: false, error: error.message };
     return { sent: true };

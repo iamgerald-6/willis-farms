@@ -23,6 +23,7 @@ import {
 import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
 import { MAX_EXTRACTION_PAGES, MAX_DOCUMENT_PAGES, MAX_EXTRACTION_FILES as MAX_FILES, getPdfPageCount } from "@/lib/pdfPages";
+import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 import PdfPagePicker from "./PdfPagePicker";
@@ -33,13 +34,10 @@ type SourceMode = "upload" | "existing";
 async function uploadToCloudinary(file: File): Promise<{ secure_url: string }> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", "willsUpload");
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
   formData.append("folder", "TaskManagerDocs");
 
-  const res = await fetch(
-    "https://api.cloudinary.com/v1_1/dmvr8ooz1/auto/upload",
-    { method: "POST", body: formData },
-  );
+  const res = await fetch(cloudinaryUploadUrl("auto"), { method: "POST", body: formData });
   const json = await res.json();
   if (!res.ok || !json.secure_url) {
     throw new Error(

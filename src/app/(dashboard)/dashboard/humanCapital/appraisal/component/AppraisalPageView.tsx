@@ -14,6 +14,7 @@ import {
   canArchiveAppraisal,
   canViewAllAppraisalPeriods,
   hasFullAppraisalAccess,
+  isSuperAdmin,
 } from "@/lib/accessControl";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import { StatusBadge } from "./AppraisalStatusBadge";
@@ -209,10 +210,10 @@ export default function AppraisalLandingPage({
   });
 
   const appraisals = data ?? [];
-  // L3+ can also appraise people below them; everyone else only ever fills
+  // L4+ can also appraise people below them; everyone else only ever fills
   // their own self-assessment.
   const viewerCanAppraiseOthers =
-    canAppraiseOthers(viewer.gradeLevel) || viewer.role === "super_admin";
+    canAppraiseOthers(viewer.gradeLevel) || isSuperAdmin(viewer.role);
   const outstandingCount = appraisals.filter(
     (a) => a.status !== "final_reviewed" && a.status !== "locked",
   ).length;

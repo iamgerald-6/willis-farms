@@ -19,6 +19,7 @@ import {
   Trash2,
   Lock,
   PenLine,
+  Pencil,
 } from "lucide-react";
 
 const BRAND = "#C62828";
@@ -34,18 +35,23 @@ interface SkillLogUser {
 interface SkillLog {
   id: string;
   employee_id: string;
-  employee_name: string;
-  employee_grade: string;
+  // The API (get_skillLog/route.ts) never actually sends these flat fields —
+  // only the joined employee/supervisor objects below. Kept optional here as
+  // a legacy fallback for employeeName/supervisorName/grade lookups (see
+  // those helpers above) rather than removed outright, in case some other
+  // caller ever does send them.
+  employee_name?: string;
+  employee_grade?: string;
   log_type: string;
   supervisor_id: string;
-  supervisor_name: string;
+  supervisor_name?: string;
   supervisor_grade?: string;
   review_period: string;
   status: "draft" | "submitted" | "signed_off";
   overall_rating: number | null;
   created_at: string;
   updated_at: string;
-  // joined relations returned by the API
+  // joined relations actually returned by the API
   employee?: SkillLogUser;
   supervisor?: SkillLogUser;
 }
@@ -81,6 +87,27 @@ function gradeLevel(grade_level: string | undefined | null) {
   if (!grade_level) return 0;
   const n = parseInt(grade_level.replace(/\D/g, ""), 10);
   return isNaN(n) ? 0 : n;
+}
+
+// The API only ever sends the joined employee/supervisor objects (see
+// employee:users!... / supervisor:users!... in get_skillLog/route.ts) — it
+// never actually populates the flat employee_name/supervisor_name/
+// employee_grade fields the SkillLog type also declares. Reading those flat
+// fields directly crashes anything that calls .toLowerCase() on them (they're
+// always undefined), and silently shows blank names anywhere they're just
+// displayed. These derive the real name from the joined object first, with
+// the flat field kept only as a last-resort fallback (matches the pattern
+// already used for supervisor_grade below).
+function fullName(u?: SkillLogUser | null): string | undefined {
+  if (!u) return undefined;
+  const name = `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim();
+  return name || undefined;
+}
+function employeeName(log: SkillLog): string {
+  return fullName(log.employee) ?? log.employee_name ?? "Unknown";
+}
+function supervisorName(log: SkillLog): string {
+  return fullName(log.supervisor) ?? log.supervisor_name ?? "Unknown";
 }
 
 function canSignOff(
@@ -163,12 +190,12 @@ function LogCard({
           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs text-gray-500">
               <User className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{log.employee_name}</span>
+              <span className="truncate">{employeeName(log)}</span>
             </span>
             <span className="hidden sm:block text-xs text-gray-300">·</span>
             <span className="flex items-center gap-1 text-xs text-gray-500">
               <Award className="w-3 h-3 flex-shrink-0" />
-              {log.employee_grade}
+              {log.employee?.grade_level ?? log.employee_grade}
             </span>
             <span className="hidden sm:block text-xs text-gray-300">·</span>
             <span className="flex items-center gap-1 text-xs text-gray-500">
@@ -179,7 +206,7 @@ function LogCard({
           <p className="text-xs text-gray-400 mt-1.5">
             Filled by{" "}
             <span className="font-medium text-gray-600">
-              {log.supervisor_name}
+              {supervisorName(log)}
             </span>
           </p>
         </div>
@@ -280,7 +307,7 @@ function SignOffModal({
           &quot;I,{" "}
           <span className="font-semibold not-italic">{viewerName}</span>, hereby
           agree to sign off the competency assessment for{" "}
-          <span className="font-semibold not-italic">{log.employee_name}</span>{" "}
+          <span className="font-semibold not-italic">{employeeName(log)}</span>{" "}
           — {log.log_type} ({log.review_period}).{" "}
           {log.overall_rating != null && (
             <>
@@ -448,7 +475,7 @@ export default function SkillLogsPage() {
     return visibleLogs.filter((l) => {
       const matchSearch =
         !search ||
-        l.employee_name.toLowerCase().includes(search.toLowerCase()) ||
+        employeeName(l).toLowerCase().includes(search.toLowerCase()) ||
         l.log_type.toLowerCase().includes(search.toLowerCase());
       const matchStatus = filterStatus === "all" || l.status === filterStatus;
       return matchSearch && matchStatus;
@@ -593,79 +620,254 @@ export default function SkillLogsPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((log) => (
-            <div key={log.id}>
-              {confirmDeleteId === log.id ? (
-                <div className="bg-white rounded-2xl border border-red-200 p-4 flex items-center justify-between gap-4">
-                  <p className="text-sm text-gray-700">
-                    Delete <span className="font-semibold">{log.log_type}</span>{" "}
-                    for{" "}
-                    <span className="font-semibold">{log.employee_name}</span>?
-                  </p>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        deleteLog(log.id);
-                        setConfirmDeleteId(null);
-                      }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition"
-                    >
-                      Delete
-                    </button>
+        <>
+          {/* Mobile: cards */}
+          <div className="md:hidden space-y-3">
+            {filtered.map((log) => (
+              <div key={log.id}>
+                {confirmDeleteId === log.id ? (
+                  <div className="bg-white rounded-2xl border border-red-200 p-4 flex items-center justify-between gap-4">
+                    <p className="text-sm text-gray-700">
+                      Delete{" "}
+                      <span className="font-semibold">{log.log_type}</span> for{" "}
+                      <span className="font-semibold">
+                        {employeeName(log)}
+                      </span>
+                      ?
+                    </p>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          deleteLog(log.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <LogCard
-                  log={log}
-                  onClick={
-                    log.status === "draft" &&
+                ) : (
+                  <LogCard
+                    log={log}
+                    onClick={
+                      log.status === "draft" &&
+                      canAct &&
+                      (log.supervisor?.user_id ?? log.supervisor_id) ===
+                        userId
+                        ? () =>
+                            router.push(
+                              `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
+                            )
+                        : undefined
+                    }
+                    onDelete={
+                      log.status === "draft" &&
+                      canAct &&
+                      (log.supervisor?.user_id ?? log.supervisor_id) ===
+                        userId
+                        ? (e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteId(log.id);
+                          }
+                        : undefined
+                    }
+                    onSignOff={
+                      canAct &&
+                      (log.supervisor?.user_id ?? log.supervisor_id) !==
+                        userId
+                        ? (e) => {
+                            e.stopPropagation();
+                            setSignOffLog(log);
+                          }
+                        : undefined
+                    }
+                    canSignOffLog={
+                      canAct &&
+                      (log.supervisor?.user_id ?? log.supervisor_id) !==
+                        userId &&
+                      canSignOff(
+                        currentUser?.grade_level,
+                        log.supervisor?.grade_level ?? log.supervisor_grade,
+                      )
+                    }
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Employee
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Log Type
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Review Period
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Filled By
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Rating
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((log) => {
+                  const status = STATUS_CONFIG[log.status] ?? STATUS_CONFIG.draft;
+                  const StatusIcon = status.icon;
+                  const isOwnedBySupervisor =
+                    (log.supervisor?.user_id ?? log.supervisor_id) === userId;
+                  const canEditDraft =
+                    log.status === "draft" && canAct && isOwnedBySupervisor;
+                  const canDeleteDraft = canEditDraft;
+                  const canSignOffThis =
                     canAct &&
-                    (log.supervisor?.user_id ?? log.supervisor_id) === userId
-                      ? () =>
-                          router.push(
-                            `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
-                          )
-                      : undefined
-                  }
-                  onDelete={
-                    log.status === "draft" &&
-                    canAct &&
-                    (log.supervisor?.user_id ?? log.supervisor_id) === userId
-                      ? (e) => {
-                          e.stopPropagation();
-                          setConfirmDeleteId(log.id);
-                        }
-                      : undefined
-                  }
-                  onSignOff={
-                    canAct &&
-                    (log.supervisor?.user_id ?? log.supervisor_id) !== userId
-                      ? (e) => {
-                          e.stopPropagation();
-                          setSignOffLog(log);
-                        }
-                      : undefined
-                  }
-                  canSignOffLog={
-                    canAct &&
-                    (log.supervisor?.user_id ?? log.supervisor_id) !== userId &&
+                    !isOwnedBySupervisor &&
                     canSignOff(
                       currentUser?.grade_level,
                       log.supervisor?.grade_level ?? log.supervisor_grade,
-                    )
+                    );
+
+                  if (confirmDeleteId === log.id) {
+                    return (
+                      <tr key={log.id} className="border-b border-gray-100">
+                        <td colSpan={7} className="px-4 py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <p className="text-sm text-gray-700">
+                              Delete{" "}
+                              <span className="font-semibold">
+                                {log.log_type}
+                              </span>{" "}
+                              for{" "}
+                              <span className="font-semibold">
+                                {employeeName(log)}
+                              </span>
+                              ?
+                            </p>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  deleteLog(log.id);
+                                  setConfirmDeleteId(null);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
                   }
-                />
-              )}
-            </div>
-          ))}
-        </div>
+
+                  return (
+                    <tr
+                      key={log.id}
+                      className="border-b border-gray-100 hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">
+                          {employeeName(log)}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {log.employee?.grade_level ?? log.employee_grade}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {log.log_type}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {log.review_period}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {supervisorName(log)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {log.overall_rating ? `★ ${log.overall_rating}/5` : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}
+                        >
+                          <StatusIcon className="w-3 h-3" />
+                          {status.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {canEditDraft && (
+                            <button
+                              onClick={() =>
+                                router.push(
+                                  `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
+                                )
+                              }
+                              title="Edit"
+                              className="p-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canDeleteDraft && (
+                            <button
+                              onClick={() => setConfirmDeleteId(log.id)}
+                              className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {log.status === "submitted" && canSignOffThis && (
+                            <button
+                              onClick={() => setSignOffLog(log)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
+                              style={{ background: BRAND }}
+                            >
+                              <PenLine className="w-3.5 h-3.5" />
+                              Sign Off
+                            </button>
+                          )}
+                          {log.status === "submitted" && !canSignOffThis && (
+                            <Lock className="w-4 h-4 text-gray-300" />
+                          )}
+                          {log.status === "signed_off" && (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

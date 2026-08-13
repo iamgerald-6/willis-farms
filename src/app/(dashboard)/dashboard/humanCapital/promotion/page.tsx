@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import {
-  Search,
   ChevronRight,
   Award,
   TrendingUp,
@@ -754,7 +753,7 @@ interface UserProfile {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PromotionViewPage() {
-  const [search, setSearch] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
   const [selected, setSelected] = useState<PromotionItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [gradeFilter, setGradeFilter] = useState("");
@@ -846,29 +845,38 @@ export default function PromotionViewPage() {
     [completedRaw, canViewAll, currentUser?.company_id],
   );
 
+  const employeeNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of visiblePending) {
+      if (item.employee_name) names.add(item.employee_name);
+    }
+    for (const item of visibleCompleted) {
+      if (item.employee_name) names.add(item.employee_name);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [visiblePending, visibleCompleted]);
+
   const filteredPending = useMemo<PendingPromotion[]>(() => {
     return visiblePending.filter((item) => {
       const name = item.employee_name ?? "";
       const grade = item.current_grade ?? "";
-      const matchSearch =
-        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchName = !nameFilter || name === nameFilter;
       const matchGrade = !gradeFilter || grade === gradeFilter;
-      return matchSearch && matchGrade;
+      return matchName && matchGrade;
     });
-  }, [visiblePending, search, gradeFilter]);
+  }, [visiblePending, nameFilter, gradeFilter]);
 
   const filteredHistory = useMemo<CompletedPromotion[]>(() => {
     return visibleCompleted.filter((item) => {
       const name = item.employee_name ?? "";
       const grade = item.current_grade ?? "";
-      const matchSearch =
-        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchName = !nameFilter || name === nameFilter;
       const matchGrade = !gradeFilter || grade === gradeFilter;
       const matchDecision =
         !decisionFilter || item.final_decision === decisionFilter;
-      return matchSearch && matchGrade && matchDecision;
+      return matchName && matchGrade && matchDecision;
     });
-  }, [visibleCompleted, search, gradeFilter, decisionFilter]);
+  }, [visibleCompleted, nameFilter, gradeFilter, decisionFilter]);
 
   const stats = useMemo(
     () => ({
@@ -1000,16 +1008,18 @@ export default function PromotionViewPage() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-5 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-gray-50/50"
-          />
-        </div>
+        <select
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          className="flex-1 text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
+        >
+          <option value="">All Employees</option>
+          {employeeNames.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
         <div className="flex gap-2 w-full sm:w-auto">
           <select
             value={gradeFilter}

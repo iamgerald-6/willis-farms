@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/careers/types";
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import {
+  ChevronDown,
   ExternalLink,
   FileText,
   Loader2,
@@ -22,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { PageShell, PageHeaderSkeleton, ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
+import { isFullRoleAccess } from "@/lib/pagePermissions";
 
 const STATUS_STYLES: Record<ApplicationStatus, string> = {
   applied: "bg-blue-50 text-blue-700 border border-blue-200",
@@ -266,12 +268,151 @@ function ApplicationDetail({
   );
 }
 
+// ─── Multi-select filter dropdown ──────────────────────────────────────────────
+// Replaces free-text search: click the field's button, pick any number of
+// values from the list of what's actually present in the data, values from
+// different fields combine (AND), values within the same field combine (OR).
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
+
+  const toggle = (value: string) => {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value],
+    );
+  };
+
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition ${
+          selected.length > 0
+            ? "bg-red-50 text-red-700 border-red-200"
+            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+        }`}
+      >
+        {label}
+        {selected.length > 0 && (
+          <span className="bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+            {selected.length}
+          </span>
+        )}
+        <ChevronDown
+          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="px-2.5 pt-2.5 pb-1.5">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 focus-within:border-red-400">
+              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${label.toLowerCase()}…`}
+                className="w-full bg-transparent text-sm outline-none placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto py-1.5 px-1.5">
+            {filteredOptions.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-gray-400">No matches</p>
+            ) : (
+              filteredOptions.map((opt) => {
+                const checked = selected.includes(opt.value);
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm cursor-pointer hover:bg-gray-50 ${checked ? "bg-red-50" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(opt.value)}
+                      className="accent-red-600 w-3.5 h-3.5 shrink-0"
+                    />
+                    <span className="flex-1 min-w-0 truncate text-gray-800">
+                      {opt.label}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          {selected.length > 0 && (
+            <div className="border-t border-gray-100 px-2.5 py-1.5">
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs font-semibold text-gray-400 hover:text-red-600"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="flex items-center gap-1 bg-red-50 text-red-700 text-xs font-medium pl-2.5 pr-1.5 py-1 rounded-full">
+      {label}
+      <button type="button" onClick={onRemove} className="hover:text-red-900">
+        <X className="w-3 h-3" />
+      </button>
+    </span>
+  );
+}
+
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
 
-  const [filter, setFilter] = useState<ApplicationStatus | "all">("all");
-  const [search, setSearch] = useState("");
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [selected, setSelected] = useState<JobApplication | null>(null);
   const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<
     string | null
@@ -300,8 +441,7 @@ function RecruitmentPageContent() {
     (session?.user?.user_metadata?.role as string | undefined) ??
     "";
 
-  const isHr =
-    role === "admin" || role === "manager" || role === "super_admin";
+  const isHr = isFullRoleAccess(role);
 
   const { data, isLoading } = useQuery({
     queryKey: ["job_applications"],
@@ -312,19 +452,64 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (data ?? []).filter((a) => {
-      if (filter !== "all" && a.status !== filter) return false;
-      if (!q) return true;
-      return (
-        a.full_name.toLowerCase().includes(q) ||
-        a.email.toLowerCase().includes(q) ||
-        a.reference_number.toLowerCase().includes(q) ||
-        a.role_title.toLowerCase().includes(q)
-      );
+  // Cross-filtering: each field's option list is scoped by the OTHER active
+  // filters (never by itself) — so picking Status = Interview narrows what
+  // shows up under Name/Role to only candidates actually in that status.
+  const applyFilters = (
+    list: JobApplication[],
+    opts: { name?: string[]; role?: string[]; status?: string[] },
+  ) =>
+    list.filter((a) => {
+      if (opts.name && opts.name.length > 0 && !opts.name.includes(a.full_name))
+        return false;
+      if (opts.role && opts.role.length > 0 && !opts.role.includes(a.role_title))
+        return false;
+      if (opts.status && opts.status.length > 0 && !opts.status.includes(a.status))
+        return false;
+      return true;
     });
-  }, [data, filter, search]);
+
+  const nameOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { role: roleFilters, status: statusFilters });
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [data, roleFilters, statusFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { name: nameFilters, status: statusFilters });
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [data, nameFilters, statusFilters]);
+
+  const statusOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { name: nameFilters, role: roleFilters });
+    const present = new Set(scoped.map((a) => a.status));
+    return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
+      value: s,
+      label: STATUS_LABELS[s],
+    }));
+  }, [data, nameFilters, roleFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applyFilters(data ?? [], {
+        name: nameFilters,
+        role: roleFilters,
+        status: statusFilters,
+      }),
+    [data, nameFilters, roleFilters, statusFilters],
+  );
+
+  const hasActiveFilters =
+    nameFilters.length + roleFilters.length + statusFilters.length > 0;
+
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+    setStatusFilters([]);
+  };
 
   const newCount = (data ?? []).filter((a) => a.status === "applied").length;
 
@@ -377,41 +562,60 @@ function RecruitmentPageContent() {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, ref, role…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-white"
+      <div className="mb-5">
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={statusOptions}
+            selected={statusFilters}
+            onChange={setStatusFilters}
           />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filter === "all"
-                ? "bg-red-600 text-white border-red-600"
-                : "bg-white text-gray-600 border-gray-200"
-            }`}
-          >
-            All
-          </button>
-          {APPLICATION_STATUSES.map((s) => (
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
+              />
+            ))}
+            {statusFilters.map((s) => (
+              <FilterChip
+                key={`status-${s}`}
+                label={STATUS_LABELS[s as ApplicationStatus]}
+                onRemove={() => setStatusFilters(statusFilters.filter((v) => v !== s))}
+              />
+            ))}
             <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-                filter === s
-                  ? "bg-red-600 text-white border-red-600"
-                  : "bg-white text-gray-600 border-gray-200"
-              }`}
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
             >
-              {STATUS_LABELS[s]}
+              Clear all
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">

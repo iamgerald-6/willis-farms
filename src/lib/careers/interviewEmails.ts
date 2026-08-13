@@ -1,4 +1,5 @@
 import { recruitmentInterviewUrl } from "@/lib/appUrl";
+import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
 type SendResult = { sent: boolean; error?: string };
 
@@ -37,9 +38,7 @@ async function sendViaResend(params: {
 
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
-  const from =
-    process.env.RESEND_FROM_EMAIL ??
-    "Wills Farms Careers <onboarding@resend.dev>";
+  const from = getResendFromAddress("Wills Farms Careers");
 
   const { error } = await resend.emails.send({
     from,
@@ -48,7 +47,7 @@ async function sendViaResend(params: {
     subject: params.subject,
     html: params.html,
     text: params.text,
-    replyTo: process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com",
+    replyTo: getReplyToEmail(),
   });
 
   if (error) return { sent: false, error: error.message };
@@ -158,7 +157,7 @@ export async function sendStage2ScheduleEmail(params: {
   stage2Duration: string;
 }): Promise<SendResult> {
   const when = formatDateTime(params.scheduledAt);
-  const hrEmail = process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com";
+  const hrEmail = getReplyToEmail();
   const locationLine = params.location
     ? `Location: ${params.location}`
     : "Location: to be confirmed";

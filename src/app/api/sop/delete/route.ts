@@ -1,6 +1,8 @@
 // app/api/content/delete/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeSopAuditLog } from "@/lib/sopAuditLog";
+import { getApiRequestUser } from "@/lib/apiRequestAuth";
 
 export async function DELETE(req: NextRequest) {
   try {
@@ -17,7 +19,11 @@ export async function DELETE(req: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = await req.json();
-    const { contentIds } = body as { contentIds: string[] };
+    const { contentIds, performed_by, performed_by_name } = body as {
+      contentIds: string[];
+      performed_by?: string;
+      performed_by_name?: string;
+    };
 
     // ── Validation ─────────────────────────────────────────────────────────
     // ── Validation ─────────────────────────────────────────────────────────
@@ -40,6 +46,17 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
+    // Snapshot titles before deleting — sop_audit_log has no FK to content,
+    // deliberately, so the "deleted" entry survives the row being gone, but
+    // that means the title has to be captured now or never.
+    const { data: toDelete } = await supabase
+      .from("content")
+      .select("id, title")
+      .in("id", safeIds);
+    const titleById = new Map(
+      (toDelete ?? []).map((c) => [c.id, c.title as string]),
+    );
+
     // ── Delete from Supabase ───────────────────────────────────────────────
     const { error } = await supabase.from("content").delete().in("id", safeIds);
 
@@ -50,6 +67,22 @@ export async function DELETE(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    const apiUser = await getApiRequestUser(req);
+    const resolvedPerformedBy = apiUser?.id ?? performed_by;
+    const resolvedPerformedByName = apiUser?.name ?? performed_by_name;
+
+    await Promise.all(
+      safeIds.map((id) =>
+        writeSopAuditLog({
+          content_id: id,
+          content_title: titleById.get(id) ?? "Untitled SOP",
+          action: "deleted",
+          performed_by: resolvedPerformedBy,
+          performed_by_name: resolvedPerformedByName,
+        }),
+      ),
+    );
 
     return NextResponse.json({
       success: true,

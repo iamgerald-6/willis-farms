@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { isSuperAdmin } from "@/lib/accessControl";
 import {
   canAddUser,
   canManageUserAccounts,
@@ -109,7 +110,7 @@ export default function UserManagementPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
-      if (u.role === "super_admin") return false;
+      if (isSuperAdmin(u.role)) return false;
       if (!q) return true;
       return (
         u.email.toLowerCase().includes(q) ||

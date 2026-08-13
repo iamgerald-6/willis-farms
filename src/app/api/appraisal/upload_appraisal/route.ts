@@ -8,6 +8,7 @@ import {
   periodLabel,
 } from "@/lib/appraisal/deadlines";
 import { canRate, type Quarter } from "@/lib/appraisal/sections";
+import { isSuperAdmin } from "@/lib/accessControl";
 import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
 import {
   requireAuth,
@@ -158,10 +159,10 @@ export async function POST(req: NextRequest) {
           "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
         );
       }
-      const isSuperAdminCaller = caller.role === "super_admin";
+      const isSuperAdminCaller = isSuperAdmin(caller.role);
       if (!isSuperAdminCaller && !canRate(caller.grade_level, current_grade)) {
         return jsonForbidden(
-          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
+          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
         );
       }
     }

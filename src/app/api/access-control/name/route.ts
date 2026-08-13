@@ -6,6 +6,7 @@ import {
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
+import { isSuperAdmin } from "@/lib/accessControl";
 
 export async function PATCH(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -67,7 +68,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
-    if (target.role === "super_admin") {
+    if (isSuperAdmin(target.role)) {
       return NextResponse.json(
         { error: "Super admin profile cannot be changed here." },
         { status: 403 },

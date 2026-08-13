@@ -1,6 +1,6 @@
 import { supabaseAdmin, type RequestUser } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
-import { computeNextDueDate } from "@/lib/taskRecurrence";
+import { computeNextDueDate, addDaysUTC, daysBetweenUTC } from "@/lib/taskRecurrence";
 import { buildSubtaskTree, computeSubtaskGroupStatus } from "@/lib/subtaskProgress";
 import type { TMTask, TMSubtask, AuditAction, ProjectAuditAction } from "@/types/taskManager";
 
@@ -64,15 +64,40 @@ export function enrichTasks(
     const dueDateStatus = computeDisplayStatus(t.due_date, t.lifecycle_status, t.is_recurring, t.progress_percent);
     const lifecycleOverrides = t.lifecycle_status !== "active";
     const subtaskStatus = !lifecycleOverrides && tree && tree.length > 0 ? computeSubtaskGroupStatus(tree) : null;
+    // subtaskStatus wins whenever it says something the due-date-only
+    // calculation couldn't know on its own (Overdue from a specific
+    // subtask, Completed, or a partial In Progress) — but "Not Started"
+    // just means "nothing ticked yet", which the due-date calculation
+    // already handles more precisely, including recognizing a recurring
+    // task that isn't due yet as "Compliant / Ongoing" rather than flatly
+    // "Not Started" (computeGroupStatus has no concept of "recurring" at
+    // all, so left alone it would always show "Not Started" here instead —
+    // e.g. right after a recurring task resets for a new cycle).
+    const resolvedStatus = subtaskStatus && subtaskStatus !== "Not Started" ? subtaskStatus : dueDateStatus;
 
     return {
       ...t,
       owner_name: t.owner_id ? (userNames[t.owner_id] ?? "Unknown") : null,
-      display_status: subtaskStatus ?? dueDateStatus,
+      display_status: resolvedStatus,
       ...(projectNames ? { project_name: projectNames[t.project_id] ?? null } : {}),
       has_subtasks: !!tree && tree.length > 0,
     };
   });
+}
+
+/**
+ * Enriches a single already-written task row, correctly reflecting its
+ * subtask tree's rollup (Overdue/Completed/In Progress/etc.) if it has one
+ * — every route that returns a task right after touching its progress,
+ * lifecycle, or fields needs this, not just the plain task-list GET route.
+ * Without it, the returned task's display_status silently falls back to the
+ * due-date-only calculation and ignores whatever its subtasks actually say
+ * (e.g. a subtask that's Overdue not showing up on the task itself until
+ * something else happens to trigger a full list refetch).
+ */
+export async function enrichSingleTask(task: any, userNames: Record<string, string>): Promise<TMTask> {
+  const trees = await fetchSubtaskTreesByTaskId([task.id]);
+  return enrichTasks([task], userNames, undefined, trees)[0];
 }
 
 /**
@@ -135,6 +160,36 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
 };
 
 /**
+ * Shifts every subtask's (and sub-subtask's, at every depth) own start_date
+ * and due_date forward by `deltaDays` — the same number of days the task's
+ * own start date just moved — and resets is_done back to false, ready for
+ * the new cycle. E.g. a task whose window was 12th-19th resets to 17th-24th
+ * (deltaDays = 5); a subtask that was 13th-15th shifts to 18th-20th, and a
+ * sub-subtask that was 13th-14th shifts to 18th-19th — same delta, every
+ * level, so every node keeps the exact same position relative to the task's
+ * own window that it had before.
+ */
+async function shiftAndResetSubtasks(
+  taskId: string,
+  rows: { id: string; start_date: string | null; due_date: string | null }[],
+  deltaDays: number,
+) {
+  for (const row of rows) {
+    const { error } = await supabaseAdmin
+      .from("tm_subtasks")
+      .update({
+        is_done: false,
+        start_date: row.start_date ? addDaysUTC(row.start_date, deltaDays) : row.start_date,
+        due_date: row.due_date ? addDaysUTC(row.due_date, deltaDays) : row.due_date,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("task_id", taskId);
+    if (error) throw error;
+  }
+}
+
+/**
  * What "marking a task complete" actually does — shared by the explicit
  * Complete button (applyLifecycleChange) and hitting 100% on the progress
  * slider (updateTaskProgress), so the two paths can't drift apart.
@@ -142,16 +197,32 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
  * For an ordinary task this is just "close it out": lifecycle_status ->
  * completed, progress -> 100, completed_at stamped.
  *
+ * A task with subtasks can only complete (or recur) once every one of them
+ * — down to the last sub-subtask — is actually ticked: `currentProgress`
+ * (the task's own progress_percent, which the subtask routes keep in
+ * lockstep with the live subtask rollup) has to already be 100 whenever any
+ * subtasks exist. Without this, the manual Complete button
+ * (applyLifecycleChange) could force a task to recur — or close — while
+ * subtasks were still outstanding, silently abandoning them mid-cycle; the
+ * ordinary subtask-ticking path (updateTaskProgress) can never actually hit
+ * this, since it only ever calls this function once the rollup itself has
+ * already reached 100 (which is only mathematically possible once every
+ * leaf is done).
+ *
  * For a recurring task (is_recurring = true) whose `frequency` text is
  * recognizable (see taskRecurrence.ts), it does NOT close — the same task
  * row cycles instead: progress resets to 0, lifecycle_status stays active,
- * and (per Sheila's explicit choice) the new cycle's start_date is the day
- * it was marked complete, while due_date is computed from frequency applied
- * to the PREVIOUS due_date (not from today) — so a monthly task due the
- * 1st stays due the 1st every cycle, regardless of when it's actually
- * ticked. This cycle's completion is preserved in tm_task_completions (so
- * reporting doesn't lose it just because the task itself didn't stay
- * "completed").
+ * start_date becomes the day it was marked complete, and due_date is that
+ * SAME new start_date with one frequency interval added — so a task
+ * finished early still gets a full fresh interval from today, rather than
+ * jumping to wherever the old due date plus an interval would land. This
+ * cycle's completion is preserved in tm_task_completions (so reporting
+ * doesn't lose it just because the task itself didn't stay "completed").
+ *
+ * Any subtasks (any depth) shift forward by the same rule Sheila specified:
+ * every one of their own start/due dates moves by exactly the same number
+ * of days the task's own start date just moved — see
+ * shiftAndResetSubtasks — and their checkboxes reset for the new cycle.
  *
  * "Hourly" is a deliberate special case, handled here rather than through
  * computeNextDueDate: due_date is a day (not a time), so there's no
@@ -168,12 +239,24 @@ const LIFECYCLE_ACTION_TO_STATUS: Record<string, string> = {
  * silently guessing at a cadence would be worse than just completing it
  * normally.
  */
-async function performTaskCompletion(existing: any, performedBy: RequestUser) {
+async function performTaskCompletion(existing: any, performedBy: RequestUser, currentProgress: number) {
+  const { data: subtaskRows, error: subtaskFetchError } = await supabaseAdmin
+    .from("tm_subtasks")
+    .select("id, start_date, due_date")
+    .eq("task_id", existing.id);
+  if (subtaskFetchError) throw subtaskFetchError;
+  const hasSubtasks = (subtaskRows ?? []).length > 0;
+
+  if (hasSubtasks && currentProgress < 100) {
+    return { error: "Every subtask must be marked complete before this task can be completed." };
+  }
+
   const isHourly = existing.is_recurring && !!existing.due_date && (existing.frequency ?? "").trim().toLowerCase() === "hourly";
+  const newStartDate = new Date().toISOString().slice(0, 10);
   const nextDueDate = isHourly
     ? existing.due_date
     : existing.is_recurring && existing.due_date
-      ? computeNextDueDate(existing.due_date, existing.frequency)
+      ? computeNextDueDate(newStartDate, existing.frequency)
       : null;
 
   if (nextDueDate) {
@@ -187,10 +270,18 @@ async function performTaskCompletion(existing: any, performedBy: RequestUser) {
       },
     ]);
 
+    if (hasSubtasks) {
+      // No start_date on the task to measure a shift from (unusual, but
+      // possible) — still reset every checkbox for the new cycle, just
+      // without moving any dates (delta 0).
+      const deltaDays = existing.start_date ? daysBetweenUTC(existing.start_date, newStartDate) : 0;
+      await shiftAndResetSubtasks(existing.id, subtaskRows ?? [], deltaDays);
+    }
+
     return {
       updates: {
         due_date: nextDueDate,
-        start_date: new Date().toISOString().slice(0, 10),
+        start_date: newStartDate,
         progress_percent: 0,
         lifecycle_status: "active",
         completed_at: null,
@@ -236,7 +327,8 @@ export async function applyLifecycleChange(
   let nextDueDate: string | null = null;
 
   if (action === "completed") {
-    const result = await performTaskCompletion(existing, performedBy);
+    const result = await performTaskCompletion(existing, performedBy, existing.progress_percent);
+    if ("error" in result) return { error: result.error, status: 400 as const };
     updates = result.updates;
     recurred = result.recurred;
     nextDueDate = result.nextDueDate;
@@ -273,7 +365,7 @@ export async function applyLifecycleChange(
   });
 
   const userNames = await fetchUserNames([updated.owner_id]);
-  return { task: enrichTasks([updated], userNames)[0], recurred, next_due_date: nextDueDate };
+  return { task: await enrichSingleTask(updated, userNames), recurred, next_due_date: nextDueDate };
 }
 
 /**
@@ -312,7 +404,7 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
   }
   if (existing.lifecycle_status === "active" && existing.progress_percent === progress) {
     const userNames = await fetchUserNames([existing.owner_id]);
-    return { task: enrichTasks([existing], userNames)[0] };
+    return { task: await enrichSingleTask(existing, userNames) };
   }
 
   const autoCompleting = progress >= 100;
@@ -325,8 +417,12 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
     // does — including cycling a recurring task forward instead of
     // closing it. existing.progress_percent is overwritten below by
     // performTaskCompletion's own updates (0 if recurred, 100 if not), so
-    // the caller's `progress` value only matters for getting here.
-    const result = await performTaskCompletion(existing, performedBy);
+    // the caller's `progress` value only matters for getting here. Passed
+    // as the "current progress" too — this branch only runs once `progress`
+    // itself is already >= 100, so the has-subtasks gate inside never
+    // actually blocks a legitimate last-subtask tick.
+    const result = await performTaskCompletion(existing, performedBy, progress);
+    if ("error" in result) return { error: result.error, status: 400 as const };
     updates = result.updates;
     recurred = result.recurred;
     nextDueDate = result.nextDueDate;
@@ -353,7 +449,7 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
   });
 
   const userNames = await fetchUserNames([updated.owner_id]);
-  return { task: enrichTasks([updated], userNames)[0], recurred, next_due_date: nextDueDate };
+  return { task: await enrichSingleTask(updated, userNames), recurred, next_due_date: nextDueDate };
 }
 
 export async function writeAuditLog(params: {

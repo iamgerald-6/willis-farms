@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { isSuperAdmin } from "@/lib/accessControl";
 import {
   canManageUserAccounts,
   getEffectivePermissionLevels,
@@ -153,7 +154,7 @@ export default function ManageUserAccessPage() {
     return <AccessControlManageSkeleton />;
   }
 
-  if (!target || target.role === "super_admin") {
+  if (!target || isSuperAdmin(target.role)) {
     return (
       <div className="p-6">
         <Link

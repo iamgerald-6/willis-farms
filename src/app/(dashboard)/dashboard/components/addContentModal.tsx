@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -14,10 +14,12 @@ import {
   Upload,
   Loader2,
   CheckCircle2,
+  Pencil,
 } from "lucide-react";
 import { Content } from "@/types";
 import { useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
+import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 
 const contentSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
@@ -107,13 +109,20 @@ interface Props {
   open: boolean;
   setOpen: (val: boolean) => void;
   onSuccess?: (content: Content) => void;
+  /** When set, the modal edits this SOP instead of creating a new one —
+   * fields pre-fill from it, file uploads become optional (existing files
+   * are kept unless replaced), and submit calls the update endpoint. */
+  editingContent?: Content | null;
+  /** Current user — recorded as the creator (on add) and as the actor in
+   * the SOP history log (on add/edit). */
+  performedBy: { id: string; name: string } | null;
 }
 
 // ─── Cloudinary upload ─────────────────────────────────────────────────────────
 async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", "willsUpload");
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
   formData.append("folder", folder);
 
   const isImage = file.type.startsWith("image/");
@@ -121,10 +130,7 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const isPdf = file.type === "application/pdf";
   const resourceType = isImage || isPdf ? "image" : isVideo ? "video" : "raw";
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/dmvr8ooz1/${resourceType}/upload`,
-    { method: "POST", body: formData },
-  );
+  const res = await fetch(cloudinaryUploadUrl(resourceType), { method: "POST", body: formData });
   const json = await res.json();
   if (!json.secure_url) throw new Error("Cloudinary upload failed");
   return json.secure_url as string;
@@ -213,20 +219,30 @@ function inputCls(hasError?: boolean, isDisabled?: boolean) {
 
 // ─── Upload payload type ───────────────────────────────────────────────────────
 interface UploadPayload {
+  id?: string;
   title: string;
   category: string;
   sub_category: string;
   description: string;
   cover_image_url: string | null;
-  document_url: string;
+  document_url: string | null;
   document_read_minutes: number;
   video_url: string | null;
   video_duration_minutes: number | null;
-  created_by: string;
+  created_by?: string;
+  performed_by?: string;
+  performed_by_name?: string;
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
+export default function AddContentModal({
+  open,
+  setOpen,
+  onSuccess,
+  editingContent,
+  performedBy,
+}: Props) {
+  const isEditing = !!editingContent;
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -248,6 +264,41 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
     resolver: zodResolver(contentSchema),
   });
 
+  // Pre-fill from the SOP being edited, or clear to a blank form for
+  // creating a new one — runs whenever the modal opens.
+  useEffect(() => {
+    if (!open) return;
+    if (editingContent) {
+      reset({
+        title: editingContent.title,
+        category: editingContent.category,
+        sub_category: editingContent.sub_category,
+        description: editingContent.description,
+        document_read_minutes:
+          editingContent.document_read_minutes ?? undefined,
+        video_duration_minutes:
+          editingContent.video_duration_minutes ?? undefined,
+      });
+    } else {
+      reset({
+        title: "",
+        category: "",
+        sub_category: "",
+        description: "",
+        document_read_minutes: undefined,
+        video_duration_minutes: undefined,
+      });
+    }
+    setCoverFile(null);
+    setDocFile(null);
+    setVideoFile(null);
+    setFileErrors({});
+    setServerError(null);
+    setSuccessMsg(null);
+    // Only re-run when the modal opens or switches which SOP it's editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingContent]);
+
   const selectedCategory = watch("category");
   const subOptions = selectedCategory
     ? (SUB_CATEGORIES[selectedCategory] ?? [])
@@ -255,18 +306,26 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
 
   const validateFiles = () => {
     const errs: { cover?: string; doc?: string } = {};
-    if (!docFile) errs.doc = "Document is required";
+    // A document is only optional when editing an SOP that already has one
+    // on file and the user isn't replacing it.
+    if (!docFile && !(isEditing && editingContent?.document_url)) {
+      errs.doc = "Document is required";
+    }
     setFileErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const { mutate, isPending } = useMutation({
     mutationFn: async (payload: UploadPayload) => {
-      const res = await api.post("/sop/upload", payload);
+      const res = payload.id
+        ? await api.patch("/sop/update", payload)
+        : await api.post("/sop/upload", payload);
       return res.data;
     },
     onSuccess: (result) => {
-      setSuccessMsg("SOP added successfully!");
+      setSuccessMsg(
+        isEditing ? "SOP updated successfully!" : "SOP added successfully!",
+      );
       onSuccess?.(result.content);
       setTimeout(() => handleClose(), 1200);
     },
@@ -288,15 +347,18 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
       const [coverUrl, docUrl] = await Promise.all([
         coverFile
           ? uploadToCloudinary(coverFile, "WillImage")
-          : Promise.resolve(null),
-        uploadToCloudinary(docFile!, "WillDocs"),
+          : Promise.resolve(editingContent?.cover_image_url ?? null),
+        docFile
+          ? uploadToCloudinary(docFile, "WillDocs")
+          : Promise.resolve(editingContent?.document_url ?? null),
       ]);
 
       const videoUrl = videoFile
         ? await uploadToCloudinary(videoFile, "WillsVideos")
-        : null;
+        : (editingContent?.video_url ?? null);
 
       mutate({
+        ...(isEditing ? { id: editingContent!.id } : {}),
         title: data.title,
         category: data.category,
         sub_category: data.sub_category,
@@ -306,7 +368,9 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
         document_read_minutes: data.document_read_minutes,
         video_url: videoUrl,
         video_duration_minutes: data.video_duration_minutes ?? null,
-        created_by: "Admin",
+        ...(isEditing ? {} : { created_by: performedBy?.id }),
+        performed_by: performedBy?.id,
+        performed_by_name: performedBy?.name,
       });
     } catch (err: any) {
       setServerError(err.message ?? "File upload failed. Please try again.");
@@ -339,7 +403,7 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
             <div>
               <Dialog.Title className="text-lg font-bold text-gray-900">
-                Add SOP
+                {isEditing ? "Edit SOP" : "Add SOP"}
               </Dialog.Title>
               <p className="text-xs text-gray-400 mt-0.5">
                 Files upload to Cloudinary. Fields marked{" "}
@@ -450,21 +514,34 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
                   accept="image/*"
                   file={coverFile}
                   onChange={setCoverFile}
-                  placeholder="Click to upload (optional)"
+                  placeholder={
+                    isEditing
+                      ? "Click to replace (optional)"
+                      : "Click to upload (optional)"
+                  }
                 />
-                {coverFile && (
+                {coverFile ? (
                   <img
                     src={URL.createObjectURL(coverFile)}
                     alt="Cover preview"
                     className="w-full h-36 object-cover rounded-lg mt-2 border border-gray-100"
                   />
+                ) : (
+                  isEditing &&
+                  editingContent?.cover_image_url && (
+                    <img
+                      src={editingContent.cover_image_url}
+                      alt="Current cover"
+                      className="w-full h-36 object-cover rounded-lg mt-2 border border-gray-100"
+                    />
+                  )
                 )}
               </Field>
 
               <div className="grid grid-cols-2 gap-4 mt-4 items-start">
                 <Field
                   label="Document (PDF / Word)"
-                  required
+                  required={!isEditing}
                   icon={<FileText className="w-4 h-4" />}
                   error={fileErrors.doc}
                 >
@@ -476,7 +553,11 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
                       if (f)
                         setFileErrors((prev) => ({ ...prev, doc: undefined }));
                     }}
-                    placeholder="Click to upload a document"
+                    placeholder={
+                      isEditing && editingContent?.document_url
+                        ? "Existing document on file — click to replace"
+                        : "Click to upload a document"
+                    }
                     hasError={!!fileErrors.doc}
                   />
                 </Field>
@@ -507,7 +588,11 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
                     accept="video/*"
                     file={videoFile}
                     onChange={setVideoFile}
-                    placeholder="Click to upload a video"
+                    placeholder={
+                      isEditing && editingContent?.video_url
+                        ? "Existing video on file — click to replace"
+                        : "Click to upload a video"
+                    }
                   />
                 </Field>
 
@@ -519,13 +604,13 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
                     type="number"
                     min={1}
                     placeholder="e.g. 15"
-                    disabled={!videoFile}
+                    disabled={!videoFile && !(isEditing && editingContent?.video_url)}
                     {...register("video_duration_minutes", {
                       setValueAs: (v) => (v === "" ? undefined : Number(v)),
                     })}
                     className={inputCls(
                       !!errors.video_duration_minutes,
-                      !videoFile,
+                      !videoFile && !(isEditing && editingContent?.video_url),
                     )}
                   />
                 </Field>
@@ -549,7 +634,12 @@ export default function AddContentModal({ open, setOpen, onSuccess }: Props) {
               >
                 {isPending ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Uploading…
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {isEditing ? "Saving…" : "Uploading…"}
+                  </>
+                ) : isEditing ? (
+                  <>
+                    <Pencil className="w-4 h-4" /> Save Changes
                   </>
                 ) : (
                   <>
