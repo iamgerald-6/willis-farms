@@ -205,6 +205,7 @@ function SubtaskNode({
   savingGroup,
   onToggleLeaf,
   onSaveGroup,
+  optimisticLeaves,
 }: {
   node: TMSubtask;
   depth: number;
@@ -216,6 +217,7 @@ function SubtaskNode({
   savingGroup: boolean;
   onToggleLeaf: (id: string, done: boolean) => void;
   onSaveGroup: (parentId: string | null, items: DraftItem[]) => void;
+  optimisticLeaves: Record<string, boolean>;
 }) {
   const isLeaf = !node.children || node.children.length === 0;
   const percent = computeNodeCompletion(node);
@@ -260,7 +262,7 @@ function SubtaskNode({
           {isLeaf ? (
             <input
               type="checkbox"
-              checked={node.is_done}
+              checked={optimisticLeaves[node.id] ?? node.is_done}
               disabled={!canToggle}
               onChange={(e) => onToggleLeaf(node.id, e.target.checked)}
               className="accent-red-600 w-3.5 h-3.5 cursor-pointer disabled:cursor-default shrink-0"
@@ -395,6 +397,7 @@ function SubtaskNode({
               savingGroup={savingGroup}
               onToggleLeaf={onToggleLeaf}
               onSaveGroup={onSaveGroup}
+              optimisticLeaves={optimisticLeaves}
             />
           ))}
         </div>
@@ -455,15 +458,23 @@ export default function SubtaskPanel({
   // is always computed after the previous tick has actually landed.
   const leafQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const afterMutation = (result?: { recurred?: boolean; next_due_date?: string | null; task?: TMTask | null }) => {
-    queryClient.invalidateQueries({ queryKey });
-    // Belt-and-suspenders on top of the invalidate+refetch below: the
-    // subtask routes now hand back the task's freshly recomputed
-    // progress_percent/display_status directly (see updateTaskProgress),
-    // so patch every cached task-list query with it right away rather than
-    // waiting on a background refetch to land. A partial tick (e.g. 1 of 4
-    // sub-subtasks under a 30%-weight subtask, moving the main task from
-    // 30% to 38%) is easy to miss if that refetch is even briefly delayed.
+  const afterMutation = (result?: { recurred?: boolean; next_due_date?: string | null; task?: TMTask | null; subtasks?: TMSubtask[] }) => {
+    // Both subtask routes already hand back the freshly rebuilt tree in the
+    // same response (see the PUT/PATCH routes) — write it straight into the
+    // cache instead of invalidating and waiting on a second round trip to
+    // fetch the same data again. That second round trip was the main reason
+    // a tick felt slow to visibly register.
+    if (result?.subtasks) {
+      queryClient.setQueryData(queryKey, { subtasks: result.subtasks });
+    } else {
+      queryClient.invalidateQueries({ queryKey });
+    }
+    // Belt-and-suspenders, same idea one level up: the subtask routes also
+    // hand back the task's freshly recomputed progress_percent/display_status
+    // directly (see updateTaskProgress), so patch every cached task-list
+    // query with it right away too. A partial tick (e.g. 1 of 4 sub-subtasks
+    // under a 30%-weight subtask, moving the main task from 30% to 38%) is
+    // easy to miss if that refetch is even briefly delayed.
     if (result?.task) {
       const updated = result.task;
       queryClient.setQueriesData<{ tasks: TMTask[] }>({ queryKey: ["tm-tasks"] }, (old) =>
@@ -476,7 +487,13 @@ export default function SubtaskPanel({
     }
   };
 
+  // Ticked/unticked instantly on click (see optimisticLeaves below), rather
+  // than waiting for the request to round-trip before the box visibly
+  // flips — the request still runs the same as before underneath.
+  const [optimisticLeaves, setOptimisticLeaves] = useState<Record<string, boolean>>({});
+
   const toggleLeaf = (subtaskId: string, nextDone: boolean) => {
+    setOptimisticLeaves((prev) => ({ ...prev, [subtaskId]: nextDone }));
     leafQueueRef.current = leafQueueRef.current.then(async () => {
       setLeafSaving(true);
       try {
@@ -486,6 +503,15 @@ export default function SubtaskPanel({
         toast.error(err?.response?.data?.error ?? "Failed to update subtask");
       } finally {
         setLeafSaving(false);
+        // Drop the local override now that the cache reflects reality again
+        // — the fresh server data on success (matching what was already
+        // shown), or the untouched prior data on failure, which is how a
+        // rejected tick visibly reverts.
+        setOptimisticLeaves((prev) => {
+          if (!(subtaskId in prev)) return prev;
+          const { [subtaskId]: _drop, ...rest } = prev;
+          return rest;
+        });
       }
     });
   };
@@ -588,12 +614,13 @@ export default function SubtaskPanel({
               depth={1}
               users={users}
               canManage={canManage}
-              canToggle={canToggle && !leafSaving}
+              canToggle={canToggle}
               editingParentId={editingParentId}
               setEditingParentId={setEditingParentId}
               savingGroup={savingGroup}
               onToggleLeaf={toggleLeaf}
               onSaveGroup={saveGroup}
+              optimisticLeaves={optimisticLeaves}
             />
           ))}
         </div>

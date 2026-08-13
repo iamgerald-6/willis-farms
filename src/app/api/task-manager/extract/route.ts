@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { extractPdfPages, MAX_EXTRACTION_FILES as MAX_FILES } from "@/lib/pdfPages";
-import { FREQUENCY_OPTIONS } from "@/lib/taskManagerConstants";
+import { FREQUENCY_OPTIONS, TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import type { ExtractedTaskProposal, ExtractionJobFile } from "@/types/taskManager";
 
 // Without this, Vercel falls back to its platform default (as low as 10s
@@ -281,10 +281,9 @@ export async function POST(req: NextRequest) {
     }
 
     const message = await anthropic.messages.create({
-      // Overridable via env so the model can be swapped without a code
-      // deploy if this string ever stops resolving — check
-      // console.anthropic.com/models for what's current.
-      model: process.env.TASK_MANAGER_EXTRACTION_MODEL ?? "claude-sonnet-4-5",
+      // Shared with the monthly report's executive summary — see
+      // TASK_MANAGER_AI_MODEL in taskManagerConstants.ts.
+      model: TASK_MANAGER_AI_MODEL,
       // A busy compliance document (or several read together) can easily
       // have 20-30+ distinct obligations, each with a title/description/
       // dates — 4096 was tight enough to truncate the tool call mid-JSON on

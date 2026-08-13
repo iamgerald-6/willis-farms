@@ -18,6 +18,7 @@ import {
   periodLabel,
 } from "@/lib/appraisal/deadlines";
 import { canAppraiseOthers } from "@/lib/appraisal/sections";
+import { isSuperAdmin } from "@/lib/accessControl";
 import { CalendarRange, Info } from "lucide-react";
 
 function AppraisalFormPageContent() {
@@ -82,7 +83,7 @@ function AppraisalFormPageContent() {
   });
 
   const canSuperviseOthers =
-    canAppraiseOthers(profile?.grade_level) || profile?.role === "super_admin";
+    canAppraiseOthers(profile?.grade_level) || isSuperAdmin(profile?.role);
 
   // Pure self-appraisal users who already filed this period are done — send
   // them to the existing record. Supervisors still need the form so they can

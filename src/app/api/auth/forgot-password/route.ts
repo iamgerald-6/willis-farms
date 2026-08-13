@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   buildPasswordResetEmail,
-  getAppUrl,
   sendViaResend,
 } from "@/lib/email/resendClient";
+import { getAppBaseUrl } from "@/lib/appUrl";
 import {
   getStaffAuthBlockReason,
   lookupStaffByEmail,
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const redirectTo = `${getAppUrl()}/set-password`;
+    const redirectTo = `${getAppBaseUrl()}/set-password`;
 
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery",

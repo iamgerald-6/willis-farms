@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import { fetchUserNames } from "@/lib/taskManagerData";
 import { TASK_MANAGER_FROM_EMAIL } from "@/lib/taskManagerEmail";
+import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { getAppBaseUrl } from "@/lib/appUrl";
 import MonthlyReportDocument, {
   MonthlyReportData,
@@ -70,7 +71,7 @@ async function generateExecutiveSummary(
 
   try {
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: TASK_MANAGER_AI_MODEL,
       max_tokens: 600,
       messages: [
         {

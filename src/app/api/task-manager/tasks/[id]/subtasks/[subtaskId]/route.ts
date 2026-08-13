@@ -80,20 +80,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updatedTask = result.task ?? null;
 
       if (recurred) {
-        // The task cycled forward to its next occurrence instead of
-        // closing — progress_percent resets to 0 (see
-        // performTaskCompletion), and the subtask checkboxes need to reset
-        // the same way. Without this, the new cycle would open with every
-        // box still ticked from the cycle that just finished, and the
-        // rollup would immediately read 100% again without anyone
-        // touching anything.
-        const { data: resetRows, error: resetError } = await supabaseAdmin
+        // The task cycled forward to its next occurrence instead of closing
+        // — performTaskCompletion (called inside updateTaskProgress above)
+        // already reset every subtask's checkbox and shifted their own
+        // start/due dates forward for the new cycle, so just re-read the
+        // fresh rows rather than resetting them a second time here.
+        const { data: freshRows, error: freshError } = await supabaseAdmin
           .from("tm_subtasks")
-          .update({ is_done: false, updated_at: new Date().toISOString() })
+          .select("*")
           .eq("task_id", id)
-          .select();
-        if (resetError) throw resetError;
-        finalTree = buildSubtaskTree(resetRows ?? []);
+          .order("position", { ascending: true });
+        if (freshError) throw freshError;
+        finalTree = buildSubtaskTree(freshRows ?? []);
       }
     }
 

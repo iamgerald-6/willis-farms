@@ -47,6 +47,14 @@ export const PROJECT_COLOR_PALETTE = [
   { dot: "bg-teal-500", chipBg: "bg-teal-50", chipText: "text-teal-700" },
 ] as const;
 
+// Which Claude model Task Manager's AI features use — document extraction
+// (extract/route.ts) and the monthly report's executive summary
+// (reports/sendMonthlyReport.tsx) used to each hardcode their own separate
+// copy of this exact string. One shared, overridable knob instead, so both
+// move together if this version string ever stops resolving (see
+// console.anthropic.com/models).
+export const TASK_MANAGER_AI_MODEL = process.env.TASK_MANAGER_AI_MODEL ?? "claude-sonnet-4-5";
+
 // The main task table's column layout — checkbox, Task/Indicator, Owner,
 // Start Date, Due/Next Due, Status, actions. Shared by the desktop header
 // (TaskListView.tsx) and every desktop row that has to line up under it

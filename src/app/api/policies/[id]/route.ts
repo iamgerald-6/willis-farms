@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { v2 as cloudinary } from "cloudinary";
+import { CLOUDINARY_CLOUD_NAME } from "@/lib/cloudinary";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,7 +9,10 @@ const supabase = createClient(
 );
 
 cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!, // "dmvr8ooz1"
+  // Same shared cloud name every upload flow uses (src/lib/cloudinary.ts) —
+  // this previously read the env var directly with a non-null assertion,
+  // which would crash instead of falling back if it were ever unset.
+  cloud_name: CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY!,
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });

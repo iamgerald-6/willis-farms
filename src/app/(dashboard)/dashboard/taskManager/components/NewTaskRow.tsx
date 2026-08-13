@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
+import { maxDueDateForFrequency } from "@/lib/taskRecurrence";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
@@ -40,6 +41,12 @@ export default function NewTaskRow({
   // The due date picker's floor: never more than a year back, and never
   // earlier than whatever start date is already chosen.
   const dueMinDate = startDate && startDate > minDate ? startDate : minDate;
+  // The due date picker's ceiling, once a start date is chosen for a
+  // recurring task with a recognizable frequency — e.g. Daily only allows
+  // the due date to be the same day as the start date; Weekly allows up to
+  // 6 days after it. Undefined (no ceiling) otherwise.
+  const dueMaxDate =
+    startDate && (variant === "monitoring" || isRecurring) ? (maxDueDateForFrequency(startDate, frequency) ?? undefined) : undefined;
 
   const handleCreate = async () => {
     if (!title.trim()) {
@@ -117,6 +124,7 @@ export default function NewTaskRow({
               type="date"
               value={dueDate}
               min={dueMinDate}
+              max={dueMaxDate}
               onChange={(e) => setDueDate(e.target.value)}
               className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
             />
@@ -174,6 +182,7 @@ export default function NewTaskRow({
           type="date"
           value={dueDate}
           min={dueMinDate}
+          max={dueMaxDate}
           onChange={(e) => setDueDate(e.target.value)}
           title="Due date"
           className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"

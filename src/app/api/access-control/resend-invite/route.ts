@@ -6,9 +6,10 @@ import {
 } from "@/lib/apiRequestAuth";
 import {
   buildInviteEmail,
-  getAppUrl,
   sendViaResend,
 } from "@/lib/email/resendClient";
+import { getAppBaseUrl } from "@/lib/appUrl";
+import { isSuperAdmin } from "@/lib/accessControl";
 
 /**
  * Re-issues a setup email for a user who hasn't verified yet
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    if (target.role === "super_admin") {
+    if (isSuperAdmin(target.role)) {
       return NextResponse.json({ error: "Invalid target" }, { status: 403 });
     }
 
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const redirectTo = `${getAppUrl()}/set-password`;
+    const redirectTo = `${getAppBaseUrl()}/set-password`;
 
     let { data: linkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({

@@ -1,3 +1,5 @@
+import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+
 type ApplicationConfirmationParams = {
   fullName: string;
   email: string;
@@ -146,9 +148,7 @@ export async function sendApplicationConfirmationEmail(
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
 
-  const from =
-    process.env.RESEND_FROM_EMAIL ??
-    "Wills Farms Careers <onboarding@resend.dev>";
+  const from = getResendFromAddress("Wills Farms Careers");
 
   const { subject, html, text } = buildApplicationConfirmationEmail(params);
 
@@ -158,7 +158,7 @@ export async function sendApplicationConfirmationEmail(
     subject,
     html,
     text,
-    replyTo: process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com",
+    replyTo: getReplyToEmail(),
   });
 
   if (error) {

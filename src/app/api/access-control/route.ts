@@ -19,6 +19,7 @@ import {
   isMissingColumnError,
   updateUserWithColumnFallback,
 } from "@/lib/supabaseUserUpdate";
+import { isSuperAdmin } from "@/lib/accessControl";
 
 export async function PATCH(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -79,7 +80,7 @@ export async function PATCH(req: NextRequest) {
       return jsonForbidden("You cannot disable your own account.");
     }
 
-    if (target.role === "super_admin") {
+    if (isSuperAdmin(target.role)) {
       return NextResponse.json(
         { error: "Super admin access cannot be changed here." },
         { status: 403 },

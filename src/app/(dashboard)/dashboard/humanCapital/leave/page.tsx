@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { isFullRoleAccess } from "@/lib/pagePermissions";
 import LeavePage from "./components/LeavePag";
 import LeaveRequestsAdminPage from "./components/LeaveRequestsAdminPage";
 
@@ -30,8 +31,7 @@ const Leave = () => {
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
   const role = profile?.role ?? session?.user?.user_metadata?.role;
-  const isAdminOrManager =
-    role === "admin" || role === "super_admin" || role === "manager";
+  const isAdminOrManager = isFullRoleAccess(role);
 
   return (
     <div>

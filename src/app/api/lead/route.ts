@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { getResendSendingAddress } from "@/lib/email/resendClient";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -8,9 +9,17 @@ export async function POST(req: Request) {
     const data = await req.json();
 
     await resend.emails.send({
-      from: `${data.fullName}  <onboarding@resend.dev>`,
+      // The display NAME is deliberately the visitor's own name (so
+      // whoever reads this in their inbox sees who submitted it) — only
+      // the underlying send address comes from shared config, same as
+      // every other email in the app, instead of its own hardcoded copy
+      // of the sandbox address.
+      from: `${data.fullName} <${getResendSendingAddress()}>`,
       replyTo: data.email,
-      to: "geraldsix89@gmail.com",
+      // Falls back to today's recipient if LEAD_NOTIFICATION_EMAIL isn't
+      // set, so this keeps working exactly as before until someone
+      // deliberately configures a different inbox.
+      to: process.env.LEAD_NOTIFICATION_EMAIL ?? "geraldsix89@gmail.com",
       subject: `New ${data.leadType.toUpperCase()} Lead Submission`,
       html: `
         <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #fafafa;">

@@ -1,13 +1,37 @@
 import type { SendResult } from "@/lib/email/types";
 
-export function getAppUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+// The one place every "who does this email come from / go to by default"
+// value lives — every Resend-sending file in the app (careers, appraisal,
+// Task Manager) reads from here now instead of keeping its own hand-typed
+// copy of the same fallback strings, which is what let them drift (e.g.
+// Task Manager and careers each independently duplicating the sandbox
+// address, and one auth flow ending up with a weaker app-URL fallback than
+// everywhere else). See src/lib/appUrl.ts for the app base URL, which this
+// module intentionally does NOT duplicate.
+
+const DEFAULT_SENDING_ADDRESS = "onboarding@resend.dev";
+
+/**
+ * The raw sending address on its own (no display name) — for the one
+ * caller (the lead-capture form) that needs to build its own "Visitor Name
+ * <address>" from combo rather than a fixed label.
+ */
+export function getResendSendingAddress(): string {
+  const configured = process.env.RESEND_FROM_EMAIL;
+  if (!configured) return DEFAULT_SENDING_ADDRESS;
+  const match = configured.match(/<([^>]+)>/);
+  return match ? match[1] : configured;
 }
 
 export function getResendFromAddress(fallbackLabel = "Wills Farms"): string {
   return (
-    process.env.RESEND_FROM_EMAIL ?? `${fallbackLabel} <onboarding@resend.dev>`
+    process.env.RESEND_FROM_EMAIL ?? `${fallbackLabel} <${DEFAULT_SENDING_ADDRESS}>`
   );
+}
+
+/** Where a recipient's reply actually lands when they hit "Reply" — same value every sender should use. */
+export function getReplyToEmail(): string {
+  return process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com";
 }
 
 export async function sendViaResend(params: {
@@ -31,7 +55,7 @@ export async function sendViaResend(params: {
       subject: params.subject,
       html: params.html,
       text: params.text,
-      replyTo: process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com",
+      replyTo: getReplyToEmail(),
     });
     if (error) return { sent: false, error: error.message };
     return { sent: true };

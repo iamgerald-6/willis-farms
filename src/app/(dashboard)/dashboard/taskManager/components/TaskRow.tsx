@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Pencil, Archive, X, Check, History, CheckSquare, Square, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMTask, TMProject, TaskType } from "@/types/taskManager";
 import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
+import { maxDueDateForFrequency } from "@/lib/taskRecurrence";
 import { STATUS_STYLES } from "../statusStyles";
 import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 import OwnerSelect from "./OwnerSelect";
@@ -59,10 +61,27 @@ export default function TaskRow({
 
   const [savingProgress, setSavingProgress] = useState(false);
   const [subtasksOpen, setSubtasksOpen] = useState(false);
+  const queryClient = useQueryClient();
+  // Ticked/unticked instantly on click rather than waiting on the request to
+  // round-trip before the box visibly flips — see handleToggleTaskDone and
+  // the effect below that hands control back to the real data once it lands.
+  const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (optimisticDone !== null && (task.progress_percent >= 100) === optimisticDone) {
+      setOptimisticDone(null);
+    }
+  }, [task.progress_percent, optimisticDone]);
   const minDate = minTaskDate();
   // The due date picker's floor: never more than a year back, and never
   // earlier than whatever start date is already chosen.
   const dueMinDate = startDate && startDate > minDate ? startDate : minDate;
+  // The due date picker's ceiling, once a start date is chosen on a
+  // recurring task with a recognizable frequency — e.g. Daily only allows
+  // the due date to be the same day as the start date; Weekly allows up to
+  // 6 days after it. Undefined (no ceiling) for a non-recurring task, an
+  // unset frequency, or "Hourly" (see maxDueDateForFrequency).
+  const dueMaxDate =
+    startDate && (taskType === "monitoring" || isRecurring) ? (maxDueDateForFrequency(startDate, frequency) ?? undefined) : undefined;
 
   const status = task.display_status ?? "Not Started";
   const style = STATUS_STYLES[status];
@@ -181,9 +200,23 @@ export default function TaskRow({
   const handleToggleTaskDone = async () => {
     if (!canEditProgress || task.has_subtasks) return;
     const nextDone = task.progress_percent < 100;
+    setOptimisticDone(nextDone);
     setSavingProgress(true);
     try {
       const res = await api.patch(`/task-manager/tasks/${task.id}/progress`, { progress_percent: nextDone ? 100 : 0 });
+      // The response already carries the task's freshly recomputed state —
+      // write it straight into the cached list instead of only invalidating
+      // and waiting on a second round trip to re-fetch the same thing (that
+      // second round trip was the main reason a tick felt slow to register).
+      // Reading it back here also covers the recurring-task case correctly,
+      // where hitting 100 immediately resets progress to 0 for the new cycle.
+      if (res.data?.task) {
+        const updated = res.data.task;
+        queryClient.setQueriesData<{ tasks: TMTask[] }>({ queryKey: ["tm-tasks"] }, (old) =>
+          old ? { tasks: old.tasks.map((t) => (t.id === updated.id ? updated : t)) } : old,
+        );
+        setOptimisticDone(updated.progress_percent >= 100);
+      }
       if (nextDone) {
         toast.success(
           res.data?.recurred ? `Recurring task — next due date set to ${fmtDate(res.data.next_due_date)}` : "Marked complete",
@@ -191,6 +224,7 @@ export default function TaskRow({
       }
       onChanged();
     } catch (err: any) {
+      setOptimisticDone(null);
       toast.error(err?.response?.data?.error ?? "Failed to update progress");
     } finally {
       setSavingProgress(false);
@@ -229,6 +263,7 @@ export default function TaskRow({
                 type="date"
                 value={dueDate}
                 min={dueMinDate}
+                max={dueMaxDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="w-full border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
               />
@@ -315,6 +350,7 @@ export default function TaskRow({
             type="date"
             value={dueDate}
             min={dueMinDate}
+            max={dueMaxDate}
             onChange={(e) => setDueDate(e.target.value)}
             title="Due date"
             className="border-2 border-red-600 rounded-md px-2 py-1.5 text-sm focus:outline-none"
@@ -465,7 +501,7 @@ export default function TaskRow({
       {!task.has_subtasks && (
         <input
           type="checkbox"
-          checked={task.progress_percent >= 100}
+          checked={optimisticDone ?? (task.progress_percent >= 100)}
           disabled={!canEditProgress || savingProgress}
           onChange={handleToggleTaskDone}
           title={canEditProgress ? "Mark complete" : undefined}

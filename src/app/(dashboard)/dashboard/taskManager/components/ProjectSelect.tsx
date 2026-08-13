@@ -81,7 +81,7 @@ export default function ProjectSelect({
           text, and a rounded, inset blue highlight on the hovered row
           rather than a full-width bar. */}
       {open && (
-        <div className="absolute z-20 mt-2 w-full bg-[#3a3a3c] border border-[#4a4a4d] rounded-xl shadow-lg overflow-hidden">
+        <div className="absolute z-30 mt-2 w-full bg-[#3a3a3c] border border-[#4a4a4d] rounded-xl shadow-lg overflow-hidden">
           <div className="px-3.5 pt-3 pb-2">
             <p className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">
               Projects
