@@ -12,7 +12,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Clock,
-  Search,
+  ChevronDown,
   User,
   Calendar,
   Award,
@@ -361,7 +361,8 @@ function SignOffModal({
 export default function SkillLogsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
+  const [filterEmployee, setFilterEmployee] = useState<string>("all");
+  const [filterLogType, setFilterLogType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [signOffLog, setSignOffLog] = useState<SkillLog | null>(null);
@@ -471,16 +472,37 @@ export default function SkillLogsPage() {
     });
   }, [logs, userId, seeAll]);
 
+  // Dropdown options are built from the logs actually on screen, rather than
+  // a fixed/imported list — every option shown is guaranteed to match at
+  // least one visible log, and it stays in sync automatically as new log
+  // types or employees show up.
+  const employeeOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    visibleLogs.forEach((l) => {
+      const id = l.employee?.user_id ?? l.employee_id;
+      if (id) byId.set(id, employeeName(l));
+    });
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [visibleLogs]);
+
+  const logTypeOptions = useMemo(() => {
+    const types = new Set(visibleLogs.map((l) => l.log_type).filter(Boolean));
+    return Array.from(types).sort((a, b) => a.localeCompare(b));
+  }, [visibleLogs]);
+
   const filtered = useMemo(() => {
     return visibleLogs.filter((l) => {
-      const matchSearch =
-        !search ||
-        employeeName(l).toLowerCase().includes(search.toLowerCase()) ||
-        l.log_type.toLowerCase().includes(search.toLowerCase());
+      const empId = l.employee?.user_id ?? l.employee_id;
+      const matchEmployee =
+        filterEmployee === "all" || empId === filterEmployee;
+      const matchLogType =
+        filterLogType === "all" || l.log_type === filterLogType;
       const matchStatus = filterStatus === "all" || l.status === filterStatus;
-      return matchSearch && matchStatus;
+      return matchEmployee && matchLogType && matchStatus;
     });
-  }, [visibleLogs, search, filterStatus]);
+  }, [visibleLogs, filterEmployee, filterLogType, filterStatus]);
 
   const stats = useMemo(
     () => ({
@@ -551,16 +573,42 @@ export default function SkillLogsPage() {
 
       {/* ── Filters ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-5">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by employee or log type…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
+        <div className="relative w-full sm:w-56">
+          <select
+            aria-label="Filter by employee"
+            value={filterEmployee}
+            onChange={(e) => setFilterEmployee(e.target.value)}
+            className="w-full appearance-none pl-9 pr-8 py-2.5 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
             style={{ "--tw-ring-color": BRAND } as any}
-          />
+          >
+            <option value="all">All employees</option>
+            {employeeOptions.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+
+        <div className="relative w-full sm:w-56">
+          <select
+            aria-label="Filter by log type"
+            value={filterLogType}
+            onChange={(e) => setFilterLogType(e.target.value)}
+            className="w-full appearance-none pl-9 pr-8 py-2.5 text-sm rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
+            style={{ "--tw-ring-color": BRAND } as any}
+          >
+            <option value="all">All log types</option>
+            {logTypeOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <ClipboardList className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         </div>
 
         <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 overflow-x-auto">
