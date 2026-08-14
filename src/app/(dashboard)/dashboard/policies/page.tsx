@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -11,6 +11,7 @@ import {
   Eye,
   Clock,
   Search,
+  Check,
   BookOpen,
   Shield,
   ClipboardList,
@@ -80,6 +81,139 @@ const CATEGORY_COLORS: Record<ManualCategory, string> = {
   "Breeding Operations":
     "bg-purple-50 text-purple-700 border border-purple-200",
 };
+
+// ─── Category select ────────────────────────────────────────────────────────
+// Same trigger + dark searchable-dropdown chrome as the SOP page's
+// CategorySelect — click "Search" to open a category picker instead of
+// typing a free-text search; picking a category filters the manuals below.
+function CategorySelect({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: (ManualCategory | "All")[];
+  selected: ManualCategory | "All";
+  onSelect: (category: ManualCategory | "All") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter((c) => c.toLowerCase().includes(q));
+  }, [categories, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative w-full max-w-xl">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 w-full border border-gray-200 rounded-xl px-3.5 py-2.5 bg-white text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 transition"
+      >
+        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        <span
+          className={`flex-1 text-sm truncate ${selected === "All" ? "text-gray-400" : "text-gray-800 font-medium"}`}
+        >
+          {selected === "All" ? "Search categories" : selected}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-2 w-full bg-[#3a3a3c] border border-[#4a4a4d] rounded-xl shadow-lg overflow-hidden">
+          <div className="px-3.5 pt-3 pb-2">
+            <p className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">
+              Categories
+            </p>
+          </div>
+
+          <div className="px-2.5 pb-2.5">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#2c2c2e] border border-[#4a4a4d] focus-within:border-[#0a84ff]">
+              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search categories"
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto pb-1.5 px-1.5 border-t border-[#4a4a4d]">
+            <div className="pt-1.5 space-y-0.5">
+              <button
+                onClick={() => {
+                  onSelect("All");
+                  setOpen(false);
+                }}
+                className={`flex items-center justify-between gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-sm text-white transition hover:bg-[#0a84ff] ${
+                  selected === "All" ? "font-semibold" : "font-normal"
+                }`}
+              >
+                <span className="truncate">All Categories</span>
+                {selected === "All" && <Check className="w-4 h-4 shrink-0" />}
+              </button>
+            </div>
+            {filtered.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-gray-400">
+                No categories match &quot;{query}&quot;
+              </p>
+            ) : (
+              <div className="pt-0.5 space-y-0.5">
+                {filtered
+                  .filter((c): c is ManualCategory => c !== "All")
+                  .map((c) => {
+                    const active = c === selected;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          onSelect(c);
+                          setOpen(false);
+                        }}
+                        className={`flex items-center gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-sm text-white transition hover:bg-[#0a84ff] ${
+                          active ? "font-semibold" : "font-normal"
+                        }`}
+                      >
+                        <span className="shrink-0">{CATEGORY_ICONS[c]}</span>
+                        <span className="truncate flex-1">{c}</span>
+                        {active && <Check className="w-4 h-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -459,7 +593,6 @@ export default function PoliciesPage() {
   const [activeCategory, setActiveCategory] = useState<ManualCategory | "All">(
     "All",
   );
-  const [searchValue, setSearchValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
@@ -480,15 +613,10 @@ export default function PoliciesPage() {
 
   const manuals = data?.manuals ?? [];
 
-  const filtered = manuals.filter((m) => {
-    if (!searchValue) return true;
-    const q = searchValue.toLowerCase();
-    return (
-      m.title.toLowerCase().includes(q) ||
-      m.category.toLowerCase().includes(q) ||
-      m.description?.toLowerCase().includes(q)
-    );
-  });
+  // The API already filters by activeCategory server-side, so the fetched
+  // list is exactly what should render — no separate client-side filter step
+  // needed now that free-text search is gone.
+  const filtered = manuals;
 
   // ── Delete ──
   const { mutate: deleteManual, isPending: isDeleting } = useMutation({
@@ -506,16 +634,6 @@ export default function PoliciesPage() {
     },
   });
 
-  const categoryCounts = (
-    ["All", ...CATEGORIES] as (ManualCategory | "All")[]
-  ).map((c) => ({
-    label: c,
-    count:
-      c === "All"
-        ? manuals.length
-        : manuals.filter((m) => m.category === c).length,
-  }));
-
   return (
     <div className="p-4 sm:p-6 min-h-screen bg-gray-50 flex flex-col">
       {/* ── Header ── */}
@@ -532,72 +650,45 @@ export default function PoliciesPage() {
             </p>
           </div>
 
-          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 w-full sm:w-auto">
-            <div className="relative w-full xs:w-56">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search manuals..."
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 justify-between xs:justify-start">
-              {isAdmin && (
-                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white shrink-0">
-                  <button
-                    onClick={() => setViewMode("grid")}
-                    className={`p-2.5 text-sm transition ${viewMode === "grid" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
-                    title="Grid view"
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode("table")}
-                    className={`p-2.5 text-sm transition ${viewMode === "table" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
-                    title="Table view"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {isAdmin && (
+          <div className="flex items-center gap-2 justify-between xs:justify-start">
+            {isAdmin && (
+              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white shrink-0">
                 <button
-                  onClick={() => setUploadOpen(true)}
-                  className="bg-red-600 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-1 xs:flex-initial whitespace-nowrap"
+                  onClick={() => setViewMode("grid")}
+                  className={`p-2.5 text-sm transition ${viewMode === "grid" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
+                  title="Grid view"
                 >
-                  <Plus className="w-4 h-4" /> Upload Manual
+                  <Grid className="w-4 h-4" />
                 </button>
-              )}
-            </div>
+                <button
+                  onClick={() => setViewMode("table")}
+                  className={`p-2.5 text-sm transition ${viewMode === "table" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
+                  title="Table view"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => setUploadOpen(true)}
+                className="bg-red-600 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-1 xs:flex-initial whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" /> Upload Manual
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Category Tabs ── */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 sm:mb-6 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 shrink-0">
-        {categoryCounts.map(({ label, count }) => (
-          <button
-            key={label}
-            onClick={() => setActiveCategory(label as ManualCategory | "All")}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition border whitespace-nowrap ${
-              activeCategory === label
-                ? "bg-red-600 text-white border-red-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-red-300 hover:text-red-600"
-            }`}
-          >
-            {label !== "All" && CATEGORY_ICONS[label as ManualCategory]}
-            {label}
-            <span
-              className={`text-xs font-mono ml-0.5 ${activeCategory === label ? "text-red-200" : "text-gray-400"}`}
-            >
-              {count}
-            </span>
-          </button>
-        ))}
+      {/* ── Category select (centered, matching the SOP browse page) ── */}
+      <div className="flex justify-center mb-6 shrink-0">
+        <CategorySelect
+          categories={["All", ...CATEGORIES]}
+          selected={activeCategory}
+          onSelect={setActiveCategory}
+        />
       </div>
 
       {/* ── Content (Fills vertical viewport evenly to block empty spaces) ── */}
