@@ -30,13 +30,15 @@ import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ManualCategory =
-  | "HR"
-  | "Biosecurity"
-  | "Finance Policies"
-  | "Breeding Operations";
+// The four original categories still get a dedicated icon/colour and are
+// always offered as filter options (see categoryOptions below), but the
+// database no longer restricts `category` to just these — manuals can be
+// uploaded under any custom category (see docs/policies/allow-custom-manual-
+// categories.sql), so this is a plain string everywhere now, not a fixed
+// union.
+type ManualCategory = string;
 
-const CATEGORIES: ManualCategory[] = [
+const BUILT_IN_CATEGORIES = [
   "HR",
   "Biosecurity",
   "Finance Policies",
@@ -67,20 +69,26 @@ interface Manual {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORY_ICONS: Record<ManualCategory, React.ReactNode> = {
+// Only the four built-in categories get a specific icon/colour — anything
+// custom (e.g. "Fire Service") falls back to a generic tag look via the
+// DEFAULT_* values and the `?? fallback` lookups at each call site below.
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   HR: <BookOpen className="w-4 h-4" />,
   Biosecurity: <Shield className="w-4 h-4" />,
   "Finance Policies": <ClipboardList className="w-4 h-4" />,
   "Breeding Operations": <Tag className="w-4 h-4" />,
 };
+const DEFAULT_CATEGORY_ICON = <Tag className="w-4 h-4" />;
 
-const CATEGORY_COLORS: Record<ManualCategory, string> = {
+const CATEGORY_COLORS: Record<string, string> = {
   HR: "bg-blue-50 text-blue-700 border border-blue-200",
   Biosecurity: "bg-green-50 text-green-700 border border-green-200",
   "Finance Policies": "bg-amber-50 text-amber-700 border border-amber-200",
   "Breeding Operations":
     "bg-purple-50 text-purple-700 border border-purple-200",
 };
+const DEFAULT_CATEGORY_COLOR =
+  "bg-gray-100 text-gray-600 border border-gray-200";
 
 // ─── Category select ────────────────────────────────────────────────────────
 // Same trigger + dark searchable-dropdown chrome as the SOP page's
@@ -91,9 +99,9 @@ function CategorySelect({
   selected,
   onSelect,
 }: {
-  categories: (ManualCategory | "All")[];
-  selected: ManualCategory | "All";
-  onSelect: (category: ManualCategory | "All") => void;
+  categories: string[];
+  selected: string;
+  onSelect: (category: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -186,7 +194,7 @@ function CategorySelect({
             ) : (
               <div className="pt-0.5 space-y-0.5">
                 {filtered
-                  .filter((c): c is ManualCategory => c !== "All")
+                  .filter((c) => c !== "All")
                   .map((c) => {
                     const active = c === selected;
                     return (
@@ -200,7 +208,9 @@ function CategorySelect({
                           active ? "font-semibold" : "font-normal"
                         }`}
                       >
-                        <span className="shrink-0">{CATEGORY_ICONS[c]}</span>
+                        <span className="shrink-0">
+                          {CATEGORY_ICONS[c] ?? DEFAULT_CATEGORY_ICON}
+                        </span>
                         <span className="truncate flex-1">{c}</span>
                         {active && <Check className="w-4 h-4 shrink-0" />}
                       </button>
@@ -324,9 +334,9 @@ function ManualCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category] ?? DEFAULT_CATEGORY_COLOR}`}
             >
-              {CATEGORY_ICONS[manual.category]}
+              {CATEGORY_ICONS[manual.category] ?? DEFAULT_CATEGORY_ICON}
               {manual.category}
             </span>
             <span className="text-xs text-gray-400">
@@ -416,9 +426,9 @@ function AdminTableView({
 
                 <div className="flex flex-wrap items-center gap-2 justify-between border-t border-b border-gray-50 py-2">
                   <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category] ?? DEFAULT_CATEGORY_COLOR}`}
                   >
-                    {CATEGORY_ICONS[manual.category]}
+                    {CATEGORY_ICONS[manual.category] ?? DEFAULT_CATEGORY_ICON}
                     {manual.category}
                   </span>
                   <span className="text-xs text-gray-500">
@@ -511,9 +521,9 @@ function AdminTableView({
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category] ?? DEFAULT_CATEGORY_COLOR}`}
                       >
-                        {CATEGORY_ICONS[manual.category]}
+                        {CATEGORY_ICONS[manual.category] ?? DEFAULT_CATEGORY_ICON}
                         {manual.category}
                       </span>
                     </td>
@@ -590,9 +600,7 @@ export default function PoliciesPage() {
     currentUserRole === "manager";
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-  const [activeCategory, setActiveCategory] = useState<ManualCategory | "All">(
-    "All",
-  );
+  const [activeCategory, setActiveCategory] = useState<string>("All");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
@@ -601,22 +609,38 @@ export default function PoliciesPage() {
   }>({ open: false, manualId: "", label: "" });
 
   // ── Fetch manuals ──
+  // Always fetch the full unfiltered list now — categories aren't a fixed
+  // set any more (see docs/policies/allow-custom-manual-categories.sql), so
+  // the category filter is applied client-side below, the same way it
+  // drives the dynamic category dropdown options.
   const { data, refetch, isLoading } = useQuery<{ manuals: Manual[] }>({
-    queryKey: ["polices", activeCategory],
+    queryKey: ["polices"],
     queryFn: async () => {
-      const params =
-        activeCategory !== "All" ? { category: activeCategory } : {};
-      const res = await api.get("/policies/get_policies", { params });
+      const res = await api.get("/policies/get_policies");
       return res.data;
     },
   });
 
   const manuals = data?.manuals ?? [];
 
-  // The API already filters by activeCategory server-side, so the fetched
-  // list is exactly what should render — no separate client-side filter step
-  // needed now that free-text search is gone.
-  const filtered = manuals;
+  // Built-in categories are always offered even with zero manuals in them
+  // yet; anything else (custom categories actually used, e.g. "Fire
+  // Service") is picked up automatically from the fetched data — mirrors
+  // the Skill Log page's employee/log-type filter dropdowns.
+  const categoryOptions = useMemo(() => {
+    const fromData = manuals.map((m) => m.category).filter(Boolean);
+    return Array.from(new Set([...BUILT_IN_CATEGORIES, ...fromData])).sort(
+      (a, b) => a.localeCompare(b),
+    );
+  }, [manuals]);
+
+  const filtered = useMemo(
+    () =>
+      manuals.filter(
+        (m) => activeCategory === "All" || m.category === activeCategory,
+      ),
+    [manuals, activeCategory],
+  );
 
   // ── Delete ──
   const { mutate: deleteManual, isPending: isDeleting } = useMutation({
@@ -685,7 +709,7 @@ export default function PoliciesPage() {
       {/* ── Category select (centered, matching the SOP browse page) ── */}
       <div className="flex justify-center mb-6 shrink-0">
         <CategorySelect
-          categories={["All", ...CATEGORIES]}
+          categories={["All", ...categoryOptions]}
           selected={activeCategory}
           onSelect={setActiveCategory}
         />
