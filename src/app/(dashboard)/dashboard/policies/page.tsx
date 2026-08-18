@@ -12,10 +12,6 @@ import {
   Clock,
   Search,
   Check,
-  BookOpen,
-  Shield,
-  ClipboardList,
-  Tag,
   Grid,
   List,
 } from "lucide-react";
@@ -27,21 +23,15 @@ import { User } from "@/types";
 import ConfirmDeleteDialog from "./components/deletModal";
 import UploadManualModal from "./components/uploadModal";
 import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
+import {
+  getPolicyCategoryBadgeClass,
+  getPolicyCategoryFilterPills,
+  getPolicyCategoryIconKey,
+  POLICIES_PAGE_COPY,
+  resolveNavIcon,
+} from "@/lib/moduleRegistry";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type ManualCategory =
-  | "HR"
-  | "Biosecurity"
-  | "Finance Policies"
-  | "Breeding Operations";
-
-const CATEGORIES: ManualCategory[] = [
-  "HR",
-  "Biosecurity",
-  "Finance Policies",
-  "Breeding Operations",
-];
 
 interface ManualVersion {
   version_id: string;
@@ -58,42 +48,49 @@ interface ManualVersion {
 interface Manual {
   manual_id: string;
   title: string;
-  category: ManualCategory;
+  category: string;
   description: string | null;
   created_at: string;
   updated_at: string;
   versions: ManualVersion[];
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+const POLICY_FILTER_PILLS = getPolicyCategoryFilterPills();
 
-const CATEGORY_ICONS: Record<ManualCategory, React.ReactNode> = {
-  HR: <BookOpen className="w-4 h-4" />,
-  Biosecurity: <Shield className="w-4 h-4" />,
-  "Finance Policies": <ClipboardList className="w-4 h-4" />,
-  "Breeding Operations": <Tag className="w-4 h-4" />,
-};
+function PolicyCategoryBadge({ category }: { category: string }) {
+  const iconKey = getPolicyCategoryIconKey(category);
+  const Icon = iconKey ? resolveNavIcon(iconKey) : null;
 
-const CATEGORY_COLORS: Record<ManualCategory, string> = {
-  HR: "bg-blue-50 text-blue-700 border border-blue-200",
-  Biosecurity: "bg-green-50 text-green-700 border border-green-200",
-  "Finance Policies": "bg-amber-50 text-amber-700 border border-amber-200",
-  "Breeding Operations":
-    "bg-purple-50 text-purple-700 border border-purple-200",
-};
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${getPolicyCategoryBadgeClass(category)}`}
+    >
+      {Icon && <Icon className="w-4 h-4" />}
+      {category}
+    </span>
+  );
+}
+
+function PolicyCategoryTabIcon({ label }: { label: string }) {
+  if (label === "All") return null;
+  const iconKey = getPolicyCategoryIconKey(label);
+  if (!iconKey) return null;
+  const Icon = resolveNavIcon(iconKey);
+  return <Icon className="w-4 h-4" />;
+}
 
 // ─── Category select ────────────────────────────────────────────────────────
-// Same trigger + dark searchable-dropdown chrome as the SOP page's
-// CategorySelect — click "Search" to open a category picker instead of
-// typing a free-text search; picking a category filters the manuals below.
+// Searchable dropdown for picking a category to browse by — same dark
+// dropdown chrome as the SOP page's CategorySelect. Categories/icons come
+// from the module registry taxonomy rather than a hardcoded list.
 function CategorySelect({
   categories,
   selected,
   onSelect,
 }: {
-  categories: (ManualCategory | "All")[];
-  selected: ManualCategory | "All";
-  onSelect: (category: ManualCategory | "All") => void;
+  categories: string[];
+  selected: string;
+  onSelect: (category: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -186,7 +183,7 @@ function CategorySelect({
             ) : (
               <div className="pt-0.5 space-y-0.5">
                 {filtered
-                  .filter((c): c is ManualCategory => c !== "All")
+                  .filter((c) => c !== "All")
                   .map((c) => {
                     const active = c === selected;
                     return (
@@ -200,7 +197,9 @@ function CategorySelect({
                           active ? "font-semibold" : "font-normal"
                         }`}
                       >
-                        <span className="shrink-0">{CATEGORY_ICONS[c]}</span>
+                        <span className="shrink-0">
+                          <PolicyCategoryTabIcon label={c} />
+                        </span>
                         <span className="truncate flex-1">{c}</span>
                         {active && <Check className="w-4 h-4 shrink-0" />}
                       </button>
@@ -214,6 +213,8 @@ function CategorySelect({
     </div>
   );
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -323,12 +324,7 @@ function ManualCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
-            >
-              {CATEGORY_ICONS[manual.category]}
-              {manual.category}
-            </span>
+            <PolicyCategoryBadge category={manual.category} />
             <span className="text-xs text-gray-400">
               {manual.versions.length} version
               {manual.versions.length !== 1 ? "s" : ""}
@@ -415,12 +411,7 @@ function AdminTableView({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 justify-between border-t border-b border-gray-50 py-2">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
-                  >
-                    {CATEGORY_ICONS[manual.category]}
-                    {manual.category}
-                  </span>
+                  <PolicyCategoryBadge category={manual.category} />
                   <span className="text-xs text-gray-500">
                     Versions:{" "}
                     <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
@@ -510,12 +501,7 @@ function AdminTableView({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[manual.category]}`}
-                      >
-                        {CATEGORY_ICONS[manual.category]}
-                        {manual.category}
-                      </span>
+                      <PolicyCategoryBadge category={manual.category} />
                     </td>
                     <td className="px-4 py-3">
                       <a
@@ -590,9 +576,8 @@ export default function PoliciesPage() {
     currentUserRole === "manager";
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
-  const [activeCategory, setActiveCategory] = useState<ManualCategory | "All">(
-    "All",
-  );
+  const [activeCategory, setActiveCategory] = useState<string>("All");
+  const [searchValue, setSearchValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
@@ -613,10 +598,17 @@ export default function PoliciesPage() {
 
   const manuals = data?.manuals ?? [];
 
-  // The API already filters by activeCategory server-side, so the fetched
-  // list is exactly what should render — no separate client-side filter step
-  // needed now that free-text search is gone.
-  const filtered = manuals;
+  // Category is filtered server-side (see queryKey above); the search box
+  // still needs a client-side pass over title/category/description.
+  const filtered = manuals.filter((m) => {
+    if (!searchValue) return true;
+    const q = searchValue.toLowerCase();
+    return (
+      m.title.toLowerCase().includes(q) ||
+      m.category.toLowerCase().includes(q) ||
+      m.description?.toLowerCase().includes(q)
+    );
+  });
 
   // ── Delete ──
   const { mutate: deleteManual, isPending: isDeleting } = useMutation({
@@ -641,7 +633,7 @@ export default function PoliciesPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">
-              Procedures & Policies
+              {POLICIES_PAGE_COPY.title}
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
               {manuals.length} manual{manuals.length !== 1 ? "s" : ""} ·{" "}
@@ -650,34 +642,47 @@ export default function PoliciesPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 justify-between xs:justify-start">
-            {isAdmin && (
-              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white shrink-0">
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`p-2.5 text-sm transition ${viewMode === "grid" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
-                  title="Grid view"
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode("table")}
-                  className={`p-2.5 text-sm transition ${viewMode === "table" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
-                  title="Table view"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+          <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 w-full sm:w-auto">
+            <div className="relative w-full xs:w-56">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder={POLICIES_PAGE_COPY.searchPlaceholder}
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
+              />
+            </div>
 
-            {isAdmin && (
-              <button
-                onClick={() => setUploadOpen(true)}
-                className="bg-red-600 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-1 xs:flex-initial whitespace-nowrap"
-              >
-                <Plus className="w-4 h-4" /> Upload Manual
-              </button>
-            )}
+            <div className="flex items-center gap-2 justify-between xs:justify-start">
+              {isAdmin && (
+                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white shrink-0">
+                  <button
+                    onClick={() => setViewMode("grid")}
+                    className={`p-2.5 text-sm transition ${viewMode === "grid" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
+                    title="Grid view"
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode("table")}
+                    className={`p-2.5 text-sm transition ${viewMode === "table" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}
+                    title="Table view"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={() => setUploadOpen(true)}
+                  className="bg-red-600 text-white flex items-center justify-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-1 xs:flex-initial whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" /> {POLICIES_PAGE_COPY.uploadButton}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -685,7 +690,7 @@ export default function PoliciesPage() {
       {/* ── Category select (centered, matching the SOP browse page) ── */}
       <div className="flex justify-center mb-6 shrink-0">
         <CategorySelect
-          categories={["All", ...CATEGORIES]}
+          categories={POLICY_FILTER_PILLS}
           selected={activeCategory}
           onSelect={setActiveCategory}
         />
@@ -706,12 +711,12 @@ export default function PoliciesPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-16 text-center flex-1 flex flex-col items-center justify-center min-h-[320px]">
             <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 font-medium text-sm sm:text-base">
-              No manuals found
+              {POLICIES_PAGE_COPY.emptyTitle}
             </p>
             <p className="text-xs sm:text-sm text-gray-400 mt-1">
               {isAdmin
-                ? "Upload a manual to get started."
-                : "No manuals have been published yet."}
+                ? POLICIES_PAGE_COPY.emptyAdminDescription
+                : POLICIES_PAGE_COPY.emptyUserDescription}
             </p>
           </div>
         ) : (

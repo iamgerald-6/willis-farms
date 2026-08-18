@@ -24,15 +24,7 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
-
-// ─── Category badge colours ───────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  SOP: "bg-blue-50 text-blue-700 border border-blue-200",
-  Clinical: "bg-purple-50 text-purple-700 border border-purple-200",
-  Training: "bg-amber-50 text-amber-700 border border-amber-200",
-  HR: "bg-green-50 text-green-700 border border-green-200",
-  "Health & Safety": "bg-red-50 text-red-700 border border-red-200",
-};
+import { getSopCategoryBadgeClass } from "@/lib/moduleRegistry";
 
 // ─── Media badge ──────────────────────────────────────────────────────────────
 function MediaBadge({ content }: { content: Content }) {
@@ -418,10 +410,7 @@ export default function SOPManagementPage({
 
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span
-                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        CATEGORY_COLORS[c.category] ??
-                        "bg-gray-100 text-gray-600 border border-gray-200"
-                      }`}
+                      className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getSopCategoryBadgeClass(c.category)}`}
                     >
                       {c.category}
                     </span>
@@ -610,10 +599,7 @@ export default function SOPManagementPage({
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            CATEGORY_COLORS[c.category] ??
-                            "bg-gray-100 text-gray-600 border border-gray-200"
-                          }`}
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getSopCategoryBadgeClass(c.category)}`}
                         >
                           {c.category}
                         </span>

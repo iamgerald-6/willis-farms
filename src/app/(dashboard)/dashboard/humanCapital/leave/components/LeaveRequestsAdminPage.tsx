@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, Hourglass, Loader2, X } from "lucide-react";
+import { CheckCircle2, XCircle, Hourglass, Loader2, X, FileText } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LeaveRequest {
@@ -21,6 +21,7 @@ interface LeaveRequest {
   total_days: number;
   status: "pending" | "approved" | "rejected";
   admin_note: string | null;
+  document_url: string | null;
   created_at: string;
   reviewed_by: string | null;
   reviewed_by_name: string | null;
@@ -43,6 +44,20 @@ const reviewSchema = z.object({
   admin_note: z.string().optional(),
 });
 type ReviewFormValues = z.infer<typeof reviewSchema>;
+
+function DocumentLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+    >
+      <FileText className="w-3.5 h-3.5" />
+      View document
+    </a>
+  );
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
@@ -165,6 +180,12 @@ function ReviewModal({
               </span>
             </div>
           )}
+          {request.document_url && (
+            <div className="flex justify-between gap-4 items-center">
+              <span className="text-gray-500 flex-shrink-0">Document</span>
+              <DocumentLink url={request.document_url} />
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -270,6 +291,14 @@ function LeaveCard({
           <div className="col-span-2">
             <p className="text-gray-400">Reason</p>
             <p className="font-medium text-gray-700 mt-0.5">{r.reason}</p>
+          </div>
+        )}
+        {r.document_url && (
+          <div className="col-span-2">
+            <p className="text-gray-400">Document</p>
+            <div className="mt-0.5">
+              <DocumentLink url={r.document_url} />
+            </div>
           </div>
         )}
         {r.admin_note && r.status !== "pending" && (
@@ -412,6 +441,7 @@ export default function LeaveRequestsAdminPage() {
               <th className="px-4 py-3 font-semibold text-gray-600">To</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Days</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Reason</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Doc</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">
                 Action
@@ -422,7 +452,7 @@ export default function LeaveRequestsAdminPage() {
             {isLoading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-b border-gray-100 animate-pulse">
-                  {[...Array(8)].map((_, j) => (
+                  {[...Array(9)].map((_, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-4 bg-gray-100 rounded w-3/4" />
                     </td>
@@ -432,7 +462,7 @@ export default function LeaveRequestsAdminPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   No {filter === "all" ? "" : filter} leave requests found.
@@ -466,6 +496,13 @@ export default function LeaveRequestsAdminPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs max-w-[140px] truncate">
                       {r.reason ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.document_url ? (
+                        <DocumentLink url={r.document_url} />
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span

@@ -27,7 +27,7 @@ create table if not exists public.job_applications (
   cv_url text,
   cv_public_id text,
   status text not null default 'applied'
-    check (status in ('applied','under_review','shortlisted','interview','offer','rejected')),
+    check (status in ('applied','under_review','shortlisted','interview','hold','onboarding','offer','rejected')),
   hr_notes text,
   interview_form_data jsonb not null default '{}'::jsonb,
   interview_submitted_at timestamptz,
@@ -101,7 +101,9 @@ If `RESEND_API_KEY` is missing, the application is still saved but no email is s
 | `under_review` | HR is screening |
 | `shortlisted` | Invited — interview guide unlocks in dashboard |
 | `interview` | Panel interview in progress |
-| `offer` | Offer extended |
+| `hold` | Panel decision — reserve / pending |
+| `onboarding` | Hire confirmed — candidate completing onboarding |
+| `offer` | Onboarding complete / offer stage |
 | `rejected` | Not proceeding |
 
 ---
@@ -114,7 +116,12 @@ If `RESEND_API_KEY` is missing, the application is still saved but no email is s
 | `GET /api/careers/applications` | HR inbox list |
 | `PATCH /api/careers/applications` | Update status / HR notes |
 | `GET /api/careers/interview?application_id=` | Fetch interview evaluation |
-| `POST /api/careers/interview` | Save staged interview (actions: `save_draft`, `send_panel_invites`, `schedule_stage2`, `complete_stage2`, `finalize`) |
+| `POST /api/careers/interview` | Save staged interview (actions: `save_draft`, `send_panel_invites`, `schedule_stage2`, `complete_stage2`, `finalize`, `confirm_decision`) |
+| `GET/POST /api/careers/onboarding/[token]` | Public onboarding magic link |
+| `GET/PATCH /api/careers/onboarding` | HR onboarding list + HR-only fields |
+| `POST /api/careers/onboarding/resend` | Resend 7-day onboarding link |
+
+Run `docs/careers/onboarding.sql` after the base schema to add `hold` / `onboarding` statuses and onboarding tables.
 
 ### Staged interview flow
 

@@ -109,6 +109,30 @@ alter table public.appraisals add constraint appraisals_status_check
   check (status in ('draft', 'submitted', 'open', 'final_reviewed', 'locked', 'reopened', 'completed'));
 ```
 
+### 1b) `promotion_readiness` — Quarterly vs Annual
+
+Promotion Readiness is collected only on the **Annual** review (Q4 in the
+database). Q1–Q3 must not require or write this field.
+
+If submitting a **Quarterly** appraisal fails with:
+
+```
+null value in column "promotion_readiness" of relation "appraisals" violates not-null constraint
+```
+
+run:
+
+```sql
+alter table public.appraisals
+  alter column promotion_readiness drop not null;
+```
+
+The allowed-value CHECK (when a value is present) stays. The API still
+requires `promotion_readiness` on Annual submit only.
+
+> Same statement is in `docs/system-definitions/appraisal.sql` if you use
+> System Definitions migrations.
+
 > `deadline_at` = quarter end + **10 days** (lock date). Reminders fire at
 > **15 / 7 / 1 days before quarter end**, then a **one-time notice** on the
 > first day after quarter end. If a supervisor appeal is **approved**, the

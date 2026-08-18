@@ -12,6 +12,9 @@ import {
   resolveAccessProfile,
   type AccessProfile,
 } from "@/lib/pagePermissions";
+import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import type { PermissionAction } from "@/lib/moduleRegistry/types";
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -33,6 +36,7 @@ export interface ApiRequestUser {
   access_tier?: string | null;
   page_permissions?: string[] | null;
   page_permission_levels?: AccessProfile["page_permission_levels"];
+  page_permission_actions?: AccessProfile["page_permission_actions"];
 }
 
 let _admin: SupabaseClient | null = null;
@@ -78,7 +82,7 @@ export async function getApiRequestUser(
   const { data: profile } = await supabaseAdmin
     .from("users")
     .select(
-      "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels",
+      "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
     )
     .eq("user_id", authUser.id)
     .maybeSingle();
@@ -102,6 +106,7 @@ export async function getApiRequestUser(
     access_tier: profile?.access_tier ?? null,
     page_permissions: profile?.page_permissions ?? null,
     page_permission_levels: profile?.page_permission_levels ?? null,
+    page_permission_actions: profile?.page_permission_actions ?? null,
   };
 }
 
@@ -113,6 +118,7 @@ function callerAccessProfile(user: ApiRequestUser): AccessProfile {
       access_tier: user.access_tier,
       page_permissions: user.page_permissions,
       page_permission_levels: user.page_permission_levels,
+      page_permission_actions: user.page_permission_actions,
     },
     user.role,
   )!;
@@ -148,12 +154,87 @@ export async function requireSeniorManagement(
   return user;
 }
 
+/** System Definitions — permission matrix (sys:definitions). Pass one action or any-of. */
+export async function requireSystemDefinitionsAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "edit",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(
+      profile,
+      "sys:definitions",
+      action,
+      user.role,
+      presets,
+    ),
+  );
+  if (!ok) return null;
+  return user;
+}
+
 export async function requireFullAppraisalAccess(
   req: NextRequest,
 ): Promise<ApiRequestUser | null> {
   const user = await getApiRequestUser(req);
   if (!user || !hasFullAppraisalAccess(user.role, user.grade_level)) return null;
   return user;
+}
+
+export type SkillLogAuthContext = {
+  user: ApiRequestUser;
+  profile: AccessProfile;
+  presets: Awaited<ReturnType<typeof fetchGroupPresetsFromDb>>["presets"];
+};
+
+/** Resolve caller profile + group presets for skill log record checks. */
+export async function getSkillLogAuthContext(
+  req: NextRequest,
+): Promise<SkillLogAuthContext | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  return {
+    user,
+    profile: callerAccessProfile(user),
+    presets,
+  };
+}
+
+/** Skill Logs — permission matrix (hc:skillLog). Pass one action or any-of. */
+export async function requireSkillLogAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "view",
+): Promise<SkillLogAuthContext | null> {
+  const ctx = await getSkillLogAuthContext(req);
+  if (!ctx) return null;
+
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(
+      ctx.profile,
+      "hc:skillLog",
+      action,
+      ctx.user.role,
+      ctx.presets,
+    ),
+  );
+  if (!ok) return null;
+  return ctx;
 }
 
 export function canAccessAppraisalRecord(

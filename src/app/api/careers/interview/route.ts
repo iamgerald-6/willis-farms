@@ -3,18 +3,34 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   computeWeightedScore,
   getInterviewGuide,
+  buildCandidatePracticalExpectations,
 } from "@/lib/careers/interviewFormConfigs";
 import {
   sendAllPanelInvites,
+  sendInterviewInvitationEmail,
   sendStage2ScheduleEmail,
+  sendHireOnboardingEmail,
+  sendRejectionEmail,
 } from "@/lib/careers/interviewEmails";
+import { onboardingMagicLinkUrl } from "@/lib/appUrl";
+import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
+import {
+  validatePanelDecision,
+  statusForDecision,
+} from "@/lib/careers/panelDecision";
 import { getOpeningBySlug } from "@/lib/careers/openings";
 import {
   normalizeInterviewFormData,
   type InterviewFormData,
 } from "@/lib/careers/types";
 
-const INTERVIEW_STATUSES = new Set(["shortlisted", "interview", "offer"]);
+const INTERVIEW_STATUSES = new Set([
+  "shortlisted",
+  "interview",
+  "hold",
+  "onboarding",
+  "offer",
+]);
 
 type InterviewAction =
   | "save_draft"
@@ -22,7 +38,8 @@ type InterviewAction =
   | "complete_stage1"
   | "schedule_stage2"
   | "complete_stage2"
-  | "finalize";
+  | "finalize"
+  | "confirm_decision";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -188,12 +205,31 @@ export async function POST(req: NextRequest) {
         emailWarnings.push(...inviteResult.failed);
       }
 
+      const candidateInviteResult = await sendInterviewInvitationEmail({
+        candidateName: application.full_name,
+        candidateEmail: application.email,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+        interviewStartAt: setup.interview_start_at,
+        location: setup.location,
+      });
+
+      if (!candidateInviteResult.sent) {
+        emailWarnings.push(
+          candidateInviteResult.error ??
+            "Candidate interview invitation email not sent",
+        );
+      }
+
       merged = {
         ...merged,
         setup: {
           ...setup,
           members: validMembers,
           invites_sent_at: new Date().toISOString(),
+          candidate_invite_sent_at: candidateInviteResult.sent
+            ? new Date().toISOString()
+            : setup.candidate_invite_sent_at,
         },
         current_stage: 1,
       };
@@ -223,6 +259,7 @@ export async function POST(req: NextRequest) {
         scheduledAt: stage2_scheduled_at,
         location: merged.setup?.location,
         stage2Duration: guide.stageDurations.stage2,
+        practicalExpectations: buildCandidatePracticalExpectations(guide),
       });
 
       if (!scheduleResult.sent) {
@@ -271,10 +308,98 @@ export async function POST(req: NextRequest) {
     };
 
     if (action === "finalize") {
+      const decision = merged.summary?.decision;
+      if (!decision) {
+        return NextResponse.json(
+          { error: "Select a panel decision before submitting the interview." },
+          { status: 400 },
+        );
+      }
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
       if (application.status === "shortlisted") {
         updates.status = "interview";
+      }
+    } else if (action === "confirm_decision") {
+      if (!application.interview_submitted_at) {
+        return NextResponse.json(
+          { error: "Submit the interview evaluation before confirming the outcome." },
+          { status: 400 },
+        );
+      }
+      if (merged.summary?.decision_confirmed_at) {
+        return NextResponse.json(
+          { error: "Outcome has already been confirmed for this application." },
+          { status: 400 },
+        );
+      }
+
+      const decision = merged.summary?.decision;
+      const validationError = validatePanelDecision(
+        decision,
+        merged.summary?.total_weighted,
+      );
+      if (validationError || !decision) {
+        return NextResponse.json(
+          { error: validationError ?? "Invalid decision." },
+          { status: 400 },
+        );
+      }
+
+      const confirmedAt = new Date().toISOString();
+      merged = {
+        ...merged,
+        summary: {
+          ...merged.summary,
+          decision_confirmed_at: confirmedAt,
+          decision_confirmed_by: submitted_by ?? undefined,
+        },
+      };
+      updates.interview_form_data = merged;
+      updates.status = statusForDecision(decision);
+
+      if (decision === "hire") {
+        const tokenRecord = await createOnboardingToken(
+          supabaseAdmin,
+          application_id,
+        );
+        const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
+
+        await supabaseAdmin.from("onboarding_submissions").upsert(
+          {
+            application_id,
+            token_id: tokenRecord.id,
+            form_data: {},
+            hr_data: {},
+          },
+          { onConflict: "application_id" },
+        );
+
+        const hireResult = await sendHireOnboardingEmail({
+          candidateName: application.full_name,
+          candidateEmail: application.email,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+          onboardingLink,
+          expiresAt: tokenRecord.expiresAt,
+          recommendedStartDate: merged.summary?.recommended_start_date,
+        });
+
+        if (!hireResult.sent) {
+          emailWarnings.push(
+            hireResult.error ?? "Hire / onboarding email not sent",
+          );
+        }
+      } else if (decision === "do_not_hire") {
+        const rejectResult = await sendRejectionEmail({
+          candidateName: application.full_name,
+          candidateEmail: application.email,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+        });
+        if (!rejectResult.sent) {
+          emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
+        }
       }
     } else if (
       action === "send_panel_invites" &&

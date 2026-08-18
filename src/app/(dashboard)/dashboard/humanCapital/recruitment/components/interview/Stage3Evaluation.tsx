@@ -5,11 +5,18 @@ import {
   RATING_LABELS,
 } from "@/lib/careers/interviewFormConfigs";
 import {
+  canConfirmHire,
+  observedDisqualifiers,
+  scoreStanding,
+  standingLabel,
+} from "@/lib/careers/panelDecision";
+import {
   PANEL_DECISIONS,
   type InterviewFormData,
   type PanelDecision,
 } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { AlertTriangle } from "lucide-react";
 import { StageInfoBanner } from "./shared";
 
 type Props = {
@@ -17,6 +24,15 @@ type Props = {
   formData: InterviewFormData;
   scores: ReturnType<typeof computeWeightedScore>;
   onChange: (data: InterviewFormData) => void;
+  readOnly?: boolean;
+};
+
+const STANDING_CLASSES: Record<string, string> = {
+  strong_hire: "text-green-800 bg-green-100",
+  hire: "text-blue-800 bg-blue-100",
+  hold: "text-amber-800 bg-amber-100",
+  do_not_hire: "text-red-800 bg-red-100",
+  incomplete: "text-gray-600 bg-gray-100",
 };
 
 export default function Stage3Evaluation({
@@ -24,12 +40,14 @@ export default function Stage3Evaluation({
   formData,
   scores,
   onChange,
+  readOnly = false,
 }: Props) {
   const updateDisqualifier = (
     id: string,
     observed: "yes" | "no" | "",
     notes: string,
   ) => {
+    if (readOnly) return;
     onChange({
       ...formData,
       disqualifiers: {
@@ -40,25 +58,10 @@ export default function Stage3Evaluation({
   };
 
   const total = scores.total;
-  const interpretation = guide.interpretation;
-
-  let standing = "Incomplete";
-  let standingClass = "text-gray-600 bg-gray-100";
-  if (total != null) {
-    if (total >= 4.0) {
-      standing = "Strong hire / appoint";
-      standingClass = "text-green-800 bg-green-100";
-    } else if (total >= 3.3) {
-      standing = "Hire / appoint (confirm references)";
-      standingClass = "text-blue-800 bg-blue-100";
-    } else if (total >= 2.8) {
-      standing = "Hold / reserve";
-      standingClass = "text-amber-800 bg-amber-100";
-    } else {
-      standing = "Do not hire / appoint";
-      standingClass = "text-red-800 bg-red-100";
-    }
-  }
+  const standing = scoreStanding(total);
+  const standingClass = STANDING_CLASSES[standing];
+  const hireAllowed = canConfirmHire(total);
+  const observedDqs = observedDisqualifiers(formData, guide.disqualifiers);
 
   return (
     <div className="space-y-8">
@@ -69,10 +72,30 @@ export default function Stage3Evaluation({
         totalDuration={guide.duration}
       />
 
+      {observedDqs.length > 0 && (
+        <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">
+              Disqualifier(s) marked as observed
+            </p>
+            <p className="text-xs text-amber-800 mt-1">
+              HR may still confirm hire after review — this does not automatically block the decision.
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-amber-900">
+              {observedDqs.map((d) => (
+                <li key={d.id}>• {d.label}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">
           Section D — Weighted evaluation sheet
         </h3>
+        {/* table unchanged */}
         <div className="overflow-x-auto border border-gray-200 rounded-xl">
           <table className="w-full text-sm min-w-[520px]">
             <thead>
@@ -134,10 +157,10 @@ export default function Stage3Evaluation({
           <span
             className={`inline-flex px-3 py-1.5 rounded-full text-xs font-semibold ${standingClass}`}
           >
-            Standing: {standing}
+            Standing: {standingLabel(standing)}
           </span>
           <p className="text-xs text-gray-500 flex-1 min-w-[200px]">
-            {interpretation}
+            {guide.interpretation}
           </p>
         </div>
 
@@ -157,29 +180,39 @@ export default function Stage3Evaluation({
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Panel decision</h3>
+        {!hireAllowed && total != null && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
+            Hire requires a weighted score of at least 3.3. Hold or Do not hire are available for this score.
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
-          {PANEL_DECISIONS.map((d) => (
-            <button
-              key={d.value}
-              type="button"
-              onClick={() =>
-                onChange({
-                  ...formData,
-                  summary: {
-                    ...formData.summary,
-                    decision: d.value as PanelDecision,
-                  },
-                })
-              }
-              className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                formData.summary?.decision === d.value
-                  ? "bg-red-600 text-white border-red-600"
-                  : "bg-white text-gray-700 border-gray-200"
-              }`}
-            >
-              {d.label}
-            </button>
-          ))}
+          {PANEL_DECISIONS.map((d) => {
+            const isHire = d.value === "hire";
+            const disabled = readOnly || (isHire && !hireAllowed);
+            return (
+              <button
+                key={d.value}
+                type="button"
+                disabled={disabled}
+                onClick={() =>
+                  onChange({
+                    ...formData,
+                    summary: {
+                      ...formData.summary,
+                      decision: d.value as PanelDecision,
+                    },
+                  })
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                  formData.summary?.decision === d.value
+                    ? "bg-red-600 text-white border-red-600"
+                    : "bg-white text-gray-700 border-gray-200"
+                } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                {d.label}
+              </button>
+            );
+          })}
         </div>
         <textarea
           value={formData.summary?.decision_notes ?? ""}
@@ -192,9 +225,10 @@ export default function Stage3Evaluation({
               },
             })
           }
+          readOnly={readOnly}
           rows={3}
           placeholder="Decision rationale and conditions"
-          className="w-full mt-3 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          className="w-full mt-3 border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
         />
         <div className="mt-3">
           <label className="text-xs text-gray-500 block mb-1">
@@ -212,7 +246,9 @@ export default function Stage3Evaluation({
                 },
               })
             }
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            readOnly={readOnly}
+            disabled={readOnly}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
           />
         </div>
       </section>
@@ -233,6 +269,7 @@ export default function Stage3Evaluation({
                   <button
                     key={v || "blank"}
                     type="button"
+                    disabled={readOnly}
                     onClick={() =>
                       updateDisqualifier(
                         `dq_${i}`,
@@ -244,7 +281,7 @@ export default function Stage3Evaluation({
                       formData.disqualifiers?.[`dq_${i}`]?.observed === v
                         ? "bg-red-600 text-white border-red-600"
                         : "bg-white border-gray-200"
-                    }`}
+                    } ${readOnly ? "opacity-60" : ""}`}
                   >
                     {v === "yes" ? "Observed" : v === "no" ? "No" : "—"}
                   </button>

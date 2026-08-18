@@ -26,6 +26,7 @@ type Props = {
   adminId: string;
   onClose: () => void;
   onSaved: () => void;
+  onInterviewSubmitted?: () => void;
 };
 
 type InterviewAction =
@@ -44,11 +45,13 @@ export default function InterviewPanelForm({
   adminId,
   onClose,
   onSaved,
+  onInterviewSubmitted,
 }: Props) {
   const [formData, setFormData] = useState<InterviewFormData>(emptyForm());
   const [guide, setGuide] = useState<InterviewGuideConfig | null>(null);
   const [candidateName, setCandidateName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<"panel" | 1 | 2 | 3 | null>(
     null,
   );
@@ -62,6 +65,7 @@ export default function InterviewPanelForm({
       const { application, guide: g } = res.data.data;
       setCandidateName(application.full_name);
       setReferenceNumber(application.reference_number);
+      setInterviewSubmitted(!!application.interview_submitted_at);
       setGuide(g);
       setFormData(normalizeInterviewFormData(application.interview_form_data));
       return res.data.data;
@@ -117,7 +121,9 @@ export default function InterviewPanelForm({
       }
 
       if (params.action === "send_panel_invites") {
-        toast.success("Panel invites sent. Stage 1 is now open.");
+        toast.success(
+          "Panel invites sent and candidate notified. Stage 1 is now open.",
+        );
         setManualStep(1);
       } else if (params.action === "schedule_stage2") {
         toast.success("Practical scheduled. Stage 2 is now open.");
@@ -126,8 +132,11 @@ export default function InterviewPanelForm({
         toast.success("Stage 2 complete. Proceed to evaluation.");
         setManualStep(3);
       } else if (params.action === "finalize") {
-        toast.success("Interview submitted.");
-        onSaved();
+        toast.success(
+          "Interview submitted. Confirm the outcome from the application detail.",
+        );
+        setInterviewSubmitted(true);
+        onInterviewSubmitted?.();
       } else {
         toast.success("Draft saved.");
       }
@@ -231,11 +240,12 @@ export default function InterviewPanelForm({
               formData={formData}
               scores={scores}
               onChange={setFormData}
+              readOnly={interviewSubmitted}
             />
           )}
         </div>
 
-        {activeStep === 3 && (
+        {activeStep === 3 && !interviewSubmitted && (
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col sm:flex-row gap-2 shrink-0">
             <button
               type="button"
@@ -258,6 +268,14 @@ export default function InterviewPanelForm({
             >
               {saveMutation.isPending ? "Submitting…" : "Submit interview"}
             </button>
+          </div>
+        )}
+
+        {activeStep === 3 && interviewSubmitted && (
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 shrink-0">
+            <p className="text-sm text-gray-600 text-center">
+              Interview submitted. Confirm the outcome from the application detail view.
+            </p>
           </div>
         )}
 

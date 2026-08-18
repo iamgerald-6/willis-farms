@@ -10,11 +10,9 @@ import { User } from "@/types";
 import { isFullRoleAccess } from "@/lib/pagePermissions";
 import {
   Users,
-  BookOpen,
   CalendarCheck,
   Star,
   ClipboardList,
-  ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -22,6 +20,18 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { DashboardOverviewSkeleton } from "@/components/skeletons/PageSkeletons";
+import {
+  buildOverviewQuickActions,
+  formatOverviewGreeting,
+  getModuleRoute,
+} from "@/lib/moduleRegistry";
+import {
+  hasUnrestrictedAccess,
+  resolveAccessProfile,
+  type PagePermissionKey,
+} from "@/lib/pagePermissions";
+import { canAccessPage } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   DonutChart,
   AppraisalBarChart,
@@ -92,6 +102,14 @@ type QuickActionProps = {
   href: string;
   icon: React.ElementType;
 };
+
+const ROUTE_LEAVE = () => getModuleRoute("mod:leave") ?? "/dashboard/humanCapital/leave";
+const ROUTE_APPRAISAL = () =>
+  getModuleRoute("mod:appraisal") ?? "/dashboard/humanCapital/appraisal";
+const ROUTE_USERS = () =>
+  getModuleRoute("mod:users") ?? "/dashboard/access-control";
+const ROUTE_SKILL_LOG = () =>
+  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
 
 type AttentionItem = {
   id: string;
@@ -328,6 +346,27 @@ export default function DashboardPage() {
   const role = profile?.role ?? metaRole;
   const isAdmin = isFullRoleAccess(role);
 
+  const accessProfile = resolveAccessProfile(profile, metaRole);
+  const unrestricted = hasUnrestrictedAccess(accessProfile, metaRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+
+  const canSee = (key: PagePermissionKey) => {
+    if (unrestricted) return true;
+    return accessProfile
+      ? canAccessPage(accessProfile, key, groupPresets, metaRole)
+      : false;
+  };
+
+  const overviewQuickActions = useMemo(
+    () =>
+      buildOverviewQuickActions({
+        isAdmin,
+        canSee,
+      }),
+    [isAdmin, accessProfile, unrestricted, metaRole, profile],
+  );
+
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],
     queryFn: async () => {
@@ -439,7 +478,7 @@ export default function DashboardPage() {
           id: `leave-${l.id}`,
           title: `${leavePersonName(l)} — ${l.leave_type} leave`,
           subtitle: formatDateRange(l.start_date, l.end_date),
-          href: "/dashboard/humanCapital/leave",
+          href: ROUTE_LEAVE(),
           type: "warning",
         });
       });
@@ -451,7 +490,7 @@ export default function DashboardPage() {
           id: `appraisal-${a.id}`,
           title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
           subtitle: "Appraisal draft in progress",
-          href: "/dashboard/humanCapital/appraisal",
+          href: ROUTE_APPRAISAL(),
           type: "info",
         });
       });
@@ -468,7 +507,7 @@ export default function DashboardPage() {
           id: `leave-${l.id}`,
           title: `${l.leave_type} leave pending approval`,
           subtitle: formatDateRange(l.start_date, l.end_date),
-          href: "/dashboard/humanCapital/leave",
+          href: ROUTE_LEAVE(),
           type: "warning",
         });
       });
@@ -477,7 +516,7 @@ export default function DashboardPage() {
         id: `appraisal-${latestAppraisal.id}`,
         title: `Complete ${latestAppraisal.review_quarter} ${latestAppraisal.review_year} appraisal`,
         subtitle: "Draft awaiting submission",
-        href: "/dashboard/humanCapital/appraisal",
+        href: ROUTE_APPRAISAL(),
         type: "info",
       });
     }
@@ -550,24 +589,6 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  const adminQuickActions: QuickActionProps[] = [
-    { label: "User Management", href: "/dashboard/access-control", icon: Users },
-    { label: "Leave", href: "/dashboard/humanCapital/leave", icon: CalendarCheck },
-    { label: "Appraisals", href: "/dashboard/humanCapital/appraisal", icon: Star },
-    { label: "Skill Logs", href: "/dashboard/humanCapital/skillLog", icon: ClipboardList },
-    { label: "SOPs", href: "/dashboard/sop", icon: ShieldCheck },
-    { label: "Learning Hub", href: "/dashboard/lms", icon: BookOpen },
-  ];
-
-  const employeeQuickActions: QuickActionProps[] = [
-    { label: "My Leave", href: "/dashboard/humanCapital/leave", icon: CalendarCheck },
-    { label: "Appraisals", href: "/dashboard/humanCapital/appraisal", icon: Star },
-    { label: "Skill Log", href: "/dashboard/humanCapital/skillLog", icon: ClipboardList },
-    { label: "SOPs", href: "/dashboard/sop", icon: ShieldCheck },
-    { label: "Learning Hub", href: "/dashboard/lms", icon: BookOpen },
-    { label: "Calendar", href: "/dashboard/taskManager/calendar", icon: CalendarCheck },
-  ];
-
   const staffRoleBars = [
     {
       label: "Employees",
@@ -599,7 +620,7 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-                {greeting}, {firstName}
+                {formatOverviewGreeting(firstName, greeting)}
               </h1>
               <p className="text-sm text-gray-500 mt-1">{dateStr}</p>
               <div className="flex flex-wrap gap-2 mt-4">
@@ -607,32 +628,32 @@ export default function DashboardPage() {
                   <>
                     <HeroChip
                       label={`${pendingLeave} leave pending`}
-                      href="/dashboard/humanCapital/leave"
+                      href={ROUTE_LEAVE()}
                     />
                     <HeroChip
                       label={`${draftAppraisals} appraisal drafts`}
-                      href="/dashboard/humanCapital/appraisal"
+                      href={ROUTE_APPRAISAL()}
                     />
                     <HeroChip
                       label={`${users?.length ?? 0} staff`}
-                      href="/dashboard/access-control"
+                      href={ROUTE_USERS()}
                     />
                   </>
                 ) : (
                   <>
                     <HeroChip
                       label={`${myPendingLeave} leave pending`}
-                      href="/dashboard/humanCapital/leave"
+                      href={ROUTE_LEAVE()}
                     />
                     {latestAppraisal && (
                       <HeroChip
                         label={`Score ${latestAppraisal.employee_weighted_score ?? "—"}/4`}
-                        href="/dashboard/humanCapital/appraisal"
+                        href={ROUTE_APPRAISAL()}
                       />
                     )}
                     <HeroChip
                       label={`${mySkillLogs.length} skill logs`}
-                      href="/dashboard/humanCapital/skillLog"
+                      href={ROUTE_SKILL_LOG()}
                     />
                   </>
                 )}
@@ -730,7 +751,7 @@ export default function DashboardPage() {
                 title="Needs attention"
                 action={
                   <Link
-                    href="/dashboard/humanCapital/leave"
+                    href={ROUTE_LEAVE()}
                     className="text-xs text-[#C62828] font-medium hover:underline"
                   >
                     View all
@@ -816,7 +837,7 @@ export default function DashboardPage() {
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
             Quick actions
           </h3>
-          <QuickActionGrid items={isAdmin ? adminQuickActions : employeeQuickActions} />
+          <QuickActionGrid items={overviewQuickActions} />
         </div>
 
         {/* Activity + appraisals table */}
@@ -830,7 +851,7 @@ export default function DashboardPage() {
               title="Recent appraisals"
               action={
                 <Link
-                  href="/dashboard/humanCapital/appraisal"
+                  href={ROUTE_APPRAISAL()}
                   className="text-xs text-[#C62828] font-medium hover:underline"
                 >
                   View all

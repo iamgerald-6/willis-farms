@@ -18,6 +18,18 @@ import { AccessControlTableSkeleton } from "@/components/skeletons/PageSkeletons
 import CreateUserModal from "@/app/(dashboard)/dashboard/components/createModal";
 import { toast } from "sonner";
 import { getAccountStatus } from "@/lib/userAccountStatus";
+import {
+  gradeBandGroup,
+  roleGroup,
+  type UserListGroup,
+} from "@/lib/permissionActions";
+import {
+  groupPresetKeyFromListGroup,
+  hasIndividualPermissionOverride,
+  type GroupPresetKey,
+} from "@/lib/groupPermissionPresets";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
+import GroupPermissionPanel from "./components/GroupPermissionPanel";
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-50 text-red-700 border border-red-200",
@@ -57,6 +69,7 @@ function StatusBadge({ user }: { user: User }) {
 
 export default function UserManagementPage() {
   const [search, setSearch] = useState("");
+  const [listGroup, setListGroup] = useState<UserListGroup>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -82,6 +95,13 @@ export default function UserManagementPage() {
   const canOpen = canOpenUserManagement(actorProfile, sessionRole);
   const canAdd = canAddUser(actorProfile, sessionRole);
   const canManageAccounts = canManageUserAccounts(actorProfile, sessionRole);
+
+  const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
+  const activeGroupKey = groupPresetKeyFromListGroup(listGroup);
+  const activeGroupActions =
+    activeGroupKey && groupPresetData?.presets
+      ? groupPresetData.presets[activeGroupKey] ?? {}
+      : null;
 
   const resendInviteMutation = useMutation({
     mutationFn: async (targetUserId: string) => {
@@ -111,6 +131,29 @@ export default function UserManagementPage() {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
       if (isSuperAdmin(u.role)) return false;
+
+      if (listGroup === "employees" && roleGroup(u.role) !== "employees") {
+        return false;
+      }
+      if (listGroup === "managers" && roleGroup(u.role) !== "managers") {
+        return false;
+      }
+      if (listGroup === "admins" && roleGroup(u.role) !== "admins") {
+        return false;
+      }
+      if (
+        listGroup === "grade_l1_l3" &&
+        gradeBandGroup(u.grade_level) !== "grade_l1_l3"
+      ) {
+        return false;
+      }
+      if (
+        listGroup === "grade_l4_l7" &&
+        gradeBandGroup(u.grade_level) !== "grade_l4_l7"
+      ) {
+        return false;
+      }
+
       if (!q) return true;
       return (
         u.email.toLowerCase().includes(q) ||
@@ -120,7 +163,16 @@ export default function UserManagementPage() {
         u.job_position?.toLowerCase().includes(q)
       );
     });
-  }, [users, search]);
+  }, [users, search, listGroup]);
+
+  const groupTabs: { id: UserListGroup; label: string }[] = [
+    { id: "all", label: "All users" },
+    { id: "employees", label: "Employees" },
+    { id: "managers", label: "Managers" },
+    { id: "admins", label: "Admins" },
+    { id: "grade_l4_l7", label: "L4–L7" },
+    { id: "grade_l1_l3", label: "L1–L3" },
+  ];
 
   if (!canOpen) {
     return (
@@ -134,7 +186,7 @@ export default function UserManagementPage() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || (activeGroupKey && presetsLoading)) {
     return <AccessControlTableSkeleton />;
   }
 
@@ -172,6 +224,31 @@ export default function UserManagementPage() {
           )}
         </div>
       </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {groupTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setListGroup(tab.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              listGroup === tab.id
+                ? "bg-gray-900 text-white border-gray-900"
+                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeGroupKey && activeGroupActions && (
+        <GroupPermissionPanel
+          groupKey={activeGroupKey as GroupPresetKey}
+          initialActions={activeGroupActions}
+          canEdit={canManageAccounts}
+        />
+      )}
 
       {/* Mobile: card list */}
       <div className="md:hidden space-y-3">
@@ -298,6 +375,11 @@ export default function UserManagementPage() {
                               .filter(Boolean)
                               .join(" · ") || "—"}
                           </p>
+                          {hasIndividualPermissionOverride(u) && (
+                            <p className="text-[10px] text-amber-600 mt-0.5 font-medium">
+                              Individual permissions
+                            </p>
+                          )}
                         </div>
                       </div>
                     </td>

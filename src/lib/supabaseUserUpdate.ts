@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Columns added by access-control migrations — may be absent on older DBs. */
 const OPTIONAL_USER_COLUMNS = [
+  "page_permission_actions",
   "page_permission_levels",
   "page_permissions",
   "access_tier",
