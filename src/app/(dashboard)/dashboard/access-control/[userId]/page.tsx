@@ -8,12 +8,15 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { isSuperAdmin } from "@/lib/accessControl";
 import {
   canManageUserAccounts,
-  getEffectivePermissionLevels,
-  levelsToLegacyPageKeys,
-  type PagePermissionLevels,
+  getEffectivePermissionActionsForProfile,
 } from "@/lib/permissionLevels";
+import { hasIndividualPermissionOverride } from "@/lib/groupPermissionPresets";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
+import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
+import { permissionActionModuleCount } from "@/lib/permissionActions";
 import PermissionMatrix from "../components/PermissionMatrix";
 import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
 import { AccessControlManageSkeleton } from "@/components/skeletons/PageSkeletons";
@@ -29,8 +32,8 @@ export default function ManageUserAccessPage() {
   const queryClient = useQueryClient();
   const userId = (params?.userId as string) ?? "";
 
-  const [permissionLevels, setPermissionLevels] =
-    useState<PagePermissionLevels>({});
+  const [permissionActions, setPermissionActions] =
+    useState<PagePermissionActions>({});
   const [isDisabled, setIsDisabled] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -57,6 +60,9 @@ export default function ManageUserAccessPage() {
   const actorProfile = resolveAccessProfile(actor, sessionRole);
   const canManage = canManageUserAccounts(actorProfile, sessionRole);
 
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+
   const target = useMemo(
     () => users.find((u) => u.user_id === userId),
     [users, userId],
@@ -66,19 +72,25 @@ export default function ManageUserAccessPage() {
 
   useEffect(() => {
     if (!target || initialized) return;
-    setPermissionLevels(getEffectivePermissionLevels(target));
+    setPermissionActions(
+      getEffectivePermissionActionsForProfile(target, groupPresets),
+    );
     setIsDisabled(!!target.is_disabled);
     setFirstName(target.first_name ?? "");
     setLastName(target.last_name ?? "");
     setInitialized(true);
-  }, [target, initialized]);
+  }, [target, initialized, groupPresets]);
+
+  const usesIndividual = target
+    ? hasIndividualPermissionOverride(target)
+    : false;
 
   const nameDirty =
     !!target &&
     (firstName.trim() !== (target.first_name ?? "").trim() ||
       lastName.trim() !== (target.last_name ?? "").trim());
 
-  const permissionKeyCount = levelsToLegacyPageKeys(permissionLevels).length;
+  const permissionModuleCount = permissionActionModuleCount(permissionActions);
 
   const saveNameMutation = useMutation({
     mutationFn: async () => {
@@ -117,18 +129,23 @@ export default function ManageUserAccessPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { resetToGroup?: boolean }) => {
       if (!session?.user?.id) throw new Error("Not signed in.");
       const res = await api.patch("/access-control", {
         target_user_id: userId,
         updated_by: session.user.id,
-        page_permission_levels: permissionLevels,
+        page_permission_actions: opts?.resetToGroup ? {} : permissionActions,
+        reset_to_group: opts?.resetToGroup === true,
         is_disabled: isSelf ? false : isDisabled,
       });
       return res.data;
     },
-    onSuccess: () => {
-      toast.success("User access updated.");
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables?.resetToGroup
+          ? "User reset to group defaults."
+          : "User access updated.",
+      );
       queryClient.invalidateQueries({ queryKey: ["get_users"] });
       router.push("/dashboard/access-control");
     },
@@ -153,7 +170,7 @@ export default function ManageUserAccessPage() {
     return <AccessControlManageSkeleton />;
   }
 
-  if (!target || target.role === "super_admin") {
+  if (!target || isSuperAdmin(target.role)) {
     return (
       <div className="p-6">
         <Link
@@ -336,23 +353,34 @@ export default function ManageUserAccessPage() {
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-          <h3 className="text-sm font-semibold text-gray-800">Page access</h3>
+          <h3 className="text-sm font-semibold text-gray-800">Module access</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Set view, add, or edit level per page. User Management levels are
-            enforced today; other modules will follow.
+            {usesIndividual
+              ? "This user has individual permissions that override their group defaults."
+              : "This user follows group permissions for their role and grade band. Saving here creates an individual override."}
           </p>
         </div>
 
         <PermissionMatrix
-          levels={permissionLevels}
-          onChange={setPermissionLevels}
+          actions={permissionActions}
+          onChange={setPermissionActions}
         />
 
-        <div className="p-5 border-t border-gray-100">
+        <div className="p-5 border-t border-gray-100 flex flex-wrap gap-3">
+          {usesIndividual && (
+            <button
+              type="button"
+              onClick={() => saveMutation.mutate({ resetToGroup: true })}
+              disabled={saveMutation.isPending}
+              className="px-5 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60 transition-colors"
+            >
+              Reset to group defaults
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || permissionKeyCount === 0}
+            onClick={() => saveMutation.mutate(undefined)}
+            disabled={saveMutation.isPending || permissionModuleCount === 0}
             className="w-full sm:w-auto px-8 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {saveMutation.isPending && (

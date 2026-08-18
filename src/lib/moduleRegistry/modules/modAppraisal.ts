@@ -71,11 +71,14 @@ export const modAppraisal: ModuleRecord = {
   },
   table: "appraisals",
   supportedActions: ["view", "add", "edit", "review"],
-  taxonomyRefs: [
-    "taxonomy.appraisal.quarters",
-    "taxonomy.appraisal.gradeBands",
-    "taxonomy.appraisal.promotionReadiness",
-    "taxonomy.appraisal.sectionsForGradeBand",
+  taxonomyRefs: ["taxonomy.appraisal.sectionAuthorisations"],
+  businessLogic: [
+    {
+      id: "l4-leadership-weight",
+      label: "L4+ higher weight on Leadership section (Section A)",
+      description:
+        "When the employee being appraised is L4 or above, Section A carries more weight in the score.",
+    },
   ],
 
   shell: {
@@ -175,6 +178,7 @@ export const modJustifications: ModuleRecord = {
   table: "appraisal_justifications",
   supportedActions: ["view", "add", "approve"],
   taxonomyRefs: ["taxonomy.appraisal.justificationStatuses"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",

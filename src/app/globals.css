@@ -3,13 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --brand-red: #C62828;
-  --brand-gray: #4B5563;
-  --brand-light: #F3F4F6;
+  --brand-red: #c62828;
+  --brand-gray: #4b5563;
+  --brand-light: #f3f4f6;
   --brand-dark: #111827;
 }
 
-html, body {
+html,
+body {
   height: 100%;
 }
 

@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { isFullRoleAccess } from "@/lib/pagePermissions";
 import {
   Users,
   CalendarCheck,
@@ -25,11 +26,12 @@ import {
   getModuleRoute,
 } from "@/lib/moduleRegistry";
 import {
-  canAccessPage,
   hasUnrestrictedAccess,
   resolveAccessProfile,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
+import { canAccessPage } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   DonutChart,
   AppraisalBarChart,
@@ -342,15 +344,18 @@ export default function DashboardPage() {
 
   const profile = users?.find((u) => u.user_id === userId);
   const role = profile?.role ?? metaRole;
-  const isAdmin =
-    role === "admin" || role === "super_admin" || role === "manager";
+  const isAdmin = isFullRoleAccess(role);
 
   const accessProfile = resolveAccessProfile(profile, metaRole);
   const unrestricted = hasUnrestrictedAccess(accessProfile, metaRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
   const canSee = (key: PagePermissionKey) => {
     if (unrestricted) return true;
-    return accessProfile ? canAccessPage(accessProfile, key) : false;
+    return accessProfile
+      ? canAccessPage(accessProfile, key, groupPresets, metaRole)
+      : false;
   };
 
   const overviewQuickActions = useMemo(

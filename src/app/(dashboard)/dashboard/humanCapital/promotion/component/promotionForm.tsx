@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import {
-  Search,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -260,7 +259,6 @@ function resetFormState(config: PromotionFormConfig | null) {
 }
 
 export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedAppraisal, setSelectedAppraisal] = useState<Appraisal | null>(
     null,
   );
@@ -360,15 +358,6 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
       ),
     [promotionAppraisals, currentUserProfile],
   );
-
-  const filtered = useMemo(() => {
-    if (!searchQuery) return eligibleAppraisals;
-    const q = searchQuery.toLowerCase();
-    return eligibleAppraisals.filter(
-      (a) =>
-        a.employee_name.toLowerCase().includes(q) || a.company_id.includes(q),
-    );
-  }, [eligibleAppraisals, searchQuery]);
 
   useEffect(() => {
     if (!selectedAppraisal || !formConfig) return;
@@ -551,57 +540,38 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
             <User className="w-4 h-4 text-red-500" />
             Select Employee Appraisal
           </h3>
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by name or company ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400"
-            />
-          </div>
-          {isLoading && (
-            <div className="space-y-2 py-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-12 bg-gray-100 animate-pulse rounded-xl" />
-              ))}
-            </div>
-          )}
-          {!isLoading && filtered.length === 0 && (
-            <p className="text-center py-8 text-gray-400 text-sm">
-              No appraisals ready for promotion assessment
-            </p>
-          )}
-          <div className="space-y-2">
-            {filtered.map((a) => {
-              const step = getPromotionStep(a.current_grade);
-              const cfg = getFormConfig(a.current_grade);
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAppraisal(a);
-                    setFormErrors({});
-                  }}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
-                    selectedAppraisal?.id === a.id
-                      ? "border-[#1e3a5f] bg-blue-50/40"
-                      : "border-gray-100 hover:border-gray-300"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-gray-900">
-                    {a.employee_name}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {a.current_grade}
+          {isLoading ? (
+            <div className="h-11 bg-gray-100 animate-pulse rounded-xl" />
+          ) : (
+            <select
+              value={selectedAppraisal?.id ?? ""}
+              disabled={eligibleAppraisals.length === 0}
+              onChange={(e) => {
+                const a = eligibleAppraisals.find(
+                  (x) => String(x.id) === e.target.value,
+                );
+                setSelectedAppraisal(a ?? null);
+                setFormErrors({});
+              }}
+              className={`${inputCls()} disabled:opacity-60 disabled:cursor-not-allowed`}
+            >
+              <option value="">
+                {eligibleAppraisals.length === 0
+                  ? "No employees ready for promotion"
+                  : "— Select employee —"}
+              </option>
+              {eligibleAppraisals.map((a) => {
+                const step = getPromotionStep(a.current_grade);
+                const cfg = getFormConfig(a.current_grade);
+                return (
+                  <option key={a.id} value={a.id}>
+                    {a.employee_name} — {a.current_grade}
                     {step && cfg ? ` → ${cfg.toGrade}` : ""} · {a.company_id}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+                  </option>
+                );
+              })}
+            </select>
+          )}
         </div>
 
         {selectedAppraisal && formConfig && (

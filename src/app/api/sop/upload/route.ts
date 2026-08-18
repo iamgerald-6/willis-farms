@@ -1,6 +1,8 @@
 // app/api/content/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeSopAuditLog } from "@/lib/sopAuditLog";
+import { getApiRequestUser } from "@/lib/apiRequestAuth";
 
 const DEFAULT_COVER = "/images/breedfeed.webp";
 
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
       video_url,
       video_duration_minutes,
       created_by,
+      performed_by_name,
     } = body;
 
     if (!title || !category || !description) {
@@ -40,6 +43,14 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Prefer the caller identity resolved server-side from the Supabase
+    // session (Authorization header, attached automatically by src/lib/api.ts)
+    // over whatever the client sent in the body — more reliable than relying
+    // on the frontend's own currentUser lookup having resolved in time.
+    const apiUser = await getApiRequestUser(req);
+    const resolvedCreatedBy = apiUser?.id ?? created_by ?? null;
+    const resolvedPerformedByName = apiUser?.name ?? performed_by_name ?? null;
 
     const { data, error } = await supabase
       .from("content")
@@ -56,7 +67,7 @@ export async function POST(req: NextRequest) {
           video_url: video_url ?? null,
           video_duration_minutes: video_duration_minutes ?? null,
           created_at: new Date().toISOString(),
-          created_by: created_by ?? null,
+          created_by: resolvedCreatedBy,
         },
       ])
       .select();
@@ -75,6 +86,14 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    await writeSopAuditLog({
+      content_id: data[0].id,
+      content_title: data[0].title,
+      action: "added",
+      performed_by: resolvedCreatedBy,
+      performed_by_name: resolvedPerformedByName,
+    });
 
     return NextResponse.json({ success: true, content: data[0] });
   } catch (err) {

@@ -6,7 +6,9 @@ import { X, Send, Loader2, FileBarChart, History } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
+import { User } from "@/types";
 import SentReportsDrawer from "./SentReportsDrawer";
+import StaffMultiSelect from "./StaffMultiSelect";
 
 function monthBounds(monthValue: string): { start: string; end: string } {
   const [year, month] = monthValue.split("-").map(Number);
@@ -21,29 +23,33 @@ function currentMonthValue() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export default function MonthlyReportModal({ projects, onClose }: { projects: TMProject[]; onClose: () => void }) {
+export default function MonthlyReportModal({
+  projects,
+  users,
+  onClose,
+}: {
+  projects: TMProject[];
+  users: User[];
+  onClose: () => void;
+}) {
   const [month, setMonth] = useState(currentMonthValue());
-  const [recipients, setRecipients] = useState("");
+  const [recipients, setRecipients] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const handleSend = async () => {
-    const emails = recipients
-      .split(",")
-      .map((e) => e.trim())
-      .filter(Boolean);
-    if (emails.length === 0) {
-      toast.error("Add at least one recipient email");
+    if (recipients.length === 0) {
+      toast.error("Select at least one recipient");
       return;
     }
     const { start, end } = monthBounds(month);
     setSending(true);
     try {
-      const res = await api.post("/task-manager/reports/send", { period_start: start, period_end: end, recipients: emails });
+      const res = await api.post("/task-manager/reports/send", { period_start: start, period_end: end, recipients });
       toast.success(res.data.sent ? "Report emailed as a PDF attachment." : "Report generated and logged (email sending isn't configured yet — see setup docs).");
       queryClient.invalidateQueries({ queryKey: ["tm-reports"] });
-      setRecipients("");
+      setRecipients([]);
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to send report");
     } finally {
@@ -89,12 +95,12 @@ export default function MonthlyReportModal({ projects, onClose }: { projects: TM
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to (comma-separated emails)</label>
-            <input
-              value={recipients}
-              onChange={(e) => setRecipients(e.target.value)}
-              placeholder="e.g. gm@willsfarms.com, ops@willsfarms.com"
-              className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to</label>
+            <StaffMultiSelect
+              users={users}
+              selectedEmails={recipients}
+              onChange={setRecipients}
+              placeholder="Select staff to receive the report…"
             />
           </div>
 

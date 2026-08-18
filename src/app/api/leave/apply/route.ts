@@ -1,25 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import {
+  getSupabaseAdminFromAuth,
   requireAuth,
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { fetchSystemOptionByLegacyValue } from "@/lib/systemDefinitions";
+import {
+  fetchLeaveAnnualCapDays,
+} from "@/lib/leave/leavePolicy";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } },
-);
+const LEAVE_MODULE_ID = "mod:leave";
+const LEAVE_TYPES_LIST = "leave.types";
 
 export async function POST(req: NextRequest) {
   try {
     const caller = await requireAuth(req);
     if (!caller) return jsonUnauthorized();
 
-    const { user_id, leave_type, reason, start_date, end_date, total_days } =
-      await req.json();
+    const {
+      user_id,
+      leave_type,
+      reason,
+      start_date,
+      end_date,
+      total_days,
+      document_url,
+    } = await req.json();
 
     if (!user_id || !leave_type || !start_date || !end_date || !total_days) {
       return NextResponse.json(
@@ -39,7 +47,44 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const supabaseAdmin = getSupabaseAdminFromAuth();
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 },
+      );
+    }
+
+    const leaveOption = await fetchSystemOptionByLegacyValue(
+      supabaseAdmin,
+      LEAVE_MODULE_ID,
+      LEAVE_TYPES_LIST,
+      String(leave_type),
+    );
+
+    if (!leaveOption) {
+      return NextResponse.json(
+        { error: "Invalid leave type" },
+        { status: 400 },
+      );
+    }
+
+    if (leaveOption.rules.requires_reason && !String(reason ?? "").trim()) {
+      return NextResponse.json(
+        { error: "A reason is required for this leave type" },
+        { status: 400 },
+      );
+    }
+
+    if (leaveOption.rules.requires_document && !document_url) {
+      return NextResponse.json(
+        { error: "A supporting document is required for this leave type" },
+        { status: 400 },
+      );
+    }
+
     if (leave_type === "Annual") {
+      const annualCap = await fetchLeaveAnnualCapDays(supabaseAdmin);
       const currentYear = new Date().getFullYear();
       const { data: existing } = await supabaseAdmin
         .from("leave_requests")
@@ -51,11 +96,11 @@ export async function POST(req: NextRequest) {
         .lte("end_date", `${currentYear}-12-31`);
 
       const usedDays = existing?.reduce((sum, r) => sum + r.total_days, 0) ?? 0;
-      if (usedDays + total_days > 30) {
+      if (usedDays + total_days > annualCap) {
         return NextResponse.json(
           {
             error: `You only have ${
-              30 - usedDays
+              Math.max(0, annualCap - usedDays)
             } annual leave days remaining this year.`,
           },
           { status: 400 },
@@ -63,11 +108,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const insertRow: Record<string, unknown> = {
+      user_id,
+      leave_type,
+      reason: reason ?? null,
+      start_date,
+      end_date,
+      total_days,
+    };
+    if (document_url) {
+      insertRow.document_url = document_url;
+    }
+
     const { data, error } = await supabaseAdmin
       .from("leave_requests")
-      .insert([
-        { user_id, leave_type, reason, start_date, end_date, total_days },
-      ])
+      .insert([insertRow])
       .select()
       .single();
 

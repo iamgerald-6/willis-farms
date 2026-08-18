@@ -9,6 +9,7 @@ import {
   getPolicyCategoryLegacyValues,
   POLICIES_PAGE_COPY,
 } from "@/lib/moduleRegistry";
+import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 
 const POLICY_CATEGORY_SUGGESTIONS = getPolicyCategoryLegacyValues();
 const DEFAULT_CATEGORY = getDefaultPolicyCategoryLegacyValue();
@@ -105,13 +106,13 @@ export default function UploadManualModal({
   }> {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("upload_preset", "willsUpload");
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     formData.append("folder", "WillDocs");
 
-    const res = await fetch(
-      "https://api.cloudinary.com/v1_1/dmvr8ooz1/image/upload",
-      { method: "POST", body: formData },
-    );
+    const res = await fetch(cloudinaryUploadUrl("image"), {
+      method: "POST",
+      body: formData,
+    });
     const json = await res.json();
     if (!res.ok || !json.secure_url) {
       const cloudErr =
@@ -321,7 +322,8 @@ export default function UploadManualModal({
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4" /> {POLICIES_PAGE_COPY.uploadButton}
+                  <Upload className="w-4 h-4" />{" "}
+                  {POLICIES_PAGE_COPY.uploadButton}
                 </>
               )}
             </button>

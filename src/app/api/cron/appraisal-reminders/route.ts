@@ -107,9 +107,7 @@ export async function GET(req: NextRequest) {
         if (!user.company_id || existingCompanyIds.has(user.company_id)) continue;
 
         const gradeBand = GRADE_BAND_FOR_LEVEL[user.grade_level ?? ""] ?? "L1";
-        const { error: insertError } = await supabaseAdmin
-          .from("appraisals")
-          .insert({
+        const seedRow: Record<string, unknown> = {
             company_id: user.company_id,
             employee_name:
               `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim(),
@@ -120,14 +118,17 @@ export async function GET(req: NextRequest) {
             review_quarter: quarter,
             review_year: year,
             immediate_supervisor: "Not yet specified",
-            promotion_readiness: "not_yet_ready",
             status: "open",
             deadline_at: deadlineAt,
             employee_user_id: user.user_id,
             employee_email: user.email ?? null,
             employee_penalty_points: 0,
             appeal_exhausted: false,
-          });
+          };
+
+        const { error: insertError } = await supabaseAdmin
+          .from("appraisals")
+          .insert(seedRow);
 
         if (insertError) {
           summary.errors.push(

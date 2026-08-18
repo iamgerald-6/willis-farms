@@ -3,12 +3,14 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, LogOut, User, Menu, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, User, Menu, Settings2, ShieldCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { User as UserType } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canOpenUserManagement } from "@/lib/permissionLevels";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 
 // ── Page title map ────────────────────────────────────────────────────────────
 // Ordered longest-path-first so nested routes (e.g. justifications/new,
@@ -112,6 +114,11 @@ const PAGE_TITLE_ENTRIES: { path: string; title: string; subtitle: string }[] = 
     title: "Account Settings",
     subtitle: "View your profile and update your password",
   },
+  {
+    path: "/dashboard/system-definitions",
+    title: "System Definitions",
+    subtitle: "Module registry — taxonomy, forms, and business rules",
+  },
 ].sort((a, b) => b.path.length - a.path.length);
 
 const DEFAULT_PAGE_INFO = {
@@ -166,7 +173,18 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
     : (session?.user?.email?.slice(0, 2).toUpperCase() ?? "?");
 
   const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
   const showUserManagement = canOpenUserManagement(accessProfile, sessionRole);
+  const showSystemDefinitions =
+    accessProfile &&
+    canPerformModuleAction(
+      accessProfile,
+      "sys:definitions",
+      "view",
+      sessionRole,
+      groupPresets,
+    );
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -262,6 +280,18 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                   >
                     <ShieldCheck className="w-4 h-4 text-red-500" />
                     User Management
+                  </button>
+                )}
+                {showSystemDefinitions && (
+                  <button
+                    className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
+                    onClick={() => {
+                      setOpen(false);
+                      router.push("/dashboard/system-definitions");
+                    }}
+                  >
+                    <Settings2 className="w-4 h-4 text-red-500" />
+                    System Definitions
                   </button>
                 )}
                 <button

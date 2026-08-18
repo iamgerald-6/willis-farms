@@ -151,6 +151,19 @@ export interface ModuleFeatureDef {
   requires: Partial<Record<PermissionAction, boolean>>;
 }
 
+/**
+ * Reserved extension point for admin-configurable business rules
+ * (System Definitions phase). Purely declarative today — no engine reads
+ * or enforces these yet. Every module carries this slot (even if empty)
+ * so the System Definitions UI has a consistent place to list and edit
+ * rules per module once rule authoring/evaluation is built.
+ */
+export interface BusinessRuleDef {
+  id: string;
+  label: string;
+  description?: string;
+}
+
 export interface ModuleShellConfig {
   layout: "module-standard-v1";
   primaryAction?: {
@@ -207,6 +220,8 @@ export interface ModuleRecord {
   formDefinition?: FormDefinition;
   features?: ModuleFeatureDef[];
   taxonomyRefs?: string[];
+  /** Reserved for System Definitions — always present, empty until authored */
+  businessLogic: BusinessRuleDef[];
   /** Present on mod:overview — dashboard quick actions & copy */
   overview?: OverviewConfig;
 }

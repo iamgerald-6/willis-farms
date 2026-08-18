@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  getSupabaseAdminFromAuth,
+  jsonForbidden,
+  jsonUnauthorized,
+  requireSkillLogAccess,
+} from "@/lib/apiRequestAuth";
+import { canFillSkillLog } from "@/lib/skillLogAccess";
+import { SKILL_LOG_MIN_FILLER_GRADE } from "@/lib/moduleRegistry";
 
 export async function POST(req: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
+  const ctx = await requireSkillLogAccess(req, "add");
+  if (!ctx) {
+    const authed = await requireSkillLogAccess(req);
+    return authed ? jsonForbidden() : jsonUnauthorized();
+  }
+
+  if (
+    !canFillSkillLog(ctx.profile, ctx.presets, ctx.user.role)
+  ) {
+    return jsonForbidden("Only L4+ supervisors with fill permission can create skill logs");
+  }
+
+  const supabaseAdmin = getSupabaseAdminFromAuth();
   if (!supabaseAdmin) {
     return NextResponse.json(
       { success: false, message: "Server configuration error" },
@@ -13,7 +32,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      supervisor_id, // ← passed from frontend
       employee_id,
       log_type,
       review_period,
@@ -25,18 +43,19 @@ export async function POST(req: NextRequest) {
       competencies = [],
     } = body;
 
-    if (!supervisor_id || !employee_id || !log_type || !review_period) {
+    const supervisor_id = ctx.user.id;
+
+    if (!employee_id || !log_type || !review_period) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "supervisor_id, employee_id, log_type, and review_period are required",
+            "employee_id, log_type, and review_period are required",
         },
         { status: 400 },
       );
     }
 
-    // Verify supervisor grade
     const { data: supervisorProfile } = await supabaseAdmin
       .from("users")
       .select("grade_level")
@@ -52,14 +71,13 @@ export async function POST(req: NextRequest) {
 
     const supervisorGrade =
       parseInt(supervisorProfile.grade_level.replace(/\D/g, ""), 10) || 0;
-    if (supervisorGrade < 3) {
+    if (supervisorGrade < SKILL_LOG_MIN_FILLER_GRADE) {
       return NextResponse.json(
-        { success: false, message: "Only L3+ supervisors can fill skill logs" },
+        { success: false, message: "Only L4+ supervisors can fill skill logs" },
         { status: 403 },
       );
     }
 
-    // Verify employee exists and is below supervisor grade
     const { data: employeeProfile } = await supabaseAdmin
       .from("users")
       .select("user_id, grade_level")
@@ -86,10 +104,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Calculate overall_rating
     const ratings = competencies
-      .map((c: any) => c.rating)
-      .filter((r: any) => r !== null && r !== undefined && !isNaN(r));
+      .map((c: { rating?: number | null }) => c.rating)
+      .filter(
+        (r: number | null | undefined) =>
+          r !== null && r !== undefined && !isNaN(r),
+      );
     const overall_rating =
       ratings.length > 0
         ? Math.round(
@@ -99,12 +119,11 @@ export async function POST(req: NextRequest) {
           ) / 10
         : null;
 
-    // Insert skill log
     const { data: logData, error: logError } = await supabaseAdmin
       .from("skill_logs")
       .insert({
         employee_id,
-        supervisor_id, // ← from body, not from token
+        supervisor_id,
         log_type,
         review_period,
         section: section ?? null,
@@ -119,17 +138,25 @@ export async function POST(req: NextRequest) {
 
     if (logError) throw logError;
 
-    // Insert competencies
     if (competencies.length > 0) {
-      const rows = competencies.map((c: any) => ({
-        skill_log_id: logData.id,
-        skill: c.skill,
-        observed: c.observed || null,
-        performed_under_supervision: c.performed_under_supervision || null,
-        performed_consistently: c.performed_consistently || null,
-        rating: c.rating ?? null,
-        comments: c.comments ?? null,
-      }));
+      const rows = competencies.map(
+        (c: {
+          skill: string;
+          observed?: string | null;
+          performed_under_supervision?: string | null;
+          performed_consistently?: string | null;
+          rating?: number | null;
+          comments?: string | null;
+        }) => ({
+          skill_log_id: logData.id,
+          skill: c.skill,
+          observed: c.observed || null,
+          performed_under_supervision: c.performed_under_supervision || null,
+          performed_consistently: c.performed_consistently || null,
+          rating: c.rating ?? null,
+          comments: c.comments ?? null,
+        }),
+      );
 
       const { error: compError } = await supabaseAdmin
         .from("skill_log_competencies")
@@ -138,7 +165,6 @@ export async function POST(req: NextRequest) {
       if (compError) throw compError;
     }
 
-    // Return full log
     const { data: fullLog } = await supabaseAdmin
       .from("skill_logs")
       .select(
@@ -153,10 +179,11 @@ export async function POST(req: NextRequest) {
       .single();
 
     return NextResponse.json({ success: true, data: fullLog }, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[POST /api/skillLog/create_skillLog]", err);
+    const message = err instanceof Error ? err.message : "Server error";
     return NextResponse.json(
-      { success: false, message: err.message },
+      { success: false, message },
       { status: 500 },
     );
   }

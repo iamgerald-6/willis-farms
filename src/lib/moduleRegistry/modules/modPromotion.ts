@@ -65,6 +65,7 @@ export const modPromotion: ModuleRecord = {
     "taxonomy.promotion.generalConditions",
     "taxonomy.promotion.formConfigForStep",
   ],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",

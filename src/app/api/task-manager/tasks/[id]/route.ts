@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { EDITABLE_TASK_FIELDS, type EditableTaskField } from "@/lib/taskAccessControl";
-import { enrichTasks, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
+import { enrichSingleTask, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
 
 // PATCH /api/task-manager/tasks/[id] — Senior Management only.
 // Only title, owner_id, due_date, description, frequency, indicator,
@@ -38,7 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     if (changedFields.length === 0) {
       const userNames = await fetchUserNames([existing.owner_id]);
-      return NextResponse.json({ task: enrichTasks([existing], userNames)[0] });
+      return NextResponse.json({ task: await enrichSingleTask(existing, userNames) });
     }
 
     // Moving a task between the Obligation Register and Monitoring
@@ -97,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
 
     const userNames = await fetchUserNames([updated.owner_id]);
-    return NextResponse.json({ task: enrichTasks([updated], userNames)[0] });
+    return NextResponse.json({ task: await enrichSingleTask(updated, userNames) });
   } catch (err: any) {
     console.error("[PATCH /api/task-manager/tasks/[id]]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });

@@ -1,9 +1,11 @@
+import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+
 export async function uploadCvToCloudinary(
   file: File,
 ): Promise<{ secure_url: string; public_id: string }> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", "willsUpload");
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
   formData.append("folder", "CareersCVs");
 
   const resourceType =
@@ -11,10 +13,7 @@ export async function uploadCvToCloudinary(
       ? "image"
       : "raw";
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/dmvr8ooz1/${resourceType}/upload`,
-    { method: "POST", body: formData },
-  );
+  const res = await fetch(cloudinaryUploadUrl(resourceType), { method: "POST", body: formData });
   const json = await res.json();
   if (!res.ok || !json.secure_url) {
     const message =

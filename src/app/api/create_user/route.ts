@@ -6,9 +6,10 @@ import {
 } from "@/lib/apiRequestAuth";
 import {
   buildInviteEmail,
-  getAppUrl,
   sendViaResend,
 } from "@/lib/email/resendClient";
+import { getAppBaseUrl } from "@/lib/appUrl";
+import { isSuperAdmin } from "@/lib/accessControl";
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (role === "super_admin") {
+    if (isSuperAdmin(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 403 });
     }
 
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
-    const redirectTo = `${getAppUrl()}/set-password`;
+    const redirectTo = `${getAppBaseUrl()}/set-password`;
 
     const { data: linkData, error: linkError } =
       await supabaseAdmin.auth.admin.generateLink({

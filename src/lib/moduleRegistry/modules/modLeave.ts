@@ -14,8 +14,9 @@ export const modLeave: ModuleRecord = {
     showInSidebar: true,
   },
   table: "leave_requests",
-  supportedActions: ["view", "add", "approve"],
+  supportedActions: ["view", "add", "review", "approve"],
   taxonomyRefs: ["taxonomy.leave.types"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",
@@ -41,6 +42,11 @@ export const modLeave: ModuleRecord = {
       id: "feat:leave:admin-review",
       label: "Approve or reject requests",
       requires: { approve: true },
+    },
+    {
+      id: "feat:leave:admin-read",
+      label: "Review all staff requests",
+      requires: { review: true },
     },
   ],
 
@@ -73,47 +79,6 @@ export const modLeave: ModuleRecord = {
     emptyState: {
       title: "No leave requests yet",
       description: 'Click "Apply for Leave" to get started.',
-    },
-  },
-
-  formDefinition: {
-    fields: [
-      {
-        id: "leave_type",
-        label: "Leave type",
-        type: "select",
-        required: true,
-        optionsRef: "taxonomy.leave.types",
-      },
-      {
-        id: "start_date",
-        label: "Start date",
-        type: "date",
-        required: true,
-        min: "today",
-      },
-      {
-        id: "end_date",
-        label: "End date",
-        type: "date",
-        required: true,
-      },
-      {
-        id: "reason",
-        label: "Reason",
-        type: "textarea",
-        requiredWhen: "leave_type === 'opt:leave:type:other'",
-        helpText: "Required when leave type is Other",
-      },
-      {
-        id: "user_id",
-        label: "Applicant",
-        type: "hidden",
-        source: { kind: "session", path: "userId" },
-      },
-    ],
-    autoFill: {
-      user_id: { kind: "session", path: "userId" },
     },
   },
 };

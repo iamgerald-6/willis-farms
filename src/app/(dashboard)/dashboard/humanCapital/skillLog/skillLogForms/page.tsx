@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useEffect } from "react";
+import { Suspense, useMemo, useEffect } from "react";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,25 +20,38 @@ import {
 } from "lucide-react";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
-  buildSkillLogCompetencyRows,
   getModuleRoute,
   getSkillLogGradeLevels,
-  getSkillLogSectionsForType,
-  getSkillLogTypeLegacyValues,
   parseSkillLogGradeLevel,
   SKILL_LOG_FORM_COPY,
   SKILL_LOG_MIN_FILLER_GRADE,
 } from "@/lib/moduleRegistry";
+import {
+  buildSkillLogCompetencyRowsFromConfig,
+  resolveSkillLogSectionsForType,
+  SKILL_LOG_MODULE_ID,
+  SKILL_LOG_REVIEW_PERIODS_LIST,
+  SKILL_LOG_SECTIONS_LIST,
+  SKILL_LOG_TIER_AUTH_LIST,
+  SKILL_LOG_TYPES_LIST,
+  type ModuleBusinessLogic,
+  type SystemOption,
+} from "@/lib/systemDefinitions";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
 const SKILL_LOG_ROUTE =
   getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
-const LOG_TYPE_OPTIONS = getSkillLogTypeLegacyValues() as unknown as [
-  string,
-  ...string[],
-];
 const ALL_GRADES = getSkillLogGradeLevels();
+
+function optionValue(opt: SystemOption): string {
+  return opt.legacy_value ?? opt.label;
+}
+
+function hasOptionValue(options: SystemOption[], value: string | undefined | null): boolean {
+  if (!value) return false;
+  return options.some((o) => optionValue(o) === value);
+}
 
 interface UserProfile {
   user_id: string;
@@ -60,7 +73,7 @@ const competencySchema = z.object({
 const skillLogSchema = z.object({
   employee_grade: z.string().min(1, "Select a grade"),
   employee_id: z.string().min(1, "Select an employee"),
-  log_type: z.enum(LOG_TYPE_OPTIONS, { error: "Select a log type" }),
+  log_type: z.string().min(1, "Select a log type"),
   review_period: z.string().min(1, "Review period is required"),
   section: z.string().optional(),
   tier_auth: z.string().optional(),
@@ -99,29 +112,6 @@ function FormSelect({
         </select>
         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
       </div>
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
-  );
-}
-
-function FormInput({
-  label,
-  error,
-  ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & {
-  label: string;
-  error?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-        {label}
-      </label>
-      <input
-        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 ${error ? "border-red-400" : "border-gray-200"}`}
-        style={{ "--tw-ring-color": BRAND } as any}
-        {...props}
-      />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
@@ -244,12 +234,58 @@ function SkillLogFormPageContent() {
     supervisorId,
   ]);
 
-  // ── Auth headers helper (Bearer token for routes that require it) ──
   const getAuthHeaders = async () => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
+
+  const fetchOptions = async (optionList: string) => {
+    const res = await api.get("/system-definitions/options", {
+      params: {
+        module_id: SKILL_LOG_MODULE_ID,
+        option_list: optionList,
+      },
+    });
+    return res.data.data as SystemOption[];
+  };
+
+  const { data: sectionOptions = [], isLoading: loadingSections } = useQuery({
+    queryKey: ["skill_log_options", SKILL_LOG_SECTIONS_LIST],
+    queryFn: () => fetchOptions(SKILL_LOG_SECTIONS_LIST),
+  });
+
+  const { data: tierAuthOptions = [], isLoading: loadingTierAuth } = useQuery({
+    queryKey: ["skill_log_options", SKILL_LOG_TIER_AUTH_LIST],
+    queryFn: () => fetchOptions(SKILL_LOG_TIER_AUTH_LIST),
+  });
+
+  const { data: reviewPeriodOptions = [], isLoading: loadingReviewPeriods } =
+    useQuery({
+      queryKey: ["skill_log_options", SKILL_LOG_REVIEW_PERIODS_LIST],
+      queryFn: () => fetchOptions(SKILL_LOG_REVIEW_PERIODS_LIST),
+    });
+
+  const { data: logTypeOptions = [], isLoading: loadingLogTypes } = useQuery({
+    queryKey: ["skill_log_options", SKILL_LOG_TYPES_LIST],
+    queryFn: () => fetchOptions(SKILL_LOG_TYPES_LIST),
+  });
+
+  const { data: moduleConfig } = useQuery<{ businessLogic: ModuleBusinessLogic }>({
+    queryKey: ["skill_log_module_config"],
+    queryFn: async () => {
+      const res = await api.get(
+        `/system-definitions/modules/${encodeURIComponent(SKILL_LOG_MODULE_ID)}`,
+      );
+      return {
+        businessLogic: (res.data.data?.businessLogic ??
+          {}) as ModuleBusinessLogic,
+      };
+    },
+  });
+
+  const competencyOverrides =
+    moduleConfig?.businessLogic?.competencyContentOverrides;
 
   // ── Load existing log for edit ──
   const { data: existingLog, isLoading: loadingExisting } = useQuery({
@@ -321,8 +357,8 @@ function SkillLogFormPageContent() {
       replace([]);
       return;
     }
-    replace(buildSkillLogCompetencyRows(watchedLogType));
-  }, [watchedLogType, replace, isEditMode]);
+    replace(buildSkillLogCompetencyRowsFromConfig(watchedLogType, competencyOverrides));
+  }, [watchedLogType, replace, isEditMode, competencyOverrides]);
 
   // Populate form in edit mode
   // Populate form in edit mode
@@ -412,8 +448,14 @@ function SkillLogFormPageContent() {
   }, [fields]);
 
   const logSections = watchedLogType
-    ? getSkillLogSectionsForType(watchedLogType)
+    ? resolveSkillLogSectionsForType(watchedLogType, competencyOverrides)
     : [];
+
+  const optionsLoading =
+    loadingSections ||
+    loadingTierAuth ||
+    loadingReviewPeriods ||
+    loadingLogTypes;
 
   if (isEditMode && loadingExisting) {
     return <FormPageSkeleton />;
@@ -513,25 +555,88 @@ function SkillLogFormPageContent() {
               )}
             />
 
-            <FormInput
-              label="Section"
-              placeholder="e.g. Breeding, Farrowing…"
-              error={errors.section?.message}
-              {...register("section")}
+            <Controller
+              control={control}
+              name="section"
+              render={({ field }) => (
+                <FormSelect
+                  label="Section"
+                  error={errors.section?.message}
+                  disabled={optionsLoading}
+                  {...field}
+                >
+                  <option value="">— Select section —</option>
+                  {sectionOptions.map((opt) => (
+                    <option key={opt.id} value={optionValue(opt)}>
+                      {opt.label}
+                    </option>
+                  ))}
+                  {isEditMode &&
+                    existingLog?.section &&
+                    !hasOptionValue(sectionOptions, existingLog.section) && (
+                      <option value={existingLog.section}>
+                        {existingLog.section}
+                      </option>
+                    )}
+                </FormSelect>
+              )}
             />
 
-            <FormInput
-              label="Tier Authorisation"
-              placeholder="GP / PS / external GGP semen handling"
-              error={errors.tier_auth?.message}
-              {...register("tier_auth")}
+            <Controller
+              control={control}
+              name="tier_auth"
+              render={({ field }) => (
+                <FormSelect
+                  label="Tier Authorisation"
+                  error={errors.tier_auth?.message}
+                  disabled={optionsLoading}
+                  {...field}
+                >
+                  <option value="">— Select tier —</option>
+                  {tierAuthOptions.map((opt) => (
+                    <option key={opt.id} value={optionValue(opt)}>
+                      {opt.label}
+                    </option>
+                  ))}
+                  {isEditMode &&
+                    existingLog?.tier_auth &&
+                    !hasOptionValue(tierAuthOptions, existingLog.tier_auth) && (
+                      <option value={existingLog.tier_auth}>
+                        {existingLog.tier_auth}
+                      </option>
+                    )}
+                </FormSelect>
+              )}
             />
 
-            <FormInput
-              label="Review Period"
-              placeholder="e.g. Jan–Mar 2026"
-              error={errors.review_period?.message}
-              {...register("review_period")}
+            <Controller
+              control={control}
+              name="review_period"
+              render={({ field }) => (
+                <FormSelect
+                  label="Review Period"
+                  error={errors.review_period?.message}
+                  disabled={optionsLoading}
+                  {...field}
+                >
+                  <option value="">— Select review period —</option>
+                  {reviewPeriodOptions.map((opt) => (
+                    <option key={opt.id} value={optionValue(opt)}>
+                      {opt.label}
+                    </option>
+                  ))}
+                  {isEditMode &&
+                    existingLog?.review_period &&
+                    !hasOptionValue(
+                      reviewPeriodOptions,
+                      existingLog.review_period,
+                    ) && (
+                      <option value={existingLog.review_period}>
+                        {existingLog.review_period}
+                      </option>
+                    )}
+                </FormSelect>
+              )}
             />
 
             {/* Log Type */}
@@ -542,14 +647,22 @@ function SkillLogFormPageContent() {
                 <FormSelect
                   label="Skills Log Type"
                   error={errors.log_type?.message}
+                  disabled={optionsLoading}
                   {...field}
                 >
                   <option value="">— Select log type —</option>
-                  {LOG_TYPE_OPTIONS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {logTypeOptions.map((opt) => (
+                    <option key={opt.id} value={optionValue(opt)}>
+                      {opt.label}
                     </option>
                   ))}
+                  {isEditMode &&
+                    existingLog?.log_type &&
+                    !hasOptionValue(logTypeOptions, existingLog.log_type) && (
+                      <option value={existingLog.log_type}>
+                        {existingLog.log_type}
+                      </option>
+                    )}
                 </FormSelect>
               )}
             />

@@ -81,6 +81,7 @@ export const modSop: ModuleRecord = {
   table: "content",
   supportedActions: ["view"],
   taxonomyRefs: ["taxonomy.sop.categories", "taxonomy.sop.subcategories"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",
@@ -124,6 +125,10 @@ export const modSop: ModuleRecord = {
   formDefinition: sopUploadFormDefinition,
 };
 
+// Not shown in the sidebar — Management is now reached via the "Manage"
+// toggle on /dashboard/sop (see SOPHubPage). This record stays registered
+// so the "sop:add" permission, taxonomy refs, and the /dashboard/addSop
+// direct link (kept alive for anyone linked straight to it) still resolve.
 export const modSopManage: ModuleRecord = {
   id: "mod:sop-manage",
   source: "builtin",
@@ -135,11 +140,12 @@ export const modSopManage: ModuleRecord = {
   sortOrder: 30,
   sidebar: {
     icon: "file-stack",
-    showInSidebar: true,
+    showInSidebar: false,
   },
   table: "content",
   supportedActions: ["view", "add", "edit"],
   taxonomyRefs: ["taxonomy.sop.categories", "taxonomy.sop.subcategories"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",

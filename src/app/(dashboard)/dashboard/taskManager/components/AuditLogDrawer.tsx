@@ -89,11 +89,32 @@ export default function AuditLogDrawer({
           {!isLoading && (data?.entries.length ?? 0) === 0 && (
             <p className="text-sm text-gray-400">No changes logged yet.</p>
           )}
-          {data?.entries.map((entry) => (
+          {data?.entries.map((entry) => {
+            // A "created" entry never sets changed_fields (nothing to diff
+            // against) — this was the only place `source: "ai_extracted"`,
+            // already written by the extraction save route, could actually
+            // be surfaced. Without this check every task's history just
+            // said "Created", whether it came from a document or was typed
+            // in by hand.
+            const isAiCreated = entry.action === "created" && entry.new_values?.source === "ai_extracted";
+            const sourceDocName = entry.new_values?.source_document_name;
+            return (
             <div key={entry.id} className="border-l-2 border-red-200 pl-4 pb-1">
-              <p className="text-sm font-semibold text-gray-900">
-                {ACTION_LABEL[entry.action] ?? entry.action}
-              </p>
+              {isAiCreated ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-900">Created</p>
+                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">
+                    AI extracted
+                  </span>
+                </div>
+              ) : (
+                <p className="text-sm font-semibold text-gray-900">
+                  {ACTION_LABEL[entry.action] ?? entry.action}
+                </p>
+              )}
+              {isAiCreated && !!sourceDocName && (
+                <p className="text-xs text-gray-500 mt-0.5">From: {String(sourceDocName)}</p>
+              )}
               <p className="text-xs text-gray-500 mt-0.5">
                 {entry.performed_by_name} &middot;{" "}
                 {new Date(entry.performed_at).toLocaleString("en-GB")}
@@ -117,7 +138,8 @@ export default function AuditLogDrawer({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

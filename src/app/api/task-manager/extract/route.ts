@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { extractPdfPages, MAX_EXTRACTION_FILES as MAX_FILES } from "@/lib/pdfPages";
+import { FREQUENCY_OPTIONS, TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import type { ExtractedTaskProposal, ExtractionJobFile } from "@/types/taskManager";
 
 // Without this, Vercel falls back to its platform default (as low as 10s
@@ -20,7 +22,6 @@ export const maxDuration = 90;
 // Keeps a batch fast enough to plausibly finish inside maxDuration and the
 // combined request small enough for the Messages API — "a couple of
 // related documents", not an entire filing cabinet in one go.
-const MAX_FILES = 5;
 const MAX_BYTES_PER_FILE = 25 * 1024 * 1024;
 const MAX_BYTES_TOTAL = 40 * 1024 * 1024;
 
@@ -110,9 +111,10 @@ const EXTRACTION_TOOL = {
           properties: {
             title: { type: "string", description: "Short, actionable task name" },
             description: { type: "string", description: "Relevant detail/context copied or summarized from the document(s)" },
+            start_date: { type: "string", description: "ISO date YYYY-MM-DD if the document states when work on this obligation should begin — separate from its deadline. Omit this field if no start date is stated." },
             due_date: { type: "string", description: "ISO date YYYY-MM-DD if a specific deadline is stated, otherwise omit this field" },
             is_recurring: { type: "boolean", description: "True if this is a recurring obligation (e.g. quarterly monitoring), false for a one-off deadline" },
-            frequency: { type: "string", description: "e.g. Quarterly, Monthly, Annual — only when is_recurring is true" },
+            frequency: { type: "string", description: `One of: ${FREQUENCY_OPTIONS.join(", ")} — only when is_recurring is true. Pick whichever of these matches the document's stated cadence most closely.` },
             indicator: { type: "string", description: "What is being measured or monitored, if this is a monitoring requirement" },
             method_provider: { type: "string", description: "The lab, test kit, or method used to check a monitoring requirement (e.g. 'Accredited lab', 'In-house test kit') — only for monitoring/testing tasks. Never a person's name; use owner_name for who is responsible." },
             owner_name: { type: "string", description: "The name of the person responsible, exactly as written in the document(s) — omit if no name is stated. This is matched against real user accounts server-side, not used directly." },
@@ -168,7 +170,7 @@ export async function POST(req: NextRequest) {
           // Legacy columns — first file, for anything not yet reading `files`.
           file_name: files[0].file_name ?? "document.pdf",
           file_url: files[0].file_url,
-          files: files.map((f) => ({ file_name: f.file_name ?? "document", file_url: f.file_url })),
+          files: files.map((f) => ({ file_name: f.file_name ?? "document", file_url: f.file_url, ...(f.pages?.length ? { pages: f.pages } : {}) })),
           status: "pending",
           created_by: user.id,
         },
@@ -184,7 +186,7 @@ export async function POST(req: NextRequest) {
         : "This is a compliance document (e.g. a permit, licence, or regulatory notice) for a farm operation in Ghana. Read it and extract every distinct obligation, deadline, renewal date, and recurring monitoring/reporting requirement as a task.";
 
     const instructions =
-      `${baseInstructions} Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document(s). If a date is written in a purely numeric, ambiguous format (e.g. 03/04/2026), read it as day/month/year — Ghana's convention — not month/day/year, unless the document clearly indicates otherwise (e.g. a month spelled out, or a US-format document). If this is a photo or scan of a handwritten page, some words may be genuinely illegible — for anything you can't read with confidence (a date, a number, a name), say so directly in that task's description rather than guessing at a value. If a person's name is written next to a task (an owner, responsible person, etc.), capture it in owner_name exactly as written — don't try to guess who it maps to in any system.`;
+      `${baseInstructions} Use clear, specific task titles a manager could act on directly, and use the units/dates exactly as stated in the document(s). If a date is written in a purely numeric, ambiguous format (e.g. 03/04/2026), read it as day/month/year — Ghana's convention — not month/day/year, unless the document clearly indicates otherwise (e.g. a month spelled out, or a US-format document). If this is a photo or scan of a handwritten page, some words may be genuinely illegible — for anything you can't read with confidence (a date, a number, a name), say so directly in that task's description rather than guessing at a value. If a person's name is written next to a task (an owner, responsible person, etc.), capture it in owner_name exactly as written — don't try to guess who it maps to in any system. If the document states both when work should begin and a separate deadline, capture the former as start_date and the latter as due_date — don't invent a start_date when only a deadline is given.`;
 
     // Word docs: pull the text out with mammoth and send it as plain text —
     // Claude's document blocks only read PDFs and images natively, and
@@ -198,8 +200,7 @@ export async function POST(req: NextRequest) {
     let totalBytes = 0;
 
     for (let i = 0; i < files.length; i++) {
-      const { file_url, file_name } = files[i];
-      const label = files.length > 1 ? `--- Document ${i + 1}: ${file_name ?? "document"} ---` : null;
+      const { file_url, file_name, pages: requestedPages } = files[i];
 
       const fileRes = await fetch(file_url);
       if (!fileRes.ok) throw new Error(`Could not download "${file_name ?? file_url}" (HTTP ${fileRes.status})`);
@@ -212,7 +213,9 @@ export async function POST(req: NextRequest) {
       // surprisingly large (an oversized page canvas at high resolution
       // easily hits 10-15MB for a single page), which is slow enough to
       // read that it's worth stopping early with real guidance rather than
-      // letting it time out.
+      // letting it time out. This check runs on the original download —
+      // trimming to selected pages (below) still requires downloading the
+      // whole file first, it just shrinks what actually gets sent to Claude.
       if (buffer.byteLength > MAX_BYTES_PER_FILE) {
         throw new Error(
           `"${file_name ?? "One of these files"}" is ${(buffer.byteLength / (1024 * 1024)).toFixed(1)}MB, which is too large to read reliably. Try a lower-resolution scan, or split a multi-page document into smaller files.`,
@@ -223,10 +226,48 @@ export async function POST(req: NextRequest) {
         throw new Error(`These files add up to more than ${MAX_BYTES_TOTAL / (1024 * 1024)}MB combined, which is too large to read reliably in one batch. Try uploading fewer at a time.`);
       }
 
+      const imgMediaType = imageMediaType(file_name ?? "", contentType);
+      const wordDoc = isWordDoc(file_name ?? "", contentType);
+
+      // If the reviewer picked specific pages in the page picker, trim the
+      // PDF down to just those before it's sent to Claude — this is what
+      // actually keeps a long document's read small, not just a UI
+      // affordance. Word docs and images have no page concept here (mammoth
+      // has no page boundaries; an image is already a single page), so this
+      // only ever applies to the native-PDF branch below. Re-validated and
+      // hard-capped server-side (extractPdfPages ignores anything past
+      // MAX_EXTRACTION_PAGES) regardless of what the client sent.
+      //
+      // A reviewer picking pages is a deliberate action, so if the file
+      // can't actually be read as a PDF at this point, that's surfaced as a
+      // real error with the underlying reason — not swallowed into a silent
+      // "send the whole thing instead", which would quietly ignore a choice
+      // they made on purpose.
+      let pageNote = "";
+      let pdfBuffer: Buffer = buffer;
+      if (!wordDoc && !imgMediaType && Array.isArray(requestedPages) && requestedPages.length > 0) {
+        try {
+          const trimmed = await extractPdfPages(buffer, requestedPages);
+          if (trimmed.pages.length < trimmed.totalPages) {
+            pdfBuffer = Buffer.from(trimmed.bytes);
+            pageNote = ` (page${trimmed.pages.length > 1 ? "s" : ""} ${trimmed.pages.join(", ")} of ${trimmed.totalPages} selected)`;
+          }
+        } catch (err: any) {
+          throw new Error(
+            `Couldn't apply your page selection to "${file_name ?? "that document"}": ${err?.message ?? "the file couldn't be read as a PDF"}. Remove the page selection and try again, or re-upload the document.`,
+          );
+        }
+      }
+
+      const label =
+        files.length > 1
+          ? `--- Document ${i + 1}: ${file_name ?? "document"}${pageNote} ---`
+          : pageNote
+            ? `Reading${pageNote} of "${file_name ?? "this document"}".`
+            : null;
       if (label) content.push({ type: "text", text: label });
 
-      const imgMediaType = imageMediaType(file_name ?? "", contentType);
-      if (isWordDoc(file_name ?? "", contentType)) {
+      if (wordDoc) {
         const { value: text } = await mammoth.extractRawText({ buffer });
         if (!text.trim()) throw new Error(`Couldn't read any text out of "${file_name ?? "that Word document"}".`);
         content.push({ type: "text", text });
@@ -234,15 +275,15 @@ export async function POST(req: NextRequest) {
         const base64 = buffer.toString("base64");
         content.push({ type: "image", source: { type: "base64", media_type: imgMediaType, data: base64 } });
       } else {
-        const base64 = buffer.toString("base64");
+        const base64 = pdfBuffer.toString("base64");
         content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } });
       }
     }
 
     const message = await anthropic.messages.create({
-      // Swap this for whatever's current on console.anthropic.com/models if
-      // this string ever stops resolving.
-      model: "claude-sonnet-4-5",
+      // Shared with the monthly report's executive summary — see
+      // TASK_MANAGER_AI_MODEL in taskManagerConstants.ts.
+      model: TASK_MANAGER_AI_MODEL,
       // A busy compliance document (or several read together) can easily
       // have 20-30+ distinct obligations, each with a title/description/
       // dates — 4096 was tight enough to truncate the tool call mid-JSON on
@@ -263,11 +304,15 @@ export async function POST(req: NextRequest) {
     // If generation was cut off before the tool call finished, don't report
     // a flat "no tasks" — that reads as "these documents have nothing in
     // them", which is misleading and sends whoever's debugging it down the
-    // wrong path. Surface the real cause instead.
+    // wrong path. Returned as a distinguishable `reason` (not just thrown)
+    // so the client can offer the page-picker as a recovery step instead of
+    // just showing a dead-end error — this is meant to be the exception,
+    // not something every upload has to plan around, so documents are read
+    // in full by default and only narrowed down when this actually fires.
     if (message.stop_reason === "max_tokens" && rawProposals.length === 0) {
-      throw new Error(
-        "These document(s) have too many obligations to extract in one pass. Try splitting them into smaller batches or sections.",
-      );
+      const msg = "These document(s) have too many obligations to extract in one pass. Select fewer pages per document and try again.";
+      await supabaseAdmin.from("tm_extraction_jobs").update({ status: "failed", error_message: msg }).eq("id", job.id);
+      return NextResponse.json({ error: msg, reason: "too_many_obligations" }, { status: 422 });
     }
 
     // Claude reads a written name off the page but has no idea which real

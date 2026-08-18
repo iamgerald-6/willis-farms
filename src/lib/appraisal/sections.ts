@@ -22,14 +22,14 @@ export function gradeIndex(g: string | null | undefined): number {
 }
 
 /**
- * Lowest grade allowed to rate anyone else's appraisal. L3 (index 2) —
- * an L2 may not appraise an L1, but an L3 may appraise L1 and L2.
+ * Lowest grade allowed to rate anyone else's appraisal. L4 (index 3) —
+ * an L3 may not appraise an L1, but an L4 may appraise L1 through L3.
  */
-export const MIN_SUPERVISOR_GRADE_INDEX = 2;
+export const MIN_SUPERVISOR_GRADE_INDEX = 3;
 
 /**
  * Can `raterGrade` fill the SUPERVISOR side for someone on `targetGrade`?
- * The rater must be L3+ and strictly above the person being appraised, so
+ * The rater must be L4+ and strictly above the person being appraised, so
  * every grade (including supervisors) is appraised by someone senior.
  */
 export function canRate(
@@ -80,6 +80,11 @@ export function supervisableGradeBands(raterGrade: string | null | undefined) {
 
 /** "quarterly" set = Q1–Q3. "annual" set = Q4. */
 export type SectionSet = "quarterly" | "annual";
+
+export const SECTION_SET_UI_LABELS: Record<SectionSet, string> = {
+  quarterly: "Quarterly",
+  annual: "Annual",
+};
 
 export function sectionSetForQuarter(quarter: Quarter): SectionSet {
   return quarter === "Q4" ? "annual" : "quarterly";
@@ -648,4 +653,65 @@ export const SECTIONS_MAP: Record<string, Record<SectionSet, SectionDef[]>> = {
 
 export function sectionsFor(gradeBand: string, quarter: Quarter): SectionDef[] {
   return SECTIONS_MAP[gradeBand]?.[sectionSetForQuarter(quarter)] ?? [];
+}
+
+/** Grade bands used in the appraisal rating grid (for System Definitions). */
+export const APPRAISAL_GRADE_BANDS = [
+  "L1",
+  "L2_L3",
+  "L4",
+  "L5_L6_L7",
+] as const;
+
+export type AppraisalGradeBand = (typeof APPRAISAL_GRADE_BANDS)[number];
+
+export const APPRAISAL_GRADE_BAND_LABELS: Record<AppraisalGradeBand, string> = {
+  L1: "L1 — Junior Swine Technician",
+  L2_L3: "L2 / L3 — Swine Technician",
+  L4: "L4 — Herd Supervisor",
+  L5_L6_L7: "L5 / L6 / L7 — Management",
+};
+
+/** Snapshot of default section weights from Git (for System Definitions + merge). */
+export function getGitSectionWeightSnapshot(): Record<
+  AppraisalGradeBand,
+  { quarterly: Record<string, number>; annual: Record<string, number> }
+> {
+  const out = {} as Record<
+    AppraisalGradeBand,
+    { quarterly: Record<string, number>; annual: Record<string, number> }
+  >;
+  for (const band of APPRAISAL_GRADE_BANDS) {
+    const sets = SECTIONS_MAP[band];
+    out[band] = {
+      quarterly: Object.fromEntries(
+        sets.quarterly.map((s) => [s.key, s.weight]),
+      ),
+      annual: Object.fromEntries(sets.annual.map((s) => [s.key, s.weight])),
+    };
+  }
+  return out;
+}
+
+/** Full Git section definitions for System Definitions editors. */
+export function getSectionsForBandSet(
+  gradeBand: AppraisalGradeBand,
+  sectionSet: SectionSet,
+): SectionDef[] {
+  return (SECTIONS_MAP[gradeBand]?.[sectionSet] ?? []).map((s) => ({
+    ...s,
+    items: [...s.items],
+  }));
+}
+
+/** Section titles for a band + set (editor labels). */
+export function getSectionMetaForBandSet(
+  gradeBand: AppraisalGradeBand,
+  sectionSet: SectionSet,
+): { key: string; title: string; defaultWeight: number }[] {
+  return (SECTIONS_MAP[gradeBand]?.[sectionSet] ?? []).map((s) => ({
+    key: s.key,
+    title: s.title,
+    defaultWeight: s.weight,
+  }));
 }

@@ -1,7 +1,9 @@
 export type {
+  BusinessRuleDef,
   FieldSource,
   FormDefinition,
   FormFieldDef,
+  FormFieldType,
   ListColumnDef,
   ListEmptyState,
   ListFilterDef,

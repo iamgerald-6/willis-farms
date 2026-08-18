@@ -8,7 +8,8 @@ import {
   periodLabel,
 } from "@/lib/appraisal/deadlines";
 import { canRate, type Quarter } from "@/lib/appraisal/sections";
-import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
+import { isSuperAdmin } from "@/lib/accessControl";
+import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import {
   requireAuth,
   jsonUnauthorized,
@@ -74,11 +75,17 @@ export async function POST(req: NextRequest) {
       !grade_band ||
       !review_year ||
       !review_quarter ||
-      !promotion_readiness ||
       (!employee_ratings && !supervisor_ratings)
     ) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 },
+      );
+    }
+
+    if (review_quarter === "Q4" && !promotion_readiness) {
+      return NextResponse.json(
+        { error: "Promotion readiness is required for Annual appraisals" },
         { status: 400 },
       );
     }
@@ -158,10 +165,10 @@ export async function POST(req: NextRequest) {
           "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
         );
       }
-      const isSuperAdminCaller = caller.role === "super_admin";
+      const isSuperAdminCaller = isSuperAdmin(caller.role);
       if (!isSuperAdminCaller && !canRate(caller.grade_level, current_grade)) {
         return jsonForbidden(
-          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
+          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
         );
       }
     }
@@ -286,7 +293,9 @@ export async function POST(req: NextRequest) {
       review_year,
       reviewing_manager: reviewing_manager ?? null,
       period_covered: period_covered ?? null,
-      promotion_readiness,
+      ...(review_quarter === "Q4" && promotion_readiness
+        ? { promotion_readiness }
+        : {}),
       strengths_observed: strengths_observed ?? null,
       improvement_areas: improvement_areas ?? null,
       agreed_actions: agreed_actions ?? null,
@@ -348,7 +357,7 @@ export async function POST(req: NextRequest) {
     // Employee submitted first → notify supervisor immediately (Section 6).
     if (submitted_by === "employee" && data?.supervisor_email) {
       const supervisorName = data.immediate_supervisor || "Supervisor";
-      sendSupervisorEvaluationDueEmail({
+      void sendSupervisorEvaluationDueEmail({
         supervisorEmail: data.supervisor_email,
         supervisorName,
         employeeName: employee_name,
@@ -357,13 +366,23 @@ export async function POST(req: NextRequest) {
         deadlineAt: data.deadline_at,
         appraisalId: data.id,
       }).then((result) => {
-        if (!result.sent) {
-          console.warn(
-            "[POST /api/appraisal/upload_appraisal] Supervisor notify email not sent:",
-            result.error,
-          );
-        }
+        logSupervisorEvaluationEmail(
+          "POST /api/appraisal/upload_appraisal",
+          result,
+          {
+            supervisorEmail: data.supervisor_email,
+            employeeName: employee_name,
+            appraisalId: data.id,
+            quarter: review_quarter,
+            year: review_year,
+          },
+        );
       });
+    } else if (submitted_by === "employee" && !data?.supervisor_email) {
+      console.warn(
+        "[POST /api/appraisal/upload_appraisal] Supervisor email skipped — no supervisor_email on record",
+        { appraisalId: data?.id, company_id, review_quarter, review_year },
+      );
     }
 
     return NextResponse.json({ data });

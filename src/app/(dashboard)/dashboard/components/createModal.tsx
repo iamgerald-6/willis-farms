@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +10,7 @@ import { User } from "@/types";
 import { useDispatch } from "react-redux";
 import { addUser } from "@/app/features/userSlice";
 import type { AppDispatch } from "@/app/store";
-import { QueryObserverResult } from "@tanstack/react-query";
+import { QueryObserverResult, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -27,6 +28,22 @@ const userSchema = z.object({
 
 type UserForm = z.infer<typeof userSchema>;
 
+type OnboardedCandidate = {
+  application_id: string;
+  full_name: string;
+  reference_number: string;
+  prefill: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    job_position: string;
+    grade_level?: string;
+    company_id?: string;
+  };
+  locked_fields: string[];
+};
+
 interface Props {
   open: boolean;
   setOpen: (val: boolean) => void;
@@ -43,13 +60,33 @@ const GRADE_LEVELS = [
   { value: "L7", label: "L7 – Operations/Production Manager" },
 ];
 
+const inputClass =
+  "w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500";
+
+const lockedClass =
+  "w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-gray-50 text-gray-700 cursor-not-allowed";
+
 export default function CreateUserModal({ open, setOpen, refetch }: Props) {
   const dispatch = useDispatch<AppDispatch>();
+  const queryClient = useQueryClient();
+  const [selectedOnboardingId, setSelectedOnboardingId] = useState("");
+  const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
+
+  const { data: onboardedCandidates = [], isLoading: loadingCandidates } =
+    useQuery({
+      queryKey: ["onboarded-invite-candidates"],
+      queryFn: async () => {
+        const res = await api.get("/careers/onboarding/invite-candidates");
+        return res.data.data as OnboardedCandidate[];
+      },
+      enabled: open,
+    });
 
   async function createUser(data: UserForm) {
     const res = await api.post("/create_user", data);
     return res.data;
   }
+
   const {
     register,
     handleSubmit,
@@ -59,6 +96,48 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     resolver: zodResolver(userSchema),
     defaultValues: { role: "employee" },
   });
+
+  const resetForm = () => {
+    setSelectedOnboardingId("");
+    setLockedFields(new Set());
+    reset({ role: "employee" });
+  };
+
+  useEffect(() => {
+    if (!open) resetForm();
+  }, [open]);
+
+  const applyOnboardedCandidate = (applicationId: string) => {
+    setSelectedOnboardingId(applicationId);
+
+    if (!applicationId) {
+      setLockedFields(new Set());
+      reset({ role: "employee" });
+      return;
+    }
+
+    const candidate = onboardedCandidates.find(
+      (c) => c.application_id === applicationId,
+    );
+    if (!candidate) return;
+
+    const { prefill, locked_fields } = candidate;
+    setLockedFields(new Set(locked_fields));
+
+    reset({
+      first_name: prefill.first_name,
+      last_name: prefill.last_name,
+      email: prefill.email,
+      phone: prefill.phone || undefined,
+      job_position: prefill.job_position || undefined,
+      company_id: prefill.company_id || "",
+      grade_level: (prefill.grade_level as UserForm["grade_level"]) || undefined,
+      role: "employee",
+    });
+  };
+
+  const fieldClass = (name: string) =>
+    lockedFields.has(name) ? lockedClass : inputClass;
 
   const { mutate, isPending } = useMutation({
     mutationFn: createUser,
@@ -77,14 +156,17 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
         created_at: new Date().toISOString(),
       };
       dispatch(addUser(newUser));
-      reset();
+      resetForm();
       setOpen(false);
       refetch();
+      queryClient.invalidateQueries({
+        queryKey: ["onboarded-invite-candidates"],
+      });
       toast.success(
-        `Invite sent to ${variables.email}! They'll receive an email to set their password.`
+        `Invite sent to ${variables.email}! They'll receive an email to set their password.`,
       );
     },
-    onError: (error: any) => {
+    onError: (error: { response?: { data?: { error?: string } } }) => {
       const message =
         error?.response?.data?.error ?? "Server error. Please try again.";
       toast.error(message);
@@ -107,14 +189,46 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Name row */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Select onboarded candidate (optional)
+              </label>
+              <select
+                value={selectedOnboardingId}
+                onChange={(e) => applyOnboardedCandidate(e.target.value)}
+                disabled={loadingCandidates}
+                className={`${inputClass} bg-white text-gray-700`}
+              >
+                <option value="">
+                  {loadingCandidates
+                    ? "Loading onboarded candidates…"
+                    : onboardedCandidates.length === 0
+                      ? "No onboarded candidates awaiting invite"
+                      : "— Enter manually or select from onboarding —"}
+                </option>
+                {onboardedCandidates.map((c) => (
+                  <option key={c.application_id} value={c.application_id}>
+                    {c.full_name} · {c.reference_number}
+                    {c.prefill.job_position ? ` · ${c.prefill.job_position}` : ""}
+                  </option>
+                ))}
+              </select>
+              {selectedOnboardingId && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Fields from onboarding are pre-filled. You still choose role and
+                  complete any missing details.
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <input
                   type="text"
                   placeholder="First Name"
+                  readOnly={lockedFields.has("first_name")}
                   {...register("first_name")}
-                  className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className={fieldClass("first_name")}
                 />
                 {errors.first_name && (
                   <p className="text-red-500 text-xs mt-1">
@@ -126,8 +240,9 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
                 <input
                   type="text"
                   placeholder="Last Name"
+                  readOnly={lockedFields.has("last_name")}
                   {...register("last_name")}
-                  className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className={fieldClass("last_name")}
                 />
                 {errors.last_name && (
                   <p className="text-red-500 text-xs mt-1">
@@ -137,13 +252,13 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               </div>
             </div>
 
-            {/* Email */}
             <div>
               <input
                 type="email"
                 placeholder="Email Address"
+                readOnly={lockedFields.has("email")}
                 {...register("email")}
-                className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                className={fieldClass("email")}
               />
               {errors.email && (
                 <p className="text-red-500 text-xs mt-1">
@@ -152,21 +267,21 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               )}
             </div>
 
-            {/* Phone */}
             <input
               type="text"
               placeholder="Phone Number (optional)"
+              readOnly={lockedFields.has("phone")}
               {...register("phone")}
-              className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              className={fieldClass("phone")}
             />
 
-            {/* Company ID */}
             <div>
               <input
                 type="text"
                 placeholder="Employee ID"
+                readOnly={lockedFields.has("company_id")}
                 {...register("company_id")}
-                className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                className={fieldClass("company_id")}
               />
               {errors.company_id && (
                 <p className="text-red-500 text-xs mt-1">
@@ -175,18 +290,19 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               )}
             </div>
 
-            {/* Job Position */}
             <input
               type="text"
               placeholder="Job Position (optional)"
+              readOnly={lockedFields.has("job_position")}
               {...register("job_position")}
-              className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              className={fieldClass("job_position")}
             />
 
             <div>
               <select
                 {...register("grade_level")}
-                className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-700"
+                disabled={lockedFields.has("grade_level")}
+                className={`${fieldClass("grade_level")} bg-white text-gray-700 disabled:cursor-not-allowed`}
               >
                 <option value="">Grade Level</option>
                 {GRADE_LEVELS.map((g) => (
@@ -202,11 +318,10 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               )}
             </div>
 
-            {/* Role */}
             <div>
               <select
                 {...register("role")}
-                className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                className={`${inputClass} bg-white`}
               >
                 <option value="employee">Employee</option>
                 <option value="manager">Manager</option>

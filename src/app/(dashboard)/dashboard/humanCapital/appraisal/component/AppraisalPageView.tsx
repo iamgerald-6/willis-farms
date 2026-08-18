@@ -14,6 +14,7 @@ import {
   canArchiveAppraisal,
   canViewAllAppraisalPeriods,
   hasFullAppraisalAccess,
+  isSuperAdmin,
 } from "@/lib/accessControl";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import { StatusBadge } from "./AppraisalStatusBadge";
@@ -76,7 +77,9 @@ function AppraisalCard({ appraisal }: { appraisal: Appraisal }) {
           <p className="font-medium text-gray-900 text-sm truncate">
             {appraisal.employee_name}
           </p>
-          <p className="text-xs text-gray-400 truncate">{appraisal.job_title}</p>
+          <p className="text-xs text-gray-400 truncate">
+            {appraisal.job_title}
+          </p>
           {appraisal.archived && <ArchivedTag />}
         </div>
         <StatusBadge
@@ -203,10 +206,10 @@ export default function AppraisalLandingPage({
   });
 
   const appraisals = data ?? [];
-  // L3+ can also appraise people below them; everyone else only ever fills
+  // L4+ can also appraise people below them; everyone else only ever fills
   // their own self-assessment.
   const viewerCanAppraiseOthers =
-    canAppraiseOthers(viewer.gradeLevel) || viewer.role === "super_admin";
+    canAppraiseOthers(viewer.gradeLevel) || isSuperAdmin(viewer.role);
   const outstandingCount = appraisals.filter(
     (a) => a.status !== "final_reviewed" && a.status !== "locked",
   ).length;
@@ -238,11 +241,11 @@ export default function AppraisalLandingPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!viewingArchived && outstandingCount > 0 && (
+          {/* {!viewingArchived && outstandingCount > 0 && (
             <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap">
               {outstandingCount} in progress
             </span>
-          )}
+          )} */}
           <button
             onClick={() => onNavigateToForm?.()}
             className="bg-red-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-shrink-0"
@@ -353,7 +356,9 @@ export default function AppraisalLandingPage({
                   <th className="px-4 py-3 font-semibold text-gray-600">
                     Period
                   </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Type</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Type
+                  </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
                     Grade Band
                   </th>
@@ -423,7 +428,9 @@ export default function AppraisalLandingPage({
                           {a.review_quarter === "Q4" ? "Annual" : "Quarterly"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{a.grade_band}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {a.grade_band}
+                      </td>
                       <td className="px-4 py-3">
                         <ScoreCell appraisal={a} />
                       </td>

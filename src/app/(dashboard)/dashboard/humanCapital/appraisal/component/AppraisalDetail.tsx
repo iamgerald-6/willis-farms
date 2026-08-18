@@ -227,7 +227,7 @@ export default function AppraisalDetail({
   const statusSummary = getStatusSummary(appraisal);
 
   // Which side of THIS record the viewer occupies. Everyone owns their own
-  // self-assessment; the supervisor side needs a strictly senior grade (L3+).
+  // self-assessment; the supervisor side needs a strictly senior grade (L4+).
   const side = appraisalSideFor(viewer, appraisal);
   const viewerIsEmployee = side === "employee";
   const viewerIsSupervisor = side === "supervisor";
@@ -1014,7 +1014,7 @@ export default function AppraisalDetail({
             </div>
           )}
 
-          {appraisal.promotion_readiness && (
+          {appraisal.review_quarter === "Q4" && appraisal.promotion_readiness && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
                 Promotion Readiness Notes

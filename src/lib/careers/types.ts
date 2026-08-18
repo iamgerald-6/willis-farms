@@ -3,6 +3,8 @@ export const APPLICATION_STATUSES = [
   "under_review",
   "shortlisted",
   "interview",
+  "hold",
+  "onboarding",
   "offer",
   "rejected",
 ] as const;
@@ -14,6 +16,8 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   under_review: "Under review",
   shortlisted: "Shortlisted",
   interview: "Interview",
+  hold: "Hold / reserve",
+  onboarding: "Onboarding",
   offer: "Offer",
   rejected: "Rejected",
 };
@@ -57,6 +61,7 @@ export interface InterviewSetup {
   interview_start_at?: string;
   location?: string;
   invites_sent_at?: string;
+  candidate_invite_sent_at?: string;
 }
 
 export type InterviewStage = 1 | 2 | 3;
@@ -86,6 +91,8 @@ export interface InterviewFormData {
     decision?: PanelDecision | "";
     decision_notes?: string;
     recommended_start_date?: string;
+    decision_confirmed_at?: string;
+    decision_confirmed_by?: string;
   };
   /** @deprecated legacy panel fields — migrated on read */
   panel?: {
@@ -130,6 +137,7 @@ export function normalizeInterviewFormData(
         : data.setup?.interview_start_at,
       location: legacy?.location ?? data.setup?.location,
       invites_sent_at: data.setup?.invites_sent_at,
+      candidate_invite_sent_at: data.setup?.candidate_invite_sent_at,
     };
   }
 

@@ -451,7 +451,8 @@ export default function FinalReviewForm({
         );
       })}
 
-      {/* ── Promotion Readiness ── */}
+      {/* ── Promotion Readiness (Q4 only) ── */}
+      {appraisal.review_quarter === "Q4" && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-bold text-gray-800 mb-1">Promotion Readiness Notes</h3>
         <p className="text-xs text-gray-400 mb-4">
@@ -481,6 +482,7 @@ export default function FinalReviewForm({
           ))}
         </div>
       </div>
+      )}
 
       {/* ── Discussion Notes ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">

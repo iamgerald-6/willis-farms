@@ -9,16 +9,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { buildSidebarNav, type SidebarNavItem } from "@/lib/moduleRegistry";
 import {
-  buildSidebarNav,
-  type SidebarNavItem,
-} from "@/lib/moduleRegistry";
-import {
-  canAccessPage,
   hasUnrestrictedAccess,
   resolveAccessProfile,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
+import { canAccessPage } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -53,10 +51,14 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
   const canSee = (key: PagePermissionKey) => {
     if (unrestricted) return true;
-    return accessProfile ? canAccessPage(accessProfile, key) : false;
+    return accessProfile
+      ? canAccessPage(accessProfile, key, groupPresets, sessionRole)
+      : false;
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -120,9 +122,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           const expanded = isOpen(item);
           const hasChildren = !!children?.length;
 
-          const visibleChildren = children?.filter((c) =>
-            canSee(c.legacyKey),
-          );
+          const visibleChildren = children?.filter((c) => canSee(c.legacyKey));
 
           return (
             <div key={item.moduleId ?? href}>

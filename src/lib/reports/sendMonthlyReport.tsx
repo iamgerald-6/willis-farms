@@ -4,6 +4,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import { fetchUserNames } from "@/lib/taskManagerData";
+import { TASK_MANAGER_FROM_EMAIL } from "@/lib/taskManagerEmail";
+import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
+import { getAppBaseUrl } from "@/lib/appUrl";
 import MonthlyReportDocument, {
   MonthlyReportData,
   OwnerStat,
@@ -68,7 +71,7 @@ async function generateExecutiveSummary(
 
   try {
     const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: TASK_MANAGER_AI_MODEL,
       max_tokens: 600,
       messages: [
         {
@@ -369,7 +372,7 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
 
   upcoming.sort((a, b) => a.due_date.localeCompare(b.due_date));
 
-  const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://willsfarms.com"}/dashboard/taskManager`;
+  const dashboardUrl = `${getAppBaseUrl()}/dashboard/taskManager`;
   const periodLabel = `${new Date(period_start).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} – ${new Date(period_end).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
 
   // The full picture, not just a top-3 — next month's comparison needs
@@ -448,7 +451,7 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
 
   if (process.env.RESEND_API_KEY) {
     await resend.emails.send({
-      from: "Wills Farms Task Manager <onboarding@resend.dev>",
+      from: TASK_MANAGER_FROM_EMAIL,
       to: recipients,
       subject: `Task Manager Monthly Report — ${periodLabel}`,
       html: `

@@ -1,5 +1,11 @@
 import { isSuperAdmin } from "@/lib/accessControl";
 import {
+  actionsToLevels,
+  canPerformModuleAction,
+  getEffectivePermissionActions,
+} from "@/lib/permissionActions";
+import type { GroupPresetsMap } from "@/lib/groupPermissionPresets";
+import {
   canManageAccessControl,
   isFullRoleAccess,
   PAGE_PERMISSION_KEYS,
@@ -198,7 +204,7 @@ export function canOpenUserManagement(
   ) {
     return true;
   }
-  return canViewPageLevel(profile, "users", sessionRole);
+  return canPerformModuleAction(profile, "users", "view", sessionRole);
 }
 
 export function canAddUser(
@@ -213,7 +219,7 @@ export function canAddUser(
   ) {
     return true;
   }
-  return canAddOnPage(profile, "users", sessionRole);
+  return canPerformModuleAction(profile, "users", "add", sessionRole);
 }
 
 export function canManageUserAccounts(
@@ -228,21 +234,22 @@ export function canManageUserAccounts(
   ) {
     return true;
   }
-  return canEditOnPage(profile, "users", sessionRole);
+  return canPerformModuleAction(profile, "users", "edit", sessionRole);
 }
 
-/** Pre-tick values for the Manage User matrix — reflects what the role can
- * actually do today (role bypasses + defaults), not just stored overrides,
- * so the radios are never blank for a role that already has access. */
+/** Pre-tick checkbox matrix — reflects effective access for this user today. */
+export function getEffectivePermissionActionsForProfile(
+  profile: AccessProfile,
+  groupPresets?: GroupPresetsMap | null,
+): import("@/lib/moduleRegistry/types").PagePermissionActions {
+  return getEffectivePermissionActions(profile, profile.role, groupPresets);
+}
+
+/** Legacy radio levels derived from effective checkbox actions. */
 export function getEffectivePermissionLevels(
   profile: AccessProfile,
 ): PagePermissionLevels {
-  const levels: PagePermissionLevels = {};
-  for (const key of PAGE_PERMISSION_KEYS) {
-    const level = getPagePermissionLevel(profile, key, profile.role);
-    if (level) levels[key] = level;
-  }
-  return levels;
+  return actionsToLevels(getEffectivePermissionActionsForProfile(profile));
 }
 
 export function levelsToLegacyPageKeys(

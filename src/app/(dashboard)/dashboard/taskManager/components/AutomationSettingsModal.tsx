@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMReportSchedule, TMReminderSettings } from "@/types/taskManager";
+import { User } from "@/types";
+import StaffMultiSelect from "./StaffMultiSelect";
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
 
@@ -16,7 +18,7 @@ function ordinal(n: number) {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
-export default function AutomationSettingsModal({ onClose }: { onClose: () => void }) {
+export default function AutomationSettingsModal({ users, onClose }: { users: User[]; onClose: () => void }) {
   const queryClient = useQueryClient();
 
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery<{ schedule: TMReportSchedule }>({
@@ -29,12 +31,15 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
   });
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [dayOfMonth, setDayOfMonth] = useState(1);
-  const [scheduleRecipients, setScheduleRecipients] = useState("");
+  // Recipients are picked from real staff accounts (see StaffMultiSelect)
+  // rather than typed as free-text emails — stored as a plain list of
+  // emails either way, since that's what the schedule endpoint expects.
+  const [scheduleRecipients, setScheduleRecipients] = useState<string[]>([]);
   const [savingSchedule, setSavingSchedule] = useState(false);
 
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [daysBeforeDue, setDaysBeforeDue] = useState(14);
-  const [reminderCc, setReminderCc] = useState("");
+  const [reminderCc, setReminderCc] = useState<string[]>([]);
   const [savingReminders, setSavingReminders] = useState(false);
   const [testingReminders, setTestingReminders] = useState(false);
 
@@ -42,7 +47,7 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
     if (scheduleData?.schedule) {
       setScheduleEnabled(scheduleData.schedule.enabled);
       setDayOfMonth(scheduleData.schedule.day_of_month);
-      setScheduleRecipients(scheduleData.schedule.recipients.join(", "));
+      setScheduleRecipients(scheduleData.schedule.recipients ?? []);
     }
   }, [scheduleData]);
 
@@ -50,19 +55,18 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
     if (reminderData?.settings) {
       setRemindersEnabled(reminderData.settings.enabled);
       setDaysBeforeDue(reminderData.settings.days_before_due);
-      setReminderCc((reminderData.settings.cc_recipients ?? []).join(", "));
+      setReminderCc(reminderData.settings.cc_recipients ?? []);
     }
   }, [reminderData]);
 
   const handleSaveSchedule = async () => {
-    const emails = scheduleRecipients.split(",").map((e) => e.trim()).filter(Boolean);
-    if (scheduleEnabled && emails.length === 0) {
-      toast.error("Add at least one recipient before enabling the schedule");
+    if (scheduleEnabled && scheduleRecipients.length === 0) {
+      toast.error("Select at least one recipient before enabling the schedule");
       return;
     }
     setSavingSchedule(true);
     try {
-      await api.put("/task-manager/reports/schedule", { enabled: scheduleEnabled, day_of_month: dayOfMonth, recipients: emails });
+      await api.put("/task-manager/reports/schedule", { enabled: scheduleEnabled, day_of_month: dayOfMonth, recipients: scheduleRecipients });
       toast.success("Report schedule saved");
       queryClient.invalidateQueries({ queryKey: ["tm-report-schedule"] });
     } catch (err: any) {
@@ -92,10 +96,9 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
   };
 
   const handleSaveReminders = async () => {
-    const cc = reminderCc.split(",").map((e) => e.trim()).filter(Boolean);
     setSavingReminders(true);
     try {
-      await api.put("/task-manager/reminders/settings", { enabled: remindersEnabled, days_before_due: daysBeforeDue, cc_recipients: cc });
+      await api.put("/task-manager/reminders/settings", { enabled: remindersEnabled, days_before_due: daysBeforeDue, cc_recipients: reminderCc });
       toast.success("Reminder settings saved");
       queryClient.invalidateQueries({ queryKey: ["tm-reminder-settings"] });
     } catch (err: any) {
@@ -157,12 +160,12 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to (comma-separated emails)</label>
-                  <input
-                    value={scheduleRecipients}
-                    onChange={(e) => setScheduleRecipients(e.target.value)}
-                    placeholder="e.g. gm@willsfarms.com, ops@willsfarms.com"
-                    className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to</label>
+                  <StaffMultiSelect
+                    users={users}
+                    selectedEmails={scheduleRecipients}
+                    onChange={setScheduleRecipients}
+                    placeholder="Select staff to receive the report…"
                   />
                 </div>
 
@@ -219,14 +222,14 @@ export default function AutomationSettingsModal({ onClose }: { onClose: () => vo
                   <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
                     Also notify (optional)
                   </label>
-                  <input
-                    value={reminderCc}
-                    onChange={(e) => setReminderCc(e.target.value)}
-                    placeholder="e.g. ops@willsfarms.com — leave blank if not needed"
-                    className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  <StaffMultiSelect
+                    users={users}
+                    selectedEmails={reminderCc}
+                    onChange={setReminderCc}
+                    placeholder="Select staff to copy — optional"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Backup addresses copied on every reminder, in case an owner misses theirs. Not required.
+                    Backup staff copied on every reminder, in case an owner misses theirs. Not required.
                   </p>
                 </div>
 

@@ -17,8 +17,14 @@ import {
   Plus,
   X,
   Loader2,
+  Upload,
+  FileText,
 } from "lucide-react";
-import { getLeaveTypeLegacyValues, getLeaveTypeOptions } from "@/lib/moduleRegistry";
+import type { SystemOption } from "@/lib/systemDefinitions";
+import {
+  CLOUDINARY_UPLOAD_PRESET,
+  cloudinaryUploadUrl,
+} from "@/lib/cloudinary";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LeaveRequest {
@@ -42,12 +48,9 @@ interface LeaveBalance {
   remaining: number;
 }
 
-// ─── Constants (from module registry taxonomy) ───────────────────────────────
-const LEAVE_TYPES = getLeaveTypeLegacyValues() as unknown as [
-  string,
-  ...string[],
-];
-const LEAVE_TYPE_OPTIONS = getLeaveTypeOptions();
+// ─── Constants ───────────────────────────────────────────────────────────────
+const LEAVE_MODULE_ID = "mod:leave";
+const LEAVE_TYPES_LIST = "leave.types";
 
 const STATUS_STYLES = {
   pending: {
@@ -68,29 +71,52 @@ const STATUS_STYLES = {
 };
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
-const leaveSchema = z
+const leaveFormSchema = z
   .object({
-    leave_type: z.enum(LEAVE_TYPES, {
-      error: "Leave type is required",
-    }),
+    leave_type: z.string().min(1, "Leave type is required"),
     start_date: z.string().min(1, "Start date is required"),
     end_date: z.string().min(1, "End date is required"),
     reason: z.string().optional(),
+    document_url: z.string().optional(),
   })
   .refine((d) => new Date(d.start_date) <= new Date(d.end_date), {
     message: "End date must be after start date",
     path: ["end_date"],
-  })
-  .refine(
-    (d) => {
-      if (d.leave_type === "Other")
-        return !!d.reason && d.reason.trim().length > 0;
-      return true;
-    },
-    { message: "Reason is required for Other leave type", path: ["reason"] }
-  );
+  });
 
-type LeaveFormValues = z.infer<typeof leaveSchema>;
+type LeaveFormValues = z.infer<typeof leaveFormSchema>;
+
+async function uploadLeaveDocument(
+  file: File,
+): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder", "WillDocs/Leave");
+
+  const res = await fetch(cloudinaryUploadUrl("raw"), {
+    method: "POST",
+    body: formData,
+  });
+  const json = await res.json();
+  if (!res.ok || !json.secure_url) {
+    throw new Error(
+      json?.error?.message ?? `Upload failed (HTTP ${res.status})`,
+    );
+  }
+  return json.secure_url as string;
+}
+
+function selectedOptionRules(
+  options: SystemOption[],
+  legacyValue: string | undefined,
+): SystemOption["rules"] {
+  if (!legacyValue) return {};
+  return (
+    options.find((o) => (o.legacy_value ?? o.label) === legacyValue)?.rules ??
+    {}
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function calcWorkingDays(start: string, end: string): number {
@@ -139,20 +165,39 @@ function ApplyLeaveModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+
+  const { data: leaveTypeOptions = [], isLoading: optionsLoading } =
+    useQuery<SystemOption[]>({
+      queryKey: ["leave_type_options"],
+      queryFn: async () => {
+        const res = await api.get("/system-definitions/options", {
+          params: {
+            module_id: LEAVE_MODULE_ID,
+            option_list: LEAVE_TYPES_LIST,
+          },
+        });
+        return res.data.data as SystemOption[];
+      },
+    });
+
   const {
     register,
     handleSubmit,
     watch,
     reset,
+    setError,
     formState: { errors },
   } = useForm<LeaveFormValues>({
-    resolver: zodResolver(leaveSchema),
+    resolver: zodResolver(leaveFormSchema),
   });
 
   const startDate = watch("start_date");
   const endDate = watch("end_date");
   const leaveType = watch("leave_type");
   const totalDays = calcWorkingDays(startDate, endDate);
+  const typeRules = selectedOptionRules(leaveTypeOptions, leaveType);
 
   // ── useMutation for POST ───────────────────────────────────────────────────
   const mutation = useMutation({
@@ -163,6 +208,7 @@ function ApplyLeaveModal({
       start_date: string;
       end_date: string;
       total_days: number;
+      document_url?: string | null;
     }) => api.post("/leave/apply", payload),
     onSuccess: () => {
       toast.success("Leave request submitted successfully!");
@@ -177,20 +223,51 @@ function ApplyLeaveModal({
     },
   });
 
-  const onSubmit = (data: LeaveFormValues) => {
+  const onSubmit = async (data: LeaveFormValues) => {
     if (totalDays < 1) {
       toast.error("Please select a valid date range.");
       return;
     }
+
+    if (typeRules.requires_reason && !data.reason?.trim()) {
+      setError("reason", {
+        message: "A reason is required for this leave type",
+      });
+      return;
+    }
+
+    if (typeRules.requires_document && !documentFile) {
+      toast.error("Please attach a supporting document.");
+      return;
+    }
+
+    let documentUrl: string | null = null;
+    if (documentFile) {
+      setUploadingDoc(true);
+      try {
+        documentUrl = await uploadLeaveDocument(documentFile);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Document upload failed.",
+        );
+        setUploadingDoc(false);
+        return;
+      }
+      setUploadingDoc(false);
+    }
+
     mutation.mutate({
       user_id: userId,
       leave_type: data.leave_type,
-      reason: data.reason || null,
+      reason: data.reason?.trim() || null,
       start_date: data.start_date,
       end_date: data.end_date,
       total_days: totalDays,
+      document_url: documentUrl,
     });
   };
+
+  const busy = mutation.isPending || uploadingDoc;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
@@ -222,11 +299,17 @@ function ApplyLeaveModal({
             </label>
             <select
               {...register("leave_type")}
+              disabled={optionsLoading}
               className={inputCls(!!errors.leave_type)}
             >
-              <option value="">Select leave type</option>
-              {LEAVE_TYPE_OPTIONS.map((t) => (
-                <option key={t.id} value={t.legacyValue ?? t.label}>
+              <option value="">
+                {optionsLoading ? "Loading…" : "Select leave type"}
+              </option>
+              {leaveTypeOptions.map((t) => (
+                <option
+                  key={t.id}
+                  value={t.legacy_value ?? t.label}
+                >
                   {t.label}
                 </option>
               ))}
@@ -284,11 +367,37 @@ function ApplyLeaveModal({
             </div>
           )}
 
+          {/* Supporting document */}
+          {typeRules.requires_document && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Supporting document <span className="text-red-500">*</span>
+              </label>
+              <label className="flex items-center gap-3 border border-dashed border-gray-300 rounded-lg px-3 py-3 cursor-pointer hover:border-red-300 hover:bg-red-50/30 transition">
+                <Upload className="w-4 h-4 text-gray-400 shrink-0" />
+                <span className="text-sm text-gray-600 truncate">
+                  {documentFile ? documentFile.name : "Choose PDF or image…"}
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  className="sr-only"
+                  onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+              {documentFile && (
+                <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                  <FileText className="w-3 h-3" /> {documentFile.name}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Reason */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1.5">
               Reason{" "}
-              {leaveType === "Other" ? (
+              {typeRules.requires_reason ? (
                 <span className="text-red-500">*</span>
               ) : (
                 <span className="text-gray-400">(optional)</span>
@@ -312,19 +421,20 @@ function ApplyLeaveModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={mutation.isPending}
+              disabled={busy}
               className="flex-1 border border-gray-200 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={mutation.isPending}
+              disabled={busy || optionsLoading}
               className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              {mutation.isPending ? (
+              {busy ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Submitting...
+                  <Loader2 className="w-4 h-4 animate-spin" />{" "}
+                  {uploadingDoc ? "Uploading…" : "Submitting..."}
                 </>
               ) : (
                 "Submit Request"
@@ -365,7 +475,10 @@ export default function LeavePage() {
 
   const requests = data?.data ?? [];
   const balance = data?.balance ?? { total: 30, used: 0, remaining: 30 };
-  const balancePct = Math.min((balance.used / balance.total) * 100, 100);
+  const balancePct =
+    balance.total > 0
+      ? Math.min((balance.used / balance.total) * 100, 100)
+      : 0;
 
   return (
     <div className="p-6 min-h-screen bg-gray-50">

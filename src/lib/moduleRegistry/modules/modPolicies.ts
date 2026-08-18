@@ -62,6 +62,7 @@ export const modPolicies: ModuleRecord = {
   table: "manuals",
   supportedActions: ["view", "add", "edit"],
   taxonomyRefs: ["taxonomy.policies.categories"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",

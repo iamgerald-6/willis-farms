@@ -24,9 +24,13 @@ export interface User {
   access_tier?: AccessTier;
   /** Page keys when access_tier is delegated — legacy view list */
   page_permissions?: string[];
-  /** view | add | edit per page key */
+  /** view | add | edit per page key — legacy hierarchical levels */
   page_permission_levels?: Partial<
     Record<string, "view" | "add" | "edit">
+  > | null;
+  /** Independent actions per page key: view, add, edit, approve, review */
+  page_permission_actions?: Partial<
+    Record<string, Partial<Record<string, boolean>>>
   > | null;
   access_updated_at?: string | null;
   access_updated_by?: string | null;
@@ -59,6 +63,19 @@ export interface Content {
   created_by: string;
   /** Resolved display name of the creator — added by the API, not stored. */
   created_by_name?: string | null;
+  /** Set when archived (hidden from the main list, restorable). Requires
+   * docs/sop/sop-audit-log.sql to have been run. */
+  archived_at?: string | null;
+}
+
+export interface SopAuditLogEntry {
+  id: string;
+  content_id: string;
+  content_title: string;
+  action: "added" | "edited" | "archived" | "restored" | "deleted";
+  performed_by: string;
+  performed_by_name: string;
+  performed_at: string;
 }
 
 // Appraisal-specific types (0–100% scoring, Q1–Q4 with Q4 = Annual) now

@@ -19,7 +19,6 @@ import {
   Info,
   Award,
   Lock,
-  Mail,
   CalendarClock,
 } from "lucide-react";
 import {
@@ -42,6 +41,7 @@ import {
   sectionsFor,
 } from "@/lib/appraisal/sections";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
+import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
 import {
   computeDeadline,
   getActiveAppraisalPeriod,
@@ -52,6 +52,15 @@ import {
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
+import {
+  APPRAISAL_MODULE_ID_CONST,
+  APPRAISAL_SECTION_AUTH_LIST,
+  applySectionBaseWeights,
+  applySectionContentOverrides,
+  applySectionWeightRules,
+  type ModuleBusinessLogic,
+  type SystemOption,
+} from "@/lib/systemDefinitions";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -349,6 +358,11 @@ export default function AppraisalForm({
   const [promotionReadiness, setPromotionReadiness] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [reviewDate, setReviewDate] = useState("");
+  /** Which user_id is picked in the "Immediate Supervisor" dropdown — the
+   * name and email that actually get submitted are looked up from this and
+   * written via setValue (see handleSupervisorSelect), so there's no way to
+   * pick a supervisor's name without their email coming along with it. */
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState("");
 
   const {
     register,
@@ -385,6 +399,41 @@ export default function AppraisalForm({
       return res.data;
     },
   });
+
+  const { data: sectionAuthOptions = [] } = useQuery<SystemOption[]>({
+    queryKey: ["appraisal_section_authorisations"],
+    queryFn: async () => {
+      const res = await api.get("/system-definitions/options", {
+        params: {
+          module_id: APPRAISAL_MODULE_ID_CONST,
+          option_list: APPRAISAL_SECTION_AUTH_LIST,
+        },
+      });
+      return res.data.data as SystemOption[];
+    },
+  });
+
+  const { data: moduleConfig } = useQuery<{
+    businessLogic: ModuleBusinessLogic;
+  }>({
+    queryKey: ["appraisal_module_config"],
+    queryFn: async () => {
+      const res = await api.get(
+        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
+      );
+      return {
+        businessLogic: (res.data.data?.businessLogic ??
+          {}) as ModuleBusinessLogic,
+      };
+    },
+  });
+
+  const weightRules = moduleConfig?.businessLogic?.sectionWeightRules ?? [];
+  const globalSectionWeights =
+    moduleConfig?.businessLogic?.globalSectionWeights;
+  const sectionBaseWeights = moduleConfig?.businessLogic?.sectionBaseWeights;
+  const sectionContentOverrides =
+    moduleConfig?.businessLogic?.sectionContentOverrides;
   const allUsers = usersData ?? [];
 
   // ── Current viewer profile ──
@@ -394,7 +443,7 @@ export default function AppraisalForm({
   );
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
-  const isSuperAdmin = currentUserProfile?.role === "super_admin";
+  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.role);
 
   // ── Which side of the form am I filling? ──
   // Everyone — supervisors included — completes their own self-assessment, so
@@ -425,7 +474,7 @@ export default function AppraisalForm({
   const supervisorMode = hasSubject && !isOwnAppraisal(viewer, subject);
   const selfAppraisalMode = hasSubject && !supervisorMode;
 
-  // Can this viewer appraise anyone other than themselves at all? (L3+)
+  // Can this viewer appraise anyone other than themselves at all? (L4+)
   const canSelectForOthers =
     !isFillingSecond && (canAppraiseOthers(currentUserGrade) || isSuperAdmin);
 
@@ -480,7 +529,84 @@ export default function AppraisalForm({
       (u) => u.company_id === existingAppraisal.company_id,
     );
     if (emp) setSelectedEmployee(emp);
+
+    // Re-select the matching entry in the supervisor dropdown too, so
+    // reopening a draft shows who's already picked rather than a blank
+    // dropdown — matched by email since that's the one value we know is
+    // unique per account (a name alone could collide or have since changed).
+    if (existingAppraisal.supervisor_email) {
+      const sup = allUsers.find(
+        (u) => u.email === existingAppraisal.supervisor_email,
+      );
+      if (sup) setSelectedSupervisorId(sup.user_id);
+    }
   }, [existingAppraisal, allUsers, setValue]);
+
+  // ── Immediate Supervisor dropdown — every user eligible to rate the
+  // employee actually being appraised (self, or whoever's picked in "Select
+  // Employee" below), same L4+/strictly-senior rule the rest of the
+  // appraisal system already uses (canRate). Picking a name here writes
+  // BOTH immediate_supervisor and supervisor_email together (see
+  // handleSupervisorSelect) — there's no longer a way to attach a
+  // supervisor's name without their email coming along with it, which is
+  // what actually routes the "please complete your evaluation" notification. ──
+  const employeeGradeForSupervisorList = fillingForSelf
+    ? currentUserGrade
+    : selectedEmployee?.grade_level;
+  const eligibleSupervisors = useMemo(() => {
+    if (isFillingSecond || !employeeGradeForSupervisorList) return [];
+    const employeeId = fillingForSelf ? userId : selectedEmployee?.user_id;
+    return allUsers.filter(
+      (u) =>
+        u.user_id !== employeeId &&
+        canRate(u.grade_level, employeeGradeForSupervisorList),
+    );
+  }, [
+    allUsers,
+    isFillingSecond,
+    employeeGradeForSupervisorList,
+    fillingForSelf,
+    userId,
+    selectedEmployee,
+  ]);
+
+  const handleSupervisorSelect = (supervisorUserId: string) => {
+    setSelectedSupervisorId(supervisorUserId);
+    const sup = eligibleSupervisors.find((u) => u.user_id === supervisorUserId);
+    setValue(
+      "immediate_supervisor",
+      sup ? `${sup.first_name} ${sup.last_name}` : "",
+    );
+    setValue("supervisor_email", sup?.email ?? "");
+  };
+
+  // Filling for someone I supervise — I AM their supervisor for this
+  // appraisal by definition, so lock the field to my own name+email
+  // instead of offering a choice (see the locked, read-only branch in the
+  // JSX below). Filling for myself instead: clear back to blank so a stale
+  // pick from a previous employee/mode doesn't silently carry over — e.g.
+  // it may not even be in the new eligible list anymore.
+  useEffect(() => {
+    if (isFillingSecond) return;
+    if (!fillingForSelf && currentUserProfile) {
+      setSelectedSupervisorId(currentUserProfile.user_id);
+      setValue(
+        "immediate_supervisor",
+        `${currentUserProfile.first_name} ${currentUserProfile.last_name}`,
+      );
+      setValue("supervisor_email", currentUserProfile.email ?? "");
+      return;
+    }
+    setSelectedSupervisorId("");
+    setValue("immediate_supervisor", "");
+    setValue("supervisor_email", "");
+  }, [
+    fillingForSelf,
+    selectedEmployee?.user_id,
+    isFillingSecond,
+    currentUserProfile,
+    setValue,
+  ]);
 
   // ── Filter employees for a fresh supervisor fill ──
   const filteredEmployees = useMemo(() => {
@@ -502,7 +628,36 @@ export default function AppraisalForm({
     isFillingSecond,
   ]);
 
-  const sections = sectionsFor(gradeBand, quarter);
+  const sections = useMemo(() => {
+    const base = sectionsFor(gradeBand, quarter);
+    const withContent = applySectionContentOverrides(
+      base,
+      gradeBand,
+      quarter,
+      sectionContentOverrides,
+    );
+    const withBaseWeights = applySectionBaseWeights(
+      withContent,
+      gradeBand,
+      quarter,
+      globalSectionWeights,
+      sectionBaseWeights,
+    );
+    return applySectionWeightRules(
+      withBaseWeights,
+      selectedEmployee?.grade_level ?? currentUserGrade,
+      weightRules,
+    );
+  }, [
+    gradeBand,
+    quarter,
+    selectedEmployee?.grade_level,
+    currentUserGrade,
+    weightRules,
+    globalSectionWeights,
+    sectionBaseWeights,
+    sectionContentOverrides,
+  ]);
 
   // Nobody to supervise → the only appraisal available is your own
   useEffect(() => {
@@ -640,7 +795,7 @@ export default function AppraisalForm({
       toast.error("Please select an employee");
     }
 
-    if (!promotionReadiness) {
+    if (quarter === "Q4" && !promotionReadiness) {
       errs.promotionReadiness = "Please select a promotion readiness status";
       toast.error("Please select a promotion readiness status");
     }
@@ -749,7 +904,9 @@ export default function AppraisalForm({
           }),
       submitted_by: supervisorMode ? "supervisor" : "employee",
       employee_user_id: selectedEmployee!.user_id,
-      promotion_readiness: promotionReadiness,
+      ...(quarter === "Q4" && promotionReadiness
+        ? { promotion_readiness: promotionReadiness }
+        : {}),
       strengths_observed: formData.strengths_observed || null,
       improvement_areas: formData.improvement_areas || null,
       agreed_actions: formData.agreed_actions || null,
@@ -912,33 +1069,27 @@ export default function AppraisalForm({
 
         {fillTargetToggle}
 
-        {!isFillingSecond && (
-          <div
-            className={`grid gap-4 mb-4 ${fillingForSelf ? "grid-cols-1" : "grid-cols-2"}`}
-          >
+        {/* Grade Band — self-assessment already knows its own band (set via
+            the useEffect below), so it's only shown as an editable choice
+            when appraising someone else. */}
+        {!isFillingSecond && !fillingForSelf && (
+          <div className="grid gap-4 mb-4 grid-cols-2">
             <div>
               <FieldLabel required>Grade Band</FieldLabel>
-              {fillingForSelf ? (
-                <p className="text-sm font-medium text-gray-800 py-2">
-                  {GRADE_OPTIONS.find((o) => o.value === ownGradeBand)?.label}
-                </p>
-              ) : (
-                <select
-                  value={gradeBand}
-                  onChange={(e) => setGradeBand(e.target.value)}
-                  className={inputCls()}
-                >
-                  {allowedGradeBands.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <select
+                value={gradeBand}
+                onChange={(e) => setGradeBand(e.target.value)}
+                className={inputCls()}
+              >
+                {allowedGradeBands.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {!fillingForSelf && (
-              <div>
+            <div>
                 <FieldLabel required>Select Employee</FieldLabel>
                 <select
                   className={inputCls(!!formErrors.employee)}
@@ -968,8 +1119,7 @@ export default function AppraisalForm({
                     {formErrors.employee}
                   </p>
                 )}
-              </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -1005,25 +1155,6 @@ export default function AppraisalForm({
           </div>
         )}
 
-        {/* Employee email + Section authorisations — self-assessment only */}
-        {fillingForSelf && (
-          <div className="mb-4">
-            <FieldLabel required>Your Email Address</FieldLabel>
-            <p className="text-xs text-gray-400 mb-1.5">
-              Used to send you deadline reminders and appraisal notices.
-            </p>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                placeholder="you@willsfarms.com"
-                {...register("employee_email", { required: true })}
-                className={`${inputCls(!!errors.employee_email)} pl-9`}
-              />
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-4">
           <div>
             <FieldLabel>Section Authorisations Held</FieldLabel>
@@ -1033,53 +1164,88 @@ export default function AppraisalForm({
                 value={existingAppraisal?.section_authorisations_held}
               />
             ) : (
-              <input
-                type="text"
-                placeholder="e.g. Farrowing, Weaning, AI"
+              <select
                 {...register("section_authorisations_held")}
                 className={inputCls()}
-              />
+              >
+                <option value="">Select section authorisation</option>
+                {sectionAuthOptions.map((opt) => (
+                  <option
+                    key={opt.id}
+                    value={opt.legacy_value ?? opt.label}
+                  >
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
           <div>
             {isFillingSecond ? (
               <ReadOnlyField
-                label="Immediate Supervisor"
+                label="Supervisor's Name"
                 value={existingAppraisal?.immediate_supervisor}
               />
+            ) : !fillingForSelf ? (
+              // Filling for someone I supervise — I AM their supervisor for
+              // this appraisal by definition, so this is locked to my own
+              // name rather than offering a choice (see the effect that
+              // sets immediate_supervisor/supervisor_email to my own
+              // profile whenever fillingForSelf is false). Same bordered
+              // read-only look as the Quarter field in Review Period below.
+              <div>
+                <ReadOnlyField
+                  label="Supervisor's Name"
+                  value={
+                    currentUserProfile
+                      ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}`
+                      : null
+                  }
+                />
+                <input
+                  type="hidden"
+                  {...register("immediate_supervisor", { required: true })}
+                />
+                <input
+                  type="hidden"
+                  {...register("supervisor_email", { required: true })}
+                />
+              </div>
             ) : (
               <div>
-                <FieldLabel required>Immediate Supervisor</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="Supervisor name"
-                  {...register("immediate_supervisor", { required: true })}
+                <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
+                <select
+                  value={selectedSupervisorId}
+                  onChange={(e) => handleSupervisorSelect(e.target.value)}
                   className={inputCls(!!errors.immediate_supervisor)}
+                >
+                  <option value="">
+                    {eligibleSupervisors.length === 0
+                      ? "No eligible supervisors found"
+                      : "Select supervisor's name"}
+                  </option>
+                  {eligibleSupervisors.map((u) => (
+                    <option key={u.user_id} value={u.user_id}>
+                      {u.first_name} {u.last_name} ({u.grade_level ?? "?"})
+                    </option>
+                  ))}
+                </select>
+                {/* Hidden — keeps react-hook-form's required validation on
+                    immediate_supervisor/supervisor_email working the same
+                    as before, even though the visible control above is the
+                    plain <select> driving both via setValue. */}
+                <input
+                  type="hidden"
+                  {...register("immediate_supervisor", { required: true })}
+                />
+                <input
+                  type="hidden"
+                  {...register("supervisor_email", { required: true })}
                 />
               </div>
             )}
           </div>
         </div>
-
-        {/* Supervisor email — self-assessment only (routes the notification) */}
-        {fillingForSelf && (
-          <div className="mt-4">
-            <FieldLabel required>Supervisor's Email Address</FieldLabel>
-            <p className="text-xs text-gray-400 mb-1.5">
-              As soon as you submit, your supervisor is emailed here to
-              complete their evaluation.
-            </p>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-gray-300 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="email"
-                placeholder="supervisor@willsfarms.com"
-                {...register("supervisor_email", { required: true })}
-                className={`${inputCls(!!errors.supervisor_email)} pl-9`}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Review Period ── */}
@@ -1119,7 +1285,7 @@ export default function AppraisalForm({
             {/* Only the single active period is available — no free picker. */}
             <ReadOnlyField
               label="Quarter"
-              value={quarter === "Q4" ? "Q4 (Annual)" : quarter}
+              value={quarter === "Q4" ? "Annual" : quarter}
             />
             <ReadOnlyField label="Year" value={String(lockedYear)} />
             {quarter === "Q4" && (
@@ -1152,7 +1318,7 @@ export default function AppraisalForm({
             <Award className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>
               <strong>This appraisal covers the employee's entire year of
-              performance.</strong> Q4 is the Annual appraisal — there is no
+              performance.</strong> This is the Annual appraisal — there is no
               separate annual form.
             </span>
           </div>
@@ -1244,7 +1410,8 @@ export default function AppraisalForm({
         ))}
       </div>
 
-      {/* ── Promotion Readiness ── */}
+      {/* ── Promotion Readiness (Annual only) ── */}
+      {quarter === "Q4" && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-bold text-gray-800 mb-1">
           Promotion Readiness Notes
@@ -1252,7 +1419,7 @@ export default function AppraisalForm({
         <p className="text-xs text-gray-400 mb-4">
           A discussion/development note only — it does not determine
           promotion eligibility. Eligibility is calculated automatically
-          from the Final Score once Q4 locks (≥ 70% required).
+          from the Final Score once the Annual review locks (≥ 70% required).
         </p>
         <div className="space-y-2">
           {PROMOTION_OPTIONS.map((opt) => (
@@ -1288,6 +1455,7 @@ export default function AppraisalForm({
           </p>
         )}
       </div>
+      )}
 
       {/* ── Comments — supervisor only ── */}
       {supervisorMode && (

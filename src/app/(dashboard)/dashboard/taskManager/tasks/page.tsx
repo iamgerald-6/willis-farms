@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileBarChart, Settings2, FolderCog } from "lucide-react";
+import { FileBarChart, Settings2, FolderCog, BellRing } from "lucide-react";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { useCurrentUser } from "../useCurrentUser";
-import ProjectPills from "../components/ProjectPills";
+import ProjectSelect from "../components/ProjectSelect";
 import NewProjectModal from "../components/NewProjectModal";
-import TaskListView from "../components/TaskListView";
+import TaskListView, { LifecycleViewKey } from "../components/TaskListView";
 import SummaryView from "../components/SummaryView";
 import GanttView from "../components/GanttView";
+import ProjectSpanCard from "../components/ProjectSpanCard";
 import MonthlyReportModal from "../components/MonthlyReportModal";
 import AutomationSettingsModal from "../components/AutomationSettingsModal";
 import ManageProjectsModal from "../components/ManageProjectsModal";
@@ -33,6 +35,15 @@ export default function TaskManagerTasksPage() {
   const [showReport, setShowReport] = useState(false);
   const [showAutomation, setShowAutomation] = useState(false);
   const [showManageProjects, setShowManageProjects] = useState(false);
+  const [notifying, setNotifying] = useState(false);
+  // Set when a Summary page stat card is clicked — tells whichever
+  // TaskListView mounts next which filter tab to open on. navNonce forces
+  // a remount even if we're already sitting on that same tab (TaskListView
+  // only reads initialFilter once, on mount — see its comment). Cleared
+  // whenever the reviewer manually clicks a top-level tab, so it doesn't
+  // keep re-applying a stale filter every time they leave and come back.
+  const [navFilter, setNavFilter] = useState<{ variant: "register" | "monitoring"; filter: LifecycleViewKey } | null>(null);
+  const [navNonce, setNavNonce] = useState(0);
 
   const {
     data,
@@ -59,6 +70,42 @@ export default function TaskManagerTasksPage() {
 
   const selectedProject =
     projects.find((p) => p.id === selectedProjectId) ?? null;
+
+  // Manual, on-demand — see sendAssignmentNotifications for why this isn't
+  // fired automatically on every task write. Safe to click repeatedly: it's
+  // always a fresh snapshot of who's currently assigned what in this
+  // project, not a "what's new" diff.
+  const handleNotifyAssignees = async () => {
+    if (!selectedProject) return;
+    setNotifying(true);
+    try {
+      const res = await api.post(`/task-manager/projects/${selectedProject.id}/notify-assignees`);
+      const { notified, tasksSent, skippedNoEmail } = res.data as {
+        notified: number;
+        tasksSent: number;
+        skippedNoEmail: number;
+      };
+      if (notified === 0) {
+        toast.error(
+          skippedNoEmail > 0
+            ? "No one could be notified — the assigned staff don't have an email on file."
+            : "No one is currently assigned a task in this project.",
+        );
+      } else {
+        toast.success(`Notified ${notified} ${notified === 1 ? "person" : "people"} about ${tasksSent} task${tasksSent === 1 ? "" : "s"}.`);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? "Failed to send notifications");
+    } finally {
+      setNotifying(false);
+    }
+  };
+
+  const handleNavigateFromSummary = (variant: "register" | "monitoring", filter: LifecycleViewKey) => {
+    setNavFilter({ variant, filter });
+    setNavNonce((n) => n + 1);
+    setTab(variant);
+  };
 
   if (userLoading || projectsLoading) {
     return <TaskManagerTasksSkeleton />;
@@ -122,13 +169,38 @@ export default function TaskManagerTasksPage() {
           </div>
         ) : (
           <>
-            <ProjectPills
-              projects={projects}
-              selectedId={selectedProjectId}
-              onSelect={setSelectedProjectId}
-              onNewProject={() => setShowNewProject(true)}
-              canCreate={isSeniorManagement}
-            />
+            {selectedProject && (
+              <div className="mb-3">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                  {selectedProject.name}
+                </h2>
+                {selectedProject.description && (
+                  <p className="text-sm text-gray-500 mt-1">{selectedProject.description}</p>
+                )}
+              </div>
+            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <ProjectSelect
+                projects={projects}
+                selectedId={selectedProjectId}
+                onSelect={setSelectedProjectId}
+                onNewProject={() => setShowNewProject(true)}
+                canCreate={isSeniorManagement}
+              />
+              {isSeniorManagement && selectedProject && (
+                <button
+                  onClick={handleNotifyAssignees}
+                  disabled={notifying}
+                  title="Emails everyone currently assigned a task in this project, with a link to the dashboard"
+                  className="flex items-center gap-2 border border-gray-200 text-gray-700 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg hover:bg-gray-50 whitespace-nowrap disabled:opacity-60 shrink-0"
+                >
+                  <BellRing className="w-4 h-4 shrink-0" />
+                  {notifying ? "Notifying…" : "Notify Assignees"}
+                </button>
+              )}
+            </div>
+
+            {selectedProject && <ProjectSpanCard project={selectedProject} />}
 
             {selectedProject ? (
               <>
@@ -143,7 +215,10 @@ export default function TaskManagerTasksPage() {
                   ).map(([key, label]) => (
                     <button
                       key={key}
-                      onClick={() => setTab(key)}
+                      onClick={() => {
+                        setTab(key);
+                        setNavFilter(null);
+                      }}
                       className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 -mb-px transition whitespace-nowrap shrink-0 ${
                         tab === key
                           ? "border-red-600 text-red-600"
@@ -172,26 +247,34 @@ export default function TaskManagerTasksPage() {
                   ))}
                 </div>
 
-                {tab === "summary" && <SummaryView project={selectedProject} />}
-                {tab === "gantt" && <GanttView project={selectedProject} />}
+                {tab === "summary" && (
+                  <SummaryView project={selectedProject} onNavigate={handleNavigateFromSummary} />
+                )}
+                {tab === "gantt" && (
+                  <GanttView project={selectedProject} onNavigate={handleNavigateFromSummary} />
+                )}
                 {tab === "register" && (
                   <TaskListView
+                    key={navFilter?.variant === "register" ? `register-${navNonce}` : "register"}
                     project={selectedProject}
                     projects={projects}
                     users={allUsers}
                     isSeniorManagement={isSeniorManagement}
                     currentUserId={userId ?? null}
                     variant="register"
+                    initialFilter={navFilter?.variant === "register" ? navFilter.filter : undefined}
                   />
                 )}
                 {tab === "monitoring" && (
                   <TaskListView
+                    key={navFilter?.variant === "monitoring" ? `monitoring-${navNonce}` : "monitoring"}
                     project={selectedProject}
                     projects={projects}
                     users={allUsers}
                     isSeniorManagement={isSeniorManagement}
                     currentUserId={userId ?? null}
                     variant="monitoring"
+                    initialFilter={navFilter?.variant === "monitoring" ? navFilter.filter : undefined}
                   />
                 )}
               </>
@@ -203,17 +286,27 @@ export default function TaskManagerTasksPage() {
       {showNewProject && (
         <NewProjectModal
           onClose={() => setShowNewProject(false)}
-          onCreated={() => refetch()}
+          onCreated={async (newProjectId) => {
+            // Refetch BEFORE switching — the "pick a default project" effect
+            // above resets selectedProjectId to projects[0] whenever it
+            // doesn't recognize the current id, and the new project isn't in
+            // `projects` until this refetch resolves. Setting it first would
+            // just get immediately overridden back to whatever was selected
+            // before.
+            await refetch();
+            setSelectedProjectId(newProjectId);
+          }}
         />
       )}
       {showReport && (
         <MonthlyReportModal
           projects={projects}
+          users={allUsers}
           onClose={() => setShowReport(false)}
         />
       )}
       {showAutomation && (
-        <AutomationSettingsModal onClose={() => setShowAutomation(false)} />
+        <AutomationSettingsModal users={allUsers} onClose={() => setShowAutomation(false)} />
       )}
       {showManageProjects && (
         <ManageProjectsModal onClose={() => setShowManageProjects(false)} />

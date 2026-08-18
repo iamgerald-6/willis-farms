@@ -35,6 +35,7 @@ function navModule(input: NavModuleInput): ModuleRecord {
       showInSidebar: input.showInSidebar ?? true,
     },
     supportedActions: input.supportedActions ?? ["view"],
+    businessLogic: [],
   };
 }
 
@@ -98,5 +99,16 @@ export const NAV_BUILTIN_MODULES: ModuleRecord[] = [
     route: "/dashboard/notifications",
     sortOrder: 90,
     icon: "bell",
+  }),
+  navModule({
+    id: "mod:system-definitions",
+    legacyKey: "sys:definitions",
+    label: "System Definitions",
+    groupId: "grp:general",
+    route: "/dashboard/system-definitions",
+    sortOrder: 95,
+    icon: "file-stack",
+    showInSidebar: false,
+    supportedActions: ["view", "add", "edit"],
   }),
 ];

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { enrichTasks, fetchUserNames, fetchProjectNames, writeAuditLog } from "@/lib/taskManagerData";
+import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
 // project_id is optional — omit it to get tasks across every active project
@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
     // Only look up project names when spanning multiple projects — a
     // single-project request already knows which project it's looking at.
     const projectNames = projectId ? undefined : await fetchProjectNames((tasks ?? []).map((t) => t.project_id));
+    const subtaskTrees = await fetchSubtaskTreesByTaskId((tasks ?? []).map((t) => t.id));
 
-    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames) });
+    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames, subtaskTrees) });
   } catch (err: any) {
     console.error("[GET /api/task-manager/tasks]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
 
     const body = await req.json();
-    const { project_id, title, owner_id, due_date, is_recurring, task_type, frequency, indicator, method_provider, description } = body;
+    const { project_id, title, owner_id, start_date, due_date, is_recurring, task_type, frequency, indicator, method_provider, description } = body;
 
     if (!project_id || !title?.trim()) {
       return NextResponse.json({ error: "project_id and title are required" }, { status: 400 });
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
           title: title.trim(),
           description: description ?? null,
           owner_id: owner_id ?? null,
+          start_date: start_date ?? null,
           due_date: due_date ?? null,
           is_recurring: !!is_recurring,
           task_type: task_type ?? "general",

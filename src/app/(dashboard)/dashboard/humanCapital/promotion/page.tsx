@@ -3,7 +3,17 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
-import { Search, ChevronRight, Award, TrendingUp, Clock, User, Plus } from "lucide-react";
+import {
+  ChevronRight,
+  Award,
+  TrendingUp,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  User,
+  Plus,
+} from "lucide-react";
 import api from "@/lib/api";
 import {
   canActOnOthers as canActOnOthersAccess,
@@ -76,7 +86,11 @@ function decisionBadge(value: string) {
   const def = getPromotionDecisionDef(value);
   if (!def) return null;
   const Icon = resolveNavIcon(def.iconKey);
-  return { label: def.label, color: def.badgeClass, icon: <Icon className="w-4 h-4" /> };
+  return {
+    label: def.label,
+    color: def.badgeClass,
+    icon: <Icon className="w-4 h-4" />,
+  };
 }
 
 function formatDate(d: string) {
@@ -301,7 +315,10 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
       <PromotionFormSections promotion={promotion} />
 
       <p className="text-[10px] sm:text-xs text-gray-300 text-right pb-2">
-        Submitted{promotion.submitted_by_name ? ` by ${promotion.submitted_by_name}` : ""}{" "}
+        Submitted
+        {promotion.submitted_by_name
+          ? ` by ${promotion.submitted_by_name}`
+          : ""}{" "}
         · {formatDate(promotion.created_at)}
       </p>
     </div>
@@ -333,8 +350,8 @@ function PendingDetail({
         </p>
         <div className="mt-4 bg-amber-500/20 border border-amber-400/30 rounded-lg px-3 py-2 text-xs text-amber-200 flex items-center gap-2">
           <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-          Automatically flagged eligible — their Q4 (Annual) Final Score was
-          ≥ 70%. No formal promotion assessment has been submitted yet.
+          Automatically flagged eligible — their Q4 (Annual) Final Score was ≥
+          70%. No formal promotion assessment has been submitted yet.
         </div>
       </div>
 
@@ -435,7 +452,9 @@ function PromotionHistoryTable({
     return (
       <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center text-gray-400">
         <Award className="w-10 h-10 mx-auto mb-3 opacity-20" />
-        <p className="text-xs sm:text-sm font-medium">No promotion history yet</p>
+        <p className="text-xs sm:text-sm font-medium">
+          No promotion history yet
+        </p>
         <p className="text-[11px] sm:text-xs mt-1 opacity-60">
           Completed promotion assessments will appear here
         </p>
@@ -607,7 +626,7 @@ interface UserProfile {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function PromotionViewPage() {
-  const [search, setSearch] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
   const [selected, setSelected] = useState<PromotionItem | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [gradeFilter, setGradeFilter] = useState("");
@@ -622,7 +641,9 @@ export default function PromotionViewPage() {
   });
   const userId = session?.user?.id ?? "";
 
-  const { data: allUsers = [], isLoading: loadingUsers } = useQuery<UserProfile[]>({
+  const { data: allUsers = [], isLoading: loadingUsers } = useQuery<
+    UserProfile[]
+  >({
     queryKey: ["get_users"],
     queryFn: async () => {
       const res = await api.get("/get_user");
@@ -676,8 +697,7 @@ export default function PromotionViewPage() {
     },
   });
 
-  const isLoading =
-    loadingUsers || loadingCompleted || loadingPending;
+  const isLoading = loadingUsers || loadingCompleted || loadingPending;
 
   const filterByVisibility = <T extends PromotionItem>(items: T[]): T[] => {
     if (canViewAll) return items;
@@ -699,29 +719,38 @@ export default function PromotionViewPage() {
     [completedRaw, canViewAll, currentUser?.company_id],
   );
 
+  const employeeNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of visiblePending) {
+      if (item.employee_name) names.add(item.employee_name);
+    }
+    for (const item of visibleCompleted) {
+      if (item.employee_name) names.add(item.employee_name);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [visiblePending, visibleCompleted]);
+
   const filteredPending = useMemo<PendingPromotion[]>(() => {
     return visiblePending.filter((item) => {
       const name = item.employee_name ?? "";
       const grade = item.current_grade ?? "";
-      const matchSearch =
-        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchName = !nameFilter || name === nameFilter;
       const matchGrade = !gradeFilter || grade === gradeFilter;
-      return matchSearch && matchGrade;
+      return matchName && matchGrade;
     });
-  }, [visiblePending, search, gradeFilter]);
+  }, [visiblePending, nameFilter, gradeFilter]);
 
   const filteredHistory = useMemo<CompletedPromotion[]>(() => {
     return visibleCompleted.filter((item) => {
       const name = item.employee_name ?? "";
       const grade = item.current_grade ?? "";
-      const matchSearch =
-        !search || name.toLowerCase().includes(search.toLowerCase());
+      const matchName = !nameFilter || name === nameFilter;
       const matchGrade = !gradeFilter || grade === gradeFilter;
       const matchDecision =
         !decisionFilter || item.final_decision === decisionFilter;
-      return matchSearch && matchGrade && matchDecision;
+      return matchName && matchGrade && matchDecision;
     });
-  }, [visibleCompleted, search, gradeFilter, decisionFilter]);
+  }, [visibleCompleted, nameFilter, gradeFilter, decisionFilter]);
 
   const stats = useMemo(
     () => ({
@@ -797,7 +826,8 @@ export default function PromotionViewPage() {
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 transition shadow-sm shrink-0"
           >
-            <Plus className="w-4 h-4" /> {PROMOTION_PAGE_COPY.newAssessmentButton}
+            <Plus className="w-4 h-4" />{" "}
+            {PROMOTION_PAGE_COPY.newAssessmentButton}
           </button>
         )}
       </div>
@@ -853,16 +883,18 @@ export default function PromotionViewPage() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-5 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-gray-50/50"
-          />
-        </div>
+        <select
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          className="flex-1 text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50/50 focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
+        >
+          <option value="">All Employees</option>
+          {employeeNames.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
         <div className="flex gap-2 w-full sm:w-auto">
           <select
             value={gradeFilter}

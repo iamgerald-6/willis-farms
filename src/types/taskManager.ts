@@ -24,6 +24,12 @@ export type AuditAction =
   | "restored"
   | "completed";
 
+// Deliberately narrower than AuditAction above — a project is never
+// AI-extracted or "completed", and its deletion is tracked separately (see
+// TMProjectDeletion) rather than as a row in its own audit log, since that
+// log cascade-deletes along with the project.
+export type ProjectAuditAction = "created" | "renamed" | "archived" | "restored";
+
 export interface TMProject {
   id: string;
   name: string;
@@ -44,6 +50,7 @@ export interface TMTask {
   title: string;
   description?: string | null;
   owner_id?: string | null;
+  start_date?: string | null; // ISO date, e.g. "2026-01-15"
   due_date?: string | null; // ISO date, e.g. "2026-12-31"
   is_recurring: boolean;
   task_type: TaskType;
@@ -64,6 +71,59 @@ export interface TMTask {
   owner_name?: string | null;
   display_status?: DisplayStatus;
   project_name?: string | null;
+  // Whether this task has any subtasks defined. When true, progress_percent
+  // is a computed rollup (see subtaskProgress.ts) driven by ticking leaf
+  // subtasks, not the manual slider — only accurate on responses from
+  // GET /api/task-manager/tasks (the list view); other routes that return a
+  // single task (progress/lifecycle updates) don't compute it and default
+  // to false, since the client always refetches the list afterward anyway.
+  has_subtasks?: boolean;
+}
+
+/**
+ * A node in a task's subtask tree, up to 4 levels deep (depth 1 = a direct
+ * child of the task, depth 4 = the deepest allowed level). Only leaf nodes
+ * (no children) are ever ticked directly via is_done — a parent's own
+ * completion is always computed client/server-side as the weighted sum of
+ * its children (see src/lib/subtaskProgress.ts), never stored.
+ *
+ * `children` is populated when the API returns the tree (GET .../subtasks);
+ * it's absent on the raw row shape used for create/update payloads.
+ */
+export interface TMSubtask {
+  id: string;
+  task_id: string;
+  parent_id: string | null;
+  title: string;
+  weight_percent: number;
+  is_done: boolean;
+  depth: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
+  children?: TMSubtask[];
+
+  // Owner can be anyone with an account — no Senior-Management restriction,
+  // unlike task ownership. A node's dates are meant to fall within its
+  // immediate parent's dates (the task's, for a top-level subtask; the
+  // parent subtask's, one level up, for a nested one) — enforced server-side
+  // in the subtasks PUT route.
+  owner_id?: string | null;
+  start_date?: string | null; // ISO date, e.g. "2026-01-15"
+  due_date?: string | null; // ISO date, e.g. "2026-12-31"
+
+  // Attached by the API — not stored columns.
+  owner_name?: string | null;
+  // A leaf's status comes from its own dates + is_done (see
+  // computeLeafSubtaskStatus in subtaskProgress.ts); any node with children
+  // gets its status by aggregating its direct children's statuses via the
+  // same priority rule used for the task-level rollup (Overdue > all-
+  // Completed > all-Not-Started > else In Progress) — a separate
+  // computation entirely from the weighted weight_percent/is_done completion
+  // percentage above. Only "Not Started" | "In Progress" | "Overdue" |
+  // "Completed" are ever produced for a subtask — never the task-only
+  // "Compliant / Ongoing", "Archived", or "Deleted" values.
+  status?: DisplayStatus;
 }
 
 export interface TMAuditLogEntry {
@@ -79,9 +139,37 @@ export interface TMAuditLogEntry {
   performed_at: string;
 }
 
+export interface TMProjectAuditLogEntry {
+  id: string;
+  project_id: string;
+  action: ProjectAuditAction;
+  changed_fields?: string[] | null;
+  previous_values?: Record<string, unknown> | null;
+  new_values?: Record<string, unknown> | null;
+  performed_by: string;
+  performed_by_name: string;
+  performed_at: string;
+}
+
+/** A tombstone row for a permanently-deleted project — see tm_project_deletions in schema.sql. */
+export interface TMProjectDeletion {
+  id: string;
+  project_id: string;
+  project_name: string;
+  deleted_by: string;
+  deleted_by_name: string;
+  deleted_at: string;
+}
+
 export interface ExtractionJobFile {
   file_name: string;
   file_url: string;
+  // 1-indexed pages to read, for a PDF the reviewer trimmed down in the
+  // page picker. Omitted (or absent) means "read the whole document",
+  // which is still the default for images, Word docs, and any PDF the
+  // reviewer didn't restrict. The server re-validates and hard-caps this
+  // at MAX_EXTRACTION_PAGES regardless of what's sent here.
+  pages?: number[];
 }
 
 export interface TMExtractionJob {
@@ -104,6 +192,7 @@ export interface TMExtractionJob {
 export interface ExtractedTaskProposal {
   title: string;
   description?: string;
+  start_date?: string | null;
   due_date?: string | null;
   is_recurring?: boolean;
   task_type?: TaskType;

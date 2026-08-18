@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -11,6 +11,7 @@ import {
   Eye,
   Clock,
   Search,
+  Check,
   Grid,
   List,
 } from "lucide-react";
@@ -76,6 +77,141 @@ function PolicyCategoryTabIcon({ label }: { label: string }) {
   if (!iconKey) return null;
   const Icon = resolveNavIcon(iconKey);
   return <Icon className="w-4 h-4" />;
+}
+
+// ─── Category select ────────────────────────────────────────────────────────
+// Searchable dropdown for picking a category to browse by — same dark
+// dropdown chrome as the SOP page's CategorySelect. Categories/icons come
+// from the module registry taxonomy rather than a hardcoded list.
+function CategorySelect({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: string[];
+  selected: string;
+  onSelect: (category: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter((c) => c.toLowerCase().includes(q));
+  }, [categories, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative w-full max-w-xl">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 w-full border border-gray-200 rounded-xl px-3.5 py-2.5 bg-white text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 transition"
+      >
+        <Search className="w-4 h-4 text-gray-400 shrink-0" />
+        <span
+          className={`flex-1 text-sm truncate ${selected === "All" ? "text-gray-400" : "text-gray-800 font-medium"}`}
+        >
+          {selected === "All" ? "Search categories" : selected}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-2 w-full bg-[#3a3a3c] border border-[#4a4a4d] rounded-xl shadow-lg overflow-hidden">
+          <div className="px-3.5 pt-3 pb-2">
+            <p className="text-[11px] font-semibold text-gray-300 uppercase tracking-wide">
+              Categories
+            </p>
+          </div>
+
+          <div className="px-2.5 pb-2.5">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#2c2c2e] border border-[#4a4a4d] focus-within:border-[#0a84ff]">
+              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search categories"
+                className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto pb-1.5 px-1.5 border-t border-[#4a4a4d]">
+            <div className="pt-1.5 space-y-0.5">
+              <button
+                onClick={() => {
+                  onSelect("All");
+                  setOpen(false);
+                }}
+                className={`flex items-center justify-between gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-sm text-white transition hover:bg-[#0a84ff] ${
+                  selected === "All" ? "font-semibold" : "font-normal"
+                }`}
+              >
+                <span className="truncate">All Categories</span>
+                {selected === "All" && <Check className="w-4 h-4 shrink-0" />}
+              </button>
+            </div>
+            {filtered.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-gray-400">
+                No categories match &quot;{query}&quot;
+              </p>
+            ) : (
+              <div className="pt-0.5 space-y-0.5">
+                {filtered
+                  .filter((c) => c !== "All")
+                  .map((c) => {
+                    const active = c === selected;
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          onSelect(c);
+                          setOpen(false);
+                        }}
+                        className={`flex items-center gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-sm text-white transition hover:bg-[#0a84ff] ${
+                          active ? "font-semibold" : "font-normal"
+                        }`}
+                      >
+                        <span className="shrink-0">
+                          <PolicyCategoryTabIcon label={c} />
+                        </span>
+                        <span className="truncate flex-1">{c}</span>
+                        {active && <Check className="w-4 h-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -462,6 +598,8 @@ export default function PoliciesPage() {
 
   const manuals = data?.manuals ?? [];
 
+  // Category is filtered server-side (see queryKey above); the search box
+  // still needs a client-side pass over title/category/description.
   const filtered = manuals.filter((m) => {
     if (!searchValue) return true;
     const q = searchValue.toLowerCase();
@@ -487,14 +625,6 @@ export default function PoliciesPage() {
       setConfirmDelete({ open: false, manualId: "", label: "" });
     },
   });
-
-  const categoryCounts = POLICY_FILTER_PILLS.map((c) => ({
-    label: c,
-    count:
-      c === "All"
-        ? manuals.length
-        : manuals.filter((m) => m.category === c).length,
-  }));
 
   return (
     <div className="p-4 sm:p-6 min-h-screen bg-gray-50 flex flex-col">
@@ -557,27 +687,13 @@ export default function PoliciesPage() {
         </div>
       </div>
 
-      {/* ── Category Tabs ── */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 sm:mb-6 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 shrink-0">
-        {categoryCounts.map(({ label, count }) => (
-          <button
-            key={label}
-            onClick={() => setActiveCategory(label)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition border whitespace-nowrap ${
-              activeCategory === label
-                ? "bg-red-600 text-white border-red-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-red-300 hover:text-red-600"
-            }`}
-          >
-            <PolicyCategoryTabIcon label={label} />
-            {label}
-            <span
-              className={`text-xs font-mono ml-0.5 ${activeCategory === label ? "text-red-200" : "text-gray-400"}`}
-            >
-              {count}
-            </span>
-          </button>
-        ))}
+      {/* ── Category select (centered, matching the SOP browse page) ── */}
+      <div className="flex justify-center mb-6 shrink-0">
+        <CategorySelect
+          categories={POLICY_FILTER_PILLS}
+          selected={activeCategory}
+          onSelect={setActiveCategory}
+        />
       </div>
 
       {/* ── Content (Fills vertical viewport evenly to block empty spaces) ── */}

@@ -70,6 +70,8 @@ export const SKILL_LOG_PAGE_COPY = {
   signOffTitle: "Sign Off Skills Log",
   signOffConfirmLabel:
     "By checking this box I confirm I have reviewed this skills log and agree to provide final sign-off.",
+  viewDetailTitle: "Skills Log Details",
+  viewButton: "View",
 };
 
 export const SKILL_LOG_FORM_COPY = {

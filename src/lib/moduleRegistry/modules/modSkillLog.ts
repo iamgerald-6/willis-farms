@@ -22,21 +22,21 @@ export const skillLogFormDefinition: FormDefinition = {
     {
       id: "section",
       label: "Section",
-      type: "text",
-      helpText: "e.g. Breeding, Farrowing…",
+      type: "select",
+      optionsRef: "taxonomy.skillLog.sections",
     },
     {
       id: "tier_auth",
       label: "Tier Authorisation",
-      type: "text",
-      helpText: "GP / PS / external GGP semen handling",
+      type: "select",
+      optionsRef: "taxonomy.skillLog.tierAuthorisations",
     },
     {
       id: "review_period",
       label: "Review Period",
-      type: "text",
+      type: "select",
       required: true,
-      helpText: "e.g. Jan–Mar 2026",
+      optionsRef: "taxonomy.skillLog.reviewPeriods",
     },
     {
       id: "log_type",
@@ -87,13 +87,17 @@ export const modSkillLog: ModuleRecord = {
     showInSidebar: true,
   },
   table: "skill_logs",
-  supportedActions: ["view", "add", "edit", "review"],
+  supportedActions: ["view", "add", "edit", "review", "approve"],
   taxonomyRefs: [
     "taxonomy.skillLog.types",
+    "taxonomy.skillLog.sections",
+    "taxonomy.skillLog.tierAuthorisations",
+    "taxonomy.skillLog.reviewPeriods",
     "taxonomy.skillLog.grades",
     "taxonomy.skillLog.statuses",
     "taxonomy.skillLog.competencies",
   ],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",
@@ -121,9 +125,14 @@ export const modSkillLog: ModuleRecord = {
       requires: { edit: true },
     },
     {
-      id: "feat:skill-log:sign-off",
-      label: "Sign off submitted log",
+      id: "feat:skill-log:review-queue",
+      label: "Review submitted skill logs",
       requires: { review: true },
+    },
+    {
+      id: "feat:skill-log:sign-off",
+      label: "Approve / sign off submitted log",
+      requires: { approve: true },
     },
     {
       id: "feat:skill-log:delete-draft",

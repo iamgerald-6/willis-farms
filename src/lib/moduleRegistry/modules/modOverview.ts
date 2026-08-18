@@ -14,6 +14,7 @@ export const modOverview: ModuleRecord = {
     showInSidebar: true,
   },
   supportedActions: ["view"],
+  businessLogic: [],
 
   shell: {
     layout: "module-standard-v1",

@@ -82,17 +82,66 @@ Example delegated User Management levels in `page_permission_levels`:
 
 Super admin rows cannot be changed from Access Control.
 
+### 2a) Checkbox permission matrix (`page_permission_actions`)
+
+Run after §1:
+
+```sql
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS page_permission_actions jsonb NOT NULL DEFAULT '{}'::jsonb;
+```
+
+Or run `docs/access-control/page-permission-actions.sql`.
+
+Example delegated checkbox permissions:
+
+```json
+{
+  "users": { "view": true, "add": true },
+  "hc:leave": { "view": true, "add": true, "review": true },
+  "dashboard": { "view": true }
+}
+```
+
+Legacy `page_permission_levels` is still written for backward compatibility. The Manage User UI uses **checkboxes** (view / add / edit / review / approve) grouped by module section.
+
+### 2b) Group permission presets (Phase 2)
+
+Run after §2a:
+
+```sql
+-- docs/access-control/group-presets.sql
+CREATE TABLE IF NOT EXISTS public.access_group_presets (
+  group_key text PRIMARY KEY,
+  page_permission_actions jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz,
+  updated_by uuid
+);
+```
+
+| Group key | Applies to |
+|-----------|------------|
+| `employees` | All users with `role = employee` |
+| `managers` | All users with `role = manager` |
+| `admins` | All users with `role = admin` |
+| `grade_l1_l3` | All users with grade L1–L3 (merged with role preset) |
+| `grade_l4_l7` | All users with grade L4–L7 (merged with role preset) |
+
+**Resolution order:** super admin bypass → individual override (`access_tier = delegated` + stored `page_permission_actions`) → role group preset + grade band preset (union) → built-in code defaults.
+
+Edit group presets from **User Management** → filter tab (Employees, Managers, etc.) → matrix at top. **Manage User** on one row creates an individual override; use **Reset to group defaults** to revert.
+
 ---
 
-## 3) User Management permission levels (`users` key)
+## 3) User Management permission actions (`users` key)
 
-| Level | Can do |
-|-------|--------|
+| Action | Can do |
+|--------|--------|
 | **view** | See user listing only |
-| **add** | View + Add User (no Manage User) |
-| **edit** | Full access — manage user, names, disable, permissions |
+| **add** | Invite users (no Manage User) |
+| **edit** | Full manage — disable accounts, change permissions |
 
-Delegated employees with `users` in `page_permission_levels` open User Management per their level. Manager (any grade) and Super Admin always get full ("edit") access. **Admin's default is "view" only** — no add, no manage — and must be explicitly raised via the permission matrix (Manage User → Page access) by someone with edit rights (Manager L5+ or Super Admin).
+These are independent checkboxes (not hierarchical radios). Manager (any grade) and Super Admin always get all three. **Admin's default is view only** unless raised via the matrix.
 
 ---
 

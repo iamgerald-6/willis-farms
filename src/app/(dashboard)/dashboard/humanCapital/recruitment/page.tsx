@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -9,11 +9,14 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  PANEL_DECISIONS,
   type ApplicationStatus,
   type JobApplication,
 } from "@/lib/careers/types";
 import InterviewPanelForm from "./components/InterviewPanelForm";
+import OnboardingTab from "./components/OnboardingTab";
 import {
+  ChevronDown,
   ExternalLink,
   FileText,
   Loader2,
@@ -22,12 +25,15 @@ import {
   X,
 } from "lucide-react";
 import { PageShell, PageHeaderSkeleton, ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
+import { isFullRoleAccess } from "@/lib/pagePermissions";
 
 const STATUS_STYLES: Record<ApplicationStatus, string> = {
   applied: "bg-blue-50 text-blue-700 border border-blue-200",
   under_review: "bg-amber-50 text-amber-700 border border-amber-200",
   shortlisted: "bg-purple-50 text-purple-700 border border-purple-200",
   interview: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  hold: "bg-orange-50 text-orange-700 border border-orange-200",
+  onboarding: "bg-teal-50 text-teal-700 border border-teal-200",
   offer: "bg-green-50 text-green-700 border border-green-200",
   rejected: "bg-red-50 text-red-700 border border-red-200",
 };
@@ -44,6 +50,7 @@ function ApplicationDetail({
   application,
   onClose,
   onUpdated,
+  onRefreshApplication,
   adminId,
   openInterviewOnMount,
   onInterviewOpened,
@@ -51,6 +58,7 @@ function ApplicationDetail({
   application: JobApplication;
   onClose: () => void;
   onUpdated: () => void;
+  onRefreshApplication: () => Promise<void>;
   adminId: string;
   openInterviewOnMount?: boolean;
   onInterviewOpened?: () => void;
@@ -68,9 +76,57 @@ function ApplicationDetail({
     }
   }, [openInterviewOnMount, onInterviewOpened]);
 
-  const canInterview = ["shortlisted", "interview", "offer"].includes(
+  useEffect(() => {
+    setStatus(application.status);
+    setHrNotes(application.hr_notes ?? "");
+  }, [application]);
+
+  const canInterview = ["shortlisted", "interview", "hold", "onboarding", "offer"].includes(
     application.status,
   );
+
+  const decision = application.interview_form_data?.summary?.decision;
+  const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
+  const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
+  const canConfirmOutcome =
+    !!application.interview_submitted_at && !decisionConfirmed && !!decision;
+
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview", {
+        application_id: application.id,
+        interview_form_data: application.interview_form_data,
+        submitted_by: adminId,
+        action: "confirm_decision",
+      }),
+    onSuccess: (res) => {
+      const warnings = res.data.email_warnings as string[] | undefined;
+      if (warnings?.length) {
+        toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
+      } else {
+        toast.success("Outcome confirmed.");
+      }
+      onUpdated();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Confirm failed.");
+    },
+  });
+
+  const resendOnboarding = useMutation({
+    mutationFn: () =>
+      api.post("/careers/onboarding/resend", { application_id: application.id }),
+    onSuccess: (res) => {
+      if (res.data.email_warning) {
+        toast.warning(res.data.email_warning);
+      } else {
+        toast.success("Onboarding link resent.");
+      }
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Resend failed.");
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: (payload: {
@@ -213,6 +269,58 @@ function ApplicationDetail({
               />
             </div>
 
+            {canConfirmOutcome && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
+                <p className="text-sm font-semibold text-amber-900">
+                  Confirm interview outcome
+                </p>
+                <p className="text-xs text-amber-800">
+                  Interview submitted. Selected decision:{" "}
+                  <strong>{decisionLabel}</strong>
+                  {application.interview_form_data?.summary?.total_weighted != null && (
+                    <>
+                      {" "}
+                      · Score{" "}
+                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
+                    </>
+                  )}
+                </p>
+                <p className="text-xs text-amber-700">
+                  {decision === "hire"
+                    ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
+                    : decision === "hold"
+                      ? "Hold does not send a candidate email."
+                      : "Confirming rejection sends a professional decline email."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => confirmMutation.mutate()}
+                  disabled={confirmMutation.isPending}
+                  className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
+                >
+                  {confirmMutation.isPending ? "Confirming…" : `Confirm: ${decisionLabel}`}
+                </button>
+              </div>
+            )}
+
+            {decisionConfirmed && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                Outcome confirmed {formatDate(decisionConfirmed)}
+                {decisionLabel ? ` · ${decisionLabel}` : ""}
+              </p>
+            )}
+
+            {application.status === "onboarding" && decision === "hire" && (
+              <button
+                type="button"
+                onClick={() => resendOnboarding.mutate()}
+                disabled={resendOnboarding.isPending}
+                className="w-full py-2 border border-teal-200 bg-teal-50 text-teal-800 text-sm font-medium rounded-lg hover:bg-teal-100 disabled:opacity-60"
+              >
+                {resendOnboarding.isPending ? "Sending…" : "Resend onboarding link"}
+              </button>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2 pt-2">
               <button
                 type="button"
@@ -256,9 +364,10 @@ function ApplicationDetail({
           applicationId={application.id}
           adminId={adminId}
           onClose={() => setShowInterview(false)}
-          onSaved={() => {
-            onUpdated();
+          onSaved={onUpdated}
+          onInterviewSubmitted={async () => {
             setShowInterview(false);
+            await onRefreshApplication();
           }}
         />
       )}
@@ -266,12 +375,155 @@ function ApplicationDetail({
   );
 }
 
+// ─── Multi-select filter dropdown ──────────────────────────────────────────────
+// Replaces free-text search: click the field's button, pick any number of
+// values from the list of what's actually present in the data, values from
+// different fields combine (AND), values within the same field combine (OR).
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
+
+  const toggle = (value: string) => {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value],
+    );
+  };
+
+  const filteredOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition ${
+          selected.length > 0
+            ? "bg-red-50 text-red-700 border-red-200"
+            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+        }`}
+      >
+        {label}
+        {selected.length > 0 && (
+          <span className="bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+            {selected.length}
+          </span>
+        )}
+        <ChevronDown
+          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="px-2.5 pt-2.5 pb-1.5">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 focus-within:border-red-400">
+              <Search className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${label.toLowerCase()}…`}
+                className="w-full bg-transparent text-sm outline-none placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto py-1.5 px-1.5">
+            {filteredOptions.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-gray-400">No matches</p>
+            ) : (
+              filteredOptions.map((opt) => {
+                const checked = selected.includes(opt.value);
+                return (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm cursor-pointer hover:bg-gray-50 ${checked ? "bg-red-50" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(opt.value)}
+                      className="accent-red-600 w-3.5 h-3.5 shrink-0"
+                    />
+                    <span className="flex-1 min-w-0 truncate text-gray-800">
+                      {opt.label}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          {selected.length > 0 && (
+            <div className="border-t border-gray-100 px-2.5 py-1.5">
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="text-xs font-semibold text-gray-400 hover:text-red-600"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="flex items-center gap-1 bg-red-50 text-red-700 text-xs font-medium pl-2.5 pr-1.5 py-1 rounded-full">
+      {label}
+      <button type="button" onClick={onRemove} className="hover:text-red-900">
+        <X className="w-3 h-3" />
+      </button>
+    </span>
+  );
+}
+
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
+  const tabParam = searchParams?.get("tab");
+  const [activeTab, setActiveTab] = useState<"applications" | "onboarding">(
+    tabParam === "onboarding" ? "onboarding" : "applications",
+  );
 
-  const [filter, setFilter] = useState<ApplicationStatus | "all">("all");
-  const [search, setSearch] = useState("");
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [selected, setSelected] = useState<JobApplication | null>(null);
   const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<
     string | null
@@ -300,8 +552,7 @@ function RecruitmentPageContent() {
     (session?.user?.user_metadata?.role as string | undefined) ??
     "";
 
-  const isHr =
-    role === "admin" || role === "manager" || role === "super_admin";
+  const isHr = isFullRoleAccess(role);
 
   const { data, isLoading } = useQuery({
     queryKey: ["job_applications"],
@@ -312,27 +563,77 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (data ?? []).filter((a) => {
-      if (filter !== "all" && a.status !== filter) return false;
-      if (!q) return true;
-      return (
-        a.full_name.toLowerCase().includes(q) ||
-        a.email.toLowerCase().includes(q) ||
-        a.reference_number.toLowerCase().includes(q) ||
-        a.role_title.toLowerCase().includes(q)
-      );
+  // Cross-filtering: each field's option list is scoped by the OTHER active
+  // filters (never by itself) — so picking Status = Interview narrows what
+  // shows up under Name/Role to only candidates actually in that status.
+  const applyFilters = (
+    list: JobApplication[],
+    opts: { name?: string[]; role?: string[]; status?: string[] },
+  ) =>
+    list.filter((a) => {
+      if (opts.name && opts.name.length > 0 && !opts.name.includes(a.full_name))
+        return false;
+      if (opts.role && opts.role.length > 0 && !opts.role.includes(a.role_title))
+        return false;
+      if (opts.status && opts.status.length > 0 && !opts.status.includes(a.status))
+        return false;
+      return true;
     });
-  }, [data, filter, search]);
+
+  const nameOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { role: roleFilters, status: statusFilters });
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [data, roleFilters, statusFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { name: nameFilters, status: statusFilters });
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [data, nameFilters, statusFilters]);
+
+  const statusOptions = useMemo(() => {
+    const scoped = applyFilters(data ?? [], { name: nameFilters, role: roleFilters });
+    const present = new Set(scoped.map((a) => a.status));
+    return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
+      value: s,
+      label: STATUS_LABELS[s],
+    }));
+  }, [data, nameFilters, roleFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applyFilters(data ?? [], {
+        name: nameFilters,
+        role: roleFilters,
+        status: statusFilters,
+      }),
+    [data, nameFilters, roleFilters, statusFilters],
+  );
+
+  const hasActiveFilters =
+    nameFilters.length + roleFilters.length + statusFilters.length > 0;
+
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+    setStatusFilters([]);
+  };
 
   const newCount = (data ?? []).filter((a) => a.status === "applied").length;
+
+  useEffect(() => {
+    if (tabParam === "onboarding") setActiveTab("onboarding");
+  }, [tabParam]);
 
   useEffect(() => {
     if (!interviewParam || !data?.length || !session?.user?.id) return;
     const app = data.find((a) => a.id === interviewParam);
     if (!app) return;
-    if (!["shortlisted", "interview", "offer"].includes(app.status)) return;
+    if (!["shortlisted", "interview", "hold", "onboarding", "offer"].includes(app.status))
+      return;
     setSelected(app);
     setAutoOpenInterviewId(app.id);
   }, [interviewParam, data, session?.user?.id]);
@@ -367,51 +668,91 @@ function RecruitmentPageContent() {
             Recruitment
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Job applications and panel interview guides
+            Job applications, panel interviews, and onboarding
           </p>
         </div>
-        {newCount > 0 && (
+        {newCount > 0 && activeTab === "applications" && (
           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-xs font-medium w-fit">
             {newCount} new application{newCount !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, ref, role…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-white"
-          />
-        </div>
-        <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {(["applications", "onboarding"] as const).map((tab) => (
           <button
-            onClick={() => setFilter("all")}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filter === "all"
-                ? "bg-red-600 text-white border-red-600"
-                : "bg-white text-gray-600 border-gray-200"
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+              activeTab === tab
+                ? "border-red-600 text-red-700"
+                : "border-transparent text-gray-500 hover:text-gray-800"
             }`}
           >
-            All
+            {tab === "applications" ? "Applications" : "Onboarding"}
           </button>
-          {APPLICATION_STATUSES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-                filter === s
-                  ? "bg-red-600 text-white border-red-600"
-                  : "bg-white text-gray-600 border-gray-200"
-              }`}
-            >
-              {STATUS_LABELS[s]}
-            </button>
-          ))}
+        ))}
+      </div>
+
+      {activeTab === "onboarding" ? (
+        <OnboardingTab />
+      ) : (
+        <>
+      <div className="mb-5">
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={statusOptions}
+            selected={statusFilters}
+            onChange={setStatusFilters}
+          />
         </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
+              />
+            ))}
+            {statusFilters.map((s) => (
+              <FilterChip
+                key={`status-${s}`}
+                label={STATUS_LABELS[s as ApplicationStatus]}
+                onRemove={() => setStatusFilters(statusFilters.filter((v) => v !== s))}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -481,16 +822,25 @@ function RecruitmentPageContent() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
 
-      {selected && (
+      {selected && activeTab === "applications" && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}
           adminId={session.user!.id}
           openInterviewOnMount={autoOpenInterviewId === selected.id}
           onInterviewOpened={() => setAutoOpenInterviewId(null)}
+          onRefreshApplication={async () => {
+            await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+            const apps = queryClient.getQueryData<JobApplication[]>(["job_applications"]);
+            const fresh = apps?.find((a) => a.id === selected.id);
+            if (fresh) setSelected(fresh);
+          }}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+            queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
             setSelected(null);
           }}
         />

@@ -88,6 +88,7 @@ export const EDITABLE_TASK_FIELDS = [
   "title",
   "owner_id",
   "due_date",
+  "start_date",
   "description",
   "frequency",
   "indicator",

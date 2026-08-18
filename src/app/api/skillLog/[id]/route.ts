@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  getSupabaseAdminFromAuth,
+  getSkillLogAuthContext,
+  jsonForbidden,
+  jsonUnauthorized,
+} from "@/lib/apiRequestAuth";
+import {
+  canApproveSkillLogRecord,
+  canEditSkillLogDraft,
+  canViewSkillLogRecord,
+  type SkillLogRecord,
+} from "@/lib/skillLogAccess";
 
 const FULL_SELECT = `
   *,
@@ -8,12 +19,19 @@ const FULL_SELECT = `
   skill_log_competencies (*)
 `;
 
+function forbiddenOrUnauthorized(ctx: Awaited<ReturnType<typeof getSkillLogAuthContext>>) {
+  return ctx ? jsonForbidden() : jsonUnauthorized();
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabaseAdmin = getSupabaseAdmin();
+  const ctx = await getSkillLogAuthContext(req);
+  if (!ctx) return jsonUnauthorized();
+
+  const supabaseAdmin = getSupabaseAdminFromAuth();
   if (!supabaseAdmin) {
     return NextResponse.json(
       { success: false, message: "Server configuration error" },
@@ -34,6 +52,18 @@ export async function GET(
     );
   }
 
+  if (
+    !canViewSkillLogRecord(
+      ctx.profile,
+      ctx.user.id,
+      data as SkillLogRecord,
+      ctx.presets,
+      ctx.user.role,
+    )
+  ) {
+    return jsonForbidden();
+  }
+
   return NextResponse.json({ success: true, data });
 }
 
@@ -42,7 +72,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabaseAdmin = getSupabaseAdmin();
+  const ctx = await getSkillLogAuthContext(req);
+  if (!ctx) return jsonUnauthorized();
+
+  const supabaseAdmin = getSupabaseAdminFromAuth();
   if (!supabaseAdmin) {
     return NextResponse.json(
       { success: false, message: "Server configuration error" },
@@ -52,7 +85,7 @@ export async function PATCH(
 
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from("skill_logs")
-    .select("id, supervisor_id, employee_id, status")
+    .select(FULL_SELECT)
     .eq("id", id)
     .single();
 
@@ -63,6 +96,7 @@ export async function PATCH(
     );
   }
 
+  const record = existing as SkillLogRecord;
   const body = await req.json();
   const {
     log_type,
@@ -73,21 +107,32 @@ export async function PATCH(
     development_gaps,
     status,
     competencies,
-    signed_off_by,
     signed_off_at,
   } = body;
 
   // ── Sign-off fast path ──
   if (status === "signed_off") {
+    if (
+      !canApproveSkillLogRecord(
+        ctx.profile,
+        ctx.user.id,
+        record,
+        ctx.presets,
+        ctx.user.role,
+      )
+    ) {
+      return forbiddenOrUnauthorized(ctx);
+    }
+
     const { data: signedData, error: signedError } = await supabaseAdmin
       .from("skill_logs")
       .update({
         status: "signed_off",
-        signed_off_by: signed_off_by ?? null,
-        signed_off_at: signed_off_at ?? null,
+        signed_off_by: ctx.user.id,
+        signed_off_at: signed_off_at ?? new Date().toISOString(),
       })
       .eq("id", id)
-      .select()
+      .select(FULL_SELECT)
       .single();
 
     if (signedError) {
@@ -106,11 +151,26 @@ export async function PATCH(
     );
   }
 
+  if (
+    !canEditSkillLogDraft(
+      ctx.profile,
+      ctx.user.id,
+      record,
+      ctx.presets,
+      ctx.user.role,
+    )
+  ) {
+    return forbiddenOrUnauthorized(ctx);
+  }
+
   let overall_rating: number | null = null;
   if (competencies?.length > 0) {
     const ratings = competencies
-      .map((c: any) => c.rating)
-      .filter((r: any) => r !== null && r !== undefined && !isNaN(r));
+      .map((c: { rating?: number | null }) => c.rating)
+      .filter(
+        (r: number | null | undefined) =>
+          r !== null && r !== undefined && !isNaN(r),
+      );
     overall_rating =
       ratings.length > 0
         ? Math.round(
@@ -148,15 +208,24 @@ export async function PATCH(
       .delete()
       .eq("skill_log_id", id);
 
-    const rows = competencies.map((c: any) => ({
-      skill_log_id: id,
-      skill: c.skill,
-      observed: c.observed || null,
-      performed_under_supervision: c.performed_under_supervision || null,
-      performed_consistently: c.performed_consistently || null,
-      rating: c.rating ?? null,
-      comments: c.comments ?? null,
-    }));
+    const rows = competencies.map(
+      (c: {
+        skill: string;
+        observed?: string | null;
+        performed_under_supervision?: string | null;
+        performed_consistently?: string | null;
+        rating?: number | null;
+        comments?: string | null;
+      }) => ({
+        skill_log_id: id,
+        skill: c.skill,
+        observed: c.observed || null,
+        performed_under_supervision: c.performed_under_supervision || null,
+        performed_consistently: c.performed_consistently || null,
+        rating: c.rating ?? null,
+        comments: c.comments ?? null,
+      }),
+    );
 
     const { error: insertError } = await supabaseAdmin
       .from("skill_log_competencies")
@@ -190,7 +259,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabaseAdmin = getSupabaseAdmin();
+  const ctx = await getSkillLogAuthContext(req);
+  if (!ctx) return jsonUnauthorized();
+
+  const supabaseAdmin = getSupabaseAdminFromAuth();
   if (!supabaseAdmin) {
     return NextResponse.json(
       { success: false, message: "Server configuration error" },
@@ -198,16 +270,37 @@ export async function DELETE(
     );
   }
 
-  // Delete competencies first (foreign key)
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("skill_logs")
+    .select(FULL_SELECT)
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !existing) {
+    return NextResponse.json(
+      { success: false, message: "Skill log not found" },
+      { status: 404 },
+    );
+  }
+
+  if (
+    !canEditSkillLogDraft(
+      ctx.profile,
+      ctx.user.id,
+      existing as SkillLogRecord,
+      ctx.presets,
+      ctx.user.role,
+    )
+  ) {
+    return forbiddenOrUnauthorized(ctx);
+  }
+
   await supabaseAdmin
     .from("skill_log_competencies")
     .delete()
     .eq("skill_log_id", id);
 
-  const { error } = await supabaseAdmin
-    .from("skill_logs")
-    .delete()
-    .eq("id", id);
+  const { error } = await supabaseAdmin.from("skill_logs").delete().eq("id", id);
 
   if (error) {
     return NextResponse.json(

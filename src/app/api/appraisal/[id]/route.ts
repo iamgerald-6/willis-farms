@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { recomputeFinalScore } from "@/lib/appraisal/server";
 import { canRate } from "@/lib/appraisal/sections";
-import { sendSupervisorEvaluationDueEmail } from "@/lib/appraisal/emails";
+import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
-import { canViewAllAppraisalPeriods } from "@/lib/accessControl";
+import { canViewAllAppraisalPeriods, isSuperAdmin } from "@/lib/accessControl";
 import {
   requireAuth,
   canAccessAppraisalRecord,
@@ -126,7 +126,7 @@ export async function PATCH(
     );
     const canActAsSupervisor =
       !isOwnRecord &&
-      (caller.role === "super_admin" ||
+      (isSuperAdmin(caller.role) ||
         canRate(caller.grade_level, existing.current_grade));
 
     const rejectSupervisorAction = () =>
@@ -135,7 +135,7 @@ export async function PATCH(
             "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
           )
         : jsonForbidden(
-            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L3 or above and senior to the employee.`,
+            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
           );
 
     // Archiving is a filing action, not a workflow state — an archived record
@@ -205,7 +205,9 @@ export async function PATCH(
           supervisor_ratings,
           supervisor_weighted_score: supervisor_weighted_score ?? null,
           final_review_notes: final_review_notes ?? null,
-          promotion_readiness: promotion_readiness ?? undefined,
+          ...(existing.review_quarter === "Q4" && promotion_readiness
+            ? { promotion_readiness }
+            : {}),
           final_reviewed_by: caller.id,
           final_reviewed_by_name: caller.name,
           final_reviewed_at: new Date().toISOString(),
@@ -255,7 +257,9 @@ export async function PATCH(
           employee_weighted_score: body.employee_weighted_score ?? null,
           employee_email: body.employee_email ?? undefined,
           supervisor_email: body.supervisor_email ?? undefined,
-          promotion_readiness: body.promotion_readiness ?? undefined,
+          ...(existing.review_quarter === "Q4" && body.promotion_readiness
+            ? { promotion_readiness: body.promotion_readiness }
+            : {}),
           section_authorisations_held:
             body.section_authorisations_held ?? undefined,
           submitted_by: employeeSubmittedBy,
@@ -271,7 +275,7 @@ export async function PATCH(
       }
 
       if (employeeSubmittedBy === "employee" && data?.supervisor_email) {
-        sendSupervisorEvaluationDueEmail({
+        void sendSupervisorEvaluationDueEmail({
           supervisorEmail: data.supervisor_email,
           supervisorName: data.immediate_supervisor || "Supervisor",
           employeeName: data.employee_name,
@@ -280,13 +284,19 @@ export async function PATCH(
           deadlineAt: data.deadline_at,
           appraisalId: data.id ?? appraisalId,
         }).then((result) => {
-          if (!result.sent) {
-            console.warn(
-              "[PATCH /api/appraisal/[id]] Supervisor notify email not sent:",
-              result.error,
-            );
-          }
+          logSupervisorEvaluationEmail("PATCH /api/appraisal/[id]", result, {
+            supervisorEmail: data.supervisor_email,
+            employeeName: data.employee_name,
+            appraisalId: data.id ?? appraisalId,
+            quarter: data.review_quarter,
+            year: data.review_year,
+          });
         });
+      } else if (employeeSubmittedBy === "employee" && !data?.supervisor_email) {
+        console.warn(
+          "[PATCH /api/appraisal/[id]] Supervisor email skipped — no supervisor_email on record",
+          { appraisalId: data?.id ?? appraisalId },
+        );
       }
 
       return NextResponse.json({ data });
@@ -335,7 +345,9 @@ export async function PATCH(
         development_plan_next_year: development_plan_next_year ?? null,
         promotion_readiness_assessment: promotion_readiness_assessment ?? null,
         compensation_review_input: compensation_review_input ?? null,
-        promotion_readiness: promotion_readiness ?? undefined,
+        ...(existing.review_quarter === "Q4" && promotion_readiness
+          ? { promotion_readiness }
+          : {}),
         submitted_by: newSubmittedBy,
         status: newSubmittedBy === "both" ? "submitted" : "open",
         supervisor_submitted_at: new Date().toISOString(),
