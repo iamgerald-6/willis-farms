@@ -25,7 +25,13 @@ const contentSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   category: z.string().min(1, "Category is required"),
   sub_category: z.string().min(1, "Sub-category is required"),
-  description: z.string().min(5, "Description must be at least 5 characters"),
+  description: z
+    .string()
+    .min(5, "Description must be at least 5 characters")
+    .refine(
+      (v) => v.trim().split(/\s+/).filter(Boolean).length <= 10,
+      "Description must be at most 10 words",
+    ),
   document_read_minutes: z.number().min(1, "Read time is required"),
   video_duration_minutes: z.number().optional(),
 });
@@ -259,6 +265,7 @@ export default function AddContentModal({
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<ContentFormValues>({
     resolver: zodResolver(contentSchema),
@@ -303,6 +310,11 @@ export default function AddContentModal({
   const subOptions = selectedCategory
     ? (SUB_CATEGORIES[selectedCategory] ?? [])
     : [];
+
+  const descriptionValue = watch("description") ?? "";
+  const descriptionWordCount = descriptionValue.trim()
+    ? descriptionValue.trim().split(/\s+/).filter(Boolean).length
+    : 0;
 
   const validateFiles = () => {
     const errs: { cover?: string; doc?: string } = {};
@@ -494,10 +506,35 @@ export default function AddContentModal({
             >
               <textarea
                 rows={3}
-                placeholder="What does this SOP cover?"
+                placeholder="What does this SOP cover? (10 words max)"
                 {...register("description")}
+                onChange={(e) => {
+                  // Let RHF record the keystroke first, then — if it pushed
+                  // past 10 words — use setValue so both the visible text
+                  // and RHF's internal form state get truncated together.
+                  // Mutating e.target.value directly here would only fix
+                  // the display: RHF already reads the untruncated value
+                  // before a custom onChange runs, so the extra words would
+                  // still slip into the submitted data.
+                  register("description").onChange(e);
+                  const words = e.target.value.split(/\s+/).filter(Boolean);
+                  if (words.length > 10) {
+                    setValue("description", words.slice(0, 10).join(" "), {
+                      shouldValidate: true,
+                    });
+                  }
+                }}
                 className={`${inputCls(!!errors.description)} resize-none`}
               />
+              <p
+                className={`text-xs text-right ${
+                  descriptionWordCount >= 10
+                    ? "text-red-500 font-medium"
+                    : "text-gray-400"
+                }`}
+              >
+                {descriptionWordCount}/10 words
+              </p>
             </Field>
 
             {/* ── Media section ── */}

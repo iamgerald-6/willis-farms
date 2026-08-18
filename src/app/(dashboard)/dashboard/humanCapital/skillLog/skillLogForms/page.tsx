@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useEffect } from "react";
+import { Suspense, useMemo, useEffect } from "react";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -320,27 +320,13 @@ function gradeLevel(grade: string) {
   return parseInt(grade.replace(/\D/g, ""), 10) || 0;
 }
 
-// ─── Review Period quarter helpers ─────────────────────────────────────────
-// review_period is still stored as a plain string (no schema change), but
-// the UI now builds it from a single Quarter dropdown instead of free text or
-// a date picker. The year isn't user-selectable — a skill log always applies
-// to the current year — so it's appended automatically. "Q1 2026" is both
-// the format we generate and the format we try to parse back when editing an
-// existing log — matching the same Quarter/Year convention already used on
-// the Appraisal pages.
-const REVIEW_QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
-
-const CURRENT_REVIEW_YEAR = new Date().getFullYear();
-
-function formatReviewPeriod(quarter: string) {
-  return `${quarter} ${CURRENT_REVIEW_YEAR}`;
-}
-
-function parseReviewPeriod(text: string | null | undefined): string {
-  if (!text) return "";
-  const match = text.trim().match(/^(Q[1-4])\s+\d{4}$/i);
-  return match ? match[1].toUpperCase() : "";
-}
+// ─── Review date helper ─────────────────────────────────────────────────────
+// review_period is still stored as a plain string (no schema change), but the
+// UI now captures it as a single calendar date (YYYY-MM-DD, matching what a
+// native <input type="date"> reads and writes) instead of a Quarter dropdown.
+// Older logs may still hold a legacy "Q1 2026"-style value — ISO_DATE_RE lets
+// us tell those apart so we don't try to display them inside the date input.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 const competencySchema = z.object({
@@ -356,7 +342,7 @@ const skillLogSchema = z.object({
   employee_grade: z.string().min(1, "Select a grade"),
   employee_id: z.string().min(1, "Select an employee"),
   log_type: z.string().min(1, "Select a log type"),
-  review_period: z.string().min(1, "Review period is required"),
+  review_period: z.string().min(1, "Date is required"),
   section: z.string().optional(),
   tier_auth: z.string().optional(),
   strengths_observed: z.string().optional(),
@@ -591,24 +577,7 @@ function SkillLogFormPageContent() {
     );
   }, [allUsers, watchedGrade, supervisorId]);
 
-  // ── Review Period quarter/year pickers ──
-  // Drives the underlying `review_period` string field via setValue, rather
-  // than being registered directly — mirrors the pattern used elsewhere in
-  // the app for derived/computed field values.
-  const [reviewPeriodQuarter, setReviewPeriodQuarter] = useState("");
-  const [reviewPeriodTouched, setReviewPeriodTouched] = useState(false);
-
-  useEffect(() => {
-    if (reviewPeriodQuarter) {
-      setValue("review_period", formatReviewPeriod(reviewPeriodQuarter), {
-        shouldValidate: true,
-      });
-    } else if (reviewPeriodTouched) {
-      // Only clear once the user has actually interacted — don't wipe out a
-      // pre-filled legacy value on first mount before a quarter is picked.
-      setValue("review_period", "", { shouldValidate: true });
-    }
-  }, [reviewPeriodQuarter, reviewPeriodTouched, setValue]);
+  const watchedReviewPeriod = watch("review_period");
 
   // Reset employee on grade change
   useEffect(() => {
@@ -649,18 +618,19 @@ function SkillLogFormPageContent() {
     const employeeGrade =
       existingLog.employee_grade ?? existingLog.employee?.grade_level ?? "";
 
-    // Try to recover the quarter from a previously-generated review_period
-    // string. If it predates this UI (arbitrary free text or a date), the
-    // picker stays blank and the original text is shown as a reference
+    // Only pre-fill the date input when the existing value is already in
+    // the YYYY-MM-DD shape it expects. A legacy value (e.g. a pre-date-picker
+    // "Q1 2026" string) leaves the picker blank and is shown as a reference
     // caption instead.
-    setReviewPeriodQuarter(parseReviewPeriod(existingLog.review_period));
-    setReviewPeriodTouched(false);
+    const existingReviewPeriod = ISO_DATE_RE.test(existingLog.review_period)
+      ? existingLog.review_period
+      : "";
 
     reset({
       employee_grade: employeeGrade,
       employee_id: existingLog.employee_id ?? "",
       log_type: existingLog.log_type ?? "",
-      review_period: existingLog.review_period ?? "",
+      review_period: existingReviewPeriod,
       section: existingLog.section ?? "",
       tier_auth: existingLog.tier_auth ?? "",
       strengths_observed: existingLog.strengths_observed ?? "",
@@ -844,37 +814,21 @@ function SkillLogFormPageContent() {
             />
 
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Review Period
-              </label>
-              <select
-                aria-label="Review period quarter"
-                value={reviewPeriodQuarter}
-                onChange={(e) => {
-                  setReviewPeriodQuarter(e.target.value);
-                  setReviewPeriodTouched(true);
-                }}
-                className={`w-full appearance-none border rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 ${errors.review_period ? "border-red-400" : "border-gray-200"}`}
-                style={{ "--tw-ring-color": BRAND } as any}
-              >
-                <option value="">Select quarter</option>
-                {REVIEW_QUARTERS.map((q) => (
-                  <option key={q} value={q}>
-                    {q} {CURRENT_REVIEW_YEAR}
-                  </option>
-                ))}
-              </select>
-              {isEditMode && existingLog?.review_period && !reviewPeriodQuarter && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Currently: {existingLog.review_period} — pick a new quarter
-                  to replace this.
-                </p>
-              )}
-              {errors.review_period && (
-                <p className="text-xs text-red-500 mt-1">
-                  {errors.review_period.message}
-                </p>
-              )}
+              <FormInput
+                label="Date"
+                type="date"
+                error={errors.review_period?.message}
+                {...register("review_period")}
+              />
+              {isEditMode &&
+                existingLog?.review_period &&
+                !ISO_DATE_RE.test(existingLog.review_period) &&
+                !watchedReviewPeriod && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Currently: {existingLog.review_period} — pick a new date
+                    to replace this.
+                  </p>
+                )}
             </div>
 
             {/* Log Type */}

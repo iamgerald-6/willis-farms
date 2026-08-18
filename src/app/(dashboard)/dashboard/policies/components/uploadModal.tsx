@@ -25,14 +25,20 @@ export default function UploadManualModal({
   onClose,
   onSuccess,
   uploadedById,
+  categories,
 }: {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   uploadedById: string;
+  // The full set of categories actually in use (built-in + any custom ones
+  // already added elsewhere) — see categoryOptions in policies/page.tsx.
+  // Upload only ever picks from this list now; typing a brand-new category
+  // here is no longer allowed.
+  categories: string[];
 }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>("HR");
+  const [category, setCategory] = useState<string>(categories[0] ?? "HR");
   const [description, setDescription] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [versionNotes, setVersionNotes] = useState("");
@@ -40,13 +46,6 @@ export default function UploadManualModal({
   const [dragOver, setDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const CATEGORIES: ManualCategory[] = [
-    "HR",
-    "Biosecurity",
-    "Finance Policies",
-    "Breeding Operations",
-  ];
 
   interface ManualVersion {
     version_id: string;
@@ -108,7 +107,7 @@ export default function UploadManualModal({
   const handleClose = () => {
     if (isUploading) return;
     setTitle("");
-    setCategory("HR");
+    setCategory(categories[0] ?? "HR");
     setDescription("");
     setVersionLabel("");
     setVersionNotes("");
@@ -210,20 +209,17 @@ export default function UploadManualModal({
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
                 Category
               </label>
-              <input
-                type="text"
-                list="manual-category-options"
+              <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. HR, or type a new one"
                 className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-              <datalist id="manual-category-options">
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c} />
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
-              </datalist>
-              <p className="text-[11px] text-gray-400 mt-1">Pick an existing one or type a new category.</p>
+              </select>
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">

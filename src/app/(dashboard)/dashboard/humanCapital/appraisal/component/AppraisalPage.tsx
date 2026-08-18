@@ -1090,19 +1090,21 @@ export default function AppraisalForm({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <FieldLabel>Section Authorisations Held</FieldLabel>
             {isFillingSecond ? (
               <ReadOnlyField
-                label=""
+                label="Section Authorisations Held"
                 value={existingAppraisal?.section_authorisations_held}
               />
             ) : (
-              <input
-                type="text"
-                placeholder="e.g. Farrowing, Weaning, AI"
-                {...register("section_authorisations_held")}
-                className={inputCls()}
-              />
+              <>
+                <FieldLabel>Section Authorisations Held</FieldLabel>
+                <input
+                  type="text"
+                  placeholder="e.g. Farrowing, Weaning, AI"
+                  {...register("section_authorisations_held")}
+                  className={inputCls()}
+                />
+              </>
             )}
           </div>
           <div>
@@ -1210,7 +1212,7 @@ export default function AppraisalForm({
             {/* Only the single active period is available — no free picker. */}
             <ReadOnlyField
               label="Quarter"
-              value={quarter === "Q4" ? "Q4 (Annual)" : quarter}
+              value={quarter === "Q4" ? "Annual" : quarter}
             />
             <ReadOnlyField label="Year" value={String(lockedYear)} />
             {quarter === "Q4" && (

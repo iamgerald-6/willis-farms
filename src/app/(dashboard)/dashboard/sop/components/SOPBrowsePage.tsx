@@ -172,68 +172,86 @@ function SkeletonCard() {
   );
 }
 
+// ─── Description helper ─────────────────────────────────────────────────────
+function truncateWords(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) return text;
+  return words.slice(0, maxWords).join(" ") + "…";
+}
+
 // ─── Content card ──────────────────────────────────────────────────────────────
+// Cards with an attached document open it directly (skipping the detail page
+// that used to sit in between). Content without a document — e.g. video-only
+// entries — still falls back to the detail page.
 function ContentCard({ content }: { content: Content }) {
-  return (
-    <Link href={`/dashboard/sop/${content.id}`}>
-      <div className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-red-200 transition-all duration-200 cursor-pointer h-full flex flex-col">
-        <div className="h-44 w-full bg-gray-100 overflow-hidden relative">
-          <img
-            src={content.cover_image_url || "/images/default_cover.jpg"}
-            alt={content.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-          <span
-            className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              CATEGORY_COLORS[content.category] ?? "bg-gray-100 text-gray-600"
-            }`}
-          >
-            {content.category}
-          </span>
-        </div>
+  const cardBody = (
+    <div className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-red-200 transition-all duration-200 cursor-pointer h-full flex flex-col">
+      <div className="h-44 w-full bg-gray-100 overflow-hidden relative">
+        <img
+          src={content.cover_image_url || "/images/default_cover.jpg"}
+          alt={content.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
+        <span
+          className={`absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+            CATEGORY_COLORS[content.category] ?? "bg-gray-100 text-gray-600"
+          }`}
+        >
+          {content.category}
+        </span>
+      </div>
 
-        <div className="p-4 flex flex-col flex-1">
-          <h2 className="font-semibold text-gray-900 text-base mb-1 group-hover:text-red-600 transition-colors line-clamp-2">
-            {content.title}
-          </h2>
-          <p className="text-xs text-gray-400 mb-3">{content.sub_category}</p>
-          <p className="text-sm text-gray-500 line-clamp-2 flex-1">
-            {content.description}
-          </p>
+      <div className="p-4 flex flex-col flex-1">
+        <h2 className="font-semibold text-gray-900 text-base mb-1 group-hover:text-red-600 transition-colors line-clamp-2">
+          {content.title}
+        </h2>
+        <p className="text-xs text-gray-400 mb-3">{content.sub_category}</p>
+        <p className="text-sm text-gray-500 line-clamp-2 flex-1">
+          {truncateWords(content.description, 10)}
+        </p>
 
-          <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">
-            {content.document_read_minutes && (
-              <span className="flex items-center gap-1 text-xs text-gray-400">
-                <Clock className="w-3.5 h-3.5" />
-                {content.document_read_minutes} min read
-              </span>
-            )}
-            {content.video_duration_minutes && (
-              <span className="flex items-center gap-1 text-xs text-gray-400">
-                <Video className="w-3.5 h-3.5" />
-                {content.video_duration_minutes} min video
-              </span>
-            )}
-            {content.document_url && (
-              <span className="flex items-center gap-1 text-xs text-gray-400 ml-auto">
-                <FileText className="w-3.5 h-3.5" /> PDF
-              </span>
-            )}
-          </div>
-          {content.created_by_name && (
-            <p className="text-[11px] text-gray-400 mt-2">
-              Added by {content.created_by_name} ·{" "}
-              {new Date(content.created_at).toLocaleDateString("en-GB", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              })}
-            </p>
+        <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">
+          {content.document_read_minutes && (
+            <span className="flex items-center gap-1 text-xs text-gray-400">
+              <Clock className="w-3.5 h-3.5" />
+              {content.document_read_minutes} min read
+            </span>
+          )}
+          {content.video_duration_minutes && (
+            <span className="flex items-center gap-1 text-xs text-gray-400">
+              <Video className="w-3.5 h-3.5" />
+              {content.video_duration_minutes} min video
+            </span>
+          )}
+          {content.document_url && (
+            <span className="flex items-center gap-1 text-xs text-gray-400 ml-auto">
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </span>
           )}
         </div>
+        {content.created_by_name && (
+          <p className="text-[11px] text-gray-400 mt-2">
+            Added by {content.created_by_name} ·{" "}
+            {new Date(content.created_at).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </p>
+        )}
       </div>
-    </Link>
+    </div>
   );
+
+  if (content.document_url) {
+    return (
+      <a href={content.document_url} target="_blank" rel="noopener noreferrer">
+        {cardBody}
+      </a>
+    );
+  }
+
+  return <Link href={`/dashboard/sop/${content.id}`}>{cardBody}</Link>;
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────

@@ -44,7 +44,7 @@ export function buildApplicationConfirmationEmail(
     `Reference number: ${referenceNumber}`,
     `Date submitted: ${dateLabel}`,
     "",
-    "Our Human Capital team will review your application. If your profile matches our current requirements, we will contact you by email or phone to discuss next steps.",
+    "Our hiring manager will review your application. If your profile matches our current requirements, we will contact you by email or phone to discuss next steps.",
     "",
     "Please keep your reference number for any follow-up correspondence:",
     referenceNumber,
@@ -52,7 +52,7 @@ export function buildApplicationConfirmationEmail(
     "For enquiries, contact info@willsfarms.com and quote your reference number.",
     "",
     "Kind regards,",
-    "Human Capital Team",
+    "Human Resource Team",
     "Wills Farms Ltd.",
   ].join("\n");
 

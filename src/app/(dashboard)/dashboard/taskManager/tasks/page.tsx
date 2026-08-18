@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { FileBarChart, Settings2, FolderCog, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -19,18 +20,33 @@ import ManageProjectsModal from "../components/ManageProjectsModal";
 import { TaskManagerTasksSkeleton } from "@/components/skeletons/PageSkeletons";
 
 type Tab = "summary" | "gantt" | "register" | "monitoring";
+const VALID_TABS: Tab[] = ["summary", "gantt", "register", "monitoring"];
 
-export default function TaskManagerTasksPage() {
+function TaskManagerTasksPageContent() {
   const {
     isLoading: userLoading,
     isSeniorManagement,
     allUsers,
     userId,
   } = useCurrentUser();
+
+  // Supports deep-linking straight to a specific project + tab (e.g. from
+  // the dashboard Overview page's Overdue Tasks card) via
+  // /dashboard/taskManager/tasks?project=<id>&tab=summary. Falls back to
+  // the normal defaults (first project, Obligation Register) when either
+  // param is absent or the project id isn't recognized — see the
+  // "pick a default project" effect below, which already handles an
+  // unrecognized selectedProjectId the same way.
+  const searchParams = useSearchParams();
+  const projectParam = searchParams?.get("project") ?? null;
+  const tabParam = searchParams?.get("tab") as Tab | null;
+
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null,
+    projectParam,
   );
-  const [tab, setTab] = useState<Tab>("register");
+  const [tab, setTab] = useState<Tab>(
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "register",
+  );
   const [showNewProject, setShowNewProject] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showAutomation, setShowAutomation] = useState(false);
@@ -312,5 +328,13 @@ export default function TaskManagerTasksPage() {
         <ManageProjectsModal onClose={() => setShowManageProjects(false)} />
       )}
     </div>
+  );
+}
+
+export default function TaskManagerTasksPage() {
+  return (
+    <Suspense fallback={<TaskManagerTasksSkeleton />}>
+      <TaskManagerTasksPageContent />
+    </Suspense>
   );
 }

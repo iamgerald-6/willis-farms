@@ -771,6 +771,7 @@ export default function PoliciesPage() {
         onClose={() => setUploadOpen(false)}
         onSuccess={refetch}
         uploadedById={currentUserId ?? ""}
+        categories={categoryOptions}
       />
     </div>
   );

@@ -236,7 +236,7 @@ export function isPeriodAlreadyAppraised(status: string | null | undefined): boo
 }
 
 export function periodLabel(quarter: Quarter, year: number): string {
-  return quarter === "Q4" ? `Q4 (Annual) ${year}` : `${quarter} ${year}`;
+  return quarter === "Q4" ? `Annual ${year}` : `${quarter} ${year}`;
 }
 
 export type DeadlinePhase = "before_quarter_end" | "after_quarter_end" | "reopened";

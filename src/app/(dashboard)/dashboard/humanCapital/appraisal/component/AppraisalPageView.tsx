@@ -29,11 +29,14 @@ export type { Appraisal, ViewerContext } from "./appraisalTypes";
 
 import type { ViewerContext } from "./appraisalTypes";
 
-const QUARTER_FILTERS = ["", "Q1", "Q2", "Q3", "Q4"] as const;
+// "All periods" itself now doubles as the "all quarters" view (quarterFilter
+// resets to "" when it's clicked) — these pills are only for drilling down
+// into one specific quarter from there, so there's no separate "All" pill.
+const QUARTER_FILTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
 
 function quarterFilterLabel(q: "" | Quarter) {
   if (q === "") return "All";
-  return q === "Q4" ? "Q4 (Annual)" : q;
+  return q === "Q4" ? "Annual" : q;
 }
 
 function detailHref(a: Appraisal) {
@@ -214,10 +217,6 @@ export default function AppraisalLandingPage({
   // their own self-assessment.
   const viewerCanAppraiseOthers =
     canAppraiseOthers(viewer.gradeLevel) || isSuperAdmin(viewer.role);
-  const outstandingCount = appraisals.filter(
-    (a) => a.status !== "final_reviewed" && a.status !== "locked",
-  ).length;
-
   const emptyMessage = viewerCanAppraiseOthers
     ? "Start a new appraisal using the button above"
     : "Complete your self-assessment using the button above";
@@ -245,11 +244,6 @@ export default function AppraisalLandingPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!viewingArchived && outstandingCount > 0 && (
-            <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap">
-              {outstandingCount} in progress
-            </span>
-          )}
           <button
             onClick={() => onNavigateToForm?.()}
             className="bg-red-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-shrink-0"
@@ -278,7 +272,10 @@ export default function AppraisalLandingPage({
               Current period
             </button>
             <button
-              onClick={() => setShowAllPeriods(true)}
+              onClick={() => {
+                setShowAllPeriods(true);
+                setQuarterFilter("");
+              }}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition border ${
                 viewingAllPeriods
                   ? "bg-red-600 text-white border-red-600"
