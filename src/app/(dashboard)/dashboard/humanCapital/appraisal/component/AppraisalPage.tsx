@@ -51,6 +51,16 @@ import {
 } from "@/lib/appraisal/deadlines";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
+import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
+import {
+  APPRAISAL_MODULE_ID_CONST,
+  APPRAISAL_SECTION_AUTH_LIST,
+  applySectionBaseWeights,
+  applySectionContentOverrides,
+  applySectionWeightRules,
+  type ModuleBusinessLogic,
+  type SystemOption,
+} from "@/lib/systemDefinitions";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -283,16 +293,7 @@ function SectionBlock({
   );
 }
 
-const PROMOTION_OPTIONS = [
-  { value: "not_yet_ready", label: "Not yet ready" },
-  { value: "developing", label: "Developing toward next level" },
-  { value: "nearly_ready", label: "Nearly ready" },
-  { value: "ready_for_assessment", label: "Ready for promotion assessment" },
-  {
-    value: "ready_for_expanded_responsibility",
-    label: "Ready for expanded responsibility but not yet formal promotion",
-  },
-];
+const PROMOTION_OPTIONS = getPromotionReadinessOptions();
 
 // ─── Main Form ────────────────────────────────────────────────────────────────
 interface AppraisalFormProps {
@@ -398,6 +399,41 @@ export default function AppraisalForm({
       return res.data;
     },
   });
+
+  const { data: sectionAuthOptions = [] } = useQuery<SystemOption[]>({
+    queryKey: ["appraisal_section_authorisations"],
+    queryFn: async () => {
+      const res = await api.get("/system-definitions/options", {
+        params: {
+          module_id: APPRAISAL_MODULE_ID_CONST,
+          option_list: APPRAISAL_SECTION_AUTH_LIST,
+        },
+      });
+      return res.data.data as SystemOption[];
+    },
+  });
+
+  const { data: moduleConfig } = useQuery<{
+    businessLogic: ModuleBusinessLogic;
+  }>({
+    queryKey: ["appraisal_module_config"],
+    queryFn: async () => {
+      const res = await api.get(
+        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
+      );
+      return {
+        businessLogic: (res.data.data?.businessLogic ??
+          {}) as ModuleBusinessLogic,
+      };
+    },
+  });
+
+  const weightRules = moduleConfig?.businessLogic?.sectionWeightRules ?? [];
+  const globalSectionWeights =
+    moduleConfig?.businessLogic?.globalSectionWeights;
+  const sectionBaseWeights = moduleConfig?.businessLogic?.sectionBaseWeights;
+  const sectionContentOverrides =
+    moduleConfig?.businessLogic?.sectionContentOverrides;
   const allUsers = usersData ?? [];
 
   // ── Current viewer profile ──
@@ -592,7 +628,36 @@ export default function AppraisalForm({
     isFillingSecond,
   ]);
 
-  const sections = sectionsFor(gradeBand, quarter);
+  const sections = useMemo(() => {
+    const base = sectionsFor(gradeBand, quarter);
+    const withContent = applySectionContentOverrides(
+      base,
+      gradeBand,
+      quarter,
+      sectionContentOverrides,
+    );
+    const withBaseWeights = applySectionBaseWeights(
+      withContent,
+      gradeBand,
+      quarter,
+      globalSectionWeights,
+      sectionBaseWeights,
+    );
+    return applySectionWeightRules(
+      withBaseWeights,
+      selectedEmployee?.grade_level ?? currentUserGrade,
+      weightRules,
+    );
+  }, [
+    gradeBand,
+    quarter,
+    selectedEmployee?.grade_level,
+    currentUserGrade,
+    weightRules,
+    globalSectionWeights,
+    sectionBaseWeights,
+    sectionContentOverrides,
+  ]);
 
   // Nobody to supervise → the only appraisal available is your own
   useEffect(() => {
@@ -730,7 +795,7 @@ export default function AppraisalForm({
       toast.error("Please select an employee");
     }
 
-    if (!promotionReadiness) {
+    if (quarter === "Q4" && !promotionReadiness) {
       errs.promotionReadiness = "Please select a promotion readiness status";
       toast.error("Please select a promotion readiness status");
     }
@@ -839,7 +904,9 @@ export default function AppraisalForm({
           }),
       submitted_by: supervisorMode ? "supervisor" : "employee",
       employee_user_id: selectedEmployee!.user_id,
-      promotion_readiness: promotionReadiness,
+      ...(quarter === "Q4" && promotionReadiness
+        ? { promotion_readiness: promotionReadiness }
+        : {}),
       strengths_observed: formData.strengths_observed || null,
       improvement_areas: formData.improvement_areas || null,
       agreed_actions: formData.agreed_actions || null,
@@ -1098,12 +1165,20 @@ export default function AppraisalForm({
             ) : (
               <>
                 <FieldLabel>Section Authorisations Held</FieldLabel>
-                <input
-                  type="text"
-                  placeholder="e.g. Farrowing, Weaning, AI"
+                <select
                   {...register("section_authorisations_held")}
                   className={inputCls()}
-                />
+                >
+                  <option value="">Select section authorisation</option>
+                  {sectionAuthOptions.map((opt) => (
+                    <option
+                      key={opt.id}
+                      value={opt.legacy_value ?? opt.label}
+                    >
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </>
             )}
           </div>
@@ -1140,7 +1215,7 @@ export default function AppraisalForm({
               </div>
             ) : (
               <div>
-                <FieldLabel required>Supervisor's Name</FieldLabel>
+                <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
                 <select
                   value={selectedSupervisorId}
                   onChange={(e) => handleSupervisorSelect(e.target.value)}
@@ -1245,7 +1320,7 @@ export default function AppraisalForm({
             <Award className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>
               <strong>This appraisal covers the employee's entire year of
-              performance.</strong> Q4 is the Annual appraisal — there is no
+              performance.</strong> This is the Annual appraisal — there is no
               separate annual form.
             </span>
           </div>
@@ -1337,7 +1412,8 @@ export default function AppraisalForm({
         ))}
       </div>
 
-      {/* ── Promotion Readiness ── */}
+      {/* ── Promotion Readiness (Annual only) ── */}
+      {quarter === "Q4" && (
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-bold text-gray-800 mb-1">
           Promotion Readiness Notes
@@ -1345,7 +1421,7 @@ export default function AppraisalForm({
         <p className="text-xs text-gray-400 mb-4">
           A discussion/development note only — it does not determine
           promotion eligibility. Eligibility is calculated automatically
-          from the Final Score once Q4 locks (≥ 70% required).
+          from the Final Score once the Annual review locks (≥ 70% required).
         </p>
         <div className="space-y-2">
           {PROMOTION_OPTIONS.map((opt) => (
@@ -1381,6 +1457,7 @@ export default function AppraisalForm({
           </p>
         )}
       </div>
+      )}
 
       {/* ── Comments — supervisor only ── */}
       {supervisorMode && (

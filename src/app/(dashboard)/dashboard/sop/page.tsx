@@ -5,12 +5,21 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User, Content } from "@/types";
-import { isFullRoleAccess, canAccessPage, resolveAccessProfile } from "@/lib/pagePermissions";
+import {
+  isFullRoleAccess,
+  resolveAccessProfile,
+} from "@/lib/pagePermissions";
+import { canAccessPage } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import { isSupervisor } from "@/lib/accessControl";
 import SOPBrowsePage from "./components/SOPBrowsePage";
 import SOPManagementPage from "./components/SOPManagementPage";
 
-const SOP = () => {
+// Single SOP route that toggles between the public browse grid and the
+// management table, instead of "SOP" and "SOP Management" being two
+// separate sidebar entries — the Management side is still reachable
+// directly at /dashboard/addSop for anyone linked straight to it.
+export default function SOPHubPage() {
   const [viewMode, setViewMode] = useState<"sops" | "manage">("sops");
 
   const { data: session } = useQuery({
@@ -34,13 +43,17 @@ const SOP = () => {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const role = profile?.role ?? sessionRole;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
   // Manage side: L4+ (any role) or admin/manager/super_admin, or anyone
   // specifically delegated the "sop:add" permission via Access Control.
   const canManage =
     isFullRoleAccess(role) ||
     isSupervisor(profile?.grade_level) ||
-    (accessProfile ? canAccessPage(accessProfile, "sop:add") : false);
+    (accessProfile
+      ? canAccessPage(accessProfile, "sop:add", groupPresets, sessionRole)
+      : false);
 
   // Same queryKey as SOPManagementPage's own fetch — React Query dedupes
   // this into a single request, we just read the count here for the header.
@@ -102,6 +115,4 @@ const SOP = () => {
       )}
     </div>
   );
-};
-
-export default SOP;
+}

@@ -19,11 +19,24 @@ import {
 import { Content } from "@/types";
 import { useMutation } from "@tanstack/react-query";
 import api from "@/lib/api";
+import {
+  getSopCategoryLegacyValues,
+  getSopCategoryOptions,
+  getSopSubcategoriesForCategory,
+} from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+
+const SOP_CATEGORY_VALUES = getSopCategoryLegacyValues() as unknown as [
+  string,
+  ...string[],
+];
+const SOP_CATEGORY_OPTIONS = getSopCategoryOptions();
 
 const contentSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
-  category: z.string().min(1, "Category is required"),
+  category: z.enum(SOP_CATEGORY_VALUES, {
+    error: "Category is required",
+  }),
   sub_category: z.string().min(1, "Sub-category is required"),
   description: z
     .string()
@@ -45,86 +58,16 @@ export type ContentFormValues = {
   video_duration_minutes?: number;
 };
 
-// ─── Updated Categories & Subcategories ───────────────────────────────────────
-const CATEGORIES = [
-  "Animal Health & Welfare",
-  "Breeding & Reproduction",
-  "Nutrition & Feeding",
-  "Biosecurity",
-  "Facility & Equipment",
-  "Health & Safety",
-  "HR & Administration",
-];
-
-const SUB_CATEGORIES: Record<string, string[]> = {
-  "Animal Health & Welfare": [
-    "Disease Identification & Treatment",
-    "Vaccination Protocols",
-    "Parasite Control",
-    "Injury & Wound Management",
-    "Mortality Management",
-    "Veterinary Visit Procedures",
-  ],
-  "Breeding & Reproduction": [
-    "Gilt Selection & Preparation",
-    "Insemination Procedures",
-    "Pregnancy Confirmation",
-    "Farrowing Procedures",
-    "Weaning Procedures",
-    "Boar Management",
-  ],
-  "Nutrition & Feeding": [
-    "Feed Schedules & Rations",
-    "Diet Formulations by Stage",
-    "Water Quality & Supply",
-    "Feed Storage & Handling",
-    "Lactating Sow Nutrition",
-  ],
-  Biosecurity: [
-    "Farm Entry & Exit Protocols",
-    "Visitor & Vehicle Management",
-    "Disinfection & Sanitation",
-    "Pest & Rodent Control",
-    "Quarantine Procedures",
-    "Disease Outbreak Response",
-  ],
-  "Facility & Equipment": [
-    "Pen Cleaning & Maintenance",
-    "Equipment Inspection & Servicing",
-    "Ventilation & Temperature Control",
-    "Waste & Effluent Management",
-    "Water System Maintenance",
-  ],
-  "Health & Safety": [
-    "PPE Requirements",
-    "Chemical Handling & Storage",
-    "Emergency Response Procedures",
-    "Incident Reporting",
-    "Staff Safety Training",
-  ],
-  "HR & Administration": [
-    "Staff Onboarding",
-    "Record Keeping & Documentation",
-    "Reporting Procedures",
-    "Performance & Compliance",
-  ],
-};
-
-// ─── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
   open: boolean;
   setOpen: (val: boolean) => void;
   onSuccess?: (content: Content) => void;
-  /** When set, the modal edits this SOP instead of creating a new one —
-   * fields pre-fill from it, file uploads become optional (existing files
-   * are kept unless replaced), and submit calls the update endpoint. */
+
   editingContent?: Content | null;
-  /** Current user — recorded as the creator (on add) and as the actor in
-   * the SOP history log (on add/edit). */
+
   performedBy: { id: string; name: string } | null;
 }
 
-// ─── Cloudinary upload ─────────────────────────────────────────────────────────
 async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
@@ -136,7 +79,10 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const isPdf = file.type === "application/pdf";
   const resourceType = isImage || isPdf ? "image" : isVideo ? "video" : "raw";
 
-  const res = await fetch(cloudinaryUploadUrl(resourceType), { method: "POST", body: formData });
+  const res = await fetch(cloudinaryUploadUrl(resourceType), {
+    method: "POST",
+    body: formData,
+  });
   const json = await res.json();
   if (!json.secure_url) throw new Error("Cloudinary upload failed");
   return json.secure_url as string;
@@ -308,7 +254,9 @@ export default function AddContentModal({
 
   const selectedCategory = watch("category");
   const subOptions = selectedCategory
-    ? (SUB_CATEGORIES[selectedCategory] ?? [])
+    ? getSopSubcategoriesForCategory(selectedCategory).map(
+        (s) => s.legacyValue ?? s.label,
+      )
     : [];
 
   const descriptionValue = watch("description") ?? "";
@@ -466,9 +414,9 @@ export default function AddContentModal({
                   className={inputCls(!!errors.category)}
                 >
                   <option value="">Select category</option>
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                  {SOP_CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.id} value={c.legacyValue ?? c.label}>
+                      {c.label}
                     </option>
                   ))}
                 </select>

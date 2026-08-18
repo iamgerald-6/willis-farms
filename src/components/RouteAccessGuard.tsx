@@ -7,11 +7,12 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import {
-  canAccessPage,
   hasUnrestrictedAccess,
   pageKeyFromPath,
   resolveAccessProfile,
 } from "@/lib/pagePermissions";
+import { canAccessPage } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   canManageUserAccounts,
   canOpenUserManagement,
@@ -50,7 +51,9 @@ export default function RouteAccessGuard({
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
-  const loading = sessionLoading || usersLoading;
+  const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+  const loading = sessionLoading || usersLoading || presetsLoading;
 
   const isAccessControlRoute = pathname?.startsWith(
     "/dashboard/access-control",
@@ -101,7 +104,7 @@ export default function RouteAccessGuard({
     }
 
     const pageKey = pageKeyFromPath(pathname || "");
-    if (pageKey && !canAccessPage(accessProfile, pageKey)) {
+    if (pageKey && !canAccessPage(accessProfile, pageKey, groupPresets, sessionRole)) {
       toast.error("You do not have access to this page.");
       router.replace("/dashboard");
     }
@@ -113,6 +116,8 @@ export default function RouteAccessGuard({
     pathname,
     router,
     isAccessControlRoute,
+    groupPresets,
+    sessionRole,
   ]);
 
   if (loading && !unrestricted) {
@@ -141,7 +146,11 @@ export default function RouteAccessGuard({
   }
 
   const pageKey = pageKeyFromPath(pathname || "");
-  if (pageKey && accessProfile && !canAccessPage(accessProfile, pageKey)) {
+  if (
+    pageKey &&
+    accessProfile &&
+    !canAccessPage(accessProfile, pageKey, groupPresets, sessionRole)
+  ) {
     return null;
   }
 

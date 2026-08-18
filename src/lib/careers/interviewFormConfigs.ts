@@ -546,6 +546,25 @@ export function getInterviewGuide(key: InterviewGuideKey): InterviewGuideConfig 
   return GUIDES[key];
 }
 
+/** Candidate-facing practical expectations (titles only — no scoring rubric). */
+export function buildCandidatePracticalExpectations(
+  guide: InterviewGuideConfig,
+): string[] {
+  const assessmentAreas = guide.scenarios.map((sc) =>
+    sc.title.replace(/^Practical:\s*/i, "").trim(),
+  );
+
+  const standard = [
+    "Arrive on time and dressed appropriately for the working environment.",
+    "Comply with all biosecurity, PPE, and safety instructions given on arrival.",
+    "Follow supervisor direction throughout — ask if anything is unclear before proceeding.",
+    "Work calmly and safely; we assess how you perform under supervision, not rehearsed answers.",
+    "Bring valid ID and any documents HR has requested.",
+  ];
+
+  return [...assessmentAreas, ...standard];
+}
+
 /** Compute weighted score from ratings (1–5) */
 export function computeWeightedScore(
   config: InterviewGuideConfig,

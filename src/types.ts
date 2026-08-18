@@ -24,9 +24,13 @@ export interface User {
   access_tier?: AccessTier;
   /** Page keys when access_tier is delegated — legacy view list */
   page_permissions?: string[];
-  /** view | add | edit per page key */
+  /** view | add | edit per page key — legacy hierarchical levels */
   page_permission_levels?: Partial<
     Record<string, "view" | "add" | "edit">
+  > | null;
+  /** Independent actions per page key: view, add, edit, approve, review */
+  page_permission_actions?: Partial<
+    Record<string, Partial<Record<string, boolean>>>
   > | null;
   access_updated_at?: string | null;
   access_updated_by?: string | null;

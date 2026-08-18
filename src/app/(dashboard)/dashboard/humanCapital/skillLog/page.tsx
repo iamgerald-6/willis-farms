@@ -20,10 +20,36 @@ import {
   Lock,
   PenLine,
   Pencil,
+  Eye,
 } from "lucide-react";
+import {
+  getModuleRoute,
+  getSkillLogStatusDef,
+  getSkillLogStatusFilterOptions,
+  SKILL_LOG_PAGE_COPY,
+} from "@/lib/moduleRegistry";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
+import {
+  canApproveSkillLogRecord,
+  canEditSkillLogDraft,
+  canFillSkillLog,
+  type SkillLogRecord,
+} from "@/lib/skillLogAccess";
+import SkillLogDetailModal from "./component/SkillLogDetailModal";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
+const SKILL_LOG_ROUTE =
+  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
+const SKILL_LOG_FORM_ROUTE = `${SKILL_LOG_ROUTE}/skillLogForms`;
+
+const STATUS_ICONS = {
+  draft: Clock,
+  submitted: Clock,
+  signed_off: CheckCircle2,
+} as const;
 
 interface SkillLogUser {
   user_id: string;
@@ -83,12 +109,17 @@ const STATUS_CONFIG = {
   },
 };
 
-function gradeLevel(grade_level: string | undefined | null) {
-  if (!grade_level) return 0;
-  const n = parseInt(grade_level.replace(/\D/g, ""), 10);
-  return isNaN(n) ? 0 : n;
-}
 
+function logAsRecord(log: SkillLog): SkillLogRecord {
+  return {
+    id: log.id,
+    employee_id: log.employee_id,
+    supervisor_id: log.supervisor_id,
+    status: log.status,
+    employee: log.employee,
+    supervisor: log.supervisor,
+  };
+}
 // The API only ever sends the joined employee/supervisor objects (see
 // employee:users!... / supervisor:users!... in get_skillLog/route.ts) — it
 // never actually populates the flat employee_name/supervisor_name/
@@ -124,16 +155,11 @@ function formatReviewDate(value: string): string {
   });
 }
 
-function canSignOff(
-  viewerGrade: string | undefined | null,
-  fillerGrade: string | undefined | null,
-): boolean {
-  const viewer = gradeLevel(viewerGrade);
-  const filler = gradeLevel(fillerGrade);
-  if (viewer < 4) return false; // L3 and below can never sign off
-  if (viewer >= 5) return true; // L5+ can sign off anything
-  return filler === 3; // L4 can only sign off L3-filled logs
-}
+// NOTE: sign-off eligibility used to be computed locally here (canSignOff,
+// using a gradeLevel() helper that turned out not to exist elsewhere in this
+// file — dead code). It's now handled by canApproveSkillLogRecord from
+// @/lib/skillLogAccess (see canApproveLog below), which is Gerald's
+// permission-engine equivalent.
 
 function StatCard({
   label,
@@ -167,18 +193,22 @@ function StatCard({
 function LogCard({
   log,
   onClick,
+  onView,
   onDelete,
   onSignOff,
   canSignOffLog,
 }: {
   log: SkillLog;
   onClick?: () => void;
+  onView?: () => void;
   onDelete?: (e: React.MouseEvent) => void;
   onSignOff?: (e: React.MouseEvent) => void;
   canSignOffLog?: boolean;
 }) {
-  const status = STATUS_CONFIG[log.status] ?? STATUS_CONFIG.draft;
-  const StatusIcon = status.icon;
+  const statusDef =
+    getSkillLogStatusDef(log.status) ?? getSkillLogStatusDef("draft")!;
+  const StatusIcon =
+    STATUS_ICONS[log.status as keyof typeof STATUS_ICONS] ?? Clock;
   const isLocked = log.status === "submitted" || log.status === "signed_off";
 
   const cardContent = (
@@ -229,10 +259,10 @@ function LogCard({
       {/* Right side */}
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <span
-          className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${status.color}`}
+          className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${statusDef.badgeClass}`}
         >
           <StatusIcon className="w-3 h-3" />
-          <span className="hidden sm:inline">{status.label}</span>
+          <span className="hidden sm:inline">{statusDef.label}</span>
         </span>
         {log.overall_rating && (
           <span className="text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-lg">
@@ -266,6 +296,19 @@ function LogCard({
           {log.status === "submitted" && !canSignOffLog && (
             <Lock className="w-4 h-4 text-gray-300" />
           )}
+          {isLocked && onView && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onView();
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              {SKILL_LOG_PAGE_COPY.viewButton}
+            </button>
+          )}
           {log.status === "signed_off" && (
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           )}
@@ -273,6 +316,20 @@ function LogCard({
       </div>
     </div>
   );
+
+  if (isLocked && onView) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onView}
+        onKeyDown={(e) => e.key === "Enter" && onView()}
+        className="w-full bg-white rounded-2xl border border-gray-200 p-4 md:p-5 text-left hover:shadow-md hover:border-gray-300 transition-all group cursor-pointer opacity-90"
+      >
+        {cardContent}
+      </div>
+    );
+  }
 
   if (isLocked) {
     return (
@@ -314,7 +371,7 @@ function SignOffModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
         <h2 className="text-base font-bold text-gray-900 mb-3">
-          Sign Off Skills Log
+          {SKILL_LOG_PAGE_COPY.signOffTitle}
         </h2>
 
         <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 border border-gray-200 rounded-xl p-4 mb-5 italic">
@@ -343,8 +400,7 @@ function SignOffModal({
             className="mt-0.5 w-4 h-4 rounded accent-red-700 flex-shrink-0"
           />
           <span className="text-sm text-gray-700">
-            By checking this box I confirm I have reviewed this skills log and
-            agree to provide final sign-off.
+            {SKILL_LOG_PAGE_COPY.signOffConfirmLabel}
           </span>
         </label>
 
@@ -380,6 +436,7 @@ export default function SkillLogsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [signOffLog, setSignOffLog] = useState<SkillLog | null>(null);
+  const [viewLogId, setViewLogId] = useState<string | null>(null);
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -389,6 +446,7 @@ export default function SkillLogsPage() {
     },
   });
   const userId = session?.user?.id ?? "";
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
 
   const { data: allUsers = [] } = useQuery<UserProfile[]>({
     queryKey: ["get_users"],
@@ -399,36 +457,63 @@ export default function SkillLogsPage() {
   });
 
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
-  const userGradeLevel = gradeLevel(currentUser?.grade_level);
-  const viewerRole = currentUser?.role ?? "";
+  const accessProfile = resolveAccessProfile(currentUser, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
-  // Supervisor = L4+ (grade determines this, not role)
-  const canFill = userGradeLevel >= 4;
+  const canFill = accessProfile
+    ? canFillSkillLog(accessProfile, groupPresets, sessionRole)
+    : false;
+  const canReview = accessProfile
+    ? canPerformModuleAction(
+        accessProfile,
+        "hc:skillLog",
+        "review",
+        sessionRole,
+        groupPresets,
+      )
+    : false;
+  const canApprove = accessProfile
+    ? canPerformModuleAction(
+        accessProfile,
+        "hc:skillLog",
+        "approve",
+        sessionRole,
+        groupPresets,
+      )
+    : false;
 
-  // Can the viewer see ALL logs (even ones they didn't create/own)?
-  const seeAll =
-    viewerRole === "super_admin" ||
-    viewerRole === "admin" ||
-    viewerRole === "manager" ||
-    canFill;
+  const canApproveLog = (log: SkillLog) =>
+    accessProfile
+      ? canApproveSkillLogRecord(
+          accessProfile,
+          userId,
+          logAsRecord(log),
+          groupPresets,
+          sessionRole,
+        )
+      : false;
 
-  // Can the viewer take actions (sign off, edit, delete) on others' logs?
-  const canAct = viewerRole === "super_admin" || canFill;
+  const canEditLog = (log: SkillLog) =>
+    accessProfile
+      ? canEditSkillLogDraft(
+          accessProfile,
+          userId,
+          logAsRecord(log),
+          groupPresets,
+          sessionRole,
+        )
+      : false;
 
   const viewerFullName = currentUser
     ? `${currentUser.first_name} ${currentUser.last_name}`
     : "You";
 
   const { data: logs = [], isLoading } = useQuery<SkillLog[]>({
-    queryKey: ["skill_logs", userId, seeAll, canFill],
+    queryKey: ["skill_logs", userId],
     enabled: !!userId,
     queryFn: async () => {
-      const params = new URLSearchParams({
-        userId,
-        isSupervisor: String(canFill),
-        fetchAll: String(seeAll),
-      });
-      const res = await api.get(`/skillLog/get_skillLog?${params}`);
+      const res = await api.get("/skillLog/get_skillLog");
       return res.data.data as SkillLog[];
     },
   });
@@ -477,14 +562,7 @@ export default function SkillLogsPage() {
     },
   });
 
-  const visibleLogs = useMemo(() => {
-    // API already returns the correct set; frontend filter is a safety net
-    if (seeAll) return logs;
-    return logs.filter((l) => {
-      const empId = l.employee?.user_id ?? l.employee_id;
-      return empId === userId;
-    });
-  }, [logs, userId, seeAll]);
+  const visibleLogs = logs;
 
   // Dropdown options are built from the logs actually on screen, rather than
   // a fixed/imported list — every option shown is guaranteed to match at
@@ -530,6 +608,12 @@ export default function SkillLogsPage() {
 
   return (
     <div className="p-4 md:p-6 min-h-full bg-gray-50">
+      {viewLogId && (
+        <SkillLogDetailModal
+          logId={viewLogId}
+          onClose={() => setViewLogId(null)}
+        />
+      )}
       {signOffLog && (
         <SignOffModal
           log={signOffLog}
@@ -543,27 +627,27 @@ export default function SkillLogsPage() {
       <div className="flex items-start sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            Skills Logs
+            {SKILL_LOG_PAGE_COPY.title}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {canAct
-              ? "Your team's competency records"
-              : seeAll
-                ? "All competency records (view only)"
-                : "Your competency records"}
+            {canFill
+              ? SKILL_LOG_PAGE_COPY.subtitleCanAct
+              : canReview || canApprove
+                ? SKILL_LOG_PAGE_COPY.subtitleSeeAll
+                : SKILL_LOG_PAGE_COPY.subtitleSelf}
           </p>
         </div>
-        {canAct && (
+        {canFill && (
           <button
-            onClick={() =>
-              router.push("/dashboard/humanCapital/skillLog/skillLogForms")
-            }
+            onClick={() => router.push(SKILL_LOG_FORM_ROUTE)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white shadow-sm hover:opacity-90 transition flex-shrink-0"
             style={{ background: BRAND }}
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Fill Skills Log</span>
-            <span className="sm:hidden">New</span>
+            <span className="hidden sm:inline">
+              {SKILL_LOG_PAGE_COPY.fillButton}
+            </span>
+            <span className="sm:hidden">{SKILL_LOG_PAGE_COPY.fillButtonShort}</span>
           </button>
         )}
       </div>
@@ -626,12 +710,7 @@ export default function SkillLogsPage() {
         </div>
 
         <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 overflow-x-auto">
-          {[
-            { key: "all", label: "All" },
-            { key: "draft", label: "Draft" },
-            { key: "submitted", label: "Pending" },
-            { key: "signed_off", label: "Signed Off" },
-          ].map(({ key, label }) => (
+          {getSkillLogStatusFilterOptions().map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setFilterStatus(key)}
@@ -662,22 +741,22 @@ export default function SkillLogsPage() {
         <div className="bg-white rounded-2xl border border-gray-200 p-10 md:p-12 text-center">
           <ClipboardList className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm font-semibold text-gray-500">
-            No skills logs found
+            {SKILL_LOG_PAGE_COPY.emptyTitle}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            {canAct
-              ? "Fill a skills log for one of your team members to get started."
-              : "Your supervisor hasn't filled a skills log for you yet."}
+            {canFill
+              ? SKILL_LOG_PAGE_COPY.emptyCanAct
+              : SKILL_LOG_PAGE_COPY.emptySelf}
           </p>
-          {canAct && (
+          {canFill && (
             <button
               onClick={() =>
-                router.push("/dashboard/humanCapital/skillLog/skillLogForms")
+                router.push(SKILL_LOG_FORM_ROUTE)
               }
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ background: BRAND }}
             >
-              <Plus className="w-4 h-4" /> Fill First Log
+              <Plus className="w-4 h-4" /> {SKILL_LOG_PAGE_COPY.fillFirstLog}
             </button>
           )}
         </div>
@@ -719,21 +798,20 @@ export default function SkillLogsPage() {
                   <LogCard
                     log={log}
                     onClick={
-                      log.status === "draft" &&
-                      canAct &&
-                      (log.supervisor?.user_id ?? log.supervisor_id) ===
-                        userId
+                      log.status === "draft" && canEditLog(log)
                         ? () =>
                             router.push(
-                              `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
+                              `${SKILL_LOG_FORM_ROUTE}?edit=${log.id}`,
                             )
                         : undefined
                     }
+                    onView={
+                      log.status === "submitted" || log.status === "signed_off"
+                        ? () => setViewLogId(log.id)
+                        : undefined
+                    }
                     onDelete={
-                      log.status === "draft" &&
-                      canAct &&
-                      (log.supervisor?.user_id ?? log.supervisor_id) ===
-                        userId
+                      canEditLog(log)
                         ? (e) => {
                             e.stopPropagation();
                             setConfirmDeleteId(log.id);
@@ -741,24 +819,14 @@ export default function SkillLogsPage() {
                         : undefined
                     }
                     onSignOff={
-                      canAct &&
-                      (log.supervisor?.user_id ?? log.supervisor_id) !==
-                        userId
+                      canApproveLog(log)
                         ? (e) => {
                             e.stopPropagation();
                             setSignOffLog(log);
                           }
                         : undefined
                     }
-                    canSignOffLog={
-                      canAct &&
-                      (log.supervisor?.user_id ?? log.supervisor_id) !==
-                        userId &&
-                      canSignOff(
-                        currentUser?.grade_level,
-                        log.supervisor?.grade_level ?? log.supervisor_grade,
-                      )
-                    }
+                    canSignOffLog={canApproveLog(log)}
                   />
                 )}
               </div>
@@ -797,18 +865,11 @@ export default function SkillLogsPage() {
                 {filtered.map((log) => {
                   const status = STATUS_CONFIG[log.status] ?? STATUS_CONFIG.draft;
                   const StatusIcon = status.icon;
-                  const isOwnedBySupervisor =
-                    (log.supervisor?.user_id ?? log.supervisor_id) === userId;
-                  const canEditDraft =
-                    log.status === "draft" && canAct && isOwnedBySupervisor;
+                  const canEditDraft = canEditLog(log);
                   const canDeleteDraft = canEditDraft;
-                  const canSignOffThis =
-                    canAct &&
-                    !isOwnedBySupervisor &&
-                    canSignOff(
-                      currentUser?.grade_level,
-                      log.supervisor?.grade_level ?? log.supervisor_grade,
-                    );
+                  const canSignOffThis = canApproveLog(log);
+                  const canViewLocked =
+                    log.status === "submitted" || log.status === "signed_off";
 
                   if (confirmDeleteId === log.id) {
                     return (
@@ -884,11 +945,21 @@ export default function SkillLogsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {canViewLocked && (
+                            <button
+                              onClick={() => setViewLogId(log.id)}
+                              title="View"
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              {SKILL_LOG_PAGE_COPY.viewButton}
+                            </button>
+                          )}
                           {canEditDraft && (
                             <button
                               onClick={() =>
                                 router.push(
-                                  `/dashboard/humanCapital/skillLog/skillLogForms?edit=${log.id}`,
+                                  `${SKILL_LOG_FORM_ROUTE}?edit=${log.id}`,
                                 )
                               }
                               title="Edit"

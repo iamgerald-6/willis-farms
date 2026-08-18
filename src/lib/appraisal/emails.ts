@@ -54,9 +54,40 @@ async function sendViaResend(params: {
     });
     if (error) return { sent: false, error: error.message };
     return { sent: true };
-  } catch (err: any) {
-    return { sent: false, error: err?.message ?? "Unknown error sending email" };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Unknown error sending email";
+    return { sent: false, error: message };
   }
+}
+
+/** Log supervisor-notify outcomes (best-effort email — never fails the request). */
+export function logSupervisorEvaluationEmail(
+  context: string,
+  result: SendResult,
+  details: {
+    supervisorEmail: string;
+    employeeName: string;
+    appraisalId?: string | number | null;
+    quarter: string;
+    year: number;
+  },
+): void {
+  if (result.sent) {
+    console.info(`[${context}] Supervisor evaluation email sent`, details);
+    return;
+  }
+
+  const resendConfigured = Boolean(process.env.RESEND_API_KEY);
+  console.warn(`[${context}] Supervisor evaluation email not sent`, {
+    ...details,
+    error: result.error,
+    resendConfigured,
+    fromAddress: resendConfigured ? getResendFromAddress("Wills Farms HR") : null,
+    hint: !resendConfigured
+      ? "Set RESEND_API_KEY in env."
+      : "On Resend sandbox, only the account signup email receives mail until a domain is verified (RESEND_FROM_EMAIL).",
+  });
 }
 
 function wrapEmail(title: string, bodyHtml: string): string {

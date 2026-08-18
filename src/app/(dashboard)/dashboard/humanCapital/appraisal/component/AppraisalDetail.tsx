@@ -1014,7 +1014,7 @@ export default function AppraisalDetail({
             </div>
           )}
 
-          {appraisal.promotion_readiness && (
+          {appraisal.review_quarter === "Q4" && appraisal.promotion_readiness && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
                 Promotion Readiness Notes

@@ -163,8 +163,9 @@ export default function PanelSetupStep({
           ))}
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          Each panel member receives an email with a link to this interview session
-          in WillsOne.
+          Panel members receive a WillsOne interview guide link. The candidate
+          receives a professional invitation email with the interview date, time,
+          and location.
         </p>
       </section>
 
@@ -172,7 +173,17 @@ export default function PanelSetupStep({
         <>
           <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
             Invites sent{" "}
-            {new Date(setup.invites_sent_at).toLocaleString("en-GB")}.
+            {new Date(setup.invites_sent_at).toLocaleString("en-GB")}
+            {setup.candidate_invite_sent_at && (
+              <>
+                {" "}
+                · Candidate notified{" "}
+                {new Date(setup.candidate_invite_sent_at).toLocaleString(
+                  "en-GB",
+                )}
+              </>
+            )}
+            .
           </p>
           <button
             type="button"

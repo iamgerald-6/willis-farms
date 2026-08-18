@@ -1,6 +1,5 @@
 import {
   gradeIndex,
-  hasFullAppraisalAccess,
   isSuperAdmin,
 } from "@/lib/accessControl";
 
@@ -20,9 +19,12 @@ export const PAGE_PERMISSION_KEYS = [
   "sop:view",
   "sop:add",
   "notifications",
+  "sys:definitions",
 ] as const;
 
 export type PagePermissionKey = (typeof PAGE_PERMISSION_KEYS)[number];
+
+import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
 
 export type AccessTier = "standard" | "delegated";
 
@@ -31,10 +33,12 @@ export interface AccessProfile {
   grade_level?: string | null;
   access_tier?: AccessTier | string | null;
   page_permissions?: string[] | null;
-  /** view | add | edit per page key — delegated users */
+  /** view | add | edit per page key — legacy hierarchical levels */
   page_permission_levels?: Partial<
-    Record<PagePermissionKey, "view" | "add" | "edit">
+    Record<string, "view" | "add" | "edit">
   > | null;
+  /** Independent action checkboxes per page key (source of truth for matrix UI) */
+  page_permission_actions?: PagePermissionActions | null;
 }
 
 export const PAGE_PERMISSION_LABELS: Record<
@@ -55,6 +59,7 @@ export const PAGE_PERMISSION_LABELS: Record<
   policies: { label: "Policies & Ops", group: "Operations" },
   "sop:view": { label: "SOP (view)", group: "Operations" },
   "sop:add": { label: "Add SOP", group: "Operations" },
+  "sys:definitions": { label: "System Definitions", group: "General" },
 };
 
 /** Full role — admin, manager, super_admin (sidebar admin group) */
@@ -92,44 +97,6 @@ export const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [
   "notifications",
 ];
 
-export function canAccessPage(
-  profile: AccessProfile,
-  pageKey: PagePermissionKey,
-): boolean {
-  const role = profile.role;
-  const grade = profile.grade_level;
-  const tier = (profile.access_tier ?? "standard") as AccessTier;
-  const perms = profile.page_permissions ?? [];
-
-  // Super admin always has every page
-  if (isSuperAdmin(role)) return true;
-
-  if (pageKey === "hc:justifications") {
-    if (hasFullAppraisalAccess(role, grade)) return true;
-    if (tier === "delegated") return perms.includes(pageKey);
-    return false;
-  }
-
-  if (isFullRoleAccess(role)) return true;
-
-  if (tier === "delegated") {
-    if (pageKey === "tm:calendar" && perms.includes("hc:schedule")) {
-      return true;
-    }
-    const levels = profile.page_permission_levels;
-    if (
-      levels &&
-      typeof levels === "object" &&
-      levels[pageKey as PagePermissionKey]
-    ) {
-      return true;
-    }
-    return perms.includes(pageKey);
-  }
-
-  return STANDARD_EMPLOYEE_PAGES.includes(pageKey);
-}
-
 export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
   if (pathname === "/dashboard" || pathname === "/dashboard/") {
     return "dashboard";
@@ -162,6 +129,9 @@ export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
   if (pathname.startsWith("/dashboard/addSop")) return "sop:add";
   if (pathname.startsWith("/dashboard/sop")) return "sop:view";
   if (pathname.startsWith("/dashboard/notifications")) return "notifications";
+  if (pathname.startsWith("/dashboard/system-definitions")) {
+    return "sys:definitions";
+  }
   return null;
 }
 
@@ -190,6 +160,7 @@ export function resolveAccessProfile(
       access_tier: dbUser.access_tier ?? "standard",
       page_permissions: dbUser.page_permissions ?? [],
       page_permission_levels: dbUser.page_permission_levels ?? null,
+      page_permission_actions: dbUser.page_permission_actions ?? null,
     };
   }
   if (sessionRole) {
@@ -209,13 +180,6 @@ export function hasUnrestrictedAccess(
 ): boolean {
   const role = profile?.role ?? sessionRole;
   return isSuperAdmin(role);
-}
-
-/** Pages the user can access today (for Access Control pre-tick UI). */
-export function getEffectivePagePermissions(
-  profile: AccessProfile,
-): PagePermissionKey[] {
-  return PAGE_PERMISSION_KEYS.filter((key) => canAccessPage(profile, key));
 }
 
 function sortedKeys(keys: PagePermissionKey[]): string[] {

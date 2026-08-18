@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { DashboardOverviewSkeleton } from "@/components/skeletons/PageSkeletons";
+import { formatOverviewGreeting, getModuleRoute } from "@/lib/moduleRegistry";
 import {
   DonutChart,
   CategoryBarChart,
@@ -182,6 +183,14 @@ type StatCardProps = {
   href?: string;
 };
 
+const ROUTE_LEAVE = () => getModuleRoute("mod:leave") ?? "/dashboard/humanCapital/leave";
+const ROUTE_APPRAISAL = () =>
+  getModuleRoute("mod:appraisal") ?? "/dashboard/humanCapital/appraisal";
+const ROUTE_USERS = () =>
+  getModuleRoute("mod:users") ?? "/dashboard/access-control";
+const ROUTE_SKILL_LOG = () =>
+  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
+
 type AttentionItem = {
   id: string;
   title: string;
@@ -214,6 +223,18 @@ function formatDateRange(start: string, end: string): string {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+function HeroChip({ label, href }: { label: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-[#C62828] hover:text-[#C62828] transition-colors"
+    >
+      {label}
+      <ChevronRight className="w-3 h-3 opacity-50" />
+    </Link>
+  );
+}
+
 function StatCard({ label, value, icon: Icon, sub, accent, loading, href }: StatCardProps) {
   const content = (
     <>
@@ -798,7 +819,7 @@ export default function DashboardPage() {
           id: `leave-${l.id}`,
           title: `${leavePersonName(l)} — ${l.leave_type} leave`,
           subtitle: formatDateRange(l.start_date, l.end_date),
-          href: "/dashboard/humanCapital/leave",
+          href: ROUTE_LEAVE(),
           type: "warning",
         });
       });
@@ -809,7 +830,7 @@ export default function DashboardPage() {
           id: `appraisal-${a.id}`,
           title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
           subtitle: "Appraisal draft in progress",
-          href: "/dashboard/humanCapital/appraisal",
+          href: ROUTE_APPRAISAL(),
           type: "info",
         });
       });
@@ -852,7 +873,7 @@ export default function DashboardPage() {
           id: `leave-${l.id}`,
           title: `${l.leave_type} leave pending approval`,
           subtitle: formatDateRange(l.start_date, l.end_date),
-          href: "/dashboard/humanCapital/leave",
+          href: ROUTE_LEAVE(),
           type: "warning",
         });
       });
@@ -861,7 +882,7 @@ export default function DashboardPage() {
         id: `appraisal-${latestAppraisal.id}`,
         title: `Complete ${latestAppraisal.review_quarter} ${latestAppraisal.review_year} appraisal`,
         subtitle: "Draft awaiting submission",
-        href: "/dashboard/humanCapital/appraisal",
+        href: ROUTE_APPRAISAL(),
         type: "info",
       });
     }
@@ -1134,9 +1155,44 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-                {greeting}, {firstName}
+                {formatOverviewGreeting(firstName, greeting)}
               </h1>
               <p className="text-sm text-gray-500 mt-1">{dateStr}</p>
+              <div className="flex flex-wrap gap-2 mt-4">
+                {isAdmin ? (
+                  <>
+                    <HeroChip
+                      label={`${pendingLeave} leave pending`}
+                      href={ROUTE_LEAVE()}
+                    />
+                    <HeroChip
+                      label={`${pendingCurrentPeriod} appraisal drafts`}
+                      href={ROUTE_APPRAISAL()}
+                    />
+                    <HeroChip
+                      label={`${users?.length ?? 0} staff`}
+                      href={ROUTE_USERS()}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <HeroChip
+                      label={`${myPendingLeave} leave pending`}
+                      href={ROUTE_LEAVE()}
+                    />
+                    {latestAppraisal && (
+                      <HeroChip
+                        label={`Score ${latestAppraisal.employee_weighted_score ?? "—"}/4`}
+                        href={ROUTE_APPRAISAL()}
+                      />
+                    )}
+                    <HeroChip
+                      label={`${mySkillLogs.length} skill logs`}
+                      href={ROUTE_SKILL_LOG()}
+                    />
+                  </>
+                )}
+              </div>
             </div>
             <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-red-50 border border-red-100 text-xs font-semibold text-[#C62828] self-start capitalize">
               {role?.replace("_", " ") ?? "Employee"}

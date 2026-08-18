@@ -9,10 +9,12 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  PANEL_DECISIONS,
   type ApplicationStatus,
   type JobApplication,
 } from "@/lib/careers/types";
 import InterviewPanelForm from "./components/InterviewPanelForm";
+import OnboardingTab from "./components/OnboardingTab";
 import {
   ChevronDown,
   ExternalLink,
@@ -30,6 +32,8 @@ const STATUS_STYLES: Record<ApplicationStatus, string> = {
   under_review: "bg-amber-50 text-amber-700 border border-amber-200",
   shortlisted: "bg-purple-50 text-purple-700 border border-purple-200",
   interview: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  hold: "bg-orange-50 text-orange-700 border border-orange-200",
+  onboarding: "bg-teal-50 text-teal-700 border border-teal-200",
   offer: "bg-green-50 text-green-700 border border-green-200",
   rejected: "bg-red-50 text-red-700 border border-red-200",
 };
@@ -46,6 +50,7 @@ function ApplicationDetail({
   application,
   onClose,
   onUpdated,
+  onRefreshApplication,
   adminId,
   openInterviewOnMount,
   onInterviewOpened,
@@ -53,6 +58,7 @@ function ApplicationDetail({
   application: JobApplication;
   onClose: () => void;
   onUpdated: () => void;
+  onRefreshApplication: () => Promise<void>;
   adminId: string;
   openInterviewOnMount?: boolean;
   onInterviewOpened?: () => void;
@@ -70,9 +76,57 @@ function ApplicationDetail({
     }
   }, [openInterviewOnMount, onInterviewOpened]);
 
-  const canInterview = ["shortlisted", "interview", "offer"].includes(
+  useEffect(() => {
+    setStatus(application.status);
+    setHrNotes(application.hr_notes ?? "");
+  }, [application]);
+
+  const canInterview = ["shortlisted", "interview", "hold", "onboarding", "offer"].includes(
     application.status,
   );
+
+  const decision = application.interview_form_data?.summary?.decision;
+  const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
+  const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
+  const canConfirmOutcome =
+    !!application.interview_submitted_at && !decisionConfirmed && !!decision;
+
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview", {
+        application_id: application.id,
+        interview_form_data: application.interview_form_data,
+        submitted_by: adminId,
+        action: "confirm_decision",
+      }),
+    onSuccess: (res) => {
+      const warnings = res.data.email_warnings as string[] | undefined;
+      if (warnings?.length) {
+        toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
+      } else {
+        toast.success("Outcome confirmed.");
+      }
+      onUpdated();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Confirm failed.");
+    },
+  });
+
+  const resendOnboarding = useMutation({
+    mutationFn: () =>
+      api.post("/careers/onboarding/resend", { application_id: application.id }),
+    onSuccess: (res) => {
+      if (res.data.email_warning) {
+        toast.warning(res.data.email_warning);
+      } else {
+        toast.success("Onboarding link resent.");
+      }
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Resend failed.");
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: (payload: {
@@ -215,6 +269,58 @@ function ApplicationDetail({
               />
             </div>
 
+            {canConfirmOutcome && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
+                <p className="text-sm font-semibold text-amber-900">
+                  Confirm interview outcome
+                </p>
+                <p className="text-xs text-amber-800">
+                  Interview submitted. Selected decision:{" "}
+                  <strong>{decisionLabel}</strong>
+                  {application.interview_form_data?.summary?.total_weighted != null && (
+                    <>
+                      {" "}
+                      · Score{" "}
+                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
+                    </>
+                  )}
+                </p>
+                <p className="text-xs text-amber-700">
+                  {decision === "hire"
+                    ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
+                    : decision === "hold"
+                      ? "Hold does not send a candidate email."
+                      : "Confirming rejection sends a professional decline email."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => confirmMutation.mutate()}
+                  disabled={confirmMutation.isPending}
+                  className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
+                >
+                  {confirmMutation.isPending ? "Confirming…" : `Confirm: ${decisionLabel}`}
+                </button>
+              </div>
+            )}
+
+            {decisionConfirmed && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                Outcome confirmed {formatDate(decisionConfirmed)}
+                {decisionLabel ? ` · ${decisionLabel}` : ""}
+              </p>
+            )}
+
+            {application.status === "onboarding" && decision === "hire" && (
+              <button
+                type="button"
+                onClick={() => resendOnboarding.mutate()}
+                disabled={resendOnboarding.isPending}
+                className="w-full py-2 border border-teal-200 bg-teal-50 text-teal-800 text-sm font-medium rounded-lg hover:bg-teal-100 disabled:opacity-60"
+              >
+                {resendOnboarding.isPending ? "Sending…" : "Resend onboarding link"}
+              </button>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2 pt-2">
               <button
                 type="button"
@@ -258,9 +364,10 @@ function ApplicationDetail({
           applicationId={application.id}
           adminId={adminId}
           onClose={() => setShowInterview(false)}
-          onSaved={() => {
-            onUpdated();
+          onSaved={onUpdated}
+          onInterviewSubmitted={async () => {
             setShowInterview(false);
+            await onRefreshApplication();
           }}
         />
       )}
@@ -409,6 +516,10 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
+  const tabParam = searchParams?.get("tab");
+  const [activeTab, setActiveTab] = useState<"applications" | "onboarding">(
+    tabParam === "onboarding" ? "onboarding" : "applications",
+  );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
@@ -514,10 +625,15 @@ function RecruitmentPageContent() {
   const newCount = (data ?? []).filter((a) => a.status === "applied").length;
 
   useEffect(() => {
+    if (tabParam === "onboarding") setActiveTab("onboarding");
+  }, [tabParam]);
+
+  useEffect(() => {
     if (!interviewParam || !data?.length || !session?.user?.id) return;
     const app = data.find((a) => a.id === interviewParam);
     if (!app) return;
-    if (!["shortlisted", "interview", "offer"].includes(app.status)) return;
+    if (!["shortlisted", "interview", "hold", "onboarding", "offer"].includes(app.status))
+      return;
     setSelected(app);
     setAutoOpenInterviewId(app.id);
   }, [interviewParam, data, session?.user?.id]);
@@ -552,16 +668,37 @@ function RecruitmentPageContent() {
             Recruitment
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Job applications and panel interview guides
+            Job applications, panel interviews, and onboarding
           </p>
         </div>
-        {newCount > 0 && (
+        {newCount > 0 && activeTab === "applications" && (
           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-xs font-medium w-fit">
             {newCount} new application{newCount !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
+      <div className="flex gap-1 mb-5 border-b border-gray-200">
+        {(["applications", "onboarding"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+              activeTab === tab
+                ? "border-red-600 text-red-700"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {tab === "applications" ? "Applications" : "Onboarding"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "onboarding" ? (
+        <OnboardingTab />
+      ) : (
+        <>
       <div className="mb-5">
         <div className="flex flex-wrap gap-2">
           <MultiSelectFilter
@@ -685,16 +822,25 @@ function RecruitmentPageContent() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
 
-      {selected && (
+      {selected && activeTab === "applications" && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}
           adminId={session.user!.id}
           openInterviewOnMount={autoOpenInterviewId === selected.id}
           onInterviewOpened={() => setAutoOpenInterviewId(null)}
+          onRefreshApplication={async () => {
+            await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+            const apps = queryClient.getQueryData<JobApplication[]>(["job_applications"]);
+            const fresh = apps?.find((a) => a.id === selected.id);
+            if (fresh) setSelected(fresh);
+          }}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+            queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
             setSelected(null);
           }}
         />

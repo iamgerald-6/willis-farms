@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
-  isStandardEmployeePageSet,
   PAGE_PERMISSION_KEYS,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
 import {
-  levelsToLegacyPageKeys,
-  sanitizePermissionLevels,
-} from "@/lib/permissionLevels";
+  actionsToLegacyPageKeys,
+  actionsToLevels,
+  isStandardEmployeeActionSet,
+  levelsToActions,
+  permissionActionSetsEqual,
+  sanitizePermissionActions,
+} from "@/lib/permissionActions";
+import { fetchGroupPresetsFromDb, resolveGroupPresetActions } from "@/lib/groupPermissionPresets";
+import { sanitizePermissionLevels } from "@/lib/permissionLevels";
 import {
   requireUserManagementAccess,
   jsonUnauthorized,
@@ -46,13 +51,17 @@ export async function PATCH(req: NextRequest) {
       updated_by,
       page_permissions,
       page_permission_levels,
+      page_permission_actions,
       is_disabled,
+      reset_to_group,
     }: {
       target_user_id: string;
       updated_by: string;
       page_permissions?: string[];
       page_permission_levels?: unknown;
+      page_permission_actions?: unknown;
       is_disabled?: boolean;
+      reset_to_group?: boolean;
     } = body;
 
     if (!target_user_id || !updated_by) {
@@ -68,7 +77,7 @@ export async function PATCH(req: NextRequest) {
 
     const { data: target, error: targetError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, email")
+      .select("user_id, role, email, grade_level")
       .eq("user_id", target_user_id)
       .single();
 
@@ -87,24 +96,65 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    let levels = sanitizePermissionLevels(page_permission_levels);
+    if (reset_to_group === true) {
+      const updates: Record<string, unknown> = {
+        access_updated_at: new Date().toISOString(),
+        access_updated_by: updated_by,
+        access_tier: "standard",
+        page_permissions: [],
+        page_permission_levels: {},
+        page_permission_actions: {},
+      };
+      if (typeof is_disabled === "boolean") {
+        updates.is_disabled = is_disabled;
+      }
 
-    if (
-      Object.keys(levels).length === 0 &&
-      Array.isArray(page_permissions)
-    ) {
-      for (const p of page_permissions) {
-        if ((PAGE_PERMISSION_KEYS as readonly string[]).includes(p)) {
-          levels[p as PagePermissionKey] = "view";
+      const { data, error } = await updateUserWithColumnFallback(
+        supabaseAdmin,
+        target_user_id,
+        updates,
+      );
+
+      if (error) {
+        const hint = isMissingColumnError(error.message)
+          ? ACCESS_CONTROL_MIGRATION_HINT
+          : "";
+        return NextResponse.json(
+          { error: error.message + hint },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({ success: true, data });
+    }
+
+    let actions = sanitizePermissionActions(page_permission_actions);
+
+    if (Object.keys(actions).length === 0) {
+      let levels = sanitizePermissionLevels(page_permission_levels);
+
+      if (
+        Object.keys(levels).length === 0 &&
+        Array.isArray(page_permissions)
+      ) {
+        for (const p of page_permissions) {
+          if ((PAGE_PERMISSION_KEYS as readonly string[]).includes(p)) {
+            levels[p as PagePermissionKey] = "view";
+          }
         }
+      }
+
+      if (Object.keys(levels).length > 0) {
+        actions = levelsToActions(levels);
       }
     }
 
-    const perms = levelsToLegacyPageKeys(levels);
+    const levels = actionsToLevels(actions);
+    const perms = actionsToLegacyPageKeys(actions);
 
     if (perms.length === 0) {
       return NextResponse.json(
-        { error: "Select at least one page with access." },
+        { error: "Select at least one module with access." },
         { status: 400 },
       );
     }
@@ -112,44 +162,35 @@ export async function PATCH(req: NextRequest) {
     const updates: Record<string, unknown> = {
       access_updated_at: new Date().toISOString(),
       access_updated_by: updated_by,
+      page_permission_actions: actions,
       page_permission_levels: levels,
     };
 
     const currentRole = target.role as string;
-    const isFullRole =
-      currentRole === "admin" || currentRole === "manager";
+    const { presets: groupPresets } = await fetchGroupPresetsFromDb(supabaseAdmin);
+    const groupActions = resolveGroupPresetActions(
+      { role: target.role, grade_level: target.grade_level },
+      groupPresets,
+    );
+    const matchesGroupPreset =
+      Object.keys(groupActions).length > 0 &&
+      permissionActionSetsEqual(actions, groupActions);
 
-    if (isFullRole) {
-      // Admin/Manager keep their role here — this screen only ever converts
-      // an *employee* into a delegated sub-admin. If every key is "edit"
-      // they're back to the plain full-role default; otherwise store the
-      // customized levels (e.g. Admin granted "edit" on Users) without
-      // touching role.
-      const allEdit = PAGE_PERMISSION_KEYS.every((k) => levels[k] === "edit");
-      if (allEdit) {
-        updates.access_tier = "standard";
-        updates.page_permissions = [];
-        updates.page_permission_levels = {};
-      } else {
-        updates.access_tier = "delegated";
-        updates.page_permissions = perms;
-      }
-    } else if (isStandardEmployeePageSet(perms) && currentRole === "employee") {
-      const allView = perms.every(
-        (k) => !levels[k] || levels[k] === "view",
-      );
-      if (allView) {
-        updates.role = "employee";
-        updates.access_tier = "standard";
-        updates.page_permissions = [];
-        updates.page_permission_levels = {};
-      } else {
-        updates.role = "employee";
-        updates.access_tier = "delegated";
-        updates.page_permissions = perms;
-      }
-    } else {
+    if (matchesGroupPreset) {
+      updates.access_tier = "standard";
+      updates.page_permissions = [];
+      updates.page_permission_levels = {};
+      updates.page_permission_actions = {};
+    } else if (
+      isStandardEmployeeActionSet(actions) &&
+      currentRole === "employee"
+    ) {
       updates.role = "employee";
+      updates.access_tier = "standard";
+      updates.page_permissions = [];
+      updates.page_permission_levels = {};
+      updates.page_permission_actions = {};
+    } else {
       updates.access_tier = "delegated";
       updates.page_permissions = perms;
     }

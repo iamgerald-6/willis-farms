@@ -1,0 +1,322 @@
+export const GHANA_REGIONS = [
+  "Ahafo",
+  "Ashanti",
+  "Bono",
+  "Bono East",
+  "Central",
+  "Eastern",
+  "Greater Accra",
+  "North East",
+  "Northern",
+  "Oti",
+  "Savannah",
+  "Upper East",
+  "Upper West",
+  "Volta",
+  "Western",
+  "Western North",
+] as const;
+
+export type OnboardingStep = "personal" | "medical" | "referee";
+
+export interface OnboardingFormData {
+  personal?: {
+    surname?: string;
+    first_name?: string;
+    middle_names?: string;
+    previous_names?: string;
+    date_of_birth?: string;
+    gender?: string;
+    marital_status?: string;
+    nationality?: string;
+    ghana_card_no?: string;
+    ssnit_number?: string;
+    personal_tin?: string;
+    work_permit?: string;
+    residential_address?: string;
+    gps_address?: string;
+    region?: string;
+    mobile?: string;
+    whatsapp?: string;
+    personal_email?: string;
+  };
+  emergency?: {
+    full_name?: string;
+    relationship?: string;
+    phone?: string;
+    address?: string;
+  };
+  next_of_kin?: {
+    full_name?: string;
+    relationship?: string;
+    phone?: string;
+    address?: string;
+  };
+  spouse?: {
+    name?: string;
+  };
+  dependents?: { full_name?: string; relationship?: string; date_of_birth?: string }[];
+  employment?: {
+    position_title?: string;
+    department?: string;
+    farm_site?: string;
+    date_of_hire?: string;
+    employment_type?: string;
+    probation_end?: string;
+    contract_end?: string;
+    work_schedule?: string;
+  };
+  payment?: {
+    method?: string;
+    bank_name?: string;
+    account_name?: string;
+    account_number?: string;
+    momo_network?: string;
+    momo_number?: string;
+    momo_registered_name?: string;
+    nhis_number?: string;
+  };
+  qualifications?: {
+    qualification?: string;
+    institution?: string;
+    field?: string;
+    certificate_no?: string;
+    year?: string;
+  }[];
+  certifications?: {
+    name?: string;
+    issuing_body?: string;
+    licence_no?: string;
+    expiry?: string;
+  }[];
+  work_experience?: {
+    employer?: string;
+    job_title?: string;
+    from?: string;
+    to?: string;
+    reason_leaving?: string;
+  }[];
+  skills?: {
+    relevant_skills?: string;
+    languages?: string;
+    computer_literacy?: string;
+    drivers_licence?: string;
+  };
+  medical?: {
+    blood_group?: string;
+    allergies?: string;
+    conditions?: string;
+    accommodation_needs?: string;
+    ppe_boots?: string;
+    ppe_overall?: string;
+    ppe_gloves?: string;
+    acknowledge_referral?: boolean;
+  };
+  referees?: { full_name?: string; relationship?: string; phone?: string; email?: string }[];
+  biosecurity?: {
+    household_pigs?: "yes" | "no" | "";
+    household_pig_work?: "yes" | "no" | "";
+    visited_swine_site_12m?: "yes" | "no" | "";
+    details?: string;
+    asf_travel_30d?: "yes" | "no" | "";
+    commitment_initials?: string;
+  };
+  background?: {
+    criminal_conviction?: "yes" | "no" | "";
+    criminal_details?: string;
+    verification_consent_initials?: string;
+  };
+  documents?: {
+    ghana_card?: boolean;
+    passport_photos?: boolean;
+    bank_proof?: boolean;
+    certificates?: boolean;
+    ssnit_card?: boolean;
+    work_permit?: boolean;
+    drivers_licence?: boolean;
+  };
+  declarations?: {
+    confidentiality_initials?: string;
+    animal_welfare_initials?: string;
+    data_consent?: boolean;
+    signature_name?: string;
+    signature_date?: string;
+  };
+}
+
+export interface OnboardingHrData {
+  employee_id?: string;
+  company_email?: string;
+  supervisor_name?: string;
+  supervisor_contact?: string;
+  salary_ghs?: string;
+  pay_frequency?: string;
+  grade_level?: string;
+  cost_centre?: string;
+  tier2_pension?: string;
+  tier3_fund?: string;
+  nda_signed_date?: string;
+  induction_date?: string;
+  medical_referral_issued?: string;
+  medical_report_received?: string;
+  fitness_determination?: string;
+  reference_forms_sent?: string;
+  reference_forms_received?: string;
+  academic_verification_sent?: string;
+  academic_verification_outcome?: string;
+  documents_verified_by?: string;
+  equipment_issued?: string;
+  approved_by?: string;
+  hr_notes?: string;
+}
+
+export interface OnboardingSubmission {
+  id: string;
+  application_id: string;
+  form_data: OnboardingFormData;
+  hr_data: OnboardingHrData;
+  personal_completed_at: string | null;
+  medical_completed_at: string | null;
+  referee_completed_at: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
+  personal: "Personal information",
+  medical: "Medical & qualifications",
+  referee: "References & declarations",
+};
+
+export function emptyOnboardingForm(): OnboardingFormData {
+  return {
+    personal: {},
+    emergency: {},
+    next_of_kin: {},
+    spouse: {},
+    dependents: [{ full_name: "", relationship: "", date_of_birth: "" }],
+    employment: {},
+    payment: {},
+    qualifications: [{ qualification: "", institution: "", field: "", certificate_no: "", year: "" }],
+    certifications: [{ name: "", issuing_body: "", licence_no: "", expiry: "" }],
+    work_experience: [{ employer: "", job_title: "", from: "", to: "", reason_leaving: "" }],
+    skills: {},
+    medical: { acknowledge_referral: false },
+    referees: [
+      { full_name: "", relationship: "", phone: "", email: "" },
+      { full_name: "", relationship: "", phone: "", email: "" },
+    ],
+    biosecurity: {},
+    background: {},
+    documents: {},
+    declarations: {},
+  };
+}
+
+/** Fields copied from job_applications — shown read-only on the onboarding form */
+export type ApplicationPrefillSource = {
+  full_name: string;
+  email: string;
+  phone: string;
+  role_title: string;
+  location?: string | null;
+};
+
+export function parseApplicantName(fullName: string): {
+  first_name: string;
+  surname: string;
+  middle_names: string;
+  has_middle_from_application: boolean;
+} {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return {
+      first_name: "",
+      surname: "",
+      middle_names: "",
+      has_middle_from_application: false,
+    };
+  }
+  if (parts.length === 1) {
+    return {
+      first_name: parts[0],
+      surname: parts[0],
+      middle_names: "",
+      has_middle_from_application: false,
+    };
+  }
+  if (parts.length === 2) {
+    return {
+      first_name: parts[0],
+      surname: parts[1],
+      middle_names: "",
+      has_middle_from_application: false,
+    };
+  }
+  return {
+    first_name: parts[0],
+    middle_names: parts.slice(1, -1).join(" "),
+    surname: parts[parts.length - 1],
+    has_middle_from_application: true,
+  };
+}
+
+/** Merge application data into form — always wins over candidate edits for locked fields */
+export function applyApplicationPrefill(
+  form: OnboardingFormData,
+  application: ApplicationPrefillSource,
+): OnboardingFormData {
+  const merged = mergeOnboardingForm(form);
+  const name = parseApplicantName(application.full_name);
+
+  return {
+    ...merged,
+    personal: {
+      ...merged.personal,
+      first_name: name.first_name,
+      surname: name.surname,
+      middle_names: name.has_middle_from_application
+        ? name.middle_names
+        : merged.personal?.middle_names,
+      mobile: application.phone.trim(),
+      personal_email: application.email.trim().toLowerCase(),
+    },
+    employment: {
+      ...merged.employment,
+      position_title: application.role_title,
+    },
+    declarations: {
+      ...merged.declarations,
+      signature_name: application.full_name.trim(),
+    },
+  };
+}
+
+export function mergeOnboardingForm(
+  raw: OnboardingFormData | null | undefined,
+): OnboardingFormData {
+  const base = emptyOnboardingForm();
+  if (!raw) return base;
+  return {
+    ...base,
+    ...raw,
+    personal: { ...base.personal, ...raw.personal },
+    emergency: { ...base.emergency, ...raw.emergency },
+    next_of_kin: { ...base.next_of_kin, ...raw.next_of_kin },
+    spouse: { ...base.spouse, ...raw.spouse },
+    employment: { ...base.employment, ...raw.employment },
+    payment: { ...base.payment, ...raw.payment },
+    skills: { ...base.skills, ...raw.skills },
+    medical: { ...base.medical, ...raw.medical },
+    biosecurity: { ...base.biosecurity, ...raw.biosecurity },
+    background: { ...base.background, ...raw.background },
+    documents: { ...base.documents, ...raw.documents },
+    declarations: { ...base.declarations, ...raw.declarations },
+    dependents: raw.dependents?.length ? raw.dependents : base.dependents,
+    qualifications: raw.qualifications?.length ? raw.qualifications : base.qualifications,
+    certifications: raw.certifications?.length ? raw.certifications : base.certifications,
+    work_experience: raw.work_experience?.length ? raw.work_experience : base.work_experience,
+    referees: raw.referees?.length ? raw.referees : base.referees,
+  };
+}

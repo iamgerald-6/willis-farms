@@ -26,3 +26,7 @@ export function getAppBaseUrl(): string {
 export function recruitmentInterviewUrl(applicationId: string): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?interview=${applicationId}`;
 }
+
+export function onboardingMagicLinkUrl(token: string): string {
+  return `${getAppBaseUrl()}/onboarding/${token}`;
+}

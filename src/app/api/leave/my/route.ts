@@ -6,6 +6,7 @@ import {
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { fetchLeaveAnnualCapDays } from "@/lib/leave/leavePolicy";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,12 +79,14 @@ export async function GET(req: NextRequest) {
         )
         .reduce((sum, r) => sum + r.total_days, 0) ?? 0;
 
+    const total = await fetchLeaveAnnualCapDays(supabaseAdmin);
+
     return NextResponse.json({
       data: enrichedData,
       balance: {
-        total: 30,
+        total,
         used: usedDays,
-        remaining: 30 - usedDays,
+        remaining: Math.max(0, total - usedDays),
       },
     });
   } catch {

@@ -32,6 +32,9 @@ import type { ViewerContext } from "./appraisalTypes";
 // "All periods" itself now doubles as the "all quarters" view (quarterFilter
 // resets to "" when it's clicked) — these pills are only for drilling down
 // into one specific quarter from there, so there's no separate "All" pill.
+// Kept local rather than the module registry's QUARTER_FILTERS/
+// getQuarterFilterLabel, which include a redundant "" (All) entry and still
+// label Q4 as "Q4 (Annual)" instead of "Annual".
 const QUARTER_FILTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
 
 function quarterFilterLabel(q: "" | Quarter) {
@@ -86,7 +89,9 @@ function AppraisalCard({ appraisal }: { appraisal: Appraisal }) {
           <p className="font-medium text-gray-900 text-sm truncate">
             {appraisal.employee_name}
           </p>
-          <p className="text-xs text-gray-400 truncate">{appraisal.job_title}</p>
+          <p className="text-xs text-gray-400 truncate">
+            {appraisal.job_title}
+          </p>
           {appraisal.archived && <ArchivedTag />}
         </div>
         <StatusBadge
@@ -357,7 +362,9 @@ export default function AppraisalLandingPage({
                   <th className="px-4 py-3 font-semibold text-gray-600">
                     Period
                   </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">Type</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Type
+                  </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
                     Grade Band
                   </th>
@@ -427,7 +434,9 @@ export default function AppraisalLandingPage({
                           {a.review_quarter === "Q4" ? "Annual" : "Quarterly"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{a.grade_band}</td>
+                      <td className="px-4 py-3 text-gray-500">
+                        {a.grade_band}
+                      </td>
                       <td className="px-4 py-3">
                         <ScoreCell appraisal={a} />
                       </td>
