@@ -131,7 +131,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     }),
     field(
       "opt:recruitment:field:cert",
-      "Certificates / qualifications (upload)",
+      "Educational Certificates",
       "certificates",
       22,
       {
