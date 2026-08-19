@@ -30,3 +30,11 @@ export function recruitmentInterviewUrl(applicationId: string): string {
 export function onboardingMagicLinkUrl(token: string): string {
   return `${getAppBaseUrl()}/onboarding/${token}`;
 }
+
+export function recruitmentApplicationsUrl(): string {
+  return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment`;
+}
+
+export function recruitmentAiRejectsUrl(): string {
+  return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?tab=ai_rejects`;
+}

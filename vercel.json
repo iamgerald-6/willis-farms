@@ -11,6 +11,14 @@
     {
       "path": "/api/task-manager/cron/hourly-rollover",
       "schedule": "0 17 * * 1-5"
+    },
+    {
+      "path": "/api/cron/screen-applications",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/careers-daily-digest",
+      "schedule": "0 8 * * *"
     }
   ]
 }
