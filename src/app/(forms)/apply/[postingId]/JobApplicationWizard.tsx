@@ -77,7 +77,16 @@ export default function JobApplicationWizard({
   );
 
   const setFieldValue = (key: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
+    setValues((prev) => {
+      const next = { ...prev, [key]: value };
+      // is_citizen isn't asked directly anymore (see recruitmentDefaults.ts)
+      // — it's derived from Nationality so the existing Ghana Card /
+      // Passport showWhen rules (which key off is_citizen) keep working.
+      if (key === "nationality") {
+        next.is_citizen = value === "Ghana" ? "Yes" : "No";
+      }
+      return next;
+    });
     setDraftSavedMessage(null);
   };
 

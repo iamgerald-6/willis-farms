@@ -75,19 +75,33 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       required: true,
       options: COUNTRY_NAMES,
     }),
+    // is_citizen is never rendered (is_active: false below) — its value is
+    // auto-filled from Nationality on the client (JobApplicationWizard's
+    // setFieldValue) instead of being asked directly. Ghana Card/Passport
+    // visibility still keys off it, same as the original design.
+    {
+      ...field("opt:recruitment:field:citizen", "Ghana citizen?", "is_citizen", 8, {
+        step: "personal",
+        fieldKey: "is_citizen",
+        fieldType: "select",
+        required: true,
+        options: ["Yes", "No"],
+      }),
+      is_active: false,
+    },
     field("opt:recruitment:field:ghana_card", "Ghana Card number", "ghana_card_no", 9, {
       step: "personal",
       fieldKey: "ghana_card_no",
       fieldType: "ghana_card",
       required: true,
-      showWhen: { field: "nationality", equals: "Ghana" },
+      showWhen: { field: "is_citizen", equals: "Yes" },
     }),
     field("opt:recruitment:field:passport_no", "Passport number", "passport_number", 10, {
       step: "personal",
       fieldKey: "passport_number",
       fieldType: "text",
       required: true,
-      showWhen: { field: "nationality", notEquals: "Ghana" },
+      showWhen: { field: "is_citizen", equals: "No" },
     }),
     field(
       "opt:recruitment:field:passport_bio",
@@ -100,7 +114,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldType: "file",
         required: true,
         accept: "image/*,.pdf",
-        showWhen: { field: "nationality", notEquals: "Ghana" },
+        showWhen: { field: "is_citizen", equals: "No" },
       },
     ),
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {
