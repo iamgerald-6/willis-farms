@@ -388,18 +388,6 @@ export default function JobApplicationWizard({
         {APPLICATION_STEP_LABELS[step as ApplicationFieldStep]}
       </p>
 
-      {/* TEMPORARY DEBUG — remove once the nationality/passport default is confirmed fixed */}
-      <div className="mb-4 text-xs font-mono text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        DEBUG — nationality: {JSON.stringify(values.nationality ?? null)} · is_citizen:{" "}
-        {JSON.stringify(values.is_citizen ?? null)}
-        <br />
-        ghana_card showWhen:{" "}
-        {JSON.stringify(fields.find((f) => f.rules.fieldKey === "ghana_card_no")?.rules.showWhen ?? null)}
-        <br />
-        passport_number showWhen:{" "}
-        {JSON.stringify(fields.find((f) => f.rules.fieldKey === "passport_number")?.rules.showWhen ?? null)}
-      </div>
-
       {error && (
         <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
           {error}
