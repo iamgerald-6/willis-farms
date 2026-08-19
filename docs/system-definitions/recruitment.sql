@@ -59,7 +59,7 @@ values
    '{"step":"documents","fieldKey":"reference_2_email","fieldType":"email","required":false}'::jsonb),
   ('opt:recruitment:field:ref2_rel', 'mod:recruitment', 'careers.applicationFields', 'Reference 2 — relationship', 'reference_2_relationship', 39,
    '{"step":"documents","fieldKey":"reference_2_relationship","fieldType":"text","required":true}'::jsonb)
-on conflict (id) do nothing;
+on conflict (module_id, option_list, legacy_value) do nothing;
 
 -- Job posting roles (HR selects when publishing careers; maps to interview guide internally)
 -- Manage these in WillsOne → System Definitions → Recruitment → Job posting
@@ -89,4 +89,4 @@ values
    '{"interviewGuideKey":"data_analyst"}'::jsonb),
   ('opt:recruitment:title:vet', 'mod:recruitment', 'careers.jobPostings', 'Veterinarian — Animal Health & Biosecurity Lead', 'veterinarian_animal_health_biosecurity_lead', 9,
    '{"interviewGuideKey":"veterinarian"}'::jsonb)
-on conflict (id) do nothing;
+on conflict (module_id, option_list, legacy_value) do nothing;
