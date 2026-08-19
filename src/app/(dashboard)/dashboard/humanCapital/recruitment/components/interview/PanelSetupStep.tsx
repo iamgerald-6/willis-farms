@@ -13,6 +13,7 @@ type Props = {
   onSendStage1Invites: () => void;
   onContinueWithoutResend?: () => void;
   isPending: boolean;
+  readOnly?: boolean;
 };
 
 export default function PanelSetupStep({
@@ -22,6 +23,7 @@ export default function PanelSetupStep({
   onSendStage1Invites,
   onContinueWithoutResend,
   isPending,
+  readOnly = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const members = setup.stage1_members?.length
@@ -80,6 +82,12 @@ export default function PanelSetupStep({
         totalDuration={guide.duration}
       />
 
+      {readOnly && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          Viewing Stage 1 panel setup — read-only.
+        </p>
+      )}
+
       <section className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
         <h3 className="text-sm font-bold text-gray-900 mb-1">Stage 1 — Add panel</h3>
         <p className="text-xs text-gray-500 mb-4">
@@ -94,6 +102,7 @@ export default function PanelSetupStep({
             <input
               type="datetime-local"
               value={toLocalDatetime(setup.interview_start_at)}
+              disabled={readOnly}
               onChange={(e) => {
                 const val = e.target.value;
                 onChange({
@@ -106,7 +115,7 @@ export default function PanelSetupStep({
                   },
                 });
               }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
             />
           </div>
           <div>
@@ -115,13 +124,14 @@ export default function PanelSetupStep({
               type="text"
               placeholder="Farm office / barn meeting room"
               value={setup.location ?? ""}
+              disabled={readOnly}
               onChange={(e) =>
                 onChange({
                   ...formData,
                   setup: { ...setup, location: e.target.value },
                 })
               }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
             />
           </div>
         </div>
@@ -130,14 +140,16 @@ export default function PanelSetupStep({
           <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
             Panel members
           </span>
-          <button
-            type="button"
-            onClick={addMember}
-            className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add member
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={addMember}
+              className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add member
+            </button>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -150,63 +162,70 @@ export default function PanelSetupStep({
                 type="text"
                 placeholder="Full name *"
                 value={member.name}
+                disabled={readOnly}
                 onChange={(e) => updateMember(index, "name", e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={member.email}
+                disabled={readOnly}
                 onChange={(e) => updateMember(index, "email", e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
-              <button
-                type="button"
-                onClick={() => removeMember(index)}
-                disabled={members.length <= 1}
-                className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => removeMember(index)}
+                  disabled={members.length <= 1}
+                  className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
       </section>
 
       {invitesSent && (
-        <>
-          <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
-            Stage 1 invites sent {new Date(invitesSent).toLocaleString("en-GB")}
-            {setup.candidate_invite_sent_at && (
-              <> · Candidate notified</>
-            )}
-            .
-          </p>
-          <button
-            type="button"
-            onClick={() => onContinueWithoutResend?.()}
-            className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
-          >
-            Continue to HR Stage 1 form
-          </button>
-        </>
+        <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+          Stage 1 invites sent {new Date(invitesSent).toLocaleString("en-GB")}
+          {setup.candidate_invite_sent_at && (
+            <> · Candidate notified</>
+          )}
+          .
+        </p>
       )}
 
-      <button
-        type="button"
-        onClick={onSendStage1Invites}
-        disabled={isPending}
-        className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-      >
-        {isPending ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Mail className="w-4 h-4" />
-        )}
-        {invitesSent
-          ? "Resend Stage 1 invites"
-          : "Send Stage 1 invites & notify candidate"}
-      </button>
+      {!readOnly && invitesSent && (
+        <button
+          type="button"
+          onClick={() => onContinueWithoutResend?.()}
+          className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
+        >
+          Continue to HR Stage 1 form
+        </button>
+      )}
+
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={onSendStage1Invites}
+          disabled={isPending}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mail className="w-4 h-4" />
+          )}
+          {invitesSent
+            ? "Resend Stage 1 invites"
+            : "Send Stage 1 invites & notify candidate"}
+        </button>
+      )}
     </div>
   );
 }

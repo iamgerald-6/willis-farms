@@ -97,6 +97,10 @@ export default function InterviewPanelForm({
 
   const workflowStep = interviewWorkflowStepV2(formData);
   const activeStep = manualStep ?? workflowStep;
+  const currentIdx = STEP_ORDER.indexOf(workflowStep);
+  const activeIdx = STEP_ORDER.indexOf(activeStep);
+  /** Viewing an earlier, already-completed step rather than the live one. */
+  const isPastStep = activeIdx < currentIdx;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;
@@ -234,11 +238,29 @@ export default function InterviewPanelForm({
               steps={STEP_ORDER}
               current={activeStep}
               labels={STEP_ORDER.map((s) => STEP_LABELS[s])}
+              maxIndex={currentIdx}
+              onStepClick={(step) =>
+                setManualStep(step === workflowStep ? null : step)
+              }
             />
           )}
         </div>
 
         <div className="overflow-y-auto flex-1 p-6">
+          {isPastStep && (
+            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
+              <p className="text-xs text-amber-800">
+                Viewing a completed step — read-only.
+              </p>
+              <button
+                type="button"
+                onClick={() => setManualStep(null)}
+                className="text-xs font-medium text-amber-900 underline underline-offset-2 shrink-0"
+              >
+                Return to current step
+              </button>
+            </div>
+          )}
           {isLoading || !guide ? (
             <ListRowsSkeleton rows={4} />
           ) : activeStep === "panel" ? (
@@ -254,6 +276,7 @@ export default function InterviewPanelForm({
               }
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
+              readOnly={isPastStep}
             />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
@@ -301,6 +324,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              readOnly={isPastStep}
             />
           ) : activeStep === "stage2" ? (
             <Stage2Practical

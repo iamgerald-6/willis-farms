@@ -95,6 +95,7 @@ export default function Stage2Practical({
               value={submission.scenario_ratings?.[s.id]?.rating ?? null}
               notes={submission.scenario_ratings?.[s.id]?.notes ?? ""}
               onChange={(rating, notes) => updateScenario(s.id, rating, notes)}
+              readOnly={submitted}
             />
           ))}
         </div>

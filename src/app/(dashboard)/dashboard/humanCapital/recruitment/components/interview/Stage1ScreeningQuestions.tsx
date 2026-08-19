@@ -120,6 +120,7 @@ export default function Stage1ScreeningQuestions({
               value={submission.question_ratings?.[q.id]?.rating ?? null}
               notes={submission.question_ratings?.[q.id]?.notes ?? ""}
               onChange={(rating, notes) => updateQuestion(q.id, rating, notes)}
+              readOnly={submitted}
             />
           ))}
         </div>
