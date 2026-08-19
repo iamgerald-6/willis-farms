@@ -17,7 +17,16 @@ export type ApplicationFieldType =
   | "date"
   | "select"
   | "textarea"
-  | "file";
+  | "file"
+  | "work_history";
+
+export interface WorkHistoryEntry {
+  company: string;
+  title: string;
+  start: string; // "YYYY-MM"
+  end: string; // "YYYY-MM", ignored when current is true
+  current: boolean;
+}
 
 export interface ApplicationFieldShowWhen {
   field: string;
@@ -165,6 +174,29 @@ export function validateStep(
       const fileVal = value as { secure_url?: string } | null | undefined;
       if (!fileVal?.secure_url) {
         errors.push(`${field.label} is required.`);
+      }
+      continue;
+    }
+
+    // Work history stores an array of entries (see WorkHistoryInput) rather
+    // than a single value — validated entry-by-entry instead of via the
+    // generic isEmpty check below.
+    if (field.rules.fieldType === "work_history") {
+      const entries = Array.isArray(value) ? (value as WorkHistoryEntry[]) : [];
+      if (field.rules.required && entries.length === 0) {
+        errors.push(`${field.label} is required — add at least one entry.`);
+        continue;
+      }
+      const hasIncompleteEntry = entries.some((entry) => {
+        const missingCore =
+          !entry?.company?.trim() || !entry?.title?.trim() || !entry?.start?.trim();
+        const missingEnd = !entry?.current && !entry?.end?.trim();
+        return missingCore || missingEnd;
+      });
+      if (hasIncompleteEntry) {
+        errors.push(
+          `${field.label}: fill in the place of work, job title, and dates for every entry (or remove the incomplete one).`,
+        );
       }
       continue;
     }

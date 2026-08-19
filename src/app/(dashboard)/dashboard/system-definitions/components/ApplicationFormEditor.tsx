@@ -32,6 +32,8 @@ const FIELD_TYPES: ApplicationFieldType[] = [
   "select",
   "textarea",
   "file",
+  "ghana_card",
+  "work_history",
 ];
 
 type DraftRules = {

@@ -17,6 +17,7 @@ import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { FormShell } from "@/components/Forms/FormShell";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
+import { WorkHistoryInput } from "@/components/WorkHistoryInput";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -259,6 +260,14 @@ export default function JobApplicationWizard({
       );
     }
 
+    if (fieldType === "work_history") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <WorkHistoryInput value={value} onChange={(next) => setFieldValue(fieldKey, next)} />
+        </FieldBlock>
+      );
+    }
+
     const inputType =
       fieldType === "email"
         ? "email"
@@ -317,7 +326,9 @@ export default function JobApplicationWizard({
           <div
             key={field.id}
             className={
-              field.rules.fieldType === "textarea" || field.rules.fieldType === "file"
+              field.rules.fieldType === "textarea" ||
+              field.rules.fieldType === "file" ||
+              field.rules.fieldType === "work_history"
                 ? "sm:col-span-2"
                 : ""
             }

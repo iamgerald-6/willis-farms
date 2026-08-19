@@ -120,7 +120,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {
       step: "experience",
       fieldKey: "work_experience",
-      fieldType: "textarea",
+      fieldType: "work_history",
       required: true,
     }),
     field("opt:recruitment:field:education", "Educational qualifications", "education", 21, {
