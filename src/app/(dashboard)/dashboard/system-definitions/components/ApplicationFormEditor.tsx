@@ -252,7 +252,13 @@ export default function ApplicationFormEditor({
                           onLabelChange={setEditLabel}
                           onDraftChange={setEditDraft}
                           onCancel={() => setEditingId(null)}
-                          onSave={() =>
+                          onSave={() => {
+                            if (!editLabel.trim() || !editDraft.fieldKey.trim()) {
+                              toast.error(
+                                "Label and field key are required — a blank field key hides this field from the form entirely.",
+                              );
+                              return;
+                            }
                             patchMutation.mutate({
                               id: option.id,
                               patch: {
@@ -260,8 +266,8 @@ export default function ApplicationFormEditor({
                                 legacy_value: editDraft.fieldKey.trim(),
                                 rules: draftToRules(editDraft),
                               },
-                            })
-                          }
+                            });
+                          }}
                           saving={patchMutation.isPending}
                         />
                       ) : (
