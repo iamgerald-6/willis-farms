@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  statusFromClosingDate,
+  type JobPostingStatus,
+} from "@/lib/careers/jobPostings";
+import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
+import {
+  isMissingColumnError,
+  JOB_POSTINGS_MIGRATION_HINT,
+  updateJobPostingWithColumnFallback,
+} from "@/lib/careers/jobPostingDb";
+
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function PATCH(req: NextRequest, context: RouteContext) {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  const { id } = await context.params;
+
+  try {
+    const body = await req.json();
+    const updates: Record<string, unknown> = {};
+
+    if (body.job_title_key !== undefined) {
+      const resolved = await resolveJobTitleKey(
+        supabaseAdmin,
+        String(body.job_title_key),
+      );
+      if ("error" in resolved) {
+        return NextResponse.json({ error: resolved.error }, { status: 400 });
+      }
+      updates.job_title_key = resolved.option.key;
+      updates.title = resolved.option.label;
+      updates.interview_guide_key = resolved.option.interviewGuideKey;
+    }
+
+    if (body.location !== undefined) updates.location = String(body.location).trim();
+    if (body.employment_type !== undefined) {
+      updates.employment_type = String(body.employment_type).trim();
+    }
+    if (body.summary !== undefined) updates.summary = String(body.summary).trim();
+    if (body.description !== undefined) {
+      updates.description = String(body.description).trim();
+    }
+    if (body.closes_at !== undefined) updates.closes_at = body.closes_at;
+    if (body.jd_file_url !== undefined) updates.jd_file_url = body.jd_file_url;
+    if (body.jd_file_public_id !== undefined) {
+      updates.jd_file_public_id = body.jd_file_public_id;
+    }
+
+    if (body.status === "published" || body.status === "closed") {
+      updates.status = body.status as JobPostingStatus;
+      updates.is_active = body.status === "published";
+    } else if (body.closes_at !== undefined) {
+      updates.status = statusFromClosingDate(String(body.closes_at));
+      updates.is_active = updates.status === "published";
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+
+    const { data, error } = await updateJobPostingWithColumnFallback(
+      supabaseAdmin,
+      id,
+      updates,
+    );
+
+    if (error) {
+      const hint = isMissingColumnError(error.message)
+        ? JOB_POSTINGS_MIGRATION_HINT
+        : "";
+      return NextResponse.json({ error: error.message + hint }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data });
+  } catch (err) {
+    console.error("[PATCH /api/careers/postings/[id]]", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: NextRequest, context: RouteContext) {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  const { id } = await context.params;
+
+  try {
+    const { error } = await updateJobPostingWithColumnFallback(supabaseAdmin, id, {
+      status: "closed",
+      is_active: false,
+    });
+
+    if (error) {
+      const hint = isMissingColumnError(error.message)
+        ? JOB_POSTINGS_MIGRATION_HINT
+        : "";
+      return NextResponse.json({ error: error.message + hint }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[DELETE /api/careers/postings/[id]]", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}

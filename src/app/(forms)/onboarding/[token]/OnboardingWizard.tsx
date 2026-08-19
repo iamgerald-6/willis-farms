@@ -9,6 +9,7 @@ import {
   type OnboardingStep,
 } from "@/lib/careers/onboardingTypes";
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 
 type ApplicationInfo = {
   full_name: string;
@@ -99,32 +100,19 @@ export default function OnboardingWizard({
 
   if (submitted) {
     return (
-      <div className="max-w-lg mx-auto text-center py-16 px-4">
-        <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold text-gray-900">Onboarding submitted</h1>
-        <p className="text-gray-600 mt-3 text-sm leading-relaxed">
-          Thank you, {application.full_name.split(/\s+/)[0]}. Your information has been sent to
-          Wills Farms HR. We will contact you regarding medical examination and next steps.
-        </p>
-        <p className="text-xs text-gray-400 mt-6">Reference {application.reference_number}</p>
-      </div>
+      <SubmittedSuccess
+        fullName={application.full_name}
+        referenceNumber={application.reference_number}
+      />
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="mb-8">
-        <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">
-          Wills Farms Ltd. — Employee onboarding
-        </p>
-        <h1 className="text-2xl font-bold text-gray-900 mt-1">{application.full_name}</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {application.role_title} · Ref {application.reference_number}
-        </p>
-        <p className="text-xs text-gray-400 mt-2">
-          Link expires {new Date(expiresAt).toLocaleString("en-GB")}
-        </p>
-      </div>
+    <FormShell
+      eyebrow="Wills Farms Ltd. — Employee onboarding"
+      title={application.full_name}
+      subtitle={`${application.role_title} · Ref ${application.reference_number} · Link expires ${new Date(expiresAt).toLocaleString("en-GB")}`}
+    >
 
       <div className="flex gap-2 mb-8">
         {STEPS.map((s, i) => (
@@ -439,6 +427,29 @@ export default function OnboardingWizard({
           )}
         </button>
       </div>
-    </div>
+    </FormShell>
+  );
+}
+
+function SubmittedSuccess({
+  fullName,
+  referenceNumber,
+}: {
+  fullName: string;
+  referenceNumber: string;
+}) {
+  usePreventBrowserBack(true);
+
+  return (
+    <FormShell eyebrow="Wills Farms Ltd." title="Onboarding submitted">
+      <div className="text-center py-8">
+        <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto mb-4" />
+        <p className="text-gray-600 text-sm leading-relaxed">
+          Thank you, {fullName.split(/\s+/)[0]}. Your information has been sent to
+          Wills Farms HR. We will contact you regarding medical examination and next steps.
+        </p>
+        <p className="text-xs text-gray-400 mt-6">Reference {referenceNumber}</p>
+      </div>
+    </FormShell>
   );
 }

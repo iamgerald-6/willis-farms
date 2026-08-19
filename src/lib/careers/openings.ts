@@ -139,6 +139,14 @@ export function getOpeningBySlug(slug: string): CareerOpening | undefined {
   return ALL_CAREER_OPENINGS.find((o) => o.slug === slug);
 }
 
+/** Resolve interview guide from legacy hardcoded opening slugs only. */
+export function getInterviewGuideKeyForRoleSlug(
+  slug: string,
+): InterviewGuideKey | undefined {
+  const opening = getOpeningBySlug(slug);
+  return opening?.interviewGuideKey;
+}
+
 export function generateReferenceNumber(): string {
   const year = new Date().getFullYear();
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();

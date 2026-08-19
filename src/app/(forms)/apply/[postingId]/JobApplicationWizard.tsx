@@ -1,0 +1,355 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  APPLICATION_STEP_LABELS,
+  APPLICATION_STEPS,
+  type ApplicationFieldStep,
+  type ApplicationFormData,
+  type ApplicationFormField,
+  validateStep,
+  visibleFieldsForStep,
+} from "@/lib/careers/applicationFormSchema";
+import type { JobPosting } from "@/lib/careers/jobPostings";
+import { formatPublicJobTitle } from "@/lib/careers/jobPostings";
+import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { FormShell } from "@/components/Forms/FormShell";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Upload,
+} from "lucide-react";
+
+type Props = {
+  posting: JobPosting;
+  fields: ApplicationFormField[];
+  initialValues?: ApplicationFormData;
+  draftToken?: string;
+};
+
+const inputClass =
+  "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400";
+
+function FieldBlock({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-gray-600">
+        {label}
+        {required && <span className="text-red-600"> *</span>}
+      </span>
+      <div className="mt-1">{children}</div>
+    </label>
+  );
+}
+
+export default function JobApplicationWizard({
+  posting,
+  fields,
+  initialValues = {},
+  draftToken,
+}: Props) {
+  const router = useRouter();
+  const [stepIndex, setStepIndex] = useState(0);
+  const [values, setValues] = useState<ApplicationFormData>(initialValues);
+  const [saving, setSaving] = useState(false);
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [draftSavedMessage, setDraftSavedMessage] = useState<string | null>(null);
+  const [activeDraftToken, setActiveDraftToken] = useState(draftToken);
+
+  const step = APPLICATION_STEPS[stepIndex];
+  const stepFields = useMemo(
+    () => visibleFieldsForStep(fields, step, values),
+    [fields, step, values],
+  );
+
+  const setFieldValue = (key: string, value: unknown) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    setDraftSavedMessage(null);
+  };
+
+  const goNext = () => {
+    const errors = validateStep(fields, step, values);
+    if (errors.length > 0) {
+      setError(errors[0]);
+      return;
+    }
+    setError(null);
+    setStepIndex((i) => Math.min(i + 1, APPLICATION_STEPS.length - 1));
+  };
+
+  const saveApplication = async (finalize: boolean) => {
+    if (finalize) {
+      for (const s of APPLICATION_STEPS) {
+        const stepErrors = validateStep(fields, s, values);
+        if (stepErrors.length > 0) {
+          setError(stepErrors[0]);
+          return;
+        }
+      }
+    } else {
+      const stepErrors = validateStep(fields, step, values);
+      if (stepErrors.length > 0) {
+        setError(stepErrors[0]);
+        return;
+      }
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/careers/applications/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posting_id: posting.id,
+          draft_token: activeDraftToken,
+          form_data: values,
+          finalize,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Save failed");
+
+      if (finalize) {
+        router.replace(
+          `/apply/success?ref=${encodeURIComponent(json.data.reference_number)}&role=${encodeURIComponent(posting.title)}`,
+        );
+        return;
+      }
+
+      if (json.data.draft_token) {
+        setActiveDraftToken(json.data.draft_token);
+        const resumeUrl = `${window.location.origin}/apply/draft/${json.data.draft_token}`;
+        setDraftSavedMessage(
+          `Draft saved. Your reference is ${json.data.reference_number}. Resume anytime: ${resumeUrl}`,
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFileUpload = async (fieldKey: string, file: File) => {
+    setUploadingKey(fieldKey);
+    setError(null);
+    try {
+      const uploaded = await uploadCareersFile(file, "CareersApplications");
+      setFieldValue(fieldKey, uploaded);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  const renderField = (field: ApplicationFormField) => {
+    const { fieldKey, fieldType, required, placeholder, options, accept } =
+      field.rules;
+    const value = values[fieldKey];
+
+    if (fieldType === "select") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <select
+            className={inputClass}
+            value={String(value ?? "")}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          >
+            <option value="">Select…</option>
+            {(options ?? []).map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "textarea") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <textarea
+            className={inputClass}
+            rows={4}
+            placeholder={placeholder}
+            value={String(value ?? "")}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "file") {
+      const fileVal = value as
+        | { secure_url?: string; original_name?: string }
+        | undefined;
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300 hover:bg-red-50/30">
+            {uploadingKey === fieldKey ? (
+              <Loader2 className="w-5 h-5 animate-spin text-red-600" />
+            ) : (
+              <Upload className="w-5 h-5 text-gray-400" />
+            )}
+            <span className="text-sm text-gray-600">
+              {fileVal?.original_name ?? fileVal?.secure_url
+                ? "File uploaded — click to replace"
+                : "Choose file to upload"}
+            </span>
+            <input
+              type="file"
+              className="sr-only"
+              accept={accept}
+              disabled={uploadingKey === fieldKey}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleFileUpload(fieldKey, file);
+              }}
+            />
+          </label>
+        </FieldBlock>
+      );
+    }
+
+    const inputType =
+      fieldType === "email"
+        ? "email"
+        : fieldType === "phone"
+          ? "tel"
+          : fieldType === "date"
+            ? "date"
+            : "text";
+
+    return (
+      <FieldBlock key={field.id} label={field.label} required={required}>
+        <input
+          className={inputClass}
+          type={inputType}
+          placeholder={placeholder}
+          value={String(value ?? "")}
+          onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+        />
+      </FieldBlock>
+    );
+  };
+
+  return (
+    <FormShell
+      eyebrow="Wills Farms Ltd. — Job application"
+      title={formatPublicJobTitle(posting.title)}
+      subtitle={`${posting.location} · ${posting.employment_type}`}
+    >
+      <div className="flex gap-2 mb-6">
+        {APPLICATION_STEPS.map((s, i) => (
+          <div
+            key={s}
+            className={`flex-1 h-1.5 rounded-full ${i <= stepIndex ? "bg-red-600" : "bg-gray-200"}`}
+          />
+        ))}
+      </div>
+      <p className="text-sm font-semibold text-gray-800 mb-1">
+        Step {stepIndex + 1} of {APPLICATION_STEPS.length}
+      </p>
+      <p className="text-xs text-gray-500 mb-6">
+        {APPLICATION_STEP_LABELS[step as ApplicationFieldStep]}
+      </p>
+
+      {error && (
+        <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
+
+      {draftSavedMessage && (
+        <div className="mb-4 text-sm text-green-800 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+          {draftSavedMessage}
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        {stepFields.map((field) => (
+          <div
+            key={field.id}
+            className={
+              field.rules.fieldType === "textarea" || field.rules.fieldType === "file"
+                ? "sm:col-span-2"
+                : ""
+            }
+          >
+            {renderField(field)}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-gray-100">
+        {stepIndex > 0 && (
+          <button
+            type="button"
+            onClick={() => setStepIndex((i) => i - 1)}
+            disabled={saving}
+            className="inline-flex items-center gap-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Back
+          </button>
+        )}
+
+        {stepIndex < APPLICATION_STEPS.length - 1 ? (
+          <button
+            type="button"
+            disabled={saving || !!uploadingKey}
+            onClick={goNext}
+            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+          >
+            Continue
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={saving || !!uploadingKey}
+              onClick={() => saveApplication(false)}
+              className="inline-flex items-center justify-center px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+            >
+              Save as draft
+            </button>
+            <button
+              type="button"
+              disabled={saving || !!uploadingKey}
+              onClick={() => saveApplication(true)}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  Submit application
+                </>
+              )}
+            </button>
+          </>
+        )}
+      </div>
+    </FormShell>
+  );
+}

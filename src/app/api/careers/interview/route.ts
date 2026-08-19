@@ -18,7 +18,7 @@ import {
   validatePanelDecision,
   statusForDecision,
 } from "@/lib/careers/panelDecision";
-import { getOpeningBySlug } from "@/lib/careers/openings";
+import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import {
   normalizeInterviewFormData,
   type InterviewFormData,
@@ -69,10 +69,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const opening = getOpeningBySlug(data.role_slug);
-    const guide = opening
-      ? getInterviewGuide(opening.interviewGuideKey)
-      : null;
+    const guideKey = await resolveInterviewGuideKey(supabaseAdmin, data.role_slug);
+    const guide = guideKey ? getInterviewGuide(guideKey) : null;
 
     const interview_form_data = normalizeInterviewFormData(
       data.interview_form_data,
@@ -146,15 +144,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const opening = getOpeningBySlug(application.role_slug);
-    if (!opening) {
+    const guideKey = await resolveInterviewGuideKey(
+      supabaseAdmin,
+      application.role_slug,
+    );
+    if (!guideKey) {
       return NextResponse.json(
         { error: "Unknown role on application." },
         { status: 400 },
       );
     }
 
-    const guide = getInterviewGuide(opening.interviewGuideKey);
+    const guide = getInterviewGuide(guideKey);
     let merged = normalizeInterviewFormData({
       ...normalizeInterviewFormData(application.interview_form_data),
       ...interview_form_data,

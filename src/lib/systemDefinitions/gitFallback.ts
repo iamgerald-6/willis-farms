@@ -4,6 +4,12 @@ import {
   DEFAULT_SECTION_AUTHORISATION_OPTIONS,
 } from "./appraisalDefaults";
 import {
+  RECRUITMENT_APPLICATION_FIELDS_LIST,
+  RECRUITMENT_JOB_POSTINGS_LIST,
+  RECRUITMENT_MODULE_ID,
+  getDefaultApplicationFormFields,
+} from "./recruitmentDefaults";
+import {
   SKILL_LOG_MODULE_ID,
   SKILL_LOG_REVIEW_PERIODS_LIST,
   SKILL_LOG_SECTIONS_LIST,
@@ -51,6 +57,21 @@ export function getGitFallbackOptions(
     return DEFAULT_SECTION_AUTHORISATION_OPTIONS;
   }
 
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === RECRUITMENT_APPLICATION_FIELDS_LIST
+  ) {
+    return getDefaultApplicationFormFields();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    (optionList === RECRUITMENT_JOB_POSTINGS_LIST ||
+      optionList === "careers.jobTitles")
+  ) {
+    return [];
+  }
+
   if (moduleId === SKILL_LOG_MODULE_ID) {
     if (optionList === SKILL_LOG_SECTIONS_LIST) {
       return getGitSkillLogSectionOptions();
@@ -74,6 +95,10 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
   for (const [moduleId, lists] of Object.entries({
     "mod:leave": ["leave.types"],
     [APPRAISAL_MODULE_ID_CONST]: [APPRAISAL_SECTION_AUTH_LIST],
+    [RECRUITMENT_MODULE_ID]: [
+      RECRUITMENT_APPLICATION_FIELDS_LIST,
+      RECRUITMENT_JOB_POSTINGS_LIST,
+    ],
     [SKILL_LOG_MODULE_ID]: [
       SKILL_LOG_TYPES_LIST,
       SKILL_LOG_SECTIONS_LIST,
