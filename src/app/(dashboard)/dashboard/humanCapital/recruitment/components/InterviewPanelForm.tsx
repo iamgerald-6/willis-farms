@@ -3,20 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
+import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
-  computeWeightedScore,
-  type InterviewGuideConfig,
-} from "@/lib/careers/interviewFormConfigs";
+  combinedInterviewAverage,
+  interviewWorkflowStepV2,
+  type WorkflowStep,
+} from "@/lib/careers/panelInterview";
 import {
-  interviewWorkflowStep,
   normalizeInterviewFormData,
   type InterviewFormData,
+  type StageSubmissionData,
 } from "@/lib/careers/types";
 import { Loader2, Save, X } from "lucide-react";
 import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 import { toast } from "sonner";
 import PanelSetupStep from "./interview/PanelSetupStep";
 import Stage1ScreeningQuestions from "./interview/Stage1ScreeningQuestions";
+import Stage1ReviewStep from "./interview/Stage1ReviewStep";
+import Stage2SetupStep from "./interview/Stage2SetupStep";
 import Stage2Practical from "./interview/Stage2Practical";
 import Stage3Evaluation from "./interview/Stage3Evaluation";
 import { StepIndicator } from "./interview/shared";
@@ -32,9 +36,30 @@ type Props = {
 type InterviewAction =
   | "save_draft"
   | "send_panel_invites"
-  | "schedule_stage2"
-  | "complete_stage2"
+  | "send_stage2_invites"
+  | "submit_hr_stage1"
+  | "submit_hr_stage2"
+  | "stage1_review_pass"
+  | "stage1_review_reject"
   | "finalize";
+
+const STEP_LABELS: Record<WorkflowStep, string> = {
+  panel: "Panel",
+  stage1: "Stage 1",
+  stage1_review: "Review",
+  stage2_setup: "Stage 2 setup",
+  stage2: "Stage 2",
+  evaluation: "Evaluation",
+};
+
+const STEP_ORDER: WorkflowStep[] = [
+  "panel",
+  "stage1",
+  "stage1_review",
+  "stage2_setup",
+  "stage2",
+  "evaluation",
+];
 
 function emptyForm(): InterviewFormData {
   return normalizeInterviewFormData(null);
@@ -52,9 +77,7 @@ export default function InterviewPanelForm({
   const [candidateName, setCandidateName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
-  const [manualStep, setManualStep] = useState<"panel" | 1 | 2 | 3 | null>(
-    null,
-  );
+  const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
 
   const { isLoading, refetch } = useQuery({
     queryKey: ["interview_guide", applicationId],
@@ -72,28 +95,49 @@ export default function InterviewPanelForm({
     },
   });
 
-  const workflowStep = interviewWorkflowStep(formData);
+  const workflowStep = interviewWorkflowStepV2(formData);
   const activeStep = manualStep ?? workflowStep;
 
-  const scores = useMemo(() => {
-    if (!guide) return { areaScores: {}, total: null };
-    return computeWeightedScore(
-      guide,
-      formData.question_ratings ?? {},
-      formData.scenario_ratings ?? {},
-    );
-  }, [guide, formData.question_ratings, formData.scenario_ratings]);
+  const combinedScore = useMemo(() => {
+    if (!guide) return null;
+    return combinedInterviewAverage(formData, guide);
+  }, [guide, formData]);
 
   useEffect(() => {
+    if (combinedScore == null) return;
     setFormData((prev) => ({
       ...prev,
       summary: {
         ...prev.summary,
-        area_scores: scores.areaScores,
-        total_weighted: scores.total,
+        total_weighted: combinedScore,
+        stage1_average: prev.summary?.stage1_average,
+        stage2_average: prev.summary?.stage2_average,
       },
     }));
-  }, [scores.areaScores, scores.total]);
+  }, [combinedScore]);
+
+  const hrStage1: StageSubmissionData = formData.hr_submission?.stage1 ?? {
+    screening: {},
+    question_ratings: {},
+  };
+
+  const hrStage2: StageSubmissionData = formData.hr_submission?.stage2 ?? {
+    scenario_ratings: {},
+  };
+
+  const setHrStage1 = (stage1: StageSubmissionData) => {
+    setFormData((prev) => ({
+      ...prev,
+      hr_submission: { ...prev.hr_submission, stage1 },
+    }));
+  };
+
+  const setHrStage2 = (stage2: StageSubmissionData) => {
+    setFormData((prev) => ({
+      ...prev,
+      hr_submission: { ...prev.hr_submission, stage2 },
+    }));
+  };
 
   const saveMutation = useMutation({
     mutationFn: (params: {
@@ -121,19 +165,26 @@ export default function InterviewPanelForm({
       }
 
       if (params.action === "send_panel_invites") {
-        toast.success(
-          "Panel invites sent and candidate notified. Stage 1 is now open.",
-        );
-        setManualStep(1);
-      } else if (params.action === "schedule_stage2") {
-        toast.success("Practical scheduled. Stage 2 is now open.");
-        setManualStep(2);
-      } else if (params.action === "complete_stage2") {
-        toast.success("Stage 2 complete. Proceed to evaluation.");
-        setManualStep(3);
+        toast.success("Stage 1 panel invites sent.");
+        setManualStep("stage1");
+      } else if (params.action === "send_stage2_invites") {
+        toast.success("Stage 2 invites sent.");
+        setManualStep("stage2");
+      } else if (params.action === "submit_hr_stage1") {
+        toast.success("HR Stage 1 submitted.");
+        setManualStep("stage1_review");
+      } else if (params.action === "submit_hr_stage2") {
+        toast.success("HR Stage 2 submitted.");
+        setManualStep("evaluation");
+      } else if (params.action === "stage1_review_pass") {
+        toast.success("Candidate passed Stage 1 review.");
+        setManualStep("stage2_setup");
+      } else if (params.action === "stage1_review_reject") {
+        toast.success("Candidate rejected at Stage 1.");
+        onInterviewSubmitted?.();
       } else if (params.action === "finalize") {
         toast.success(
-          "Interview submitted. Confirm the outcome from the application detail.",
+          "Evaluation submitted. Review results in the application view and confirm an outcome when ready.",
         );
         setInterviewSubmitted(true);
         onInterviewSubmitted?.();
@@ -142,18 +193,17 @@ export default function InterviewPanelForm({
       }
 
       refetch();
+      onSaved();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Save failed.");
     },
   });
 
-  const stepLabels = ["Panel", "Stage 1", "Stage 2", "Evaluation"] as [
-    string,
-    string,
-    string,
-    string,
-  ];
+  const dummyScores = {
+    areaScores: formData.summary?.area_scores ?? {},
+    total: combinedScore,
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -162,7 +212,7 @@ export default function InterviewPanelForm({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">
-                Internal — panel use only
+                HR — interview management
               </p>
               <h2 className="text-lg font-bold text-gray-900 mt-1">
                 {guide?.title ?? "Interview guide"}
@@ -180,7 +230,11 @@ export default function InterviewPanelForm({
             </button>
           </div>
           {!isLoading && guide && (
-            <StepIndicator current={activeStep} labels={stepLabels} />
+            <StepIndicator
+              steps={STEP_ORDER}
+              current={activeStep}
+              labels={STEP_ORDER.map((s) => STEP_LABELS[s])}
+            />
           )}
         </div>
 
@@ -192,44 +246,85 @@ export default function InterviewPanelForm({
               guide={guide}
               formData={formData}
               onChange={setFormData}
-              onSendInvites={() =>
+              onSendStage1Invites={() =>
                 saveMutation.mutate({
                   action: "send_panel_invites",
                   data: formData,
                 })
               }
-              onContinueWithoutResend={() => setManualStep(1)}
+              onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
             />
-          ) : activeStep === 1 ? (
+          ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
+              guide={guide}
+              submission={hrStage1}
+              onChange={setHrStage1}
+              submitted={!!hrStage1.submitted_at}
+              onSaveDraft={() =>
+                saveMutation.mutate({
+                  action: "save_draft",
+                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage1: hrStage1 } },
+                })
+              }
+              onSubmit={() =>
+                saveMutation.mutate({
+                  action: "submit_hr_stage1",
+                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage1: hrStage1 } },
+                })
+              }
+              isPending={saveMutation.isPending}
+            />
+          ) : activeStep === "stage1_review" ? (
+            <Stage1ReviewStep
+              guide={guide}
+              formData={formData}
+              readOnly={!!formData.stage1_review?.reviewed_at}
+              onPass={() =>
+                saveMutation.mutate({ action: "stage1_review_pass", data: formData })
+              }
+              onReject={() =>
+                saveMutation.mutate({ action: "stage1_review_reject", data: formData })
+              }
+              isPending={saveMutation.isPending}
+            />
+          ) : activeStep === "stage2_setup" ? (
+            <Stage2SetupStep
               guide={guide}
               formData={formData}
               onChange={setFormData}
-              onSaveDraft={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
-              }
-              onScheduleStage2={(scheduledAt) =>
+              onSendStage2Invites={(scheduledAt) =>
                 saveMutation.mutate({
-                  action: "schedule_stage2",
+                  action: "send_stage2_invites",
                   data: formData,
                   stage2_scheduled_at: scheduledAt,
                 })
               }
               isPending={saveMutation.isPending}
             />
-          ) : activeStep === 2 ? (
+          ) : activeStep === "stage2" ? (
             <Stage2Practical
               guide={guide}
-              formData={formData}
-              onChange={setFormData}
-              onSaveDraft={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
+              submission={hrStage2}
+              scheduledAt={
+                formData.stage2_scheduled_at ??
+                formData.setup?.stage2_scheduled_at
               }
-              onComplete={() =>
+              location={
+                formData.setup?.stage2_location ?? formData.setup?.location
+              }
+              onChange={setHrStage2}
+              submitted={!!hrStage2.submitted_at}
+              onSaveDraft={() =>
                 saveMutation.mutate({
-                  action: "complete_stage2",
-                  data: formData,
+                  action: "save_draft",
+                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage2: hrStage2 } },
+                })
+              }
+              onSubmit={() =>
+                saveMutation.mutate({
+                  action: "submit_hr_stage2",
+                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage2: hrStage2 } },
                 })
               }
               isPending={saveMutation.isPending}
@@ -238,14 +333,14 @@ export default function InterviewPanelForm({
             <Stage3Evaluation
               guide={guide}
               formData={formData}
-              scores={scores}
+              scores={dummyScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
             />
           )}
         </div>
 
-        {activeStep === 3 && !interviewSubmitted && (
+        {activeStep === "evaluation" && !interviewSubmitted && (
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col sm:flex-row gap-2 shrink-0">
             <button
               type="button"
@@ -266,50 +361,16 @@ export default function InterviewPanelForm({
               disabled={saveMutation.isPending || isLoading}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
             >
-              {saveMutation.isPending ? "Submitting…" : "Submit interview"}
+              {saveMutation.isPending ? "Submitting…" : "Submit evaluation"}
             </button>
           </div>
         )}
 
-        {activeStep === 3 && interviewSubmitted && (
+        {activeStep === "evaluation" && interviewSubmitted && (
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 shrink-0">
             <p className="text-sm text-gray-600 text-center">
-              Interview submitted. Confirm the outcome from the application detail view.
+              Evaluation submitted. Review results in the application view, discuss as a team, then confirm hire, hold, or reject.
             </p>
-          </div>
-        )}
-
-        {(activeStep === 1 || activeStep === 2) && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-3 shrink-0">
-            <div className="flex gap-2 text-xs">
-              {activeStep !== 1 && (
-                <button
-                  type="button"
-                  onClick={() => setManualStep(1)}
-                  className="text-red-600 hover:underline"
-                >
-                  ← Stage 1
-                </button>
-              )}
-              {formData.stage1_completed_at && activeStep !== 2 && (
-                <button
-                  type="button"
-                  onClick={() => setManualStep(2)}
-                  className="text-red-600 hover:underline"
-                >
-                  Stage 2
-                </button>
-              )}
-              {formData.stage2_completed_at && (
-                <button
-                  type="button"
-                  onClick={() => setManualStep(3)}
-                  className="text-red-600 hover:underline ml-auto"
-                >
-                  Evaluation →
-                </button>
-              )}
-            </div>
           </div>
         )}
       </div>

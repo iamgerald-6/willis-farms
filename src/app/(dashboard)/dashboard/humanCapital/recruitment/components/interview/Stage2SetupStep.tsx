@@ -1,40 +1,65 @@
 "use client";
 
+import { useEffect } from "react";
 import { Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { stageMembers } from "@/lib/careers/panelInterview";
 import { StageInfoBanner } from "./shared";
 
 type Props = {
   guide: InterviewGuideConfig;
   formData: InterviewFormData;
   onChange: (data: InterviewFormData) => void;
-  onSendStage1Invites: () => void;
-  onContinueWithoutResend?: () => void;
+  onSendStage2Invites: (scheduledAt: string) => void;
   isPending: boolean;
 };
 
-export default function PanelSetupStep({
+function toLocalDatetime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export default function Stage2SetupStep({
   guide,
   formData,
   onChange,
-  onSendStage1Invites,
-  onContinueWithoutResend,
+  onSendStage2Invites,
   isPending,
 }: Props) {
   const setup = formData.setup ?? {};
-  const members = setup.stage1_members?.length
-    ? setup.stage1_members
-    : [createPanelMember("", "", 1)];
+  const stage1Members = stageMembers(formData, 1);
+
+  useEffect(() => {
+    if (setup.stage2_members?.length) return;
+    if (stage1Members.length === 0) return;
+    onChange({
+      ...formData,
+      setup: {
+        ...setup,
+        stage2_members: stage1Members.map((m) =>
+          createPanelMember(m.name, m.email, 2),
+        ),
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.stage1_review?.passed]);
+
+  const stage2Members = setup.stage2_members?.length
+    ? setup.stage2_members
+    : stage1Members.map((m) => createPanelMember(m.name, m.email, 2));
 
   const updateMember = (index: number, field: keyof PanelMember, value: string) => {
-    const next = members.map((m, i) =>
+    const next = stage2Members.map((m, i) =>
       i === index ? { ...m, [field]: value } : m,
     );
     onChange({
       ...formData,
-      setup: { ...setup, stage1_members: next },
+      setup: { ...setup, stage2_members: next },
     });
   };
 
@@ -43,92 +68,87 @@ export default function PanelSetupStep({
       ...formData,
       setup: {
         ...setup,
-        stage1_members: [...members, createPanelMember("", "", 1)],
+        stage2_members: [
+          ...stage2Members,
+          createPanelMember("", "", 2),
+        ],
       },
     });
   };
 
   const removeMember = (index: number) => {
-    if (members.length <= 1) return;
     onChange({
       ...formData,
       setup: {
         ...setup,
-        stage1_members: members.filter((_, i) => i !== index),
+        stage2_members: stage2Members.filter((_, i) => i !== index),
       },
     });
   };
 
-  const toLocalDatetime = (iso?: string) => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
-
-  const invitesSent =
-    setup.stage1_invites_sent_at ?? setup.invites_sent_at;
+  const scheduledAt =
+    setup.stage2_scheduled_at ??
+    formData.stage2_scheduled_at ??
+    "";
 
   return (
     <div className="space-y-6">
       <StageInfoBanner
-        title="Panel setup — Stage 1"
-        duration="Before Stage 1"
-        briefing="Add panel members for Stage 1 screening. Each member receives a link to complete their evaluation — no WillsOne account required."
-        recommendedPanel={guide.recommendedPanel}
-        totalDuration={guide.duration}
+        title="Panel setup — Stage 2"
+        duration={guide.stageDurations.stage2}
+        briefing="Stage 1 panel members are listed below. Add more panel members if needed, then set the practical date, time, and location before sending Stage 2 invites."
       />
 
-      <section className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
-        <h3 className="text-sm font-bold text-gray-900 mb-1">Stage 1 — Add panel</h3>
+      <section className="border border-gray-200 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Stage 2 — Add panel</h3>
         <p className="text-xs text-gray-500 mb-4">
-          Panel members score screening and structured questions independently. HR also completes a Stage 1 form.
+          Pre-filled from Stage 1. You can add additional panel members for the practical assessment.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Stage 1 interview start *
+              Stage 2 practical date & time *
             </label>
             <input
               type="datetime-local"
-              value={toLocalDatetime(setup.interview_start_at)}
+              value={toLocalDatetime(scheduledAt)}
               onChange={(e) => {
                 const val = e.target.value;
+                const iso = val ? new Date(val).toISOString() : "";
                 onChange({
                   ...formData,
+                  stage2_scheduled_at: iso,
                   setup: {
                     ...setup,
-                    interview_start_at: val
-                      ? new Date(val).toISOString()
-                      : undefined,
+                    stage2_scheduled_at: iso,
+                    stage2_members: stage2Members,
                   },
                 });
               }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Location</label>
+            <label className="text-xs text-gray-500 block mb-1">Location *</label>
             <input
               type="text"
-              placeholder="Farm office / barn meeting room"
-              value={setup.location ?? ""}
+              placeholder="Practical assessment location"
+              value={setup.stage2_location ?? setup.location ?? ""}
               onChange={(e) =>
                 onChange({
                   ...formData,
-                  setup: { ...setup, location: e.target.value },
+                  setup: { ...setup, stage2_location: e.target.value },
                 })
               }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             />
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-            Panel members
+            Stage 2 panel
           </span>
           <button
             type="button"
@@ -141,10 +161,10 @@ export default function PanelSetupStep({
         </div>
 
         <div className="space-y-3">
-          {members.map((member, index) => (
+          {stage2Members.map((member, index) => (
             <div
               key={member.id || index}
-              className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start border border-gray-100 rounded-xl p-3 bg-white"
+              className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start border border-gray-100 rounded-xl p-3"
             >
               <input
                 type="text"
@@ -163,8 +183,7 @@ export default function PanelSetupStep({
               <button
                 type="button"
                 onClick={() => removeMember(index)}
-                disabled={members.length <= 1}
-                className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
+                className="p-2 text-gray-400 hover:text-red-600"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -173,29 +192,17 @@ export default function PanelSetupStep({
         </div>
       </section>
 
-      {invitesSent && (
-        <>
-          <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
-            Stage 1 invites sent {new Date(invitesSent).toLocaleString("en-GB")}
-            {setup.candidate_invite_sent_at && (
-              <> · Candidate notified</>
-            )}
-            .
-          </p>
-          <button
-            type="button"
-            onClick={() => onContinueWithoutResend?.()}
-            className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
-          >
-            Continue to HR Stage 1 form
-          </button>
-        </>
+      {setup.stage2_invites_sent_at && (
+        <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+          Stage 2 invites sent{" "}
+          {new Date(setup.stage2_invites_sent_at).toLocaleString("en-GB")}
+        </p>
       )}
 
       <button
         type="button"
-        onClick={onSendStage1Invites}
-        disabled={isPending}
+        onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+        disabled={isPending || !scheduledAt}
         className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
       >
         {isPending ? (
@@ -203,9 +210,9 @@ export default function PanelSetupStep({
         ) : (
           <Mail className="w-4 h-4" />
         )}
-        {invitesSent
-          ? "Resend Stage 1 invites"
-          : "Send Stage 1 invites & notify candidate"}
+        {setup.stage2_invites_sent_at
+          ? "Resend Stage 2 invites"
+          : "Send Stage 2 invites & open practical"}
       </button>
     </div>
   );
