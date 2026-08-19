@@ -194,9 +194,14 @@ export default function JobApplicationWizard({
       if (!res.ok) throw new Error(json.error ?? "Could not read the CV");
       const extracted = json.data as ExtractedCvFields;
 
-      let filledAnything = false;
+      // setValues' updater isn't guaranteed to run synchronously (it's
+      // batched into the next render), so a variable mutated inside it and
+      // read right after can still be stale — compute the merge and the
+      // "did we fill anything" flag together, inside the updater, and only
+      // react to the result from there.
       setValues((prev) => {
         const next = { ...prev };
+        let filledAnything = false;
         const fillText = (key: string, val: string) => {
           if (val && !String(next[key] ?? "").trim()) {
             next[key] = val;
@@ -228,14 +233,15 @@ export default function JobApplicationWizard({
           next.education = extracted.education;
           filledAnything = true;
         }
+
+        setCvFillNotice(
+          filledAnything
+            ? "We've pre-filled some fields from your CV — please review everything before continuing."
+            : "We couldn't find anything in that CV to pre-fill — no problem, just fill in the fields below.",
+        );
+
         return next;
       });
-
-      setCvFillNotice(
-        filledAnything
-          ? "We've pre-filled some fields from your CV — please review everything before continuing."
-          : "We couldn't find anything in that CV to pre-fill — no problem, just fill in the fields below.",
-      );
     } catch (e) {
       // CV auto-fill is a convenience, not a requirement — fail quietly and
       // let them fill the form manually.
