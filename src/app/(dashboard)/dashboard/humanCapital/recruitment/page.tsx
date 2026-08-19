@@ -41,6 +41,18 @@ const STATUS_STYLES: Record<ApplicationStatus, string> = {
   rejected: "bg-red-50 text-red-700 border border-red-200",
 };
 
+const AI_RECOMMENDATION_LABELS: Record<string, string> = {
+  hire: "Hire",
+  hold: "Hold / reserve",
+  do_not_hire: "Do not hire",
+};
+
+const AI_RECOMMENDATION_CLASSES: Record<string, string> = {
+  hire: "bg-green-100 text-green-800",
+  hold: "bg-amber-100 text-amber-800",
+  do_not_hire: "bg-red-100 text-red-800",
+};
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -331,6 +343,32 @@ function ApplicationDetail({
                       {application.interview_form_data.summary.total_weighted.toFixed(2)}
                     </strong>
                   </p>
+                )}
+                {application.interview_form_data.summary?.ai_analysis && (
+                  <div className="mt-2 pt-2 border-t border-indigo-100 space-y-1.5">
+                    <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">
+                      AI analysis
+                    </p>
+                    <p className="text-xs text-indigo-900 leading-relaxed">
+                      {application.interview_form_data.summary.ai_analysis}
+                    </p>
+                    {application.interview_form_data.summary.ai_recommendation && (
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          AI_RECOMMENDATION_CLASSES[
+                            application.interview_form_data.summary.ai_recommendation
+                          ]
+                        }`}
+                      >
+                        AI recommends:{" "}
+                        {
+                          AI_RECOMMENDATION_LABELS[
+                            application.interview_form_data.summary.ai_recommendation
+                          ]
+                        }
+                      </span>
+                    )}
+                  </div>
                 )}
                 <p className="text-xs text-indigo-700/80 mt-2">
                   Review scores and discuss as a team before confirming an outcome.
