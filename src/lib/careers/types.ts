@@ -58,16 +58,56 @@ export interface JobApplication {
 }
 
 export interface PanelMember {
+  id: string;
   name: string;
   email: string;
+  stage: 1 | 2;
+  access_token: string;
+}
+
+export interface StageSubmissionData {
+  submitted_at?: string;
+  screening?: Record<string, { pass: "yes" | "no" | ""; notes: string }>;
+  question_ratings?: Record<
+    string,
+    { rating: number | null; notes: string }
+  >;
+  scenario_ratings?: Record<
+    string,
+    { rating: number | null; notes: string }
+  >;
+  area_scores?: Record<string, number | null>;
+  total_weighted?: number | null;
+}
+
+export interface PanelSubmission extends StageSubmissionData {
+  member_id: string;
+  member_name: string;
+  stage: 1 | 2;
 }
 
 export interface InterviewSetup {
-  members: PanelMember[];
+  /** @deprecated use stage1_members */
+  members?: PanelMember[];
+  stage1_members?: PanelMember[];
+  stage2_members?: PanelMember[];
   interview_start_at?: string;
   location?: string;
+  stage2_scheduled_at?: string;
+  stage2_location?: string;
+  /** @deprecated use stage1_invites_sent_at */
   invites_sent_at?: string;
+  stage1_invites_sent_at?: string;
+  stage2_invites_sent_at?: string;
   candidate_invite_sent_at?: string;
+}
+
+export interface Stage1Review {
+  average_score?: number | null;
+  passed?: boolean;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  notes?: string;
 }
 
 export type InterviewStage = 1 | 2 | 3;
@@ -75,12 +115,22 @@ export type InterviewStage = 1 | 2 | 3;
 export interface InterviewFormData {
   /** Panel setup — outside staged form */
   setup?: InterviewSetup;
+  /** Per-panel member submissions (via public link) */
+  panel_submissions?: PanelSubmission[];
+  /** HR's own stage scores */
+  hr_submission?: {
+    stage1?: StageSubmissionData;
+    stage2?: StageSubmissionData;
+  };
+  /** Stage 1 grading review before opening stage 2 */
+  stage1_review?: Stage1Review;
   /** 1 = A+B, 2 = C, 3 = evaluation */
   current_stage?: InterviewStage;
   stage1_completed_at?: string;
   stage2_scheduled_at?: string;
   stage2_schedule_sent_at?: string;
   stage2_completed_at?: string;
+  /** @deprecated legacy shared ratings — migrated to hr_submission on read */
   screening?: Record<string, { pass: "yes" | "no" | ""; notes: string }>;
   question_ratings?: Record<
     string,
@@ -94,6 +144,8 @@ export interface InterviewFormData {
   summary?: {
     area_scores?: Record<string, number | null>;
     total_weighted?: number | null;
+    stage1_average?: number | null;
+    stage2_average?: number | null;
     decision?: PanelDecision | "";
     decision_notes?: string;
     recommended_start_date?: string;
@@ -110,11 +162,15 @@ export interface InterviewFormData {
   };
 }
 
+import { createPanelMember, ensureMemberTokens } from "@/lib/careers/panelInterview";
+
 export function normalizeInterviewFormData(
   raw: InterviewFormData | null | undefined,
 ): InterviewFormData {
   const data: InterviewFormData = {
-    setup: { members: [{ name: "", email: "" }] },
+    setup: { stage1_members: [createPanelMember("", "", 1)] },
+    panel_submissions: [],
+    hr_submission: {},
     current_stage: 1,
     screening: {},
     question_ratings: {},
@@ -124,26 +180,75 @@ export function normalizeInterviewFormData(
     ...(raw ?? {}),
   };
 
-  if (!data.setup?.members?.length) {
+  // Migrate legacy setup.members → stage1_members
+  if (!data.setup?.stage1_members?.length && data.setup?.members?.length) {
+    data.setup.stage1_members = data.setup.members.map((m) =>
+      createPanelMember(m.name, m.email, m.stage ?? 1),
+    );
+  }
+
+  if (!data.setup?.stage1_members?.length) {
     const legacy = raw?.panel;
     const members: PanelMember[] = [];
     if (legacy?.chair?.trim()) {
-      members.push({ name: legacy.chair.trim(), email: "" });
+      members.push(createPanelMember(legacy.chair.trim(), "", 1));
     }
     if (legacy?.member_2?.trim()) {
-      members.push({ name: legacy.member_2.trim(), email: "" });
+      members.push(createPanelMember(legacy.member_2.trim(), "", 1));
     }
     if (legacy?.member_3?.trim()) {
-      members.push({ name: legacy.member_3.trim(), email: "" });
+      members.push(createPanelMember(legacy.member_3.trim(), "", 1));
     }
     data.setup = {
-      members: members.length ? members : [{ name: "", email: "" }],
+      ...data.setup,
+      stage1_members: members.length
+        ? members
+        : [createPanelMember("", "", 1)],
       interview_start_at: legacy?.interview_date
         ? `${legacy.interview_date}T09:00:00`
         : data.setup?.interview_start_at,
       location: legacy?.location ?? data.setup?.location,
-      invites_sent_at: data.setup?.invites_sent_at,
+      stage1_invites_sent_at:
+        data.setup?.stage1_invites_sent_at ?? data.setup?.invites_sent_at,
       candidate_invite_sent_at: data.setup?.candidate_invite_sent_at,
+    };
+  }
+
+  if (data.setup?.stage1_members) {
+    data.setup.stage1_members = ensureMemberTokens(data.setup.stage1_members);
+  }
+  if (data.setup?.stage2_members) {
+    data.setup.stage2_members = ensureMemberTokens(data.setup.stage2_members);
+  }
+
+  // Migrate legacy shared ratings → hr_submission
+  if (
+    !data.hr_submission?.stage1 &&
+    (Object.keys(data.question_ratings ?? {}).length > 0 ||
+      Object.keys(data.screening ?? {}).length > 0)
+  ) {
+    data.hr_submission = {
+      ...data.hr_submission,
+      stage1: {
+        screening: data.screening,
+        question_ratings: data.question_ratings,
+        submitted_at: data.stage1_completed_at,
+        total_weighted: data.summary?.total_weighted,
+        area_scores: data.summary?.area_scores,
+      },
+    };
+  }
+
+  if (
+    !data.hr_submission?.stage2 &&
+    Object.keys(data.scenario_ratings ?? {}).length > 0
+  ) {
+    data.hr_submission = {
+      ...data.hr_submission,
+      stage2: {
+        scenario_ratings: data.scenario_ratings,
+        submitted_at: data.stage2_completed_at,
+      },
     };
   }
 
@@ -156,13 +261,16 @@ export function normalizeInterviewFormData(
   return data;
 }
 
+/** @deprecated use interviewWorkflowStepV2 from panelInterview.ts */
 export function interviewWorkflowStep(
   data: InterviewFormData,
 ): "panel" | InterviewStage {
   const setup = data.setup;
   const hasValidPanel =
-    setup?.invites_sent_at &&
-    setup.members.some((m) => m.name.trim() && m.email.trim());
+    (setup?.stage1_invites_sent_at ?? setup?.invites_sent_at) &&
+    (setup.stage1_members ?? setup.members ?? []).some(
+      (m) => m.name.trim() && m.email.trim(),
+    );
   if (!hasValidPanel) return "panel";
   if (!data.stage1_completed_at) return 1;
   if (!data.stage2_completed_at) return 2;

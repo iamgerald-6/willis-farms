@@ -200,9 +200,6 @@ export default function SOPManagementPage({
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      // Use the shared api instance (not raw fetch) so the Supabase session
-      // token gets attached — the delete route resolves who's calling from
-      // that, the same way upload/update/archive/restore already do.
       const res = await api.delete("/sop/delete", {
         data: {
           contentIds: confirmDelete.contentIds,
@@ -270,9 +267,7 @@ export default function SOPManagementPage({
           >
             {showHeader && (
               <div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  SOP Content
-                </h2>
+                <h2 className="text-xl font-bold text-gray-900">SOP Content</h2>
                 <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
                   {contents.length} {statusTab} content item
                   {contents.length !== 1 ? "s" : ""}
@@ -377,8 +372,8 @@ export default function SOPManagementPage({
                 "No archived SOPs."
               ) : (
                 <>
-                  No content uploaded yet. Click <strong>Add SOP</strong> to
-                  get started.
+                  No content uploaded yet. Click <strong>Add SOP</strong> to get
+                  started.
                 </>
               )}
             </div>
@@ -488,7 +483,9 @@ export default function SOPManagementPage({
                                 </button>
                               )}
                               <button
-                                onClick={() => promptDelete([c.id], `"${c.title}"`)}
+                                onClick={() =>
+                                  promptDelete([c.id], `"${c.title}"`)
+                                }
                                 className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-white transition"
                                 title="Delete"
                               >
@@ -499,7 +496,9 @@ export default function SOPManagementPage({
                           <button
                             onClick={() => toggleExpanded(c.id)}
                             className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-white transition"
-                            title={isExpanded ? "Fewer actions" : "More actions"}
+                            title={
+                              isExpanded ? "Fewer actions" : "More actions"
+                            }
                           >
                             <ChevronDown
                               className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
@@ -570,8 +569,8 @@ export default function SOPManagementPage({
                       "No archived SOPs."
                     ) : (
                       <>
-                        No content uploaded yet. Click{" "}
-                        <strong>Add SOP</strong> to get started.
+                        No content uploaded yet. Click <strong>Add SOP</strong>{" "}
+                        to get started.
                       </>
                     )}
                   </td>
@@ -667,7 +666,9 @@ export default function SOPManagementPage({
                                   </button>
                                   {statusTab === "active" && (
                                     <button
-                                      onClick={() => handleArchiveToggle(c, false)}
+                                      onClick={() =>
+                                        handleArchiveToggle(c, false)
+                                      }
                                       disabled={archivingId === c.id}
                                       className="p-1.5 rounded-lg text-gray-400 hover:text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
                                       title="Archive"
@@ -676,7 +677,9 @@ export default function SOPManagementPage({
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => promptDelete([c.id], `"${c.title}"`)}
+                                    onClick={() =>
+                                      promptDelete([c.id], `"${c.title}"`)
+                                    }
                                     className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
                                     title="Delete"
                                   >
@@ -687,7 +690,9 @@ export default function SOPManagementPage({
                               <button
                                 onClick={() => toggleExpanded(c.id)}
                                 className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition"
-                                title={isExpanded ? "Fewer actions" : "More actions"}
+                                title={
+                                  isExpanded ? "Fewer actions" : "More actions"
+                                }
                               >
                                 <ChevronDown
                                   className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}

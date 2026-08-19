@@ -91,14 +91,15 @@ export function StageInfoBanner({
   );
 }
 
-export function StepIndicator({
+export function StepIndicator<T extends string>({
+  steps,
   current,
   labels,
 }: {
-  current: "panel" | 1 | 2 | 3;
-  labels: [string, string, string, string];
+  steps: T[];
+  current: T;
+  labels: string[];
 }) {
-  const steps: ("panel" | 1 | 2 | 3)[] = ["panel", 1, 2, 3];
   const currentIdx = steps.indexOf(current);
 
   return (
@@ -108,7 +109,7 @@ export function StepIndicator({
         const active = step === current;
         return (
           <div
-            key={String(step)}
+            key={step}
             className="flex items-center gap-1 sm:gap-2 shrink-0"
           >
             <div

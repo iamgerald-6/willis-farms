@@ -12,6 +12,7 @@ import {
   PANEL_DECISIONS,
   type ApplicationStatus,
   type JobApplication,
+  type PanelDecision,
 } from "@/lib/careers/types";
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import OnboardingTab from "./components/OnboardingTab";
@@ -47,6 +48,9 @@ function formatDate(iso: string) {
   });
 }
 
+/** HR can set these manually — offer is set by the system after hire/onboarding. */
+const HR_MANUAL_STATUSES = APPLICATION_STATUSES.filter((s) => s !== "offer");
+
 function ApplicationDetail({
   application,
   onClose,
@@ -66,6 +70,9 @@ function ApplicationDetail({
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(application.status);
   const [hrNotes, setHrNotes] = useState(application.hr_notes ?? "");
+  const [selectedDecision, setSelectedDecision] = useState<PanelDecision | "">(
+    application.interview_form_data?.summary?.decision ?? "",
+  );
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -80,6 +87,7 @@ function ApplicationDetail({
   useEffect(() => {
     setStatus(application.status);
     setHrNotes(application.hr_notes ?? "");
+    setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
   }, [application]);
 
   const canInterview = ["shortlisted", "interview", "hold", "onboarding", "offer"].includes(
@@ -90,13 +98,19 @@ function ApplicationDetail({
   const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
   const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
   const canConfirmOutcome =
-    !!application.interview_submitted_at && !decisionConfirmed && !!decision;
+    !!application.interview_submitted_at && !decisionConfirmed;
 
   const confirmMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview", {
         application_id: application.id,
-        interview_form_data: application.interview_form_data,
+        interview_form_data: {
+          ...application.interview_form_data,
+          summary: {
+            ...application.interview_form_data?.summary,
+            decision: selectedDecision,
+          },
+        },
         submitted_by: adminId,
         action: "confirm_decision",
       }),
@@ -244,17 +258,23 @@ function ApplicationDetail({
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                 Update status
               </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              >
-                {APPLICATION_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
+              {application.status === "offer" ? (
+                <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  {STATUS_LABELS.offer} — set automatically when an offer is made.
+                </p>
+              ) : (
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                >
+                  {HR_MANUAL_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
@@ -270,36 +290,101 @@ function ApplicationDetail({
               />
             </div>
 
+            {application.interview_submitted_at && application.interview_form_data && (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-2">
+                <p className="text-sm font-semibold text-indigo-900">
+                  Interview evaluation results
+                </p>
+                {application.interview_form_data.summary?.stage1_average != null && (
+                  <p className="text-xs text-indigo-800">
+                    Stage 1 average:{" "}
+                    <strong>
+                      {application.interview_form_data.summary.stage1_average.toFixed(2)}
+                    </strong>
+                  </p>
+                )}
+                {application.interview_form_data.summary?.stage2_average != null && (
+                  <p className="text-xs text-indigo-800">
+                    Stage 2 average:{" "}
+                    <strong>
+                      {application.interview_form_data.summary.stage2_average.toFixed(2)}
+                    </strong>
+                  </p>
+                )}
+                {application.interview_form_data.summary?.total_weighted != null && (
+                  <p className="text-xs text-indigo-800">
+                    Combined score:{" "}
+                    <strong>
+                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
+                    </strong>
+                  </p>
+                )}
+                <p className="text-xs text-indigo-700/80 mt-2">
+                  Review scores and discuss as a team before confirming an outcome.
+                </p>
+              </div>
+            )}
+
+            {application.interview_form_data?.stage1_review?.reviewed_at &&
+              application.interview_form_data.stage1_review.passed === false && (
+                <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  Rejected at Stage 1 review (
+                  {application.interview_form_data.stage1_review.average_score?.toFixed(2) ?? "—"}{" "}
+                  average)
+                </p>
+              )}
+
             {canConfirmOutcome && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
                 <p className="text-sm font-semibold text-amber-900">
                   Confirm interview outcome
                 </p>
                 <p className="text-xs text-amber-800">
-                  Interview submitted. Selected decision:{" "}
-                  <strong>{decisionLabel}</strong>
+                  Interview evaluation is complete. Choose an outcome after your team discussion.
                   {application.interview_form_data?.summary?.total_weighted != null && (
                     <>
                       {" "}
-                      · Score{" "}
+                      Combined score:{" "}
                       {application.interview_form_data.summary.total_weighted.toFixed(2)}
                     </>
                   )}
                 </p>
-                <p className="text-xs text-amber-700">
-                  {decision === "hire"
-                    ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
-                    : decision === "hold"
-                      ? "Hold does not send a candidate email."
-                      : "Confirming rejection sends a professional decline email."}
-                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PANEL_DECISIONS.map((d) => (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => setSelectedDecision(d.value)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                        selectedDecision === d.value
+                          ? "bg-amber-800 text-white border-amber-800"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+                {selectedDecision && (
+                  <p className="text-xs text-amber-700">
+                    {selectedDecision === "hire"
+                      ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
+                      : selectedDecision === "hold"
+                        ? "Hold does not send a candidate email."
+                        : "Confirming rejection sends a professional decline email."}
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => confirmMutation.mutate()}
-                  disabled={confirmMutation.isPending}
+                  disabled={confirmMutation.isPending || !selectedDecision}
                   className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
                 >
-                  {confirmMutation.isPending ? "Confirming…" : `Confirm: ${decisionLabel}`}
+                  {confirmMutation.isPending
+                    ? "Confirming…"
+                    : selectedDecision
+                      ? `Confirm: ${PANEL_DECISIONS.find((d) => d.value === selectedDecision)?.label}`
+                      : "Select an outcome to confirm"}
                 </button>
               </div>
             )}

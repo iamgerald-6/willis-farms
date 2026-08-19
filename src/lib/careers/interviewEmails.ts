@@ -1,4 +1,4 @@
-import { recruitmentInterviewUrl } from "@/lib/appUrl";
+import { recruitmentInterviewUrl, panelInterviewUrl } from "@/lib/appUrl";
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
 type SendResult = { sent: boolean; error?: string };
@@ -76,24 +76,25 @@ function emailShell(title: string, body: string): string {
 </body></html>`;
 }
 
-/** Panel member invite with link to the interview session in WillsOne */
+/** Panel member invite with link to the public interview form (no login) */
 export async function sendPanelInviteEmail(params: {
   memberName: string;
   memberEmail: string;
   candidateName: string;
   roleTitle: string;
   referenceNumber: string;
-  applicationId: string;
+  accessToken: string;
+  stage: 1 | 2;
   interviewStartAt: string;
   location?: string;
 }): Promise<SendResult> {
-  const link = recruitmentInterviewUrl(params.applicationId);
+  const link = panelInterviewUrl(params.accessToken);
   const when = formatDateTime(params.interviewStartAt);
   const locationLine = params.location
     ? `<p style="margin:0 0 12px;font-size:14px;"><strong>Location:</strong> ${escapeHtml(params.location)}</p>`
     : "";
 
-  const subject = `Interview panel invite — ${params.roleTitle} (${params.referenceNumber})`;
+  const subject = `Interview panel invite (Stage ${params.stage}) — ${params.roleTitle} (${params.referenceNumber})`;
 
   const text = [
     `Dear ${params.memberName},`,
@@ -106,9 +107,9 @@ export async function sendPanelInviteEmail(params: {
     `Interview start: ${when}`,
     params.location ? `Location: ${params.location}` : "",
     "",
-    `Open the interview guide: ${link}`,
+    `Open your Stage ${params.stage} interview form: ${link}`,
     "",
-    "Please sign in to WillsOne to access the staged interview guide and evaluation sheet.",
+    "No WillsOne account is required — use the link above on any device.",
     "",
     "Kind regards,",
     "Human Capital Team",
@@ -134,10 +135,10 @@ export async function sendPanelInviteEmail(params: {
         </td></tr>
       </table>
       <p style="margin:0 0 20px;font-size:15px;color:#374151;">
-        Use the link below to open the staged interview guide in WillsOne (sign-in required):
+        Use the link below to open your Stage ${params.stage} interview evaluation form. No sign-in required:
       </p>
       <p style="margin:0 0 24px;">
-        <a href="${escapeHtml(link)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open interview guide</a>
+        <a href="${escapeHtml(link)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open interview form</a>
       </p>
       <p style="margin:0;font-size:13px;color:#6b7280;">Or copy this link: ${escapeHtml(link)}</p>
     `,
@@ -323,11 +324,10 @@ export async function sendStage2ScheduleEmail(params: {
 }
 
 export async function sendAllPanelInvites(params: {
-  members: { name: string; email: string }[];
+  members: { name: string; email: string; access_token: string; stage: 1 | 2 }[];
   candidateName: string;
   roleTitle: string;
   referenceNumber: string;
-  applicationId: string;
   interviewStartAt: string;
   location?: string;
 }): Promise<{ sent: number; failed: string[] }> {
@@ -342,7 +342,8 @@ export async function sendAllPanelInvites(params: {
       candidateName: params.candidateName,
       roleTitle: params.roleTitle,
       referenceNumber: params.referenceNumber,
-      applicationId: params.applicationId,
+      accessToken: member.access_token,
+      stage: member.stage,
       interviewStartAt: params.interviewStartAt,
       location: params.location,
     });
