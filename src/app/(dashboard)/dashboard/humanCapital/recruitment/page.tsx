@@ -15,6 +15,7 @@ import {
 } from "@/lib/careers/types";
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import OnboardingTab from "./components/OnboardingTab";
+import CareersTab from "./components/CareersTab";
 import {
   ChevronDown,
   ExternalLink,
@@ -517,8 +518,14 @@ function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
-  const [activeTab, setActiveTab] = useState<"applications" | "onboarding">(
-    tabParam === "onboarding" ? "onboarding" : "applications",
+  const [activeTab, setActiveTab] = useState<
+    "applications" | "onboarding" | "careers"
+  >(
+    tabParam === "onboarding"
+      ? "onboarding"
+      : tabParam === "careers"
+        ? "careers"
+        : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -626,6 +633,7 @@ function RecruitmentPageContent() {
 
   useEffect(() => {
     if (tabParam === "onboarding") setActiveTab("onboarding");
+    else if (tabParam === "careers") setActiveTab("careers");
   }, [tabParam]);
 
   useEffect(() => {
@@ -679,7 +687,7 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "onboarding"] as const).map((tab) => (
+        {(["applications", "careers", "onboarding"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -690,12 +698,18 @@ function RecruitmentPageContent() {
                 : "border-transparent text-gray-500 hover:text-gray-800"
             }`}
           >
-            {tab === "applications" ? "Applications" : "Onboarding"}
+            {tab === "applications"
+              ? "Applications"
+              : tab === "careers"
+                ? "Careers"
+                : "Onboarding"}
           </button>
         ))}
       </div>
 
-      {activeTab === "onboarding" ? (
+      {activeTab === "careers" ? (
+        <CareersTab />
+      ) : activeTab === "onboarding" ? (
         <OnboardingTab />
       ) : (
         <>

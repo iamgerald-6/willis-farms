@@ -17,9 +17,13 @@ import { EDITABLE_BUSINESS_LOGIC_MODULES } from "./optionListKeys";
 export {
   EDITABLE_LEAVE_POLICY_MODULES,
   EDITABLE_BUSINESS_LOGIC_MODULES,
+  EDITABLE_JOB_POSTING_MODULES,
+  EDITABLE_APPLICATION_FORM_MODULES,
   EDITABLE_COMPETENCY_SECTION_MODULES,
   EDITABLE_OPTION_LISTS,
   EDITABLE_RATING_SECTION_MODULES,
+  isEditableJobPostingModule,
+  isEditableApplicationFormModule,
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
   isEditableOptionList,

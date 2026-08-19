@@ -21,7 +21,32 @@ export const EDITABLE_OPTION_LISTS: Partial<
     "skillLog.tierAuthorisations",
     "skillLog.reviewPeriods",
   ],
+  "mod:recruitment": ["careers.applicationFields"],
 };
+
+/** Modules whose job posting roles are editable in System Definitions. */
+export const EDITABLE_JOB_POSTING_MODULES = ["mod:recruitment"] as const;
+
+/** @deprecated use EDITABLE_JOB_POSTING_MODULES */
+export const EDITABLE_JOB_TITLE_MODULES = EDITABLE_JOB_POSTING_MODULES;
+
+export function isEditableJobPostingModule(moduleId: string): boolean {
+  return EDITABLE_JOB_POSTING_MODULES.includes(
+    moduleId as (typeof EDITABLE_JOB_POSTING_MODULES)[number],
+  );
+}
+
+/** @deprecated use isEditableJobPostingModule */
+export const isEditableJobTitleModule = isEditableJobPostingModule;
+
+/** Modules whose job application form fields are editable in System Definitions. */
+export const EDITABLE_APPLICATION_FORM_MODULES = ["mod:recruitment"] as const;
+
+export function isEditableApplicationFormModule(moduleId: string): boolean {
+  return EDITABLE_APPLICATION_FORM_MODULES.includes(
+    moduleId as (typeof EDITABLE_APPLICATION_FORM_MODULES)[number],
+  );
+}
 
 /** Modules with editable leave policy (annual cap, etc.). */
 export const EDITABLE_LEAVE_POLICY_MODULES = ["mod:leave"] as const;
