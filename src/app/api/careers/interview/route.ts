@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
-  computeWeightedScore,
   getInterviewGuide,
   buildCandidatePracticalExpectations,
 } from "@/lib/careers/interviewFormConfigs";
@@ -23,6 +22,12 @@ import {
   normalizeInterviewFormData,
   type InterviewFormData,
 } from "@/lib/careers/types";
+import {
+  combinedInterviewAverage,
+  ensureMemberTokens,
+  scoreSubmission,
+  stageAverage,
+} from "@/lib/careers/panelInterview";
 
 const INTERVIEW_STATUSES = new Set([
   "shortlisted",
@@ -35,6 +40,11 @@ const INTERVIEW_STATUSES = new Set([
 type InterviewAction =
   | "save_draft"
   | "send_panel_invites"
+  | "send_stage2_invites"
+  | "submit_hr_stage1"
+  | "submit_hr_stage2"
+  | "stage1_review_pass"
+  | "stage1_review_reject"
   | "complete_stage1"
   | "schedule_stage2"
   | "complete_stage2"
@@ -164,29 +174,36 @@ export async function POST(req: NextRequest) {
     const emailWarnings: string[] = [];
 
     if (action === "send_panel_invites") {
-      const setup = merged.setup;
-      if (!setup?.interview_start_at) {
+      const setup = merged.setup ?? {};
+      if (!setup.interview_start_at) {
         return NextResponse.json(
-          { error: "Interview start date and time are required." },
+          { error: "Stage 1 interview start date and time are required." },
           { status: 400 },
         );
       }
-      const validMembers = (setup.members ?? []).filter(
+      const stage1Members = ensureMemberTokens(
+        setup.stage1_members ?? setup.members ?? [],
+      );
+      const validMembers = stage1Members.filter(
         (m) => m.name.trim() && m.email.trim(),
       );
       if (validMembers.length === 0) {
         return NextResponse.json(
-          { error: "Add at least one panel member with name and email." },
+          { error: "Add at least one Stage 1 panel member with name and email." },
           { status: 400 },
         );
       }
 
       const inviteResult = await sendAllPanelInvites({
-        members: validMembers,
+        members: validMembers.map((m) => ({
+          name: m.name,
+          email: m.email,
+          access_token: m.access_token,
+          stage: 1 as const,
+        })),
         candidateName: application.full_name,
         roleTitle: application.role_title,
         referenceNumber: application.reference_number,
-        applicationId: application_id,
         interviewStartAt: setup.interview_start_at,
         location: setup.location,
       });
@@ -226,7 +243,8 @@ export async function POST(req: NextRequest) {
         ...merged,
         setup: {
           ...setup,
-          members: validMembers,
+          stage1_members: validMembers,
+          stage1_invites_sent_at: new Date().toISOString(),
           invites_sent_at: new Date().toISOString(),
           candidate_invite_sent_at: candidateInviteResult.sent
             ? new Date().toISOString()
@@ -234,6 +252,168 @@ export async function POST(req: NextRequest) {
         },
         current_stage: 1,
       };
+    }
+
+    if (action === "send_stage2_invites") {
+      const setup = merged.setup ?? {};
+      const scheduled = stage2_scheduled_at ?? setup.stage2_scheduled_at;
+      if (!scheduled) {
+        return NextResponse.json(
+          { error: "Stage 2 date and time are required." },
+          { status: 400 },
+        );
+      }
+
+      const stage2Members = ensureMemberTokens(setup.stage2_members ?? []);
+      const validMembers = stage2Members.filter(
+        (m) => m.name.trim() && m.email.trim(),
+      );
+      if (validMembers.length === 0) {
+        return NextResponse.json(
+          { error: "Add at least one Stage 2 panel member." },
+          { status: 400 },
+        );
+      }
+
+      const inviteResult = await sendAllPanelInvites({
+        members: validMembers.map((m) => ({
+          name: m.name,
+          email: m.email,
+          access_token: m.access_token,
+          stage: 2 as const,
+        })),
+        candidateName: application.full_name,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+        interviewStartAt: scheduled,
+        location: setup.stage2_location ?? setup.location,
+      });
+
+      if (inviteResult.failed.length) {
+        emailWarnings.push(...inviteResult.failed);
+      }
+
+      const scheduleResult = await sendStage2ScheduleEmail({
+        candidateName: application.full_name,
+        candidateEmail: application.email,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+        scheduledAt: scheduled,
+        location: setup.stage2_location ?? setup.location,
+        stage2Duration: guide.stageDurations.stage2,
+        practicalExpectations: buildCandidatePracticalExpectations(guide),
+      });
+
+      if (!scheduleResult.sent) {
+        emailWarnings.push(
+          scheduleResult.error ?? "Stage 2 schedule email not sent",
+        );
+      }
+
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage2_members: validMembers,
+          stage2_invites_sent_at: new Date().toISOString(),
+          stage2_scheduled_at: scheduled,
+        },
+        stage2_scheduled_at: scheduled,
+        stage2_schedule_sent_at: scheduleResult.sent
+          ? new Date().toISOString()
+          : merged.stage2_schedule_sent_at,
+        current_stage: 2,
+      };
+    }
+
+    if (action === "submit_hr_stage1") {
+      const hrStage1 = merged.hr_submission?.stage1;
+      if (!hrStage1) {
+        return NextResponse.json(
+          { error: "HR Stage 1 data is missing." },
+          { status: 400 },
+        );
+      }
+      const scored = scoreSubmission(guide, hrStage1, 1);
+      merged = {
+        ...merged,
+        hr_submission: {
+          ...merged.hr_submission,
+          stage1: {
+            ...hrStage1,
+            submitted_at: new Date().toISOString(),
+            area_scores: scored.areaScores,
+            total_weighted: scored.total,
+          },
+        },
+        screening: hrStage1.screening,
+        question_ratings: hrStage1.question_ratings,
+      };
+    }
+
+    if (action === "submit_hr_stage2") {
+      const hrStage2 = merged.hr_submission?.stage2;
+      if (!hrStage2) {
+        return NextResponse.json(
+          { error: "HR Stage 2 data is missing." },
+          { status: 400 },
+        );
+      }
+      const scored = scoreSubmission(guide, hrStage2, 2);
+      merged = {
+        ...merged,
+        hr_submission: {
+          ...merged.hr_submission,
+          stage2: {
+            ...hrStage2,
+            submitted_at: new Date().toISOString(),
+            area_scores: scored.areaScores,
+            total_weighted: scored.total,
+          },
+        },
+        scenario_ratings: hrStage2.scenario_ratings,
+        stage2_completed_at: new Date().toISOString(),
+        current_stage: 3,
+      };
+    }
+
+    if (action === "stage1_review_pass") {
+      const avg = stageAverage(merged, guide, 1);
+      merged = {
+        ...merged,
+        stage1_review: {
+          average_score: avg,
+          passed: true,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: submitted_by,
+        },
+        stage1_completed_at: new Date().toISOString(),
+        current_stage: 2,
+      };
+    }
+
+    if (action === "stage1_review_reject") {
+      const avg = stageAverage(merged, guide, 1);
+      merged = {
+        ...merged,
+        stage1_review: {
+          average_score: avg,
+          passed: false,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: submitted_by,
+        },
+        stage1_completed_at: new Date().toISOString(),
+      };
+
+      const rejectResult = await sendRejectionEmail({
+        candidateName: application.full_name,
+        candidateEmail: application.email,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+      });
+      if (!rejectResult.sent) {
+        emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
+      }
     }
 
     if (action === "complete_stage1") {
@@ -289,18 +469,17 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    const { areaScores, total } = computeWeightedScore(
-      guide,
-      merged.question_ratings ?? {},
-      merged.scenario_ratings ?? {},
-    );
+    const combined = combinedInterviewAverage(merged, guide);
+    const s1Avg = stageAverage(merged, guide, 1);
+    const s2Avg = stageAverage(merged, guide, 2);
 
     merged = {
       ...merged,
       summary: {
         ...merged.summary,
-        area_scores: areaScores,
-        total_weighted: total,
+        stage1_average: s1Avg,
+        stage2_average: s2Avg,
+        total_weighted: combined,
       },
     };
 
@@ -308,14 +487,11 @@ export async function POST(req: NextRequest) {
       interview_form_data: merged,
     };
 
+    if (action === "stage1_review_reject") {
+      updates.status = "rejected";
+    }
+
     if (action === "finalize") {
-      const decision = merged.summary?.decision;
-      if (!decision) {
-        return NextResponse.json(
-          { error: "Select a panel decision before submitting the interview." },
-          { status: 400 },
-        );
-      }
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
       if (application.status === "shortlisted") {
@@ -338,7 +514,7 @@ export async function POST(req: NextRequest) {
       const decision = merged.summary?.decision;
       const validationError = validatePanelDecision(
         decision,
-        merged.summary?.total_weighted,
+        merged.summary?.total_weighted ?? combined,
       );
       if (validationError || !decision) {
         return NextResponse.json(
@@ -403,7 +579,7 @@ export async function POST(req: NextRequest) {
         }
       }
     } else if (
-      action === "send_panel_invites" &&
+      (action === "send_panel_invites" || action === "send_stage2_invites") &&
       application.status === "shortlisted"
     ) {
       updates.status = "interview";

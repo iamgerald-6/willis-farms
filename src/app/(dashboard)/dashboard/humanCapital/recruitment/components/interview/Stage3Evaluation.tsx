@@ -5,19 +5,73 @@ import {
   RATING_LABELS,
 } from "@/lib/careers/interviewFormConfigs";
 import {
-  canConfirmHire,
   observedDisqualifiers,
   scoreStanding,
   standingLabel,
 } from "@/lib/careers/panelDecision";
-import {
-  PANEL_DECISIONS,
-  type InterviewFormData,
-  type PanelDecision,
-} from "@/lib/careers/types";
+import type { InterviewFormData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { gradersForStage, stageAverage } from "@/lib/careers/panelInterview";
 import { AlertTriangle } from "lucide-react";
 import { StageInfoBanner } from "./shared";
+
+function GraderMatrix({
+  formData,
+  guide,
+  stage,
+}: {
+  formData: InterviewFormData;
+  guide: InterviewGuideConfig;
+  stage: 1 | 2;
+}) {
+  const graders = gradersForStage(formData, guide, stage);
+  const avg = stageAverage(formData, guide, stage);
+
+  if (graders.length === 0) {
+    return <p className="text-xs text-gray-400">No graders for this stage.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto border border-gray-200 rounded-xl mb-4">
+      <table className="w-full text-sm min-w-[400px]">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-4 py-2 font-semibold text-gray-600">Grader</th>
+            <th className="text-center px-4 py-2 font-semibold text-gray-600">Score</th>
+            <th className="text-center px-4 py-2 font-semibold text-gray-600">Submitted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {graders.map((g) => (
+            <tr key={g.id} className="border-b border-gray-100">
+              <td className="px-4 py-2 text-gray-900">
+                {g.label}
+                <span className="text-xs text-gray-400 ml-1">({g.role})</span>
+              </td>
+              <td className="px-4 py-2 text-center font-medium">
+                {g.total?.toFixed(2) ?? "—"}
+              </td>
+              <td className="px-4 py-2 text-center text-xs text-gray-500">
+                {g.submitted_at
+                  ? new Date(g.submitted_at).toLocaleDateString("en-GB")
+                  : "Pending"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 font-semibold">
+            <td className="px-4 py-2">Stage {stage} average</td>
+            <td className="px-4 py-2 text-center text-red-700">
+              {avg?.toFixed(2) ?? "—"}
+            </td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
 
 type Props = {
   guide: InterviewGuideConfig;
@@ -60,27 +114,36 @@ export default function Stage3Evaluation({
   const total = scores.total;
   const standing = scoreStanding(total);
   const standingClass = STANDING_CLASSES[standing];
-  const hireAllowed = canConfirmHire(total);
   const observedDqs = observedDisqualifiers(formData, guide.disqualifiers);
 
   return (
     <div className="space-y-8">
       <StageInfoBanner
         stage={3}
-        title="Evaluation summary (Section D)"
+        title="Final evaluation — all panel scores"
         duration={guide.stageDurations.stage3}
         totalDuration={guide.duration}
       />
+
+      <section>
+        <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 1 scores</h3>
+        <GraderMatrix formData={formData} guide={guide} stage={1} />
+      </section>
+
+      <section>
+        <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 2 scores</h3>
+        <GraderMatrix formData={formData} guide={guide} stage={2} />
+      </section>
 
       {observedDqs.length > 0 && (
         <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-900">
-              Disqualifier(s) marked as observed
+              Critical concern(s) noted
             </p>
             <p className="text-xs text-amber-800 mt-1">
-              HR may still confirm hire after review — this does not automatically block the decision.
+              For HR awareness only — does not automatically change the hire decision.
             </p>
             <ul className="mt-2 space-y-1 text-xs text-amber-900">
               {observedDqs.map((d) => (
@@ -92,10 +155,7 @@ export default function Stage3Evaluation({
       )}
 
       <section>
-        <h3 className="text-sm font-bold text-gray-900 mb-3">
-          Section D — Weighted evaluation sheet
-        </h3>
-        {/* table unchanged */}
+        <h3 className="text-sm font-bold text-gray-900 mb-3">Combined scores</h3>
         <div className="overflow-x-auto border border-gray-200 rounded-xl">
           <table className="w-full text-sm min-w-[520px]">
             <thead>
@@ -179,91 +239,19 @@ export default function Stage3Evaluation({
       </section>
 
       <section>
-        <h3 className="text-sm font-bold text-gray-900 mb-3">Panel decision</h3>
-        {!hireAllowed && total != null && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-            Hire requires a weighted score of at least 3.3. Hold or Do not hire are available for this score.
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {PANEL_DECISIONS.map((d) => {
-            const isHire = d.value === "hire";
-            const disabled = readOnly || (isHire && !hireAllowed);
-            return (
-              <button
-                key={d.value}
-                type="button"
-                disabled={disabled}
-                onClick={() =>
-                  onChange({
-                    ...formData,
-                    summary: {
-                      ...formData.summary,
-                      decision: d.value as PanelDecision,
-                    },
-                  })
-                }
-                className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                  formData.summary?.decision === d.value
-                    ? "bg-red-600 text-white border-red-600"
-                    : "bg-white text-gray-700 border-gray-200"
-                } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
-              >
-                {d.label}
-              </button>
-            );
-          })}
-        </div>
-        <textarea
-          value={formData.summary?.decision_notes ?? ""}
-          onChange={(e) =>
-            onChange({
-              ...formData,
-              summary: {
-                ...formData.summary,
-                decision_notes: e.target.value,
-              },
-            })
-          }
-          readOnly={readOnly}
-          rows={3}
-          placeholder="Decision rationale and conditions"
-          className="w-full mt-3 border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
-        />
-        <div className="mt-3">
-          <label className="text-xs text-gray-500 block mb-1">
-            Recommended start date (optional)
-          </label>
-          <input
-            type="date"
-            value={formData.summary?.recommended_start_date ?? ""}
-            onChange={(e) =>
-              onChange({
-                ...formData,
-                summary: {
-                  ...formData.summary,
-                  recommended_start_date: e.target.value,
-                },
-              })
-            }
-            readOnly={readOnly}
-            disabled={readOnly}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
-          />
-        </div>
-      </section>
-
-      <section>
-        <h3 className="text-sm font-bold text-gray-900 mb-3">
-          Automatic disqualifiers
+        <h3 className="text-sm font-bold text-gray-900 mb-1">
+          Critical concerns checklist
         </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Note anything observed during the interview. These are for HR review — they do not automatically reject the candidate.
+        </p>
         <div className="space-y-2">
           {guide.disqualifiers.map((d, i) => (
             <div
               key={i}
-              className="flex flex-col sm:flex-row sm:items-center gap-2 border border-red-100 bg-red-50/50 rounded-lg p-3"
+              className="flex flex-col sm:flex-row sm:items-center gap-2 border border-gray-200 bg-gray-50 rounded-lg p-3"
             >
-              <p className="text-sm text-red-900 flex-1">{d}</p>
+              <p className="text-sm text-gray-800 flex-1">{d}</p>
               <div className="flex gap-1">
                 {(["yes", "no", ""] as const).map((v) => (
                   <button
@@ -279,11 +267,13 @@ export default function Stage3Evaluation({
                     }
                     className={`px-2 py-1 rounded text-xs font-medium border ${
                       formData.disqualifiers?.[`dq_${i}`]?.observed === v
-                        ? "bg-red-600 text-white border-red-600"
+                        ? v === "yes"
+                          ? "bg-amber-600 text-white border-amber-600"
+                          : "bg-gray-700 text-white border-gray-700"
                         : "bg-white border-gray-200"
                     } ${readOnly ? "opacity-60" : ""}`}
                   >
-                    {v === "yes" ? "Observed" : v === "no" ? "No" : "—"}
+                    {v === "yes" ? "Observed" : v === "no" ? "Not observed" : "—"}
                   </button>
                 ))}
               </div>
