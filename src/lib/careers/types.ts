@@ -172,6 +172,10 @@ export interface InterviewFormData {
     recommended_start_date?: string;
     decision_confirmed_at?: string;
     decision_confirmed_by?: string;
+    /** AI-generated read of the full Stage 1 + Stage 2 record — advisory only, HR still decides. */
+    ai_analysis?: string;
+    ai_recommendation?: PanelDecision;
+    ai_generated_at?: string;
   };
   /** @deprecated legacy panel fields — migrated on read */
   panel?: {

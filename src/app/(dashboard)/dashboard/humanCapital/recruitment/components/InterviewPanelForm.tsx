@@ -220,6 +220,22 @@ export default function InterviewPanelForm({
     },
   });
 
+  const finalAnalysisMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/final-analysis", {
+        application_id: applicationId,
+      }),
+    onSuccess: (res) => {
+      setFormData(
+        normalizeInterviewFormData(res.data.data.interview_form_data),
+      );
+      toast.success("AI analysis ready.");
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+    },
+  });
+
   const dummyScores = {
     areaScores: formData.summary?.area_scores ?? {},
     total: combinedScore,
@@ -378,6 +394,8 @@ export default function InterviewPanelForm({
               scores={dummyScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
+              onGenerateAnalysis={() => finalAnalysisMutation.mutate()}
+              isGeneratingAnalysis={finalAnalysisMutation.isPending}
             />
           )}
         </div>
