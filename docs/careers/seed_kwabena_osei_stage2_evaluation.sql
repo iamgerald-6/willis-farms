@@ -12,7 +12,9 @@
 --      with "invites sent" and a scheduled practical.
 --   3. Adds a fully submitted Stage 2 practical grading form from each of
 --      them, plus one from HR, ratings mostly 4s and 5s.
---   4. Sets status = 'interview'.
+--
+-- Status is left as-is (already 'interview' from the Stage 1 seed — that's
+-- when the real app flips it, not at Stage 2).
 --
 -- interview_submitted_at is deliberately left NULL, so opening the
 -- application lands you on the live "Final evaluation — all panel
@@ -48,7 +50,6 @@ ids as (
 )
 update public.job_applications ja
 set
-  status = 'interview',
   interview_form_data = coalesce(target.interview_form_data, '{}'::jsonb) || jsonb_build_object(
     'current_stage', 3,
 

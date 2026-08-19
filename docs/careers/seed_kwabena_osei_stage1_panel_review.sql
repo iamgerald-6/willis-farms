@@ -8,8 +8,9 @@
 -- and the candidate is passing.
 --
 -- What this does to the ONE matching application row:
---   1. Sets status = 'shortlisted' (unlocks the Interview tab in the UI —
---      harmless if AI screening already set this).
+--   1. Sets status = 'interview' — this matches the real app: sending
+--      Stage 1 panel invites is what flips status from 'shortlisted' to
+--      'interview' (not Stage 2), so we mirror that here too.
 --   2. Writes interview_form_data with:
 --        - 3 Stage 1 panel members (already "invited")
 --        - a submitted Stage 1 grading form from each of them
@@ -46,7 +47,7 @@ tokens as (
 )
 update public.job_applications ja
 set
-  status = 'shortlisted',
+  status = 'interview',
   interview_form_data = jsonb_build_object(
     'current_stage', 1,
 
