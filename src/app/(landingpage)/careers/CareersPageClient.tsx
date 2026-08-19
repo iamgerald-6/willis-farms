@@ -20,7 +20,7 @@ function JobCard({ posting }: { posting: JobPosting }) {
       <p className="mt-2 text-sm text-brand-gray">
         {posting.location} · {posting.employment_type}
       </p>
-      <p className="mt-4 text-sm leading-relaxed text-brand-gray">
+      <p className="mt-4 text-sm leading-relaxed text-brand-gray text-justify">
         {expanded ? posting.description : previewDescription(posting.description)}
       </p>
       {posting.description.length > 220 && (
@@ -33,15 +33,20 @@ function JobCard({ posting }: { posting: JobPosting }) {
         </button>
       )}
       <p className="mt-3 text-xs text-brand-gray">
-        Applications close{" "}
-        {new Date(posting.closes_at).toLocaleDateString("en-GB", {
+        Applications close on {" "}
+        {new Date(posting.closes_at).toLocaleString("en-GB", {
           day: "numeric",
           month: "long",
           year: "numeric",
-        })}
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+          timeZone: "Africa/Accra",
+        })}{" "}
+        GMT
       </p>
       <Link
-        href={`/apply/${posting.id}`}
+        href={`/careers/${posting.id}`}
         className="mt-5 inline-flex rounded-2xl bg-brand-red px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
       >
         Apply now

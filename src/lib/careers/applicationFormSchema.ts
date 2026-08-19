@@ -5,6 +5,7 @@ import {
   RECRUITMENT_MODULE_ID,
   getDefaultApplicationFormFields,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
 
 export type ApplicationFieldStep = "personal" | "experience" | "documents";
 
@@ -12,6 +13,7 @@ export type ApplicationFieldType =
   | "text"
   | "email"
   | "phone"
+  | "ghana_card"
   | "date"
   | "select"
   | "textarea"
@@ -19,7 +21,8 @@ export type ApplicationFieldType =
 
 export interface ApplicationFieldShowWhen {
   field: string;
-  equals: string;
+  equals?: string;
+  notEquals?: string;
 }
 
 export interface ApplicationFieldRules {
@@ -73,8 +76,14 @@ export function parseApplicationFieldRules(
       ? raw.options.map((o) => String(o))
       : undefined,
     showWhen:
-      showWhenRaw?.field && showWhenRaw?.equals
-        ? { field: String(showWhenRaw.field), equals: String(showWhenRaw.equals) }
+      showWhenRaw?.field && (showWhenRaw?.equals !== undefined || showWhenRaw?.notEquals !== undefined)
+        ? {
+            field: String(showWhenRaw.field),
+            ...(showWhenRaw.equals !== undefined ? { equals: String(showWhenRaw.equals) } : {}),
+            ...(showWhenRaw.notEquals !== undefined
+              ? { notEquals: String(showWhenRaw.notEquals) }
+              : {}),
+          }
         : undefined,
     accept: typeof raw?.accept === "string" ? raw.accept : undefined,
   };
@@ -123,8 +132,15 @@ export function isFieldVisible(
 ): boolean {
   const condition = field.rules.showWhen;
   if (!condition) return true;
-  const current = values[condition.field];
-  return String(current ?? "") === condition.equals;
+  const current = String(values[condition.field] ?? "");
+  if (condition.equals !== undefined) return current === condition.equals;
+  if (condition.notEquals !== undefined) {
+    // Don't reveal a "not this" field before the controlling field has
+    // even been answered — e.g. passport fields shouldn't appear just
+    // because nationality is still blank (which is trivially "not Ghana").
+    return current !== "" && current !== condition.notEquals;
+  }
+  return true;
 }
 
 export function visibleFieldsForStep(
@@ -142,17 +158,49 @@ export function validateStep(
 ): string[] {
   const errors: string[] = [];
   for (const field of visibleFieldsForStep(fields, step, values)) {
-    if (!field.rules.required) continue;
     const value = values[field.rules.fieldKey];
+
     if (field.rules.fieldType === "file") {
+      if (!field.rules.required) continue;
       const fileVal = value as { secure_url?: string } | null | undefined;
       if (!fileVal?.secure_url) {
         errors.push(`${field.label} is required.`);
       }
       continue;
     }
-    if (value === undefined || value === null || String(value).trim() === "") {
+
+    const isEmpty =
+      value === undefined || value === null || String(value).trim() === "";
+
+    if (field.rules.required && isEmpty) {
       errors.push(`${field.label} is required.`);
+      continue;
+    }
+
+    // Phone fields store "<country code><9 digits>" as one string (see
+    // PhoneNumberInput) — checked here, not just presence, whenever a
+    // value has been entered (even for an optional field like a second
+    // reference's phone), so a half-typed number can't slip through.
+    if (field.rules.fieldType === "phone" && !isEmpty) {
+      const raw = String(value).trim();
+      // Longest matching code wins (see PhoneNumberInput.tsx) — e.g.
+      // "+1684..." must match American Samoa, not the shorter "+1"
+      // (Canada/United States) that's also a valid prefix of it.
+      const matchedCode = COUNTRY_CODES.filter((c) => raw.startsWith(c.code)).sort(
+        (a, b) => b.code.length - a.code.length,
+      )[0];
+      const digits = matchedCode ? raw.slice(matchedCode.code.length) : "";
+      if (!matchedCode || !/^\d{9}$/.test(digits)) {
+        errors.push(`${field.label} needs a country code and exactly 9 digits.`);
+      }
+    }
+
+    // Ghana Card stores "GHA-XXXXXXXXX-X" as one string (see
+    // GhanaCardInput) — 9 digits, a dash, then the 1-digit check digit.
+    if (field.rules.fieldType === "ghana_card" && !isEmpty) {
+      if (!/^GHA-\d{9}-\d$/.test(String(value).trim())) {
+        errors.push(`${field.label} needs all 10 digits (9 digits + 1 check digit).`);
+      }
     }
   }
   return errors;

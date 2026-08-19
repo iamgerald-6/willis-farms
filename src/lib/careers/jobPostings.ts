@@ -3,6 +3,29 @@ import type { InterviewGuideKey } from "@/lib/careers/openings";
 
 export type JobPostingStatus = "published" | "closed";
 
+/** Field key -> human label, shared between the admin editor and the public details page. */
+export const JOB_POSTING_CONTENT_SECTIONS: {
+  key: JobPostingContentField;
+  label: string;
+}[] = [
+  { key: "role_scope", label: "Role Scope" },
+  { key: "key_responsibilities", label: "Key Responsibilities" },
+  { key: "minimum_qualifications", label: "Minimum Qualifications" },
+  { key: "preferred_qualifications", label: "Preferred Qualifications" },
+  { key: "experience", label: "Experience" },
+  { key: "required_skills_attributes", label: "Required Skills & Attributes" },
+  { key: "non_negotiable_standards", label: "Non-Negotiable Standards" },
+];
+
+export type JobPostingContentField =
+  | "role_scope"
+  | "key_responsibilities"
+  | "minimum_qualifications"
+  | "preferred_qualifications"
+  | "experience"
+  | "required_skills_attributes"
+  | "non_negotiable_standards";
+
 export interface JobPosting {
   id: string;
   slug: string;
@@ -12,6 +35,16 @@ export interface JobPosting {
   employment_type: string;
   summary: string;
   description: string;
+  // Long-form job description sections. Plain text, written using
+  // SectionTextEditor's shorthand ("# heading", "- bullet", "1. numbered",
+  // "*bold*", "_italic_") and formatted for display by SectionText.
+  role_scope: string;
+  key_responsibilities: string;
+  minimum_qualifications: string;
+  preferred_qualifications: string;
+  experience: string;
+  required_skills_attributes: string;
+  non_negotiable_standards: string;
   interview_guide_key: InterviewGuideKey;
   jd_file_url: string | null;
   jd_file_public_id: string | null;
@@ -29,6 +62,13 @@ export type JobPostingInput = {
   employment_type?: string;
   summary: string;
   description: string;
+  role_scope?: string;
+  key_responsibilities?: string;
+  minimum_qualifications?: string;
+  preferred_qualifications?: string;
+  experience?: string;
+  required_skills_attributes?: string;
+  non_negotiable_standards?: string;
   jd_file_url?: string | null;
   jd_file_public_id?: string | null;
   closes_at: string;

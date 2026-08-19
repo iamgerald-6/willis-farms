@@ -15,6 +15,8 @@ import type { JobPosting } from "@/lib/careers/jobPostings";
 import { formatPublicJobTitle } from "@/lib/careers/jobPostings";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { FormShell } from "@/components/Forms/FormShell";
+import { PhoneNumberInput } from "@/components/PhoneNumberInput";
+import { GhanaCardInput } from "@/components/GhanaCardInput";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -226,14 +228,34 @@ export default function JobApplicationWizard({
       );
     }
 
+    if (fieldType === "phone") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <PhoneNumberInput
+            value={String(value ?? "")}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "ghana_card") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <GhanaCardInput
+            value={String(value ?? "")}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+          />
+        </FieldBlock>
+      );
+    }
+
     const inputType =
       fieldType === "email"
         ? "email"
-        : fieldType === "phone"
-          ? "tel"
-          : fieldType === "date"
-            ? "date"
-            : "text";
+        : fieldType === "date"
+          ? "date"
+          : "text";
 
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>

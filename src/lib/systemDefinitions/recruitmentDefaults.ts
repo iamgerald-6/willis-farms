@@ -1,4 +1,5 @@
 import type { SystemOption } from "./types";
+import { COUNTRY_NAMES } from "@/lib/careers/countryNames";
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const RECRUITMENT_APPLICATION_FIELDS_LIST = "careers.applicationFields";
@@ -70,29 +71,23 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:nationality", "Nationality", "nationality", 7, {
       step: "personal",
       fieldKey: "nationality",
-      fieldType: "text",
-      required: true,
-    }),
-    field("opt:recruitment:field:citizen", "Ghana citizen?", "is_citizen", 8, {
-      step: "personal",
-      fieldKey: "is_citizen",
       fieldType: "select",
       required: true,
-      options: ["Yes", "No"],
+      options: COUNTRY_NAMES,
     }),
     field("opt:recruitment:field:ghana_card", "Ghana Card number", "ghana_card_no", 9, {
       step: "personal",
       fieldKey: "ghana_card_no",
-      fieldType: "text",
+      fieldType: "ghana_card",
       required: true,
-      showWhen: { field: "is_citizen", equals: "Yes" },
+      showWhen: { field: "nationality", equals: "Ghana" },
     }),
     field("opt:recruitment:field:passport_no", "Passport number", "passport_number", 10, {
       step: "personal",
       fieldKey: "passport_number",
       fieldType: "text",
       required: true,
-      showWhen: { field: "is_citizen", equals: "No" },
+      showWhen: { field: "nationality", notEquals: "Ghana" },
     }),
     field(
       "opt:recruitment:field:passport_bio",
@@ -105,7 +100,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldType: "file",
         required: true,
         accept: "image/*,.pdf",
-        showWhen: { field: "is_citizen", equals: "No" },
+        showWhen: { field: "nationality", notEquals: "Ghana" },
       },
     ),
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {

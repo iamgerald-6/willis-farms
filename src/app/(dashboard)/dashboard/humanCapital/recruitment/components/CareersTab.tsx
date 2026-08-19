@@ -6,26 +6,38 @@ import api from "@/lib/api";
 import type { JobPosting, JobPostingStatus } from "@/lib/careers/jobPostings";
 import {
   formatPublicJobTitle,
+  JOB_POSTING_CONTENT_SECTIONS,
   JOB_POSTING_STATUS_LABELS,
   normalizePostingStatus,
+  previewDescription,
 } from "@/lib/careers/jobPostings";
 import type { JobPostingOption } from "@/lib/careers/jobPostingOptions";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { IOSTimePicker } from "@/components/IOSTimePicker";
+import { SectionTextEditor } from "@/components/SectionTextEditor";
 import {
   Calendar,
+  ChevronDown,
+  Clock,
   FileText,
   Loader2,
+  Pencil,
   Plus,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
+  return new Date(iso).toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Africa/Accra",
   });
 }
 
@@ -56,8 +68,14 @@ type FormState = {
   job_title_key: string;
   location: string;
   employment_type: string;
-  summary: string;
   description: string;
+  role_scope: string;
+  key_responsibilities: string;
+  minimum_qualifications: string;
+  preferred_qualifications: string;
+  experience: string;
+  required_skills_attributes: string;
+  non_negotiable_standards: string;
   closes_at: string;
   status: JobPostingStatus;
   jd_file_url: string | null;
@@ -68,8 +86,14 @@ const emptyForm = (): FormState => ({
   job_title_key: "",
   location: "Eastern Region, Ghana",
   employment_type: "Full-time",
-  summary: "",
   description: "",
+  role_scope: "",
+  key_responsibilities: "",
+  minimum_qualifications: "",
+  preferred_qualifications: "",
+  experience: "",
+  required_skills_attributes: "",
+  non_negotiable_standards: "",
   closes_at: "",
   status: "published",
   jd_file_url: null,
@@ -82,6 +106,7 @@ export default function CareersTab() {
   const [editing, setEditing] = useState<JobPosting | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [uploadingJd, setUploadingJd] = useState(false);
+  const [extracting, setExtracting] = useState(false);
 
   const { data: postings = [], isLoading } = useQuery({
     queryKey: ["job_postings"],
@@ -105,9 +130,21 @@ export default function CareersTab() {
         job_title_key: form.job_title_key,
         location: form.location.trim(),
         employment_type: form.employment_type.trim(),
-        summary: form.summary.trim(),
+        summary: previewDescription(form.description.trim()),
         description: form.description.trim(),
-        closes_at: new Date(form.closes_at).toISOString(),
+        role_scope: form.role_scope,
+        key_responsibilities: form.key_responsibilities,
+        minimum_qualifications: form.minimum_qualifications,
+        preferred_qualifications: form.preferred_qualifications,
+        experience: form.experience,
+        required_skills_attributes: form.required_skills_attributes,
+        non_negotiable_standards: form.non_negotiable_standards,
+        // form.closes_at is "YYYY-MM-DDTHH:mm" from the date/time fields —
+        // treated as Ghana local time (always UTC+0, no DST), not the
+        // browser's own timezone. Appending "Z" stores it as literal UTC
+        // rather than letting `new Date(...)` reinterpret it using
+        // whatever timezone the admin's computer happens to be set to.
+        closes_at: `${form.closes_at}:00Z`,
         status: form.status,
         jd_file_url: form.jd_file_url,
         jd_file_public_id: form.jd_file_public_id,
@@ -142,6 +179,45 @@ export default function CareersTab() {
     onError: () => toast.error("Could not update posting status."),
   });
 
+  const handleExtract = async () => {
+    if (!form.jd_file_url) return;
+    setExtracting(true);
+    try {
+      const res = await api.post("/careers/postings/extract", {
+        file_url: form.jd_file_url,
+      });
+      const fields = res.data.data as {
+        summary: string;
+        role_scope: string;
+        key_responsibilities: string;
+        minimum_qualifications: string;
+        preferred_qualifications: string;
+        experience: string;
+        required_skills_attributes: string;
+        non_negotiable_standards: string;
+      };
+      setForm((f) => ({
+        ...f,
+        description: fields.summary || f.description,
+        role_scope: fields.role_scope || f.role_scope,
+        key_responsibilities: fields.key_responsibilities || f.key_responsibilities,
+        minimum_qualifications: fields.minimum_qualifications || f.minimum_qualifications,
+        preferred_qualifications: fields.preferred_qualifications || f.preferred_qualifications,
+        experience: fields.experience || f.experience,
+        required_skills_attributes: fields.required_skills_attributes || f.required_skills_attributes,
+        non_negotiable_standards: fields.non_negotiable_standards || f.non_negotiable_standards,
+      }));
+      toast.success("Fields filled in from the document — review before saving.");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        "Couldn't read that document.";
+      toast.error(message);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm({
@@ -157,8 +233,14 @@ export default function CareersTab() {
       job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
       location: posting.location,
       employment_type: posting.employment_type,
-      summary: posting.summary,
       description: posting.description,
+      role_scope: posting.role_scope ?? "",
+      key_responsibilities: posting.key_responsibilities ?? "",
+      minimum_qualifications: posting.minimum_qualifications ?? "",
+      preferred_qualifications: posting.preferred_qualifications ?? "",
+      experience: posting.experience ?? "",
+      required_skills_attributes: posting.required_skills_attributes ?? "",
+      non_negotiable_standards: posting.non_negotiable_standards ?? "",
       closes_at: posting.closes_at.slice(0, 16),
       status: postingStatus(posting),
       jd_file_url: posting.jd_file_url,
@@ -320,18 +402,69 @@ export default function CareersTab() {
                 </label>
               </div>
 
-              <label className="block">
-                <span className="text-xs font-medium text-gray-600">Short summary (card preview) *</span>
-                <textarea
-                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  rows={2}
-                  value={form.summary}
-                  onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
-                />
-              </label>
+              <div>
+                <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5" />
+                  JD document
+                </span>
+                <p className="mt-0.5 text-[11px] text-gray-400">
+                  Upload the job description document, or skip this and type the fields below manually.
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300">
+                    {uploadingJd ? (
+                      <Loader2 className="w-5 h-5 animate-spin text-red-600" />
+                    ) : (
+                      <Upload className="w-5 h-5 text-gray-400" />
+                    )}
+                    <span className="text-sm text-gray-600">
+                      {form.jd_file_url ? "JD uploaded — click to replace" : "Upload JD"}
+                    </span>
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept=".pdf,.doc,.docx,image/*"
+                      disabled={uploadingJd}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setUploadingJd(true);
+                        try {
+                          const uploaded = await uploadCareersFile(file, "CareersJD");
+                          setForm((f) => ({
+                            ...f,
+                            jd_file_url: uploaded.secure_url,
+                            jd_file_public_id: uploaded.public_id,
+                          }));
+                        } catch {
+                          toast.error("JD upload failed.");
+                        } finally {
+                          setUploadingJd(false);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {form.jd_file_url && (
+                    <button
+                      type="button"
+                      disabled={extracting}
+                      onClick={handleExtract}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
+                    >
+                      {extracting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" />
+                      )}
+                      {extracting ? "Reading document…" : "Auto-fill fields with AI"}
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">Full job description (public) *</span>
+                <span className="text-xs font-medium text-gray-600">Job summary *</span>
                 <textarea
                   className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   rows={6}
@@ -340,74 +473,76 @@ export default function CareersTab() {
                 />
               </label>
 
-              <div className="grid sm:grid-cols-2 gap-3">
+              {JOB_POSTING_CONTENT_SECTIONS.map((section) => (
+                <label key={section.key} className="block">
+                  <span className="text-xs font-medium text-gray-600">{section.label}</span>
+                  <div className="mt-1">
+                    <SectionTextEditor
+                      value={form[section.key]}
+                      onChange={(text) =>
+                        setForm((f) => ({ ...f, [section.key]: text }))
+                      }
+                    />
+                  </div>
+                </label>
+              ))}
+
+              <div className="flex flex-wrap items-end gap-14">
                 <label className="block">
                   <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5" />
-                    Closing date & time *
+                    Closing date *
                   </span>
                   <input
-                    type="datetime-local"
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.closes_at}
-                    onChange={(e) => setForm((f) => ({ ...f, closes_at: e.target.value }))}
+                    type="date"
+                    className="mt-1 h-10 w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    value={form.closes_at.split("T")[0] ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => {
+                        const time = f.closes_at.split("T")[1] || "00:00";
+                        return { ...f, closes_at: `${e.target.value}T${time}` };
+                      })
+                    }
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Status</span>
-                  <select
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        status: e.target.value as JobPostingStatus,
-                      }))
-                    }
-                  >
-                    <option value="published">Published</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </label>
-              </div>
-
-              <div>
-                <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5" />
-                  JD document (HR archive — not shown publicly)
-                </span>
-                <label className="mt-1 flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300">
-                  {uploadingJd ? (
-                    <Loader2 className="w-5 h-5 animate-spin text-red-600" />
-                  ) : (
-                    <Upload className="w-5 h-5 text-gray-400" />
-                  )}
-                  <span className="text-sm text-gray-600">
-                    {form.jd_file_url ? "JD uploaded — click to replace" : "Upload JD to Cloudinary"}
+                  <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Closing time *
                   </span>
-                  <input
-                    type="file"
-                    className="sr-only"
-                    accept=".pdf,.doc,.docx,image/*"
-                    disabled={uploadingJd}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setUploadingJd(true);
-                      try {
-                        const uploaded = await uploadCareersFile(file, "CareersJD");
+                  <div className="mt-1">
+                    <IOSTimePicker
+                      value={form.closes_at.split("T")[1] ?? ""}
+                      onChange={(time) =>
+                        setForm((f) => {
+                          const date = f.closes_at.split("T")[0] || "";
+                          return { ...f, closes_at: `${date}T${time}` };
+                        })
+                      }
+                    />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
+                    <Pencil className="w-3.5 h-3.5" />
+                    Status *
+                    </span>
+                  <div className="relative mt-1">
+                    <select
+                      className="h-10 w-40 appearance-none rounded-lg border border-gray-200 pl-3 pr-8 py-2 text-sm"
+                      value={form.status}
+                      onChange={(e) =>
                         setForm((f) => ({
                           ...f,
-                          jd_file_url: uploaded.secure_url,
-                          jd_file_public_id: uploaded.public_id,
-                        }));
-                      } catch {
-                        toast.error("JD upload failed.");
-                      } finally {
-                        setUploadingJd(false);
+                          status: e.target.value as JobPostingStatus,
+                        }))
                       }
-                    }}
-                  />
+                    >
+                      <option value="published">Published</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
+                  </div>
                 </label>
               </div>
             </div>
