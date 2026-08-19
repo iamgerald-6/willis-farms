@@ -86,8 +86,11 @@ export default function JobApplicationWizard({
       // is_citizen isn't asked directly anymore (see recruitmentDefaults.ts)
       // — it's derived from Nationality so the existing Ghana Card /
       // Passport showWhen rules (which key off is_citizen) keep working.
+      // Blank nationality must clear is_citizen back to blank too — otherwise
+      // switching nationality back to "Select…" left is_citizen stuck at
+      // "No" (blank isn't "Ghana"), keeping Passport visible forever.
       if (key === "nationality") {
-        next.is_citizen = value === "Ghana" ? "Yes" : "No";
+        next.is_citizen = !value ? "" : value === "Ghana" ? "Yes" : "No";
       }
       return next;
     });
@@ -384,6 +387,18 @@ export default function JobApplicationWizard({
       <p className="text-xs text-gray-500 mb-6">
         {APPLICATION_STEP_LABELS[step as ApplicationFieldStep]}
       </p>
+
+      {/* TEMPORARY DEBUG — remove once the nationality/passport default is confirmed fixed */}
+      <div className="mb-4 text-xs font-mono text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        DEBUG — nationality: {JSON.stringify(values.nationality ?? null)} · is_citizen:{" "}
+        {JSON.stringify(values.is_citizen ?? null)}
+        <br />
+        ghana_card showWhen:{" "}
+        {JSON.stringify(fields.find((f) => f.rules.fieldKey === "ghana_card_no")?.rules.showWhen ?? null)}
+        <br />
+        passport_number showWhen:{" "}
+        {JSON.stringify(fields.find((f) => f.rules.fieldKey === "passport_number")?.rules.showWhen ?? null)}
+      </div>
 
       {error && (
         <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">

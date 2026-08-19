@@ -44,7 +44,8 @@ type DraftRules = {
   required: boolean;
   options: string;
   showWhenField: string;
-  showWhenEquals: string;
+  showWhenMode: "equals" | "notEquals";
+  showWhenValue: string;
   accept: string;
   multiple: boolean;
 };
@@ -57,14 +58,29 @@ function rulesToDraft(rules: ReturnType<typeof parseApplicationFieldRules>): Dra
     required: rules.required ?? false,
     options: (rules.options ?? []).join(", "),
     showWhenField: rules.showWhen?.field ?? "",
-    showWhenEquals: rules.showWhen?.equals ?? "",
+    showWhenMode: rules.showWhen?.notEquals !== undefined ? "notEquals" : "equals",
+    showWhenValue: rules.showWhen?.notEquals ?? rules.showWhen?.equals ?? "",
     accept: rules.accept ?? "",
     multiple: rules.multiple ?? false,
   };
 }
 
-function draftToRules(draft: DraftRules): Record<string, unknown> {
+/**
+ * Builds the rules object to save. `base` should be the field's raw,
+ * unparsed rules from the database (or {} when creating a new field) —
+ * everything in it is preserved except the specific keys this form
+ * actually manages. This form only surfaces a subset of possible rules
+ * properties, so rebuilding from scratch on every save silently dropped
+ * anything it didn't know about (e.g. this used to always lose "multiple"
+ * and "notEquals"-based showWhen conditions on any edit, even unrelated
+ * ones like a label change).
+ */
+function draftToRules(
+  draft: DraftRules,
+  base: Record<string, unknown> = {},
+): Record<string, unknown> {
   const rules: Record<string, unknown> = {
+    ...base,
     step: draft.step,
     fieldKey: draft.fieldKey.trim(),
     fieldType: draft.fieldType,
@@ -73,17 +89,23 @@ function draftToRules(draft: DraftRules): Record<string, unknown> {
   if (draft.fieldType === "select" && draft.options.trim()) {
     rules.options = draft.options.split(",").map((s) => s.trim()).filter(Boolean);
   }
-  if (draft.showWhenField.trim() && draft.showWhenEquals.trim()) {
+  if (draft.showWhenField.trim() && draft.showWhenValue.trim()) {
     rules.showWhen = {
       field: draft.showWhenField.trim(),
-      equals: draft.showWhenEquals.trim(),
+      ...(draft.showWhenMode === "notEquals"
+        ? { notEquals: draft.showWhenValue.trim() }
+        : { equals: draft.showWhenValue.trim() }),
     };
+  } else if (!draft.showWhenField.trim()) {
+    delete rules.showWhen;
   }
   if (draft.fieldType === "file" && draft.accept.trim()) {
     rules.accept = draft.accept.trim();
   }
   if (draft.fieldType === "file" && draft.multiple) {
     rules.multiple = true;
+  } else {
+    delete rules.multiple;
   }
   return rules;
 }
@@ -105,7 +127,8 @@ export default function ApplicationFormEditor({
     required: false,
     options: "",
     showWhenField: "",
-    showWhenEquals: "",
+    showWhenMode: "equals",
+    showWhenValue: "",
     accept: "",
     multiple: false,
   });
@@ -264,7 +287,10 @@ export default function ApplicationFormEditor({
                               patch: {
                                 label: editLabel.trim(),
                                 legacy_value: editDraft.fieldKey.trim(),
-                                rules: draftToRules(editDraft),
+                                rules: draftToRules(
+                                  editDraft,
+                                  option.rules as Record<string, unknown>,
+                                ),
                               },
                             });
                           }}
@@ -433,7 +459,7 @@ function FieldDraftForm({
         </>
       )}
 
-      <div className="grid sm:grid-cols-2 gap-2">
+      <div className="grid sm:grid-cols-3 gap-2">
         <label className="block">
           <span className="text-xs text-gray-500">Show when field (optional)</span>
           <input
@@ -443,11 +469,27 @@ function FieldDraftForm({
           />
         </label>
         <label className="block">
-          <span className="text-xs text-gray-500">Equals value</span>
+          <span className="text-xs text-gray-500">Condition</span>
+          <select
+            className={inputClass}
+            value={draft.showWhenMode}
+            onChange={(e) =>
+              onDraftChange({
+                ...draft,
+                showWhenMode: e.target.value as "equals" | "notEquals",
+              })
+            }
+          >
+            <option value="equals">Equals</option>
+            <option value="notEquals">Not equals</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-xs text-gray-500">Value</span>
           <input
             className={inputClass}
-            value={draft.showWhenEquals}
-            onChange={(e) => onDraftChange({ ...draft, showWhenEquals: e.target.value })}
+            value={draft.showWhenValue}
+            onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
           />
         </label>
       </div>
