@@ -212,23 +212,34 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
+  // TEST-ONLY override: /api/cron/careers-daily-digest?includeToday=1
+  // widens the window to also include applications submitted today, so you
+  // can submit a test application and grade it in the same sitting instead
+  // of waiting for tomorrow's run. Remove this block once testing is done —
+  // the real cron never sends this query param, so it has no effect on the
+  // scheduled 8am run.
+  const includeToday = req.nextUrl.searchParams.get("includeToday") === "1";
+
   try {
     const now = new Date();
     const todayUtcMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const yesterdayStart = new Date(todayUtcMidnight.getTime() - 24 * 60 * 60 * 1000);
-    const dateLabel = yesterdayStart.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+    const windowEnd = includeToday ? now : todayUtcMidnight;
+    const dateLabel = includeToday
+      ? `${yesterdayStart.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} – today (TEST RUN)`
+      : yesterdayStart.toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
 
     const { data: rows, error } = await supabaseAdmin
       .from("job_applications")
       .select("id, status, role_title, job_posting_id, cv_url, ai_screening")
       .eq("submission_status", "submitted")
       .gte("created_at", yesterdayStart.toISOString())
-      .lt("created_at", todayUtcMidnight.toISOString());
+      .lt("created_at", windowEnd.toISOString());
 
     if (error) throw error;
 
