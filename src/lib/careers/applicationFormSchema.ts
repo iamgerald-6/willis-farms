@@ -18,7 +18,8 @@ export type ApplicationFieldType =
   | "select"
   | "textarea"
   | "file"
-  | "work_history";
+  | "work_history"
+  | "education_history";
 
 export interface WorkHistoryEntry {
   company: string;
@@ -26,6 +27,14 @@ export interface WorkHistoryEntry {
   start: string; // "YYYY-MM"
   end: string; // "YYYY-MM", ignored when current is true
   current: boolean;
+}
+
+export interface EducationEntry {
+  institutionType: string; // University, High School, College, Diploma, Other
+  institutionName: string;
+  yearStarted: string; // "YYYY"
+  yearCompleted: string; // "YYYY"
+  degree: string; // optional — degree/qualification obtained, if applicable
 }
 
 export interface ApplicationFieldShowWhen {
@@ -196,6 +205,30 @@ export function validateStep(
       if (hasIncompleteEntry) {
         errors.push(
           `${field.label}: fill in the place of work, job title, and dates for every entry (or remove the incomplete one).`,
+        );
+      }
+      continue;
+    }
+
+    // Education history stores an array of entries (see
+    // EducationHistoryInput) — degree is optional (not every institution
+    // type has one), everything else is required per entry.
+    if (field.rules.fieldType === "education_history") {
+      const entries = Array.isArray(value) ? (value as EducationEntry[]) : [];
+      if (field.rules.required && entries.length === 0) {
+        errors.push(`${field.label} is required — add at least one entry.`);
+        continue;
+      }
+      const hasIncompleteEntry = entries.some(
+        (entry) =>
+          !entry?.institutionType?.trim() ||
+          !entry?.institutionName?.trim() ||
+          !entry?.yearStarted?.trim() ||
+          !entry?.yearCompleted?.trim(),
+      );
+      if (hasIncompleteEntry) {
+        errors.push(
+          `${field.label}: fill in the institution type, name, and years for every entry (or remove the incomplete one).`,
         );
       }
       continue;

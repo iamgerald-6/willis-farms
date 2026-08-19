@@ -126,7 +126,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:education", "Educational qualifications", "education", 21, {
       step: "experience",
       fieldKey: "education",
-      fieldType: "textarea",
+      fieldType: "education_history",
       required: true,
     }),
     field(

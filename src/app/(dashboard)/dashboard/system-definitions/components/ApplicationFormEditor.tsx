@@ -34,6 +34,7 @@ const FIELD_TYPES: ApplicationFieldType[] = [
   "file",
   "ghana_card",
   "work_history",
+  "education_history",
 ];
 
 type DraftRules = {

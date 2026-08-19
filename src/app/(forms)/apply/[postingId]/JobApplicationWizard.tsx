@@ -18,6 +18,7 @@ import { FormShell } from "@/components/Forms/FormShell";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { WorkHistoryInput } from "@/components/WorkHistoryInput";
+import { EducationHistoryInput } from "@/components/EducationHistoryInput";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -268,6 +269,17 @@ export default function JobApplicationWizard({
       );
     }
 
+    if (fieldType === "education_history") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <EducationHistoryInput
+            value={value}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+          />
+        </FieldBlock>
+      );
+    }
+
     const inputType =
       fieldType === "email"
         ? "email"
@@ -328,7 +340,8 @@ export default function JobApplicationWizard({
             className={
               field.rules.fieldType === "textarea" ||
               field.rules.fieldType === "file" ||
-              field.rules.fieldType === "work_history"
+              field.rules.fieldType === "work_history" ||
+              field.rules.fieldType === "education_history"
                 ? "sm:col-span-2"
                 : ""
             }
