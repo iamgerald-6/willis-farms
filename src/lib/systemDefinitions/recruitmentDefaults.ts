@@ -31,6 +31,13 @@ function field(
 /** Git / pre-migration defaults for job application form fields. */
 export function getDefaultApplicationFormFields(): SystemOption[] {
   return [
+    field("opt:recruitment:field:cv", "Curriculum vitae (CV)", "cv", 0, {
+      step: "personal",
+      fieldKey: "cv",
+      fieldType: "file",
+      required: true,
+      accept: ".pdf,.doc,.docx,image/*",
+    }),
     field("opt:recruitment:field:first_name", "First name", "first_name", 1, {
       step: "personal",
       fieldKey: "first_name",
@@ -143,13 +150,6 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         multiple: true,
       },
     ),
-    field("opt:recruitment:field:cv", "Curriculum vitae (CV)", "cv", 30, {
-      step: "documents",
-      fieldKey: "cv",
-      fieldType: "file",
-      required: true,
-      accept: ".pdf,.doc,.docx,image/*",
-    }),
     field("opt:recruitment:field:cover", "Cover letter", "cover_letter", 31, {
       step: "documents",
       fieldKey: "cover_letter",

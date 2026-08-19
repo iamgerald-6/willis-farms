@@ -37,6 +37,16 @@ export interface EducationEntry {
   degree: string; // optional — degree/qualification obtained, if applicable
 }
 
+// Shared between EducationHistoryInput.tsx (the select options) and the
+// CV-extraction route (matching AI output against valid values).
+export const INSTITUTION_TYPES = [
+  "High School",
+  "College",
+  "Diploma Institution",
+  "University",
+  "Other",
+];
+
 export interface ApplicationFieldShowWhen {
   field: string;
   equals?: string;

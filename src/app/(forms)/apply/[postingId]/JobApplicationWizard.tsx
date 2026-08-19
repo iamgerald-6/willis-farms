@@ -8,7 +8,9 @@ import {
   type ApplicationFieldStep,
   type ApplicationFormData,
   type ApplicationFormField,
+  type EducationEntry,
   type UploadedFile,
+  type WorkHistoryEntry,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
@@ -73,6 +75,8 @@ export default function JobApplicationWizard({
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMessage, setDraftSavedMessage] = useState<string | null>(null);
   const [activeDraftToken, setActiveDraftToken] = useState(draftToken);
+  const [extractingCv, setExtractingCv] = useState(false);
+  const [cvFillNotice, setCvFillNotice] = useState<string | null>(null);
 
   const step = APPLICATION_STEPS[stepIndex];
   const stepFields = useMemo(
@@ -161,6 +165,86 @@ export default function JobApplicationWizard({
     }
   };
 
+  type ExtractedCvFields = {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    date_of_birth: string;
+    gender: string;
+    nationality: string;
+    work_experience: WorkHistoryEntry[];
+    education: EducationEntry[];
+  };
+
+  // Reads whatever the CV extraction route found and fills in ONLY the
+  // fields still blank — never overwrites something the applicant already
+  // typed (e.g. if they re-upload a different CV after editing manually).
+  // Everything it fills stays fully editable afterward.
+  const handleExtractCv = async (fileUrl: string, fileName: string) => {
+    setExtractingCv(true);
+    setCvFillNotice(null);
+    try {
+      const res = await fetch("/api/careers/applications/extract-cv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_url: fileUrl, file_name: fileName }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not read the CV");
+      const extracted = json.data as ExtractedCvFields;
+
+      let filledAnything = false;
+      setValues((prev) => {
+        const next = { ...prev };
+        const fillText = (key: string, val: string) => {
+          if (val && !String(next[key] ?? "").trim()) {
+            next[key] = val;
+            filledAnything = true;
+          }
+        };
+        fillText("first_name", extracted.first_name);
+        fillText("last_name", extracted.last_name);
+        fillText("email", extracted.email);
+        fillText("phone", extracted.phone);
+        fillText("date_of_birth", extracted.date_of_birth);
+        fillText("gender", extracted.gender);
+        if (extracted.nationality && !String(next.nationality ?? "").trim()) {
+          next.nationality = extracted.nationality;
+          next.is_citizen = extracted.nationality === "Ghana" ? "Yes" : "No";
+          filledAnything = true;
+        }
+        if (
+          extracted.work_experience.length > 0 &&
+          !(Array.isArray(next.work_experience) && next.work_experience.length > 0)
+        ) {
+          next.work_experience = extracted.work_experience;
+          filledAnything = true;
+        }
+        if (
+          extracted.education.length > 0 &&
+          !(Array.isArray(next.education) && next.education.length > 0)
+        ) {
+          next.education = extracted.education;
+          filledAnything = true;
+        }
+        return next;
+      });
+
+      setCvFillNotice(
+        filledAnything
+          ? "We've pre-filled some fields from your CV — please review everything before continuing."
+          : "We couldn't find anything in that CV to pre-fill — no problem, just fill in the fields below.",
+      );
+    } catch (e) {
+      // CV auto-fill is a convenience, not a requirement — fail quietly and
+      // let them fill the form manually.
+      console.error(e);
+    } finally {
+      setExtractingCv(false);
+    }
+  };
+
   const handleFileUpload = async (fieldKey: string, file: File, multiple: boolean) => {
     setUploadingKey(fieldKey);
     setError(null);
@@ -174,6 +258,9 @@ export default function JobApplicationWizard({
         setDraftSavedMessage(null);
       } else {
         setFieldValue(fieldKey, uploaded);
+      }
+      if (fieldKey === "cv") {
+        void handleExtractCv(uploaded.secure_url, uploaded.original_name);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
@@ -387,6 +474,19 @@ export default function JobApplicationWizard({
       <p className="text-xs text-gray-500 mb-6">
         {APPLICATION_STEP_LABELS[step as ApplicationFieldStep]}
       </p>
+
+      {extractingCv && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+          Reading your CV and filling in what we can find…
+        </div>
+      )}
+
+      {!extractingCv && cvFillNotice && (
+        <div className="mb-4 text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          {cvFillNotice}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">

@@ -2,14 +2,12 @@
 
 import { useId } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { EducationEntry } from "@/lib/careers/applicationFormSchema";
+import { INSTITUTION_TYPES, type EducationEntry } from "@/lib/careers/applicationFormSchema";
 
 type Props = {
   value: unknown;
   onChange: (next: EducationEntry[]) => void;
 };
-
-const INSTITUTION_TYPES = ["High School", "College", "Diploma Institution", "University", "Other"];
 
 function emptyEntry(): EducationEntry {
   return { institutionType: "", institutionName: "", yearStarted: "", yearCompleted: "", degree: "" };
