@@ -41,6 +41,13 @@ export const POLICY_CATEGORIES: PolicyCategoryDef[] = [
   },
 ];
 
+/**
+ * Character cap on a manual's description, enforced by both the upload
+ * form and the edit form — a single shared constant so the two can never
+ * drift out of sync with each other.
+ */
+export const POLICY_DESCRIPTION_MAX_CHARS = 100;
+
 export const POLICIES_PAGE_COPY = {
   title: "Procedures & Policies",
   searchPlaceholder: "Search manuals...",

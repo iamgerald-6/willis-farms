@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
+  Pencil,
+  History,
   Loader2,
   FileText,
   ChevronDown,
@@ -22,16 +24,29 @@ import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
 import ConfirmDeleteDialog from "./components/deletModal";
 import UploadManualModal from "./components/uploadModal";
+import EditManualModal from "./components/editModal";
+import PolicyHistoryDrawer from "./components/historyDrawer";
 import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
   getPolicyCategoryBadgeClass,
-  getPolicyCategoryFilterPills,
   getPolicyCategoryIconKey,
   POLICIES_PAGE_COPY,
   resolveNavIcon,
 } from "@/lib/moduleRegistry";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+// The four original categories are always offered as filter options (see
+// categoryOptions below), but the database no longer restricts `category` to
+// just these — manuals can be uploaded under any custom category (see
+// docs/policies/allow-custom-manual-categories.sql), so this is a plain
+// string everywhere now, not a fixed union.
+const BUILT_IN_CATEGORIES = [
+  "HR",
+  "Biosecurity",
+  "Finance Policies",
+  "Breeding Operations",
+];
 
 interface ManualVersion {
   version_id: string;
@@ -54,8 +69,6 @@ interface Manual {
   updated_at: string;
   versions: ManualVersion[];
 }
-
-const POLICY_FILTER_PILLS = getPolicyCategoryFilterPills();
 
 function PolicyCategoryBadge({ category }: { category: string }) {
   const iconKey = getPolicyCategoryIconKey(category);
@@ -312,10 +325,14 @@ function ManualCard({
   manual,
   isAdmin,
   onDelete,
+  onEdit,
+  onHistory,
 }: {
   manual: Manual;
   isAdmin: boolean;
   onDelete: (id: string, title: string) => void;
+  onEdit: (manual: Manual) => void;
+  onHistory: (manual: Manual) => void;
 }) {
   const latest = manual.versions[0];
 
@@ -334,19 +351,35 @@ function ManualCard({
             {manual.title}
           </h3>
           {manual.description && (
-            <p className="text-sm text-gray-500 mt-1 leading-relaxed line-clamp-2 break-words">
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed break-words text-justify">
               {manual.description}
             </p>
           )}
         </div>
         {isAdmin && (
-          <button
-            onClick={() => onDelete(manual.manual_id, manual.title)}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition flex-shrink-0"
-            title="Delete manual"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={() => onEdit(manual)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-[#C62828] hover:bg-red-50 transition"
+              title="Edit"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onHistory(manual)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition"
+              title="History"
+            >
+              <History className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onDelete(manual.manual_id, manual.title)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition"
+              title="Delete manual"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -371,9 +404,13 @@ function ManualCard({
 function AdminTableView({
   manuals,
   onDelete,
+  onEdit,
+  onHistory,
 }: {
   manuals: Manual[];
   onDelete: (id: string, title: string) => void;
+  onEdit: (manual: Manual) => void;
+  onHistory: (manual: Manual) => void;
 }) {
   return (
     <div className="w-full flex-1 flex flex-col">
@@ -397,17 +434,34 @@ function AdminTableView({
                       {manual.title}
                     </p>
                     {manual.description && (
-                      <p className="text-xs text-gray-400 line-clamp-2 mt-0.5 break-words">
+                      <p className="text-xs text-gray-400 mt-0.5 break-words text-justify">
                         {manual.description}
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={() => onDelete(manual.manual_id, manual.title)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => onEdit(manual)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                      title="Edit"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onHistory(manual)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                      title="History"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(manual.manual_id, manual.title)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                      title="Delete manual"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 justify-between border-t border-b border-gray-50 py-2">
@@ -489,11 +543,11 @@ function AdminTableView({
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 max-w-[220px]">
-                          <p className="font-medium text-gray-900 truncate">
+                          <p className="font-medium text-gray-900 break-words">
                             {manual.title}
                           </p>
                           {manual.description && (
-                            <p className="text-xs text-gray-400 truncate">
+                            <p className="text-xs text-gray-400 break-words text-justify">
                               {manual.description}
                             </p>
                           )}
@@ -524,7 +578,21 @@ function AdminTableView({
                       {latest.uploaded_by_name}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          onClick={() => onEdit(manual)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onHistory(manual)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                          title="History"
+                        >
+                          <History className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() =>
                             onDelete(manual.manual_id, manual.title)
@@ -579,6 +647,8 @@ export default function PoliciesPage() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchValue, setSearchValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editingManual, setEditingManual] = useState<Manual | null>(null);
+  const [historyManual, setHistoryManual] = useState<Manual | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
     manualId: string;
@@ -586,29 +656,47 @@ export default function PoliciesPage() {
   }>({ open: false, manualId: "", label: "" });
 
   // ── Fetch manuals ──
+  // Always fetch the full unfiltered list now — categories aren't a fixed
+  // set any more (see docs/policies/allow-custom-manual-categories.sql), so
+  // the category filter is applied client-side below, the same way it
+  // drives the dynamic category dropdown options.
   const { data, refetch, isLoading } = useQuery<{ manuals: Manual[] }>({
-    queryKey: ["polices", activeCategory],
+    queryKey: ["polices"],
     queryFn: async () => {
-      const params =
-        activeCategory !== "All" ? { category: activeCategory } : {};
-      const res = await api.get("/policies/get_policies", { params });
+      const res = await api.get("/policies/get_policies");
       return res.data;
     },
   });
 
   const manuals = data?.manuals ?? [];
 
-  // Category is filtered server-side (see queryKey above); the search box
-  // still needs a client-side pass over title/category/description.
-  const filtered = manuals.filter((m) => {
-    if (!searchValue) return true;
-    const q = searchValue.toLowerCase();
-    return (
-      m.title.toLowerCase().includes(q) ||
-      m.category.toLowerCase().includes(q) ||
-      m.description?.toLowerCase().includes(q)
+  // Built-in categories are always offered even with zero manuals in them
+  // yet; anything else (custom categories actually used, e.g. "Fire
+  // Service") is picked up automatically from the fetched data — mirrors
+  // the Skill Log page's employee/log-type filter dropdowns.
+  const categoryOptions = useMemo(() => {
+    const fromData = manuals.map((m) => m.category).filter(Boolean);
+    return Array.from(new Set([...BUILT_IN_CATEGORIES, ...fromData])).sort(
+      (a, b) => a.localeCompare(b),
     );
-  });
+  }, [manuals]);
+
+  // Combines the category pill filter with the search box's client-side
+  // pass over title/category/description.
+  const filtered = useMemo(() => {
+    return manuals.filter((m) => {
+      if (activeCategory !== "All" && m.category !== activeCategory) {
+        return false;
+      }
+      if (!searchValue) return true;
+      const q = searchValue.toLowerCase();
+      return (
+        m.title.toLowerCase().includes(q) ||
+        m.category.toLowerCase().includes(q) ||
+        m.description?.toLowerCase().includes(q)
+      );
+    });
+  }, [manuals, activeCategory, searchValue]);
 
   // ── Delete ──
   const { mutate: deleteManual, isPending: isDeleting } = useMutation({
@@ -690,7 +778,7 @@ export default function PoliciesPage() {
       {/* ── Category select (centered, matching the SOP browse page) ── */}
       <div className="flex justify-center mb-6 shrink-0">
         <CategorySelect
-          categories={POLICY_FILTER_PILLS}
+          categories={["All", ...categoryOptions]}
           selected={activeCategory}
           onSelect={setActiveCategory}
         />
@@ -706,6 +794,8 @@ export default function PoliciesPage() {
             onDelete={(id, title) =>
               setConfirmDelete({ open: true, manualId: id, label: title })
             }
+            onEdit={setEditingManual}
+            onHistory={setHistoryManual}
           />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-16 text-center flex-1 flex flex-col items-center justify-center min-h-[320px]">
@@ -729,6 +819,8 @@ export default function PoliciesPage() {
                 onDelete={(id, title) =>
                   setConfirmDelete({ open: true, manualId: id, label: title })
                 }
+                onEdit={setEditingManual}
+                onHistory={setHistoryManual}
               />
             ))}
           </div>
@@ -752,7 +844,24 @@ export default function PoliciesPage() {
         onClose={() => setUploadOpen(false)}
         onSuccess={refetch}
         uploadedById={currentUserId ?? ""}
+        categories={categoryOptions}
       />
+
+      <EditManualModal
+        open={!!editingManual}
+        onClose={() => setEditingManual(null)}
+        onSuccess={refetch}
+        manual={editingManual}
+        categories={categoryOptions}
+      />
+
+      {historyManual && (
+        <PolicyHistoryDrawer
+          manualId={historyManual.manual_id}
+          manualTitle={historyManual.title}
+          onClose={() => setHistoryManual(null)}
+        />
+      )}
     </div>
   );
 }

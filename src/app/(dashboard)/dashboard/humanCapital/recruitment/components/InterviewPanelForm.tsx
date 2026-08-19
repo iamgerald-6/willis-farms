@@ -97,6 +97,10 @@ export default function InterviewPanelForm({
 
   const workflowStep = interviewWorkflowStepV2(formData);
   const activeStep = manualStep ?? workflowStep;
+  const currentIdx = STEP_ORDER.indexOf(workflowStep);
+  const activeIdx = STEP_ORDER.indexOf(activeStep);
+  /** Viewing an earlier, already-completed step rather than the live one. */
+  const isPastStep = activeIdx < currentIdx;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;
@@ -200,6 +204,38 @@ export default function InterviewPanelForm({
     },
   });
 
+  const analysisMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/stage1-analysis", {
+        application_id: applicationId,
+      }),
+    onSuccess: (res) => {
+      setFormData(
+        normalizeInterviewFormData(res.data.data.interview_form_data),
+      );
+      toast.success("AI analysis ready.");
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+    },
+  });
+
+  const finalAnalysisMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/final-analysis", {
+        application_id: applicationId,
+      }),
+    onSuccess: (res) => {
+      setFormData(
+        normalizeInterviewFormData(res.data.data.interview_form_data),
+      );
+      toast.success("AI analysis ready.");
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+    },
+  });
+
   const dummyScores = {
     areaScores: formData.summary?.area_scores ?? {},
     total: combinedScore,
@@ -234,11 +270,29 @@ export default function InterviewPanelForm({
               steps={STEP_ORDER}
               current={activeStep}
               labels={STEP_ORDER.map((s) => STEP_LABELS[s])}
+              maxIndex={currentIdx}
+              onStepClick={(step) =>
+                setManualStep(step === workflowStep ? null : step)
+              }
             />
           )}
         </div>
 
         <div className="overflow-y-auto flex-1 p-6">
+          {isPastStep && (
+            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
+              <p className="text-xs text-amber-800">
+                Viewing a completed step — read-only.
+              </p>
+              <button
+                type="button"
+                onClick={() => setManualStep(null)}
+                className="text-xs font-medium text-amber-900 underline underline-offset-2 shrink-0"
+              >
+                Return to current step
+              </button>
+            </div>
+          )}
           {isLoading || !guide ? (
             <ListRowsSkeleton rows={4} />
           ) : activeStep === "panel" ? (
@@ -254,6 +308,7 @@ export default function InterviewPanelForm({
               }
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
+              readOnly={isPastStep}
             />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
@@ -279,7 +334,7 @@ export default function InterviewPanelForm({
             <Stage1ReviewStep
               guide={guide}
               formData={formData}
-              readOnly={!!formData.stage1_review?.reviewed_at}
+              readOnly={!!formData.stage1_review?.reviewed_at || isPastStep}
               onPass={() =>
                 saveMutation.mutate({ action: "stage1_review_pass", data: formData })
               }
@@ -287,6 +342,8 @@ export default function InterviewPanelForm({
                 saveMutation.mutate({ action: "stage1_review_reject", data: formData })
               }
               isPending={saveMutation.isPending}
+              onGenerateAnalysis={() => analysisMutation.mutate()}
+              isGeneratingAnalysis={analysisMutation.isPending}
             />
           ) : activeStep === "stage2_setup" ? (
             <Stage2SetupStep
@@ -301,6 +358,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              readOnly={isPastStep}
             />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
@@ -336,6 +394,8 @@ export default function InterviewPanelForm({
               scores={dummyScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
+              onGenerateAnalysis={() => finalAnalysisMutation.mutate()}
+              isGeneratingAnalysis={finalAnalysisMutation.isPending}
             />
           )}
         </div>

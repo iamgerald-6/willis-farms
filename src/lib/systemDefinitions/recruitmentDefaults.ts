@@ -1,4 +1,5 @@
 import type { SystemOption } from "./types";
+import { COUNTRY_NAMES } from "@/lib/careers/countryNames";
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const RECRUITMENT_APPLICATION_FIELDS_LIST = "careers.applicationFields";
@@ -30,6 +31,13 @@ function field(
 /** Git / pre-migration defaults for job application form fields. */
 export function getDefaultApplicationFormFields(): SystemOption[] {
   return [
+    field("opt:recruitment:field:cv", "Curriculum vitae (CV)", "cv", 0, {
+      step: "personal",
+      fieldKey: "cv",
+      fieldType: "file",
+      required: true,
+      accept: ".pdf,.doc,.docx,image/*",
+    }),
     field("opt:recruitment:field:first_name", "First name", "first_name", 1, {
       step: "personal",
       fieldKey: "first_name",
@@ -70,20 +78,28 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:nationality", "Nationality", "nationality", 7, {
       step: "personal",
       fieldKey: "nationality",
-      fieldType: "text",
-      required: true,
-    }),
-    field("opt:recruitment:field:citizen", "Ghana citizen?", "is_citizen", 8, {
-      step: "personal",
-      fieldKey: "is_citizen",
       fieldType: "select",
       required: true,
-      options: ["Yes", "No"],
+      options: COUNTRY_NAMES,
     }),
+    // is_citizen is never rendered (is_active: false below) — its value is
+    // auto-filled from Nationality on the client (JobApplicationWizard's
+    // setFieldValue) instead of being asked directly. Ghana Card/Passport
+    // visibility still keys off it, same as the original design.
+    {
+      ...field("opt:recruitment:field:citizen", "Ghana citizen?", "is_citizen", 8, {
+        step: "personal",
+        fieldKey: "is_citizen",
+        fieldType: "select",
+        required: true,
+        options: ["Yes", "No"],
+      }),
+      is_active: false,
+    },
     field("opt:recruitment:field:ghana_card", "Ghana Card number", "ghana_card_no", 9, {
       step: "personal",
       fieldKey: "ghana_card_no",
-      fieldType: "text",
+      fieldType: "ghana_card",
       required: true,
       showWhen: { field: "is_citizen", equals: "Yes" },
     }),
@@ -111,18 +127,18 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {
       step: "experience",
       fieldKey: "work_experience",
-      fieldType: "textarea",
+      fieldType: "work_history",
       required: true,
     }),
     field("opt:recruitment:field:education", "Educational qualifications", "education", 21, {
       step: "experience",
       fieldKey: "education",
-      fieldType: "textarea",
+      fieldType: "education_history",
       required: true,
     }),
     field(
       "opt:recruitment:field:cert",
-      "Certificates / qualifications (upload)",
+      "Educational Certificates",
       "certificates",
       22,
       {
@@ -131,15 +147,9 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldType: "file",
         required: true,
         accept: ".pdf,image/*",
+        multiple: true,
       },
     ),
-    field("opt:recruitment:field:cv", "Curriculum vitae (CV)", "cv", 30, {
-      step: "documents",
-      fieldKey: "cv",
-      fieldType: "file",
-      required: true,
-      accept: ".pdf,.doc,.docx,image/*",
-    }),
     field("opt:recruitment:field:cover", "Cover letter", "cover_letter", 31, {
       step: "documents",
       fieldKey: "cover_letter",

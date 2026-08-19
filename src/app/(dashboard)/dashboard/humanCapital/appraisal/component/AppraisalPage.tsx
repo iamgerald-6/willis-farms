@@ -1157,27 +1157,29 @@ export default function AppraisalForm({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <FieldLabel>Section Authorisations Held</FieldLabel>
             {isFillingSecond ? (
               <ReadOnlyField
-                label=""
+                label="Section Authorisations Held"
                 value={existingAppraisal?.section_authorisations_held}
               />
             ) : (
-              <select
-                {...register("section_authorisations_held")}
-                className={inputCls()}
-              >
-                <option value="">Select section authorisation</option>
-                {sectionAuthOptions.map((opt) => (
-                  <option
-                    key={opt.id}
-                    value={opt.legacy_value ?? opt.label}
-                  >
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <>
+                <FieldLabel>Section Authorisations Held</FieldLabel>
+                <select
+                  {...register("section_authorisations_held")}
+                  className={inputCls()}
+                >
+                  <option value="">Select section authorisation</option>
+                  {sectionAuthOptions.map((opt) => (
+                    <option
+                      key={opt.id}
+                      value={opt.legacy_value ?? opt.label}
+                    >
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
           </div>
           <div>

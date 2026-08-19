@@ -6,12 +6,11 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import {
   getDefaultPolicyCategoryLegacyValue,
-  getPolicyCategoryLegacyValues,
   POLICIES_PAGE_COPY,
+  POLICY_DESCRIPTION_MAX_CHARS,
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 
-const POLICY_CATEGORY_SUGGESTIONS = getPolicyCategoryLegacyValues();
 const DEFAULT_CATEGORY = getDefaultPolicyCategoryLegacyValue();
 
 export default function UploadManualModal({
@@ -19,14 +18,22 @@ export default function UploadManualModal({
   onClose,
   onSuccess,
   uploadedById,
+  categories,
 }: {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   uploadedById: string;
+  // The full set of categories actually in use (built-in + any custom ones
+  // already added elsewhere) — see categoryOptions in policies/page.tsx.
+  // Upload only ever picks from this list now; typing a brand-new category
+  // here is no longer allowed.
+  categories: string[];
 }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>(DEFAULT_CATEGORY);
+  const [category, setCategory] = useState<string>(
+    categories[0] ?? DEFAULT_CATEGORY,
+  );
   const [description, setDescription] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [versionNotes, setVersionNotes] = useState("");
@@ -59,7 +66,7 @@ export default function UploadManualModal({
   const handleClose = () => {
     if (isUploading) return;
     setTitle("");
-    setCategory(DEFAULT_CATEGORY);
+    setCategory(categories[0] ?? DEFAULT_CATEGORY);
     setDescription("");
     setVersionLabel("");
     setVersionNotes("");
@@ -166,22 +173,17 @@ export default function UploadManualModal({
               <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
                 Category
               </label>
-              <input
-                type="text"
-                list="manual-category-options"
+              <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. HR, or type a new one"
                 className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-              <datalist id="manual-category-options">
-                {POLICY_CATEGORY_SUGGESTIONS.map((c) => (
-                  <option key={c} value={c} />
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
-              </datalist>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Pick an existing one or type a new category.
-              </p>
+              </select>
               {errors.category && (
                 <p className="text-red-500 text-xs mt-1">{errors.category}</p>
               )}
@@ -212,11 +214,16 @@ export default function UploadManualModal({
             </label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) =>
+                setDescription(e.target.value.slice(0, POLICY_DESCRIPTION_MAX_CHARS))
+              }
               placeholder="Brief description of what this manual covers..."
               rows={2}
               className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
             />
+            <p className="text-xs text-gray-400 mt-1 text-right">
+              {description.length}/{POLICY_DESCRIPTION_MAX_CHARS} characters
+            </p>
           </div>
 
           {/* Version Notes */}

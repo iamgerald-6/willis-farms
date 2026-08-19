@@ -141,6 +141,26 @@ function supervisorName(log: SkillLog): string {
   return fullName(log.supervisor) ?? log.supervisor_name ?? "Unknown";
 }
 
+// review_period is stored as a plain string (no schema change) but is now
+// captured as a single YYYY-MM-DD date rather than free text or a quarter.
+// Format it for display; older logs filled in before this change may still
+// hold a legacy value (e.g. "Q1 2026") — those are shown as-is.
+function formatReviewDate(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// NOTE: sign-off eligibility used to be computed locally here (canSignOff,
+// using a gradeLevel() helper that turned out not to exist elsewhere in this
+// file — dead code). It's now handled by canApproveSkillLogRecord from
+// @/lib/skillLogAccess (see canApproveLog below), which is Gerald's
+// permission-engine equivalent.
+
 function StatCard({
   label,
   value,
@@ -224,7 +244,7 @@ function LogCard({
             <span className="hidden sm:block text-xs text-gray-300">·</span>
             <span className="flex items-center gap-1 text-xs text-gray-500">
               <Calendar className="w-3 h-3 flex-shrink-0" />
-              {log.review_period}
+              {formatReviewDate(log.review_period)}
             </span>
           </div>
           <p className="text-xs text-gray-400 mt-1.5">
@@ -359,7 +379,7 @@ function SignOffModal({
           <span className="font-semibold not-italic">{viewerName}</span>, hereby
           agree to sign off the competency assessment for{" "}
           <span className="font-semibold not-italic">{employeeName(log)}</span>{" "}
-          — {log.log_type} ({log.review_period}).{" "}
+          — {log.log_type} ({formatReviewDate(log.review_period)}).{" "}
           {log.overall_rating != null && (
             <>
               Overall supervisor rating:{" "}
@@ -825,7 +845,7 @@ export default function SkillLogsPage() {
                     Log Type
                   </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
-                    Review Period
+                    Date
                   </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
                     Filled By
@@ -907,7 +927,7 @@ export default function SkillLogsPage() {
                         {log.log_type}
                       </td>
                       <td className="px-4 py-3 text-gray-500">
-                        {log.review_period}
+                        {formatReviewDate(log.review_period)}
                       </td>
                       <td className="px-4 py-3 text-gray-500">
                         {supervisorName(log)}

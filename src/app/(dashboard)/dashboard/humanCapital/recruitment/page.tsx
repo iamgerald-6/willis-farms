@@ -10,6 +10,7 @@ import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
   PANEL_DECISIONS,
+  isAiFlagged,
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
@@ -38,6 +39,18 @@ const STATUS_STYLES: Record<ApplicationStatus, string> = {
   onboarding: "bg-teal-50 text-teal-700 border border-teal-200",
   offer: "bg-green-50 text-green-700 border border-green-200",
   rejected: "bg-red-50 text-red-700 border border-red-200",
+};
+
+const AI_RECOMMENDATION_LABELS: Record<string, string> = {
+  hire: "Hire",
+  hold: "Hold / reserve",
+  do_not_hire: "Do not hire",
+};
+
+const AI_RECOMMENDATION_CLASSES: Record<string, string> = {
+  hire: "bg-green-100 text-green-800",
+  hold: "bg-amber-100 text-amber-800",
+  do_not_hire: "bg-red-100 text-red-800",
 };
 
 function formatDate(iso: string) {
@@ -254,6 +267,18 @@ function ApplicationDetail({
               </a>
             )}
 
+            {application.ai_screening && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                  AI screening — {application.ai_screening.score}% match
+                </p>
+                <p className="text-sm text-purple-900">{application.ai_screening.summary}</p>
+                <p className="text-xs text-purple-500 mt-2">
+                  Screened {formatDate(application.ai_screening.screened_at)}
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                 Update status
@@ -318,6 +343,32 @@ function ApplicationDetail({
                       {application.interview_form_data.summary.total_weighted.toFixed(2)}
                     </strong>
                   </p>
+                )}
+                {application.interview_form_data.summary?.ai_analysis && (
+                  <div className="mt-2 pt-2 border-t border-indigo-100 space-y-1.5">
+                    <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">
+                      AI analysis
+                    </p>
+                    <p className="text-xs text-indigo-900 leading-relaxed">
+                      {application.interview_form_data.summary.ai_analysis}
+                    </p>
+                    {application.interview_form_data.summary.ai_recommendation && (
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          AI_RECOMMENDATION_CLASSES[
+                            application.interview_form_data.summary.ai_recommendation
+                          ]
+                        }`}
+                      >
+                        AI recommends:{" "}
+                        {
+                          AI_RECOMMENDATION_LABELS[
+                            application.interview_form_data.summary.ai_recommendation
+                          ]
+                        }
+                      </span>
+                    )}
+                  </div>
                 )}
                 <p className="text-xs text-indigo-700/80 mt-2">
                   Review scores and discuss as a team before confirming an outcome.
@@ -599,18 +650,137 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
+// Applications the AI screened at 60% or below (status "under_review"), plus
+// any HR has since confirmed "rejected" starting from that same AI call —
+// kept here rather than deleted so there's a record, per the retention
+// policy (up to 5 years). HR can open one and either shortlist it (override
+// the AI) or reject it, using the same status control as the main list.
+function AiRejectsTab({
+  applications,
+  isLoading,
+  onSelect,
+}: {
+  applications: JobApplication[];
+  isLoading: boolean;
+  onSelect: (application: JobApplication) => void;
+}) {
+  const pending = applications.filter((a) => a.status === "under_review");
+  const confirmed = applications.filter((a) => a.status === "rejected");
+
+  const renderRow = (a: JobApplication) => (
+    <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+      <td className="px-4 py-3">
+        <p className="font-medium text-gray-900">{a.full_name}</p>
+        <p className="text-xs text-gray-400">{a.email}</p>
+      </td>
+      <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+      <td className="px-4 py-3">
+        {a.ai_screening ? (
+          <div>
+            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              {a.ai_screening.score}% match
+            </span>
+            <p className="text-xs text-gray-500 mt-1 max-w-sm line-clamp-2">
+              {a.ai_screening.summary}
+            </p>
+          </div>
+        ) : (
+          <span className="text-xs text-gray-400">No score</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <span
+          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+        >
+          {STATUS_LABELS[a.status]}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-right">
+        <button
+          onClick={() => onSelect(a)}
+          className="text-xs font-medium text-red-600 hover:underline"
+        >
+          Review
+        </button>
+      </td>
+    </tr>
+  );
+
+  const renderTable = (rows: JobApplication[], emptyLabel: string) => (
+    <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+      <table className="w-full text-left text-sm min-w-[800px]">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">AI screening</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+            <th className="px-4 py-3 font-semibold text-gray-600 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <tr key={i} className="border-b border-gray-100">
+                <td colSpan={5} className="px-4 py-3">
+                  <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                </td>
+              </tr>
+            ))
+          ) : rows.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
+                {emptyLabel}
+              </td>
+            </tr>
+          ) : (
+            rows.map(renderRow)
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
+        Applications the AI scored at 60% or below against the job's requirements land here
+        instead of the main Applications list. Review each one and either shortlist it if you
+        disagree with the AI, or confirm the reject — confirmed rejects stay listed here rather
+        than being deleted.
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">
+          Awaiting your review ({pending.length})
+        </h3>
+        {renderTable(pending, "Nothing waiting on your review.")}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">
+          Confirmed rejects ({confirmed.length})
+        </h3>
+        {renderTable(confirmed, "No confirmed rejects yet.")}
+      </div>
+    </div>
+  );
+}
+
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
-    "applications" | "onboarding" | "careers"
+    "applications" | "onboarding" | "careers" | "ai_rejects"
   >(
     tabParam === "onboarding"
       ? "onboarding"
       : tabParam === "careers"
         ? "careers"
-        : "applications",
+        : tabParam === "ai_rejects"
+          ? "ai_rejects"
+          : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -655,6 +825,19 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
+  // Applications the AI has soft-rejected (or HR has since confirmed
+  // rejected, starting from an AI soft-reject) live in the AI Rejects tab
+  // instead of the main list — split once here so every view below just
+  // reads the right pool.
+  const mainApplications = useMemo(
+    () => (data ?? []).filter((a) => !isAiFlagged(a)),
+    [data],
+  );
+  const aiRejectApplications = useMemo(
+    () => (data ?? []).filter(isAiFlagged),
+    [data],
+  );
+
   // Cross-filtering: each field's option list is scoped by the OTHER active
   // filters (never by itself) — so picking Status = Interview narrows what
   // shows up under Name/Role to only candidates actually in that status.
@@ -673,36 +856,36 @@ function RecruitmentPageContent() {
     });
 
   const nameOptions = useMemo(() => {
-    const scoped = applyFilters(data ?? [], { role: roleFilters, status: statusFilters });
+    const scoped = applyFilters(mainApplications, { role: roleFilters, status: statusFilters });
     return Array.from(new Set(scoped.map((a) => a.full_name)))
       .sort((a, b) => a.localeCompare(b))
       .map((n) => ({ value: n, label: n }));
-  }, [data, roleFilters, statusFilters]);
+  }, [mainApplications, roleFilters, statusFilters]);
 
   const roleOptions = useMemo(() => {
-    const scoped = applyFilters(data ?? [], { name: nameFilters, status: statusFilters });
+    const scoped = applyFilters(mainApplications, { name: nameFilters, status: statusFilters });
     return Array.from(new Set(scoped.map((a) => a.role_title)))
       .sort((a, b) => a.localeCompare(b))
       .map((r) => ({ value: r, label: r }));
-  }, [data, nameFilters, statusFilters]);
+  }, [mainApplications, nameFilters, statusFilters]);
 
   const statusOptions = useMemo(() => {
-    const scoped = applyFilters(data ?? [], { name: nameFilters, role: roleFilters });
+    const scoped = applyFilters(mainApplications, { name: nameFilters, role: roleFilters });
     const present = new Set(scoped.map((a) => a.status));
     return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
       value: s,
       label: STATUS_LABELS[s],
     }));
-  }, [data, nameFilters, roleFilters]);
+  }, [mainApplications, nameFilters, roleFilters]);
 
   const filtered = useMemo(
     () =>
-      applyFilters(data ?? [], {
+      applyFilters(mainApplications, {
         name: nameFilters,
         role: roleFilters,
         status: statusFilters,
       }),
-    [data, nameFilters, roleFilters, statusFilters],
+    [mainApplications, nameFilters, roleFilters, statusFilters],
   );
 
   const hasActiveFilters =
@@ -719,6 +902,7 @@ function RecruitmentPageContent() {
   useEffect(() => {
     if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "careers") setActiveTab("careers");
+    else if (tabParam === "ai_rejects") setActiveTab("ai_rejects");
   }, [tabParam]);
 
   useEffect(() => {
@@ -772,12 +956,12 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "careers", "onboarding"] as const).map((tab) => (
+        {(["applications", "ai_rejects", "careers", "onboarding"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition flex items-center gap-1.5 ${
               activeTab === tab
                 ? "border-red-600 text-red-700"
                 : "border-transparent text-gray-500 hover:text-gray-800"
@@ -785,15 +969,24 @@ function RecruitmentPageContent() {
           >
             {tab === "applications"
               ? "Applications"
-              : tab === "careers"
-                ? "Careers"
-                : "Onboarding"}
+              : tab === "ai_rejects"
+                ? "AI Rejects"
+                : tab === "careers"
+                  ? "Careers"
+                  : "Onboarding"}
+            {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {aiRejectApplications.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {activeTab === "careers" ? (
         <CareersTab />
+      ) : activeTab === "ai_rejects" ? (
+        <AiRejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
       ) : (
@@ -924,7 +1117,7 @@ function RecruitmentPageContent() {
         </>
       )}
 
-      {selected && activeTab === "applications" && (
+      {selected && (activeTab === "applications" || activeTab === "ai_rejects") && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}

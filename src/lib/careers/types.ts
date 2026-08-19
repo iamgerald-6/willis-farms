@@ -53,8 +53,25 @@ export interface JobApplication {
   interview_form_data: InterviewFormData | null;
   interview_submitted_at: string | null;
   interview_submitted_by: string | null;
+  ai_screening?: AiScreening | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Result of the AI shortlisting pass — set once by the screen-applications
+ * cron job, read by the admin UI and the daily digest email. */
+export interface AiScreening {
+  score: number; // 0-100
+  summary: string;
+  model: string;
+  screened_at: string;
+}
+
+/** Applications the AI screening cron has flagged and that HR hasn't
+ * overridden back into the normal pipeline yet — these are the ones that
+ * belong in the "AI Rejects" tab instead of the main Applications list. */
+export function isAiFlagged(application: Pick<JobApplication, "ai_screening" | "status">): boolean {
+  return !!application.ai_screening && ["under_review", "rejected"].includes(application.status);
 }
 
 export interface PanelMember {
@@ -108,6 +125,10 @@ export interface Stage1Review {
   reviewed_at?: string;
   reviewed_by?: string;
   notes?: string;
+  /** AI-generated read of the panel's Stage 1 scores/notes — advisory only, HR still decides. */
+  ai_analysis?: string;
+  ai_recommendation?: "advance_to_stage2" | "reject";
+  ai_generated_at?: string;
 }
 
 export type InterviewStage = 1 | 2 | 3;
@@ -151,6 +172,10 @@ export interface InterviewFormData {
     recommended_start_date?: string;
     decision_confirmed_at?: string;
     decision_confirmed_by?: string;
+    /** AI-generated read of the full Stage 1 + Stage 2 record — advisory only, HR still decides. */
+    ai_analysis?: string;
+    ai_recommendation?: PanelDecision;
+    ai_generated_at?: string;
   };
   /** @deprecated legacy panel fields — migrated on read */
   panel?: {

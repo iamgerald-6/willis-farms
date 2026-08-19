@@ -8,12 +8,14 @@ export function RatingRow({
   value,
   notes,
   onChange,
+  readOnly = false,
 }: {
   label: string;
   lookFor?: string;
   value: number | null;
   notes: string;
   onChange: (rating: number | null, notes: string) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="border border-gray-100 rounded-xl p-4 space-y-3">
@@ -30,12 +32,13 @@ export function RatingRow({
           <button
             key={n}
             type="button"
+            disabled={readOnly}
             onClick={() => onChange(n, notes)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
               value === n
                 ? "bg-red-600 text-white border-red-600"
                 : "bg-white text-gray-600 border-gray-200 hover:border-red-300"
-            }`}
+            } ${readOnly ? "opacity-60" : ""}`}
             title={RATING_LABELS[n]}
           >
             {n}
@@ -45,9 +48,12 @@ export function RatingRow({
       <textarea
         value={notes}
         onChange={(e) => onChange(value, e.target.value)}
+        readOnly={readOnly}
         rows={2}
         placeholder="Evidence-based notes"
-        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2"
+        className={`w-full text-xs border border-gray-200 rounded-lg px-3 py-2 ${
+          readOnly ? "bg-gray-50 text-gray-500" : ""
+        }`}
       />
     </div>
   );
@@ -95,10 +101,16 @@ export function StepIndicator<T extends string>({
   steps,
   current,
   labels,
+  maxIndex,
+  onStepClick,
 }: {
   steps: T[];
   current: T;
   labels: string[];
+  /** Highest step index reached so far — steps beyond this can't be clicked into yet. */
+  maxIndex?: number;
+  /** When provided, already-reached steps become clickable (to view them read-only). */
+  onStepClick?: (step: T) => void;
 }) {
   const currentIdx = steps.indexOf(current);
 
@@ -107,25 +119,35 @@ export function StepIndicator<T extends string>({
       {steps.map((step, i) => {
         const done = i < currentIdx;
         const active = step === current;
+        const reachable = maxIndex == null || i <= maxIndex;
+        const clickable = !!onStepClick && reachable;
         return (
           <div
             key={step}
             className="flex items-center gap-1 sm:gap-2 shrink-0"
           >
-            <div
+            <button
+              type="button"
+              disabled={!clickable}
+              onClick={() => clickable && onStepClick?.(step)}
+              title={
+                clickable
+                  ? `View ${labels[i]}${i < (maxIndex ?? -1) ? " (read-only)" : ""}`
+                  : undefined
+              }
               className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-medium ${
                 active
                   ? "bg-red-600 text-white"
                   : done
                     ? "bg-red-50 text-red-800 border border-red-200"
                     : "bg-gray-100 text-gray-500"
-              }`}
+              } ${clickable ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
             >
               <span className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[10px]">
                 {done ? "✓" : i + 1}
               </span>
               <span className="hidden sm:inline">{labels[i]}</span>
-            </div>
+            </button>
             {i < steps.length - 1 && (
               <span className="text-gray-300 hidden sm:inline">→</span>
             )}

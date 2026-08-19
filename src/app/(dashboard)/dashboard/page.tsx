@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
+import { TMProject } from "@/types/taskManager";
 import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
+import { getStatusSummary } from "./humanCapital/appraisal/component/appraisalTypes";
+import type { JobApplication } from "@/lib/careers/types";
+import { STATUS_LABELS } from "@/lib/careers/types";
 import {
   Users,
   CalendarCheck,
@@ -18,23 +23,13 @@ import {
   Clock,
   FileText,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { DashboardOverviewSkeleton } from "@/components/skeletons/PageSkeletons";
-import {
-  buildOverviewQuickActions,
-  formatOverviewGreeting,
-  getModuleRoute,
-} from "@/lib/moduleRegistry";
-import {
-  hasUnrestrictedAccess,
-  resolveAccessProfile,
-  type PagePermissionKey,
-} from "@/lib/pagePermissions";
-import { canAccessPage } from "@/lib/permissionActions";
-import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { formatOverviewGreeting, getModuleRoute } from "@/lib/moduleRegistry";
 import {
   DonutChart,
-  AppraisalBarChart,
+  CategoryBarChart,
   HorizontalBarChart,
   SegmentedBar,
   ScoreRing,
@@ -42,6 +37,33 @@ import {
 } from "./components/DashboardCharts";
 
 const BRAND = "#C62828";
+
+// Fixed display order + representative stand-in record for each status the
+// Appraisal page can show (see getStatusSummary in appraisalTypes.ts) — used
+// to build the Appraisal progress chart's categories below.
+const APPRAISAL_STATUS_ORDER: Array<Parameters<typeof getStatusSummary>[0]> = [
+  {},
+  { submitted_by: "employee" },
+  { submitted_by: "supervisor" },
+  { submitted_by: "both" },
+  { status: "final_reviewed" },
+  { status: "reopened" },
+  { status: "locked" },
+];
+// A dedicated palette for the chart, keyed by position in
+// APPRAISAL_STATUS_ORDER rather than by tone — two statuses (Supervisor
+// Submitted and Both Submitted) share the same "blue" tone on the Appraisal
+// page's badges, which would make their bars indistinguishable if this chart
+// reused STATUS_TONE_COLOR. Every bar gets its own color instead.
+const APPRAISAL_STATUS_CHART_COLORS = [
+  "#9ca3af", // Not Started — gray
+  "#fbbf24", // Awaiting Supervisor — amber
+  "#60a5fa", // Supervisor Submitted — blue
+  "#6366f1", // Both Submitted — indigo
+  "#34d399", // Final Reviewed — emerald
+  "#a78bfa", // Reopened — purple
+  "#f87171", // Locked — red
+];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type LeaveRecord = {
@@ -67,7 +89,16 @@ type AppraisalRecord = {
   employee_name: string;
   review_quarter: string;
   review_year: number;
-  status: "draft" | "submitted" | "completed";
+  // Kept loose (not the old "draft"/"submitted"/"completed" union) — the
+  // appraisals API returns the real workflow fields below, and status itself
+  // is one of "open" | "submitted" | "final_reviewed" | "locked" | "reopened"
+  // (see AppraisalStatus in appraisalTypes.ts). getStatusSummary() is the
+  // single source of truth for turning these into a display label; nothing
+  // here should re-derive status meaning by comparing this field directly.
+  status: string;
+  submitted_by?: string | null;
+  locked_reason?: string | null;
+  appeal_exhausted?: boolean;
   employee_weighted_score: number | null;
   supervisor_weighted_score: number | null;
   promotion_readiness: string;
@@ -88,6 +119,60 @@ type SopRecord = {
   [key: string]: unknown;
 };
 
+// ── Recent activity source types ──────────────────────────────────────────────
+// These back the admin/manager/super_admin "sees everything" branch of
+// Recent activity — each maps 1:1 onto a GET response shape from its own
+// module's API, not a stored column of its own.
+type SopAuditEntry = {
+  id: string;
+  content_id: string;
+  content_title: string;
+  action: "added" | "edited" | "archived" | "restored" | "deleted";
+  performed_by_name: string;
+  performed_at: string;
+};
+
+type TmAuditEntry = {
+  id: string;
+  action: string;
+  new_values: Record<string, unknown> | null;
+  previous_values: Record<string, unknown> | null;
+  performed_by_name: string;
+  performed_at: string;
+  task_id?: string;
+  project_id?: string;
+};
+
+type TmProjectDeletionEntry = {
+  id: string;
+  project_name: string;
+  deleted_by_name: string;
+  deleted_at: string;
+};
+
+type ManualVersionRecord = {
+  version_id: string;
+  version_label: string;
+  uploaded_by_name: string;
+  uploaded_at: string;
+};
+
+type ManualRecord = {
+  manual_id: string;
+  title: string;
+  created_at: string;
+  versions: ManualVersionRecord[];
+};
+
+type PromotionRecord = {
+  id: string;
+  employee_name: string;
+  proposed_grade: string;
+  final_decision: string | null;
+  submitted_by_name: string | null;
+  created_at: string;
+};
+
 type StatCardProps = {
   label: string;
   value: string | number;
@@ -95,28 +180,19 @@ type StatCardProps = {
   sub?: string;
   accent?: boolean;
   loading?: boolean;
-};
-
-type QuickActionProps = {
-  label: string;
-  href: string;
-  icon: React.ElementType;
+  href?: string;
 };
 
 const ROUTE_LEAVE = () => getModuleRoute("mod:leave") ?? "/dashboard/humanCapital/leave";
 const ROUTE_APPRAISAL = () =>
   getModuleRoute("mod:appraisal") ?? "/dashboard/humanCapital/appraisal";
-const ROUTE_USERS = () =>
-  getModuleRoute("mod:users") ?? "/dashboard/access-control";
-const ROUTE_SKILL_LOG = () =>
-  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
 
 type AttentionItem = {
   id: string;
   title: string;
   subtitle: string;
   href: string;
-  type: "warning" | "info";
+  type: "warning" | "info" | "success";
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,30 +218,10 @@ function formatDateRange(start: string, end: string): string {
   return `${new Date(start).toLocaleDateString("en-GB", opts)} – ${new Date(end).toLocaleDateString("en-GB", opts)}`;
 }
 
-function groupAppraisalsByQuarter(data: AppraisalRecord[]) {
-  const map = new Map<string, { draft: number; done: number }>();
-  for (const a of data) {
-    const key = `${a.review_quarter} ${a.review_year}`;
-    const cur = map.get(key) ?? { draft: 0, done: 0 };
-    if (a.status === "draft") cur.draft += 1;
-    else cur.done += 1;
-    map.set(key, cur);
-  }
-  return Array.from(map.entries())
-    .slice(0, 6)
-    .map(([label, v]) => ({ label, ...v }));
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, sub, accent, loading }: StatCardProps) {
-  return (
-    <div
-      className={`rounded-2xl p-5 flex flex-col gap-3 border transition-shadow hover:shadow-sm ${
-        accent
-          ? "bg-[#C62828] text-white border-transparent shadow-sm"
-          : "bg-white border-gray-100"
-      }`}
-    >
+function StatCard({ label, value, icon: Icon, sub, accent, loading, href }: StatCardProps) {
+  const content = (
+    <>
       <div className="flex items-center justify-between">
         <span
           className={`text-[11px] font-semibold uppercase tracking-widest ${accent ? "text-red-100" : "text-gray-400"}`}
@@ -187,40 +243,137 @@ function StatCard({ label, value, icon: Icon, sub, accent, loading }: StatCardPr
           </p>
         )}
         {sub && (
-          <p className={`text-xs mt-1 ${accent ? "text-red-100" : "text-gray-400"}`}>{sub}</p>
+          <p className={`text-xs mt-1 whitespace-pre-line ${accent ? "text-red-100" : "text-gray-400"}`}>
+            {sub}
+          </p>
         )}
       </div>
-    </div>
+    </>
   );
+
+  const className = `rounded-2xl p-5 flex flex-col gap-3 border transition-all ${
+    accent
+      ? "bg-[#C62828] text-white border-transparent shadow-sm"
+      : "bg-white border-gray-100"
+  } ${
+    href
+      ? accent
+        ? "hover:shadow-md hover:brightness-110 cursor-pointer"
+        : "hover:shadow-md hover:border-red-200 cursor-pointer"
+      : "hover:shadow-sm"
+  }`;
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
 }
 
-function HeroChip({ label, href }: { label: string; href: string }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-[#C62828] hover:text-[#C62828] transition-colors"
-    >
-      {label}
-      <ChevronRight className="w-3 h-3 opacity-50" />
-    </Link>
-  );
-}
+// Same interaction pattern as the Task Manager Summary page's stat cards
+// (see SummaryView.tsx's SummaryCard/VariantPicker): a single matching
+// project navigates straight there, more than one opens a small popover to
+// pick which project's Summary page to jump to, and zero overdue tasks
+// makes the card inert. Kept as its own component rather than reusing
+// StatCard because clicking it opens a picker instead of following a plain
+// href.
+function OverdueTasksCard({
+  loading,
+  overdueProjects,
+  total,
+}: {
+  loading?: boolean;
+  overdueProjects: TMProject[];
+  total: number;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-function QuickActionGrid({ items }: { items: QuickActionProps[] }) {
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const goToProjectSummary = (projectId: string) => {
+    setOpen(false);
+    router.push(`/dashboard/taskManager/tasks?project=${projectId}&tab=summary`);
+  };
+
+  const clickable = total > 0;
+
+  const handleClick = () => {
+    if (!clickable) return;
+    if (overdueProjects.length === 1) {
+      goToProjectSummary(overdueProjects[0].id);
+    } else {
+      setOpen((o) => !o);
+    }
+  };
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      {items.map(({ label, href, icon: Icon }) => (
-        <Link
-          key={href}
-          href={href}
-          className="group flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border border-gray-100 hover:border-red-100 hover:shadow-sm transition-all text-center"
-        >
-          <div className="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center group-hover:bg-[#C62828] transition-colors">
-            <Icon className="w-5 h-5 text-[#C62828] group-hover:text-white transition-colors" />
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={!clickable}
+        className={`w-full h-full text-left rounded-2xl p-5 flex flex-col gap-3 border bg-white transition-all ${
+          open ? "border-red-300 ring-2 ring-red-100" : "border-gray-100"
+        } ${clickable ? "hover:shadow-md hover:border-red-200 cursor-pointer" : "hover:shadow-sm cursor-default"}`}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+            Overdue Tasks
+          </span>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-red-50">
+            <AlertCircle className="w-4 h-4 text-[#C62828]" />
           </div>
-          <span className="text-xs font-semibold text-gray-700 leading-tight">{label}</span>
-        </Link>
-      ))}
+        </div>
+        <div>
+          {loading ? (
+            <div className="h-8 w-16 rounded-lg bg-gray-100 animate-pulse" />
+          ) : (
+            <p className="text-3xl font-bold tracking-tight text-gray-900">{total}</p>
+          )}
+          <p className="text-xs mt-1 text-gray-400">
+            {total === 0
+              ? "Nothing overdue"
+              : overdueProjects.length === 1
+                ? "Past their due date"
+                : `Across ${overdueProjects.length} projects`}
+          </p>
+        </div>
+      </button>
+
+      {open && overdueProjects.length > 1 && (
+        <div className="absolute z-30 mt-1.5 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <p className="px-3.5 pt-3 pb-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+            Go to project…
+          </p>
+          <div className="pb-1.5 px-1.5 space-y-0.5 max-h-64 overflow-y-auto">
+            {overdueProjects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => goToProjectSummary(p.id)}
+                className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-lg text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition"
+              >
+                <span className="truncate">{p.name}</span>
+                <span className="text-xs text-gray-400 shrink-0">{p.overdue_task_count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -237,37 +390,42 @@ function Panel({
   className?: string;
 }) {
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 p-5 ${className}`}>
-      <div className="flex items-center justify-between mb-4">
+    <div className={`bg-white rounded-2xl border border-gray-100 p-5 flex flex-col ${className}`}>
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
         {action}
       </div>
-      {children}
+      {/* flex-1 so a Panel that's been stretched taller than its own content
+          (e.g. sitting next to a taller sibling in a grid row) gives that
+          extra space to the content area instead of just padding at the
+          bottom — lets children vertically center themselves with h-full. */}
+      <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
 }
 
-function AttentionPanel({ items, emptyText }: { items: AttentionItem[]; emptyText: string }) {
-  if (!items.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
-        <CheckCircle2 className="w-8 h-8 text-emerald-400 mb-2" />
-        <p className="text-sm text-gray-500">{emptyText}</p>
-      </div>
-    );
-  }
-
+// Shared row markup between the compact panel preview and the "View all"
+// modal, so the two never drift out of sync visually.
+function AttentionRows({
+  items,
+  onItemClick,
+}: {
+  items: AttentionItem[];
+  onItemClick?: () => void;
+}) {
   const icon = {
     warning: <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />,
     info: <Clock className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />,
+    success: <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />,
   };
 
   return (
-    <div className="space-y-1">
+    <>
       {items.map((item) => (
         <Link
           key={item.id}
           href={item.href}
+          onClick={onItemClick}
           className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group"
         >
           {icon[item.type]}
@@ -280,40 +438,89 @@ function AttentionPanel({ items, emptyText }: { items: AttentionItem[]; emptyTex
           <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#C62828] flex-shrink-0 mt-0.5" />
         </Link>
       ))}
+    </>
+  );
+}
+
+function AttentionPanel({
+  items,
+  emptyText,
+  columns = 1,
+}: {
+  items: AttentionItem[];
+  emptyText: string;
+  // 2 lets a wider panel (e.g. Recent activity spanning the full row) show
+  // more of the preview at once instead of leaving the second half empty.
+  columns?: 1 | 2;
+}) {
+  if (!items.length) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center">
+        <CheckCircle2 className="w-8 h-8 text-emerald-400 mb-2" />
+        <p className="text-sm text-gray-500">{emptyText}</p>
+      </div>
+    );
+  }
+
+  // justify-center/content-center groups a short preview list in the middle
+  // of whatever height the panel ends up with (matching its grid-row
+  // siblings), instead of stacking rows at the top and leaving a gap
+  // underneath.
+  return (
+    <div
+      className={
+        columns === 2
+          ? "h-full grid grid-cols-1 sm:grid-cols-2 content-center gap-x-2 gap-y-1"
+          : "h-full flex flex-col justify-center space-y-1"
+      }
+    >
+      <AttentionRows items={items} />
     </div>
   );
 }
 
-type FeedItem = {
-  id: string;
-  text: string;
-  time: string;
-  type: "success" | "warning" | "info";
-};
-
-const feedIcon = {
-  success: <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />,
-  warning: <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />,
-  info: <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />,
-};
-
-function ActivityTimeline({ items }: { items: FeedItem[] }) {
-  if (!items.length) {
-    return <p className="text-sm text-gray-400 py-6 text-center">No recent activity</p>;
-  }
+// The full, uncapped list — opened from the compact panel's "View all"
+// instead of expanding that panel in place (which would blow past the size
+// of its grid-row siblings). Every row still links straight to its source
+// page and closes the modal on click. Shared by Needs Attention and Recent
+// activity so both get identical behavior for free.
+function ListModal({
+  title,
+  items,
+  columns = 1,
+  onClose,
+}: {
+  title: string;
+  items: AttentionItem[];
+  columns?: 1 | 2;
+  onClose: () => void;
+}) {
   return (
-    <div className="relative pl-4 border-l-2 border-gray-100 space-y-4 ml-1">
-      {items.map((item) => (
-        <div key={item.id} className="relative flex items-start gap-3 -ml-[21px]">
-          <div className="w-8 h-8 rounded-full bg-white border-2 border-gray-100 flex items-center justify-center flex-shrink-0">
-            {feedIcon[item.type]}
-          </div>
-          <div className="flex-1 min-w-0 pt-0.5">
-            <p className="text-sm text-gray-700 leading-snug">{item.text}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{item.time}</p>
-          </div>
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className={`bg-white rounded-xl shadow-xl w-full ${columns === 2 ? "max-w-2xl" : "max-w-lg"} max-h-[80vh] flex flex-col`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+          <h2 className="text-base font-bold text-gray-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      ))}
+        <div
+          className={`p-2 overflow-y-auto min-h-0 ${
+            columns === 2 ? "grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-1" : "space-y-1"
+          }`}
+        >
+          <AttentionRows items={items} onItemClick={onClose} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -321,6 +528,8 @@ function ActivityTimeline({ items }: { items: FeedItem[] }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
+  const [showAllAttention, setShowAllAttention] = useState(false);
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -345,27 +554,6 @@ export default function DashboardPage() {
   const profile = users?.find((u) => u.user_id === userId);
   const role = profile?.role ?? metaRole;
   const isAdmin = isFullRoleAccess(role);
-
-  const accessProfile = resolveAccessProfile(profile, metaRole);
-  const unrestricted = hasUnrestrictedAccess(accessProfile, metaRole);
-  const { data: groupPresetData } = useGroupPresets();
-  const groupPresets = groupPresetData?.presets;
-
-  const canSee = (key: PagePermissionKey) => {
-    if (unrestricted) return true;
-    return accessProfile
-      ? canAccessPage(accessProfile, key, groupPresets, metaRole)
-      : false;
-  };
-
-  const overviewQuickActions = useMemo(
-    () =>
-      buildOverviewQuickActions({
-        isAdmin,
-        canSee,
-      }),
-    [isAdmin, accessProfile, unrestricted, metaRole, profile],
-  );
 
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],
@@ -407,30 +595,134 @@ export default function DashboardPage() {
     enabled: !!session,
   });
 
+  // Recruitment is an admin surface — only fetch applicant data for viewers
+  // who can actually act on it, same gating as the leave "all" branch above.
+  const { data: applicationsData } = useQuery<JobApplication[]>({
+    queryKey: ["recruitment-applications"],
+    queryFn: async () => {
+      const res = await api.get("/careers/applications");
+      return res.data.data ?? [];
+    },
+    enabled: !!session && isAdmin,
+  });
+  const newApplicationsCount = (applicationsData ?? []).filter(
+    (a) => a.status === "applied",
+  ).length;
+
+  // Recent activity's "sees everything" branch also needs SOP, Task
+  // Manager, Policies & Ops, and Promotion activity — all admin-only
+  // surfaces, so these only fetch for isAdmin like the applications query
+  // above.
+  const { data: sopActivityData } = useQuery<SopAuditEntry[]>({
+    queryKey: ["sop-activity"],
+    queryFn: async () => {
+      const res = await api.get("/sop/activity");
+      return res.data.entries ?? [];
+    },
+    enabled: !!session && isAdmin,
+  });
+
+  const { data: tmActivityData } = useQuery<{
+    tasks: TmAuditEntry[];
+    projects: TmAuditEntry[];
+    deletions: TmProjectDeletionEntry[];
+  }>({
+    queryKey: ["tm-activity"],
+    queryFn: async () => {
+      const res = await api.get("/task-manager/activity");
+      return {
+        tasks: res.data.tasks ?? [],
+        projects: res.data.projects ?? [],
+        deletions: res.data.deletions ?? [],
+      };
+    },
+    enabled: !!session && isAdmin,
+  });
+
+  const { data: manualsData } = useQuery<ManualRecord[]>({
+    queryKey: ["policies-manuals"],
+    queryFn: async () => {
+      const res = await api.get("/policies/get_policies");
+      return res.data.manuals ?? [];
+    },
+    enabled: !!session && isAdmin,
+  });
+
+  const { data: promotionsData } = useQuery<PromotionRecord[]>({
+    queryKey: ["promotions"],
+    queryFn: async () => {
+      const res = await api.get("/promotion/get_promotions");
+      return res.data.data ?? [];
+    },
+    enabled: !!session && isAdmin,
+  });
+
+  // /task-manager/projects already scopes to "my projects only" for anyone
+  // without canViewAllTasks, and returns each project's own overdue_task_count
+  // pre-computed server-side (see GET /api/task-manager/projects) — so this
+  // doubles as both the admin-wide and the employee's-own breakdown, and
+  // gives the per-project counts the Overdue Tasks card's picker needs.
+  const { data: tmProjects, isLoading: tasksLoading } = useQuery<TMProject[]>({
+    queryKey: ["overview-tm-projects"],
+    queryFn: async () => {
+      const res = await api.get("/task-manager/projects");
+      return res.data.projects ?? [];
+    },
+    enabled: !!session,
+  });
+
+  const overdueProjects = useMemo(
+    () => (tmProjects ?? []).filter((p) => (p.overdue_task_count ?? 0) > 0),
+    [tmProjects],
+  );
+  const overdueTasks = overdueProjects.reduce((sum, p) => sum + (p.overdue_task_count ?? 0), 0);
+
   const firstName =
     profile?.first_name ?? session?.user?.email?.split("@")[0] ?? "there";
 
   const pendingLeave = leaveData?.filter((l) => l.status === "pending").length ?? 0;
   const approvedLeave = leaveData?.filter((l) => l.status === "approved").length ?? 0;
   const rejectedLeave = leaveData?.filter((l) => l.status === "rejected").length ?? 0;
-  const pendingSupervisorReview =
-    appraisalData?.filter((a) => a.supervisor_weighted_score === null).length ?? 0;
-  const draftAppraisals = appraisalData?.filter((a) => a.status === "draft").length ?? 0;
-  const avgScore = appraisalData?.length
-    ? (
-        appraisalData
-          .filter((a) => a.employee_weighted_score)
-          .reduce((sum, a) => sum + (a.employee_weighted_score ?? 0), 0) /
-        (appraisalData.filter((a) => a.employee_weighted_score).length || 1)
-      ).toFixed(2)
-    : "—";
-
   const myLeave = leaveData ?? [];
   const myPendingLeave = myLeave.filter((l) => l.status === "pending").length;
   const myApprovedLeave = myLeave.filter((l) => l.status === "approved").length;
   const myRejectedLeave = myLeave.filter((l) => l.status === "rejected").length;
   const myAppraisals = appraisalData ?? [];
   const latestAppraisal = myAppraisals[0] ?? myAppraisals[myAppraisals.length - 1];
+
+  // "Appraisals" KPI card should only count the period that's currently
+  // open for review — not the all-time total — so it stays useful once a
+  // few quarters of history pile up. Reuses the same active-period logic
+  // the reminder emails and deadline banner are built on, rather than a
+  // second definition of "current quarter" that could drift out of sync.
+  const currentPeriod = useMemo(() => getActiveAppraisalPeriod(), []);
+  const currentPeriodAppraisals = useMemo(
+    () =>
+      (appraisalData ?? []).filter(
+        (a) => a.review_quarter === currentPeriod.quarter && a.review_year === currentPeriod.year,
+      ),
+    [appraisalData, currentPeriod],
+  );
+  const myCurrentPeriodAppraisals = useMemo(
+    () =>
+      myAppraisals.filter(
+        (a) => a.review_quarter === currentPeriod.quarter && a.review_year === currentPeriod.year,
+      ),
+    [myAppraisals, currentPeriod],
+  );
+
+  // Awaiting-approval counts, split by whether they belong to the period
+  // that's open right now vs. something older still sitting unscored — kept
+  // separate rather than one combined number, since a stale prior-quarter
+  // backlog reads very differently from this quarter's normal in-flight count.
+  const pendingCurrentPeriod = currentPeriodAppraisals.filter(
+    (a) => a.supervisor_weighted_score === null,
+  ).length;
+  const pendingPriorPeriods = (appraisalData ?? []).filter(
+    (a) =>
+      a.supervisor_weighted_score === null &&
+      !(a.review_quarter === currentPeriod.quarter && a.review_year === currentPeriod.year),
+  ).length;
   const mySkillLogs = skillLogData ?? [];
 
   const leaveSegments = useMemo(
@@ -451,10 +743,39 @@ export default function DashboardPage() {
     [myPendingLeave, myApprovedLeave, myRejectedLeave],
   );
 
-  const appraisalGroups = useMemo(
-    () => groupAppraisalsByQuarter(appraisalData ?? []),
-    [appraisalData],
-  );
+  // Appraisal progress now reads as "where does the current period stand"
+  // rather than a multi-quarter history — one bar per status, scoped to
+  // currentPeriodAppraisals (same active-period filter as the KPI card
+  // above), not the all-time/all-quarter list.
+  //
+  // Categories come from getStatusSummary() — the same function that drives
+  // the status badges on the Appraisal page itself — rather than a second,
+  // hand-rolled status model, so this chart can never drift out of sync with
+  // what "Awaiting Supervisor" / "Locked" / etc. actually mean there.
+  const appraisalStatusCounts = useMemo(() => {
+    const byLabel = new Map<string, { value: number; color: string }>();
+    APPRAISAL_STATUS_ORDER.forEach((template, i) => {
+      const { label } = getStatusSummary(template);
+      if (!byLabel.has(label)) {
+        byLabel.set(label, { value: 0, color: APPRAISAL_STATUS_CHART_COLORS[i] });
+      }
+    });
+    for (const a of currentPeriodAppraisals) {
+      const { label } = getStatusSummary({
+        status: a.status,
+        submitted_by: a.submitted_by,
+        locked_reason: a.locked_reason,
+        appeal_exhausted: a.appeal_exhausted,
+      });
+      const entry = byLabel.get(label);
+      if (entry) entry.value += 1;
+    }
+    // Only show statuses this period actually has — a status with zero
+    // appraisals in it doesn't get an empty bar taking up space.
+    return Array.from(byLabel.entries())
+      .filter(([, { value }]) => value > 0)
+      .map(([label, { value, color }]) => ({ label, value, color }));
+  }, [currentPeriodAppraisals]);
 
   const scoreHistory = useMemo(
     () =>
@@ -468,11 +789,15 @@ export default function DashboardPage() {
     [myAppraisals],
   );
 
+  // Full, uncapped list — "View all" in the panel now expands in place
+  // instead of navigating to the Leave page, so the cap that used to live
+  // here (and the pretense that "view all" meant "view all leave requests")
+  // is gone. Display-time slicing for the collapsed state happens where
+  // this is rendered.
   const adminAttentionItems = useMemo((): AttentionItem[] => {
     const items: AttentionItem[] = [];
     leaveData
       ?.filter((l) => l.status === "pending")
-      .slice(0, 3)
       .forEach((l) => {
         items.push({
           id: `leave-${l.id}`,
@@ -484,7 +809,6 @@ export default function DashboardPage() {
       });
     appraisalData
       ?.filter((a) => a.status === "draft")
-      .slice(0, 3)
       .forEach((a) => {
         items.push({
           id: `appraisal-${a.id}`,
@@ -494,8 +818,34 @@ export default function DashboardPage() {
           type: "info",
         });
       });
-    return items.slice(0, 5);
-  }, [leaveData, appraisalData]);
+    // One entry per project with overdue tasks (same overdueProjects the
+    // Overdue Tasks KPI card uses) rather than per individual task — the
+    // per-task list isn't fetched on this page, and the project's Summary
+    // tab is exactly where the KPI card's own picker already sends you.
+    overdueProjects.forEach((p) => {
+      items.push({
+        id: `overdue-${p.id}`,
+        title: `${p.name} — ${p.overdue_task_count} overdue task${p.overdue_task_count === 1 ? "" : "s"}`,
+        subtitle: "Task Manager",
+        href: `/dashboard/taskManager/tasks?project=${p.id}&tab=summary`,
+        type: "warning",
+      });
+    });
+    // One aggregated entry rather than one per applicant — an inbox of
+    // fresh applications reads better as a single "go triage these" prompt
+    // than a name-by-name list, unlike leave/appraisal items which are each
+    // their own actionable record.
+    if (newApplicationsCount > 0) {
+      items.push({
+        id: "recruitment-new-applications",
+        title: `${newApplicationsCount} new application${newApplicationsCount === 1 ? "" : "s"} available`,
+        subtitle: "Recruitment",
+        href: "/dashboard/humanCapital/recruitment",
+        type: "info",
+      });
+    }
+    return items;
+  }, [leaveData, appraisalData, overdueProjects, newApplicationsCount]);
 
   const employeeAttentionItems = useMemo((): AttentionItem[] => {
     const items: AttentionItem[] = [];
@@ -523,60 +873,229 @@ export default function DashboardPage() {
     return items;
   }, [myLeave, latestAppraisal]);
 
-  const buildAdminFeed = (): FeedItem[] => {
-    const items: FeedItem[] = [];
-    leaveData?.slice(0, 3).forEach((l) => {
-      items.push({
-        id: `leave-${l.id}`,
-        text: `${leavePersonName(l)} — ${l.leave_type} leave is ${l.status}`,
-        time: timeAgo(l.created_at),
-        type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
-      });
-    });
-    appraisalData?.slice(0, 3).forEach((a) => {
-      items.push({
-        id: `appraisal-${a.id}`,
-        text: `${a.employee_name} — ${a.review_quarter} ${a.review_year} · score ${a.employee_weighted_score ?? "pending"}`,
-        time: timeAgo(a.created_at),
-        type: a.status === "draft" ? "warning" : "success",
-      });
-    });
-    return items.slice(0, 6);
-  };
+  // Recent activity's visibility follows the same admin/manager/super_admin
+  // gate the rest of this page already uses for "see everyone's records"
+  // (leaveData is only the full company list when isAdmin — /leave/all is
+  // role-gated server-side, not grade-based — so this stays consistent with
+  // what the viewer's other queries actually return rather than promising a
+  // grade-based "L4+ sees everyone" rule the APIs don't back up).
+  const activityItems = useMemo((): AttentionItem[] => {
+    const rows: { time: number; item: AttentionItem }[] = [];
+    const add = (createdAt: string, item: AttentionItem) => {
+      rows.push({ time: new Date(createdAt).getTime(), item });
+    };
 
-  const buildEmployeeFeed = (): FeedItem[] => {
-    const items: FeedItem[] = [];
-    myLeave.slice(0, 2).forEach((l) => {
-      items.push({
-        id: `leave-${l.id}`,
-        text: `Your ${l.leave_type} leave (${l.total_days} days) is ${l.status}`,
-        time: timeAgo(l.created_at),
-        type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+    if (isAdmin) {
+      leaveData?.forEach((l) => {
+        add(l.created_at, {
+          id: `leave-${l.id}`,
+          title: `${leavePersonName(l)} — ${l.leave_type} leave`,
+          subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
+          href: "/dashboard/humanCapital/leave",
+          type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+        });
       });
-    });
-    myAppraisals.slice(0, 2).forEach((a) => {
-      items.push({
-        id: `appraisal-${a.id}`,
-        text: `${a.review_quarter} ${a.review_year} appraisal — score ${a.employee_weighted_score ?? "pending"}`,
-        time: timeAgo(a.created_at),
-        type: a.status === "draft" ? "info" : "success",
+      appraisalData?.forEach((a) => {
+        add(a.created_at, {
+          id: `appraisal-${a.id}`,
+          title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
+          subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+          href: "/dashboard/humanCapital/appraisal",
+          type: a.status === "draft" ? "warning" : "success",
+        });
       });
-    });
-    mySkillLogs.slice(0, 2).forEach((s) => {
-      items.push({
-        id: `skill-${s.id}`,
-        text: "Skill log entry recorded",
-        time: timeAgo(s.created_at),
-        type: "success",
+
+      const sopVerb: Record<SopAuditEntry["action"], string> = {
+        added: "uploaded",
+        edited: "edited",
+        archived: "archived",
+        restored: "restored",
+        deleted: "deleted",
+      };
+      sopActivityData?.forEach((e) => {
+        add(e.performed_at, {
+          id: `sop-${e.id}`,
+          title: `${e.performed_by_name} ${sopVerb[e.action] ?? e.action} "${e.content_title}"`,
+          subtitle: `SOP · ${timeAgo(e.performed_at)}`,
+          href: "/dashboard/sop",
+          type: e.action === "archived" || e.action === "deleted" ? "warning" : "success",
+        });
       });
-    });
-    return items.slice(0, 5);
-  };
+
+      const projectNameById = new Map((tmProjects ?? []).map((p) => [p.id, p.name]));
+      const tmTaskVerb: Record<string, string> = {
+        created: "created",
+        edited: "updated",
+        completed: "completed",
+        archived: "archived",
+        deleted: "deleted",
+        restored: "restored",
+      };
+      tmActivityData?.tasks.forEach((e) => {
+        const title =
+          (e.new_values?.title as string | undefined) ??
+          (e.previous_values?.title as string | undefined) ??
+          "a task";
+        const project = e.project_id ? (projectNameById.get(e.project_id) ?? "Task Manager") : "Task Manager";
+        add(e.performed_at, {
+          id: `tm-task-${e.id}`,
+          title: `${e.performed_by_name} ${tmTaskVerb[e.action] ?? e.action} "${title}"`,
+          subtitle: `${project} · ${timeAgo(e.performed_at)}`,
+          href: "/dashboard/taskManager/tasks",
+          type:
+            e.action === "completed"
+              ? "success"
+              : e.action === "deleted" || e.action === "archived"
+                ? "warning"
+                : "info",
+        });
+      });
+      const tmProjectVerb: Record<string, string> = {
+        created: "created",
+        renamed: "renamed",
+        archived: "archived",
+        restored: "restored",
+      };
+      tmActivityData?.projects.forEach((e) => {
+        const name =
+          (e.new_values?.name as string | undefined) ??
+          (e.previous_values?.name as string | undefined) ??
+          (e.project_id ? projectNameById.get(e.project_id) : undefined) ??
+          "a project";
+        add(e.performed_at, {
+          id: `tm-project-${e.id}`,
+          title: `${e.performed_by_name} ${tmProjectVerb[e.action] ?? e.action} project "${name}"`,
+          subtitle: `Task Manager · ${timeAgo(e.performed_at)}`,
+          href: "/dashboard/taskManager/tasks",
+          type: e.action === "archived" ? "warning" : "info",
+        });
+      });
+      tmActivityData?.deletions.forEach((d) => {
+        add(d.deleted_at, {
+          id: `tm-deletion-${d.id}`,
+          title: `${d.deleted_by_name} permanently deleted project "${d.project_name}"`,
+          subtitle: `Task Manager · ${timeAgo(d.deleted_at)}`,
+          href: "/dashboard/taskManager/tasks",
+          type: "warning",
+        });
+      });
+
+      manualsData?.forEach((m) => {
+        const versions = [...m.versions].sort(
+          (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime(),
+        );
+        if (versions.length === 0) {
+          add(m.created_at, {
+            id: `manual-${m.manual_id}`,
+            title: `"${m.title}" uploaded`,
+            subtitle: `Policies & Ops · ${timeAgo(m.created_at)}`,
+            href: "/dashboard/policies",
+            type: "success",
+          });
+          return;
+        }
+        versions.forEach((v, i) => {
+          add(v.uploaded_at, {
+            id: `manual-${m.manual_id}-${v.version_id}`,
+            title: `${v.uploaded_by_name} ${i === 0 ? "uploaded" : "updated"} "${m.title}"`,
+            subtitle: `Policies & Ops · ${timeAgo(v.uploaded_at)}`,
+            href: "/dashboard/policies",
+            type: "success",
+          });
+        });
+      });
+
+      applicationsData?.forEach((a) => {
+        add(a.created_at, {
+          id: `application-${a.id}`,
+          title: `${a.full_name} applied for ${a.role_title}`,
+          subtitle: `${STATUS_LABELS[a.status]} · ${timeAgo(a.created_at)}`,
+          href: "/dashboard/humanCapital/recruitment",
+          type: a.status === "rejected" ? "warning" : a.status === "offer" ? "success" : "info",
+        });
+      });
+
+      promotionsData?.forEach((p) => {
+        add(p.created_at, {
+          id: `promotion-${p.id}`,
+          title: `${p.employee_name} — promotion to ${p.proposed_grade}`,
+          subtitle: `${p.final_decision ? p.final_decision.replace(/_/g, " ") : "pending decision"} · ${timeAgo(p.created_at)}`,
+          href: "/dashboard/humanCapital/promotion",
+          type: p.final_decision?.includes("promote") ? "success" : "info",
+        });
+      });
+    } else {
+      myLeave.forEach((l) => {
+        add(l.created_at, {
+          id: `leave-${l.id}`,
+          title: `${l.leave_type} leave (${l.total_days} days)`,
+          subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
+          href: "/dashboard/humanCapital/leave",
+          type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+        });
+      });
+      myAppraisals.forEach((a) => {
+        add(a.created_at, {
+          id: `appraisal-${a.id}`,
+          title: `${a.review_quarter} ${a.review_year} appraisal`,
+          subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+          href: "/dashboard/humanCapital/appraisal",
+          type: a.status === "draft" ? "info" : "success",
+        });
+      });
+      mySkillLogs.forEach((s) => {
+        add(s.created_at, {
+          id: `skill-${s.id}`,
+          title: "Skill log entry recorded",
+          subtitle: timeAgo(s.created_at),
+          href: "/dashboard/humanCapital/skillLog",
+          type: "success",
+        });
+      });
+    }
+
+    // Merging leave + appraisal (+ skill logs) needs an explicit sort —
+    // each source is already newest-first on its own, but interleaving them
+    // into one feed only reads as a coherent timeline if it's re-sorted by
+    // actual recency.
+    //
+    // Capped to this calendar month, most-recent 20 — otherwise a platform-
+    // wide feed (SOP/task manager/policies/recruitment/promotions on top of
+    // leave/appraisals) only grows over time with nothing to bound it.
+    const monthStart = new Date(
+      new Date().getFullYear(),
+      new Date().getMonth(),
+      1,
+    ).getTime();
+    return rows
+      .filter((r) => r.time >= monthStart)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 20)
+      .map((r) => r.item);
+  }, [
+    isAdmin,
+    leaveData,
+    appraisalData,
+    myLeave,
+    myAppraisals,
+    mySkillLogs,
+    sopActivityData,
+    tmActivityData,
+    tmProjects,
+    manualsData,
+    applicationsData,
+    promotionsData,
+  ]);
 
   const coreLoading = usersLoading || leaveLoading || appraisalLoading;
   if (coreLoading) {
     return <DashboardOverviewSkeleton />;
   }
+
+  // 6 in a 2-column preview (admin, full-width panel) vs 4 in a single
+  // column (employee, half-width panel) — roughly the same visual amount
+  // either way.
+  const activityPreviewCount = isAdmin ? 6 : 4;
 
   const now = new Date();
   const hour = now.getHours();
@@ -623,41 +1142,6 @@ export default function DashboardPage() {
                 {formatOverviewGreeting(firstName, greeting)}
               </h1>
               <p className="text-sm text-gray-500 mt-1">{dateStr}</p>
-              <div className="flex flex-wrap gap-2 mt-4">
-                {isAdmin ? (
-                  <>
-                    <HeroChip
-                      label={`${pendingLeave} leave pending`}
-                      href={ROUTE_LEAVE()}
-                    />
-                    <HeroChip
-                      label={`${draftAppraisals} appraisal drafts`}
-                      href={ROUTE_APPRAISAL()}
-                    />
-                    <HeroChip
-                      label={`${users?.length ?? 0} staff`}
-                      href={ROUTE_USERS()}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <HeroChip
-                      label={`${myPendingLeave} leave pending`}
-                      href={ROUTE_LEAVE()}
-                    />
-                    {latestAppraisal && (
-                      <HeroChip
-                        label={`Score ${latestAppraisal.employee_weighted_score ?? "—"}/4`}
-                        href={ROUTE_APPRAISAL()}
-                      />
-                    )}
-                    <HeroChip
-                      label={`${mySkillLogs.length} skill logs`}
-                      href={ROUTE_SKILL_LOG()}
-                    />
-                  </>
-                )}
-              </div>
             </div>
             <span className="inline-flex items-center px-3 py-1.5 rounded-full bg-red-50 border border-red-100 text-xs font-semibold text-[#C62828] self-start capitalize">
               {role?.replace("_", " ") ?? "Employee"}
@@ -666,7 +1150,7 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {isAdmin ? (
             <>
               <StatCard
@@ -681,12 +1165,14 @@ export default function DashboardPage() {
                 value={pendingLeave}
                 icon={CalendarCheck}
                 sub={`${approvedLeave} approved`}
+                href="/dashboard/humanCapital/leave"
               />
               <StatCard
                 label="Appraisals"
-                value={appraisalData?.length ?? "—"}
+                value={appraisalData ? currentPeriodAppraisals.length : "—"}
                 icon={Star}
-                sub={`${pendingSupervisorReview} awaiting review · avg ${avgScore}`}
+                sub={`${pendingCurrentPeriod} awaiting approval (${currentPeriod.quarter} ${currentPeriod.year})\n${pendingPriorPeriods} awaiting approval (prior quarters)`}
+                href="/dashboard/humanCapital/appraisal"
               />
               <StatCard
                 label="SOPs"
@@ -694,6 +1180,12 @@ export default function DashboardPage() {
                 icon={FileText}
                 sub="Active procedures"
                 loading={sopLoading}
+                href="/dashboard/sop"
+              />
+              <OverdueTasksCard
+                loading={tasksLoading}
+                overdueProjects={overdueProjects}
+                total={overdueTasks}
               />
             </>
           ) : (
@@ -704,16 +1196,16 @@ export default function DashboardPage() {
                 value={myPendingLeave}
                 icon={CalendarCheck}
                 sub={`${myApprovedLeave} approved`}
+                href="/dashboard/humanCapital/leave"
               />
               <StatCard
                 label="Appraisals"
-                value={myAppraisals.length}
+                value={myCurrentPeriodAppraisals.length}
                 icon={Star}
-                sub={
-                  latestAppraisal
-                    ? `Latest: ${latestAppraisal.review_quarter} ${latestAppraisal.review_year}`
-                    : "None yet"
-                }
+                sub={`${currentPeriod.quarter} ${currentPeriod.year}${
+                  myCurrentPeriodAppraisals.length === 0 ? " · None yet" : ""
+                }`}
+                href="/dashboard/humanCapital/appraisal"
               />
               <StatCard
                 label="Skill Logs"
@@ -721,6 +1213,7 @@ export default function DashboardPage() {
                 icon={ClipboardList}
                 sub="Entries recorded"
                 loading={skillLogLoading}
+                href="/dashboard/humanCapital/skillLog"
               />
               <StatCard
                 label="SOPs"
@@ -728,6 +1221,12 @@ export default function DashboardPage() {
                 icon={FileText}
                 sub="Available to you"
                 loading={sopLoading}
+                href="/dashboard/sop"
+              />
+              <OverdueTasksCard
+                loading={tasksLoading}
+                overdueProjects={overdueProjects}
+                total={overdueTasks}
               />
             </>
           )}
@@ -736,35 +1235,70 @@ export default function DashboardPage() {
         {/* Charts + attention */}
         {isAdmin ? (
           <>
+            {/* Default stretch (not items-start) — all three cards match the
+                tallest one (Appraisal progress). Each card's own content is
+                vertically centered within that shared height (see the h-full
+                wrappers below) so the extra room reads as intentional
+                breathing space, not leftover whitespace at the bottom. */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Panel title="Leave requests" className="lg:col-span-1">
-                <DonutChart
-                  segments={leaveSegments}
-                  centerLabel={String((leaveData?.length ?? 0))}
-                  centerSub="total"
-                />
+                <div className="h-full flex items-center justify-center">
+                  <DonutChart
+                    segments={leaveSegments}
+                    centerLabel={String((leaveData?.length ?? 0))}
+                    centerSub="total"
+                  />
+                </div>
               </Panel>
-              <Panel title="Appraisal progress" className="lg:col-span-1">
-                <AppraisalBarChart groups={appraisalGroups} />
+              <Panel
+                title="Appraisal progress"
+                action={
+                  <span className="text-xs text-gray-400">
+                    {currentPeriod.quarter} {currentPeriod.year}
+                  </span>
+                }
+                className="lg:col-span-1"
+              >
+                {currentPeriodAppraisals.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-10">
+                    No appraisals for this period yet
+                  </p>
+                ) : (
+                  <CategoryBarChart items={appraisalStatusCounts} />
+                )}
               </Panel>
               <Panel
                 title="Needs attention"
                 action={
-                  <Link
-                    href={ROUTE_LEAVE()}
-                    className="text-xs text-[#C62828] font-medium hover:underline"
-                  >
-                    View all
-                  </Link>
+                  adminAttentionItems.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllAttention(true)}
+                      className="text-xs text-[#C62828] font-medium hover:underline"
+                    >
+                      View all
+                    </button>
+                  )
                 }
                 className="lg:col-span-1"
               >
+                {/* 3 rows keeps this panel's natural height in line with its
+                    Leave requests / Appraisal progress siblings — anything
+                    beyond that is one tap away via "View all". */}
                 <AttentionPanel
-                  items={adminAttentionItems}
+                  items={adminAttentionItems.slice(0, 3)}
                   emptyText="All caught up — nothing needs attention"
                 />
               </Panel>
             </div>
+
+            {showAllAttention && (
+              <ListModal
+                title="Needs attention"
+                items={adminAttentionItems}
+                onClose={() => setShowAllAttention(false)}
+              />
+            )}
 
             {staffRoleBars.length > 0 && (
               <Panel title="Staff by role">
@@ -832,73 +1366,29 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Quick actions */}
-        <div>
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3 px-1">
-            Quick actions
-          </h3>
-          <QuickActionGrid items={overviewQuickActions} />
-        </div>
-
-        {/* Activity + appraisals table */}
+        {/* Activity + appraisal details */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Panel title="Recent activity">
-            <ActivityTimeline items={isAdmin ? buildAdminFeed() : buildEmployeeFeed()} />
-          </Panel>
-
-          {isAdmin && appraisalData && appraisalData.length > 0 && (
-            <Panel
-              title="Recent appraisals"
-              action={
-                <Link
-                  href={ROUTE_APPRAISAL()}
+          <Panel
+            title="Recent activity"
+            action={
+              activityItems.length > activityPreviewCount && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllActivity(true)}
                   className="text-xs text-[#C62828] font-medium hover:underline"
                 >
                   View all
-                </Link>
-              }
-            >
-              <div className="overflow-x-auto -mx-1">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-100">
-                      <th className="text-left pb-3 font-semibold">Employee</th>
-                      <th className="text-left pb-3 font-semibold">Period</th>
-                      <th className="text-left pb-3 font-semibold">Score</th>
-                      <th className="text-left pb-3 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {appraisalData.slice(0, 5).map((a) => (
-                      <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="py-3 font-medium text-gray-800">{a.employee_name}</td>
-                        <td className="py-3 text-gray-500">
-                          {a.review_quarter} {a.review_year}
-                        </td>
-                        <td className="py-3 font-semibold text-gray-800">
-                          {a.employee_weighted_score ?? "—"}
-                          <span className="text-gray-400 text-xs font-normal"> / 4</span>
-                        </td>
-                        <td className="py-3">
-                          <span
-                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                              a.status === "draft"
-                                ? "bg-amber-50 text-amber-700"
-                                : a.status === "submitted"
-                                  ? "bg-blue-50 text-blue-700"
-                                  : "bg-emerald-50 text-emerald-700"
-                            }`}
-                          >
-                            {a.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Panel>
-          )}
+                </button>
+              )
+            }
+            className={isAdmin ? "lg:col-span-2" : undefined}
+          >
+            <AttentionPanel
+              items={activityItems.slice(0, activityPreviewCount)}
+              emptyText="No recent activity"
+              columns={isAdmin ? 2 : 1}
+            />
+          </Panel>
 
           {!isAdmin && latestAppraisal && (
             <Panel title="Appraisal details">
@@ -927,6 +1417,15 @@ export default function DashboardPage() {
             </Panel>
           )}
         </div>
+
+        {showAllActivity && (
+          <ListModal
+            title="Recent activity"
+            items={activityItems}
+            columns={isAdmin ? 2 : 1}
+            onClose={() => setShowAllActivity(false)}
+          />
+        )}
       </div>
     </div>
   );

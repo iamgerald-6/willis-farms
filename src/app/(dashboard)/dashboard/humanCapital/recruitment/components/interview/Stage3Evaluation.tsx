@@ -12,8 +12,20 @@ import {
 import type { InterviewFormData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { gradersForStage, stageAverage } from "@/lib/careers/panelInterview";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { StageInfoBanner } from "./shared";
+
+const RECOMMENDATION_LABELS: Record<string, string> = {
+  hire: "Hire",
+  hold: "Hold / reserve",
+  do_not_hire: "Do not hire",
+};
+
+const RECOMMENDATION_CLASSES: Record<string, string> = {
+  hire: "bg-green-100 text-green-800",
+  hold: "bg-amber-100 text-amber-800",
+  do_not_hire: "bg-red-100 text-red-800",
+};
 
 function GraderMatrix({
   formData,
@@ -79,6 +91,8 @@ type Props = {
   scores: ReturnType<typeof computeWeightedScore>;
   onChange: (data: InterviewFormData) => void;
   readOnly?: boolean;
+  onGenerateAnalysis?: () => void;
+  isGeneratingAnalysis?: boolean;
 };
 
 const STANDING_CLASSES: Record<string, string> = {
@@ -95,6 +109,8 @@ export default function Stage3Evaluation({
   scores,
   onChange,
   readOnly = false,
+  onGenerateAnalysis,
+  isGeneratingAnalysis = false,
 }: Props) {
   const updateDisqualifier = (
     id: string,
@@ -237,6 +253,55 @@ export default function Stage3Evaluation({
           </ul>
         </details>
       </section>
+
+      <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            AI analysis & recommendation
+          </p>
+          {!readOnly && onGenerateAnalysis && (
+            <button
+              type="button"
+              onClick={onGenerateAnalysis}
+              disabled={isGeneratingAnalysis}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 hover:text-purple-900 disabled:opacity-60"
+            >
+              {isGeneratingAnalysis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {formData.summary?.ai_analysis ? "Regenerate" : "Generate"}
+            </button>
+          )}
+        </div>
+
+        {formData.summary?.ai_analysis ? (
+          <>
+            <p className="text-sm text-purple-950 leading-relaxed">
+              {formData.summary.ai_analysis}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  RECOMMENDATION_CLASSES[formData.summary.ai_recommendation ?? "hold"]
+                }`}
+              >
+                AI recommends: {RECOMMENDATION_LABELS[formData.summary.ai_recommendation ?? "hold"]}
+              </span>
+              {formData.summary.ai_generated_at && (
+                <span className="text-xs text-purple-500">
+                  Generated {new Date(formData.summary.ai_generated_at).toLocaleString("en-GB")}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-purple-500">
+              Advisory only — HR confirms the actual outcome from the application view.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-purple-700">
+            Get a quick AI read of the full Stage 1 + Stage 2 record before deciding.
+          </p>
+        )}
+      </div>
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-1">

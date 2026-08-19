@@ -78,6 +78,17 @@ export interface SopAuditLogEntry {
   performed_at: string;
 }
 
+export interface PolicyAuditLogEntry {
+  id: string;
+  manual_id: string;
+  manual_title: string;
+  action: "added" | "version_added" | "edited" | "deleted";
+  detail?: string | null;
+  performed_by: string;
+  performed_by_name: string;
+  performed_at: string;
+}
+
 // Appraisal-specific types (0–100% scoring, Q1–Q4 with Q4 = Annual) now
 // live in src/lib/appraisal/scoring.ts and src/lib/appraisal/sections.ts —
 // see those modules instead of duplicating types here.

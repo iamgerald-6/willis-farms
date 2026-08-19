@@ -238,11 +238,14 @@ function ReviewModal({
 // ─── Mobile Leave Card ────────────────────────────────────────────────────────
 function LeaveCard({
   r,
+  viewerId,
   onReview,
 }: {
   r: LeaveRequest;
+  viewerId: string;
   onReview: (r: LeaveRequest) => void;
 }) {
+  const isOwnRequest = r.user_id === viewerId;
   const employeeName = r.users.first_name
     ? `${r.users.first_name} ${r.users.last_name ?? ""}`
     : r.users.email;
@@ -320,14 +323,19 @@ function LeaveCard({
       )}
 
       {/* Action */}
-      {r.status === "pending" && (
-        <button
-          onClick={() => onReview(r)}
-          className="w-full py-2 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition"
-        >
-          Review
-        </button>
-      )}
+      {r.status === "pending" &&
+        (isOwnRequest ? (
+          <p className="text-xs text-gray-400 text-center py-2">
+            You can't review your own request
+          </p>
+        ) : (
+          <button
+            onClick={() => onReview(r)}
+            className="w-full py-2 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition"
+          >
+            Review
+          </button>
+        ))}
     </div>
   );
 }
@@ -423,7 +431,12 @@ export default function LeaveRequestsAdminPage() {
           </div>
         ) : (
           filtered.map((r) => (
-            <LeaveCard key={r.id} r={r} onReview={setSelectedRequest} />
+            <LeaveCard
+              key={r.id}
+              r={r}
+              viewerId={adminId}
+              onReview={setSelectedRequest}
+            />
           ))
         )}
       </div>
@@ -522,12 +535,18 @@ export default function LeaveRequestsAdminPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       {r.status === "pending" ? (
-                        <button
-                          onClick={() => setSelectedRequest(r)}
-                          className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition font-medium"
-                        >
-                          Review
-                        </button>
+                        r.user_id === adminId ? (
+                          <span className="text-xs text-gray-400">
+                            Can't review your own request
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setSelectedRequest(r)}
+                            className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition font-medium"
+                          >
+                            Review
+                          </button>
+                        )
                       ) : (
                         <div className="flex flex-col items-end gap-0.5">
                           <span

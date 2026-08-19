@@ -2,11 +2,84 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { v2 as cloudinary } from "cloudinary";
 import { CLOUDINARY_CLOUD_NAME } from "@/lib/cloudinary";
+import { writePolicyAuditLog } from "@/lib/policyAuditLog";
+import { getApiRequestUser } from "@/lib/apiRequestAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json(
+        { error: "Manual ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const body = await req.json();
+    const { title, category, description } = body as {
+      title?: string;
+      category?: string;
+      description?: string | null;
+    };
+
+    if (!title?.trim() || !category?.trim()) {
+      return NextResponse.json(
+        { error: "Title and category are required" },
+        { status: 400 },
+      );
+    }
+
+    const { data, error } = await supabase
+      .from("manuals")
+      .update({
+        title: title.trim(),
+        category,
+        description: description?.trim() || null,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Supabase update error:", error);
+      return NextResponse.json(
+        { error: "Failed to update manual" },
+        { status: 500 },
+      );
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: "Manual not found" }, { status: 404 });
+    }
+
+    const apiUser = await getApiRequestUser(req);
+
+    await writePolicyAuditLog({
+      manual_id: id,
+      manual_title: data.title,
+      action: "edited",
+      detail: "Title / category / description updated",
+      performed_by: apiUser?.id ?? null,
+      performed_by_name: apiUser?.name ?? null,
+    });
+
+    return NextResponse.json({ success: true, manual: data });
+  } catch (err: any) {
+    console.error("[PATCH /api/policies/[id]]", err);
+    return NextResponse.json(
+      { error: err.message ?? "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
 
 cloudinary.config({
   // Same shared cloud name every upload flow uses (src/lib/cloudinary.ts) —
@@ -60,6 +133,18 @@ export async function DELETE(
       .eq("id", id);
 
     if (deleteError) throw deleteError;
+
+    // Fire-and-forget: policy_audit_log has no FK to manuals, deliberately,
+    // so the "deleted" entry survives the row being gone (see
+    // docs/policies/policy-audit-log.sql).
+    const apiUser = await getApiRequestUser(req);
+    await writePolicyAuditLog({
+      manual_id: id,
+      manual_title: manual.title,
+      action: "deleted",
+      performed_by: apiUser?.id ?? null,
+      performed_by_name: apiUser?.name ?? null,
+    });
 
     // ── Clean up Cloudinary (best effort — don't fail if this errors) ──
     if (publicIds.length > 0) {

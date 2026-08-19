@@ -128,7 +128,7 @@ export function formatDateTime(d: string | null | undefined): string {
 
 export function periodLabel(a: Pick<Appraisal, "review_quarter" | "review_year">) {
   return a.review_quarter === "Q4"
-    ? `Q4 (Annual) ${a.review_year}`
+    ? `Annual ${a.review_year}`
     : `${a.review_quarter} ${a.review_year}`;
 }
 

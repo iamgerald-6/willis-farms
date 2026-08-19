@@ -30,7 +30,6 @@ import {
   buildSkillLogCompetencyRowsFromConfig,
   resolveSkillLogSectionsForType,
   SKILL_LOG_MODULE_ID,
-  SKILL_LOG_REVIEW_PERIODS_LIST,
   SKILL_LOG_SECTIONS_LIST,
   SKILL_LOG_TIER_AUTH_LIST,
   SKILL_LOG_TYPES_LIST,
@@ -60,6 +59,20 @@ interface UserProfile {
   grade_level: string;
 }
 
+// NOTE: the skill taxonomy (log types, sections, and individual skills) used
+// to be hardcoded here. It's now sourced from system definitions via
+// buildSkillLogCompetencyRowsFromConfig/resolveSkillLogSectionsForType and
+// SKILL_LOG_TYPES_LIST (imported above), so admins can edit it without a
+// code change. The old hardcoded table below is dead — removed rather than
+// kept alongside the registry-driven version.
+// ─── Review date helper ─────────────────────────────────────────────────────
+// review_period is still stored as a plain string (no schema change), but the
+// UI now captures it as a single calendar date (YYYY-MM-DD, matching what a
+// native <input type="date"> reads and writes) instead of a Quarter dropdown.
+// Older logs may still hold a legacy "Q1 2026"-style value — ISO_DATE_RE lets
+// us tell those apart so we don't try to display them inside the date input.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 const competencySchema = z.object({
   skill: z.string(),
@@ -74,7 +87,7 @@ const skillLogSchema = z.object({
   employee_grade: z.string().min(1, "Select a grade"),
   employee_id: z.string().min(1, "Select an employee"),
   log_type: z.string().min(1, "Select a log type"),
-  review_period: z.string().min(1, "Review period is required"),
+  review_period: z.string().min(1, "Date is required"),
   section: z.string().optional(),
   tier_auth: z.string().optional(),
   strengths_observed: z.string().optional(),
@@ -112,6 +125,29 @@ function FormSelect({
         </select>
         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
       </div>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+function FormInput({
+  label,
+  error,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  label: string;
+  error?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+        {label}
+      </label>
+      <input
+        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 ${error ? "border-red-400" : "border-gray-200"}`}
+        style={{ "--tw-ring-color": BRAND } as any}
+        {...props}
+      />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
@@ -260,12 +296,6 @@ function SkillLogFormPageContent() {
     queryFn: () => fetchOptions(SKILL_LOG_TIER_AUTH_LIST),
   });
 
-  const { data: reviewPeriodOptions = [], isLoading: loadingReviewPeriods } =
-    useQuery({
-      queryKey: ["skill_log_options", SKILL_LOG_REVIEW_PERIODS_LIST],
-      queryFn: () => fetchOptions(SKILL_LOG_REVIEW_PERIODS_LIST),
-    });
-
   const { data: logTypeOptions = [], isLoading: loadingLogTypes } = useQuery({
     queryKey: ["skill_log_options", SKILL_LOG_TYPES_LIST],
     queryFn: () => fetchOptions(SKILL_LOG_TYPES_LIST),
@@ -343,6 +373,8 @@ function SkillLogFormPageContent() {
     );
   }, [allUsers, watchedGrade, supervisorId]);
 
+  const watchedReviewPeriod = watch("review_period");
+
   // Reset employee on grade change
   useEffect(() => {
     if (isEditMode) return;
@@ -370,11 +402,19 @@ function SkillLogFormPageContent() {
     const employeeGrade =
       existingLog.employee_grade ?? existingLog.employee?.grade_level ?? "";
 
+    // Only pre-fill the date input when the existing value is already in
+    // the YYYY-MM-DD shape it expects. A legacy value (e.g. a pre-date-picker
+    // "Q1 2026" string) leaves the picker blank and is shown as a reference
+    // caption instead.
+    const existingReviewPeriod = ISO_DATE_RE.test(existingLog.review_period)
+      ? existingLog.review_period
+      : "";
+
     reset({
       employee_grade: employeeGrade,
       employee_id: existingLog.employee_id ?? "",
       log_type: existingLog.log_type ?? "",
-      review_period: existingLog.review_period ?? "",
+      review_period: existingReviewPeriod,
       section: existingLog.section ?? "",
       tier_auth: existingLog.tier_auth ?? "",
       strengths_observed: existingLog.strengths_observed ?? "",
@@ -451,11 +491,7 @@ function SkillLogFormPageContent() {
     ? resolveSkillLogSectionsForType(watchedLogType, competencyOverrides)
     : [];
 
-  const optionsLoading =
-    loadingSections ||
-    loadingTierAuth ||
-    loadingReviewPeriods ||
-    loadingLogTypes;
+  const optionsLoading = loadingSections || loadingTierAuth || loadingLogTypes;
 
   if (isEditMode && loadingExisting) {
     return <FormPageSkeleton />;
@@ -609,35 +645,23 @@ function SkillLogFormPageContent() {
               )}
             />
 
-            <Controller
-              control={control}
-              name="review_period"
-              render={({ field }) => (
-                <FormSelect
-                  label="Review Period"
-                  error={errors.review_period?.message}
-                  disabled={optionsLoading}
-                  {...field}
-                >
-                  <option value="">— Select review period —</option>
-                  {reviewPeriodOptions.map((opt) => (
-                    <option key={opt.id} value={optionValue(opt)}>
-                      {opt.label}
-                    </option>
-                  ))}
-                  {isEditMode &&
-                    existingLog?.review_period &&
-                    !hasOptionValue(
-                      reviewPeriodOptions,
-                      existingLog.review_period,
-                    ) && (
-                      <option value={existingLog.review_period}>
-                        {existingLog.review_period}
-                      </option>
-                    )}
-                </FormSelect>
-              )}
-            />
+            <div>
+              <FormInput
+                label="Date"
+                type="date"
+                error={errors.review_period?.message}
+                {...register("review_period")}
+              />
+              {isEditMode &&
+                existingLog?.review_period &&
+                !ISO_DATE_RE.test(existingLog.review_period) &&
+                !watchedReviewPeriod && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Currently: {existingLog.review_period} — pick a new date
+                    to replace this.
+                  </p>
+                )}
+            </div>
 
             {/* Log Type */}
             <Controller

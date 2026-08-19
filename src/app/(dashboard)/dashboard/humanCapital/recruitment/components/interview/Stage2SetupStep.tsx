@@ -14,6 +14,7 @@ type Props = {
   onChange: (data: InterviewFormData) => void;
   onSendStage2Invites: (scheduledAt: string) => void;
   isPending: boolean;
+  readOnly?: boolean;
 };
 
 function toLocalDatetime(iso?: string) {
@@ -30,6 +31,7 @@ export default function Stage2SetupStep({
   onChange,
   onSendStage2Invites,
   isPending,
+  readOnly = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -99,6 +101,12 @@ export default function Stage2SetupStep({
         briefing="Stage 1 panel members are listed below. Add more panel members if needed, then set the practical date, time, and location before sending Stage 2 invites."
       />
 
+      {readOnly && (
+        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          Viewing Stage 2 panel setup — read-only.
+        </p>
+      )}
+
       <section className="border border-gray-200 rounded-xl p-4">
         <h3 className="text-sm font-bold text-gray-900 mb-1">Stage 2 — Add panel</h3>
         <p className="text-xs text-gray-500 mb-4">
@@ -113,6 +121,7 @@ export default function Stage2SetupStep({
             <input
               type="datetime-local"
               value={toLocalDatetime(scheduledAt)}
+              disabled={readOnly}
               onChange={(e) => {
                 const val = e.target.value;
                 const iso = val ? new Date(val).toISOString() : "";
@@ -126,7 +135,7 @@ export default function Stage2SetupStep({
                   },
                 });
               }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
             />
           </div>
           <div>
@@ -135,13 +144,14 @@ export default function Stage2SetupStep({
               type="text"
               placeholder="Practical assessment location"
               value={setup.stage2_location ?? setup.location ?? ""}
+              disabled={readOnly}
               onChange={(e) =>
                 onChange({
                   ...formData,
                   setup: { ...setup, stage2_location: e.target.value },
                 })
               }
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
             />
           </div>
         </div>
@@ -150,14 +160,16 @@ export default function Stage2SetupStep({
           <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
             Stage 2 panel
           </span>
-          <button
-            type="button"
-            onClick={addMember}
-            className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add member
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={addMember}
+              className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add member
+            </button>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -170,23 +182,27 @@ export default function Stage2SetupStep({
                 type="text"
                 placeholder="Full name *"
                 value={member.name}
+                disabled={readOnly}
                 onChange={(e) => updateMember(index, "name", e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={member.email}
+                disabled={readOnly}
                 onChange={(e) => updateMember(index, "email", e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
-              <button
-                type="button"
-                onClick={() => removeMember(index)}
-                className="p-2 text-gray-400 hover:text-red-600"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => removeMember(index)}
+                  className="p-2 text-gray-400 hover:text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -199,21 +215,23 @@ export default function Stage2SetupStep({
         </p>
       )}
 
-      <button
-        type="button"
-        onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
-        disabled={isPending || !scheduledAt}
-        className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-      >
-        {isPending ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Mail className="w-4 h-4" />
-        )}
-        {setup.stage2_invites_sent_at
-          ? "Resend Stage 2 invites"
-          : "Send Stage 2 invites & open practical"}
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+          disabled={isPending || !scheduledAt}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mail className="w-4 h-4" />
+          )}
+          {setup.stage2_invites_sent_at
+            ? "Resend Stage 2 invites"
+            : "Send Stage 2 invites & open practical"}
+        </button>
+      )}
     </div>
   );
 }

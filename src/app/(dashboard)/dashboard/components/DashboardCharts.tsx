@@ -145,6 +145,93 @@ export function AppraisalBarChart({ groups }: { groups: BarGroup[] }) {
   );
 }
 
+// ── Vertical category bar chart (x/y axis) ────────────────────────────────────
+// A real x/y axis chart: bar height is proportional to its value against a
+// shared y-axis scale (a value of 1 reads as short, not stretched to fill
+// the chart the way a "min visible height" trick would), each category's
+// name sits under its own bar on the x-axis, and each bar keeps its own
+// color so categories are still distinguishable at a glance.
+// Picks a whole-number tick step (aiming for ~4 gaps) and rounds the axis
+// top up to a clean multiple of it — e.g. max 1 → step 1 → ticks [1, 0]; max
+// 7 → step 2 → ticks [8, 6, 4, 2, 0]; max 23 → step 10 → ticks [30..0]. Counts
+// are always whole numbers, so the step is clamped to at least 1 — a plain
+// "max * fraction" split produces duplicate rounded ticks (e.g. 1, 1, 1, 0)
+// whenever the max is small, which is what was showing up before.
+function niceYAxisTicks(max: number): number[] {
+  if (max <= 0) return [0];
+  const rawStep = max / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / magnitude;
+  const niceResidual = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 5 ? 5 : 10;
+  const step = Math.max(1, Math.round(niceResidual * magnitude));
+  const axisMax = step * Math.ceil(max / step);
+  const ticks: number[] = [];
+  for (let t = axisMax; t >= 0; t -= step) ticks.push(t);
+  return ticks;
+}
+
+export function CategoryBarChart({
+  items,
+  height = 176,
+}: {
+  items: { label: string; value: number; color: string }[];
+  height?: number;
+}) {
+  const total = items.reduce((s, i) => s + i.value, 0);
+
+  if (total === 0) {
+    return <p className="text-sm text-gray-400 text-center py-10">No data yet</p>;
+  }
+
+  const yTicks = niceYAxisTicks(Math.max(...items.map((i) => i.value)));
+  const axisMax = yTicks[0];
+
+  return (
+    <div className="flex gap-2">
+      <div
+        className="flex flex-col justify-between text-[10px] text-gray-400 text-right tabular-nums"
+        style={{ height }}
+      >
+        {yTicks.map((t, i) => (
+          <span key={i}>{t}</span>
+        ))}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div
+          className="flex items-end gap-2 sm:gap-3 border-l border-b border-gray-200 pl-2"
+          style={{ height }}
+        >
+          {items.map((item) => {
+            const pct = (item.value / axisMax) * 100;
+            return (
+              <div
+                key={item.label}
+                className="flex-1 h-full flex flex-col items-center justify-end gap-1 min-w-0"
+              >
+                <span className="text-xs font-semibold text-gray-700 tabular-nums">{item.value}</span>
+                <div
+                  className="w-full max-w-[36px] mx-auto rounded-t-md transition-all"
+                  style={{ height: `${pct}%`, backgroundColor: item.color }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-2 sm:gap-3 pl-2 mt-1.5">
+          {items.map((item) => (
+            <span
+              key={item.label}
+              className="flex-1 min-w-0 text-[10px] text-gray-500 text-center leading-tight break-words"
+            >
+              {item.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Horizontal bar chart ──────────────────────────────────────────────────────
 export function HorizontalBarChart({
   items,

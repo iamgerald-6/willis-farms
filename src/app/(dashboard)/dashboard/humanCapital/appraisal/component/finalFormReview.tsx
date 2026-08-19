@@ -318,7 +318,7 @@ export default function FinalReviewForm({
         {appraisal.review_quarter === "Q4" && (
           <div className="mt-3 bg-purple-500/20 border border-purple-400/30 rounded-lg px-3 py-2 text-xs text-purple-200 flex items-center gap-2">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            This is the Q4 (Annual) review — submitting here will
+            This is the Annual review — submitting here will
             automatically compute the employee's Final Score and promotion
             eligibility for the year.
           </div>

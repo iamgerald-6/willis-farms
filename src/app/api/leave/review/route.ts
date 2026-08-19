@@ -37,6 +37,26 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
 
+    // Self-approval block: fetch who the request actually belongs to before
+    // touching it — a Senior Management caller can review anyone else's
+    // leave, but never their own, regardless of what the client sent.
+    const { data: existing, error: fetchError } = await supabaseAdmin
+      .from("leave_requests")
+      .select("user_id")
+      .eq("id", leave_id)
+      .single();
+
+    if (fetchError || !existing) {
+      return NextResponse.json(
+        { error: "Leave request not found" },
+        { status: 404 },
+      );
+    }
+
+    if (existing.user_id === caller.id) {
+      return jsonForbidden("You cannot approve or reject your own leave request.");
+    }
+
     const { data, error } = await supabaseAdmin
       .from("leave_requests")
       .update({

@@ -1,15 +1,29 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 
+const REDIRECT_SECONDS = 8;
+
 export default function ApplySuccessPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const reference = searchParams?.get("ref") ?? "";
   const role = searchParams?.get("role") ?? "your selected role";
+  const [secondsLeft, setSecondsLeft] = useState(REDIRECT_SECONDS);
 
   usePreventBrowserBack(true);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      router.push("/careers");
+      return;
+    }
+    const timer = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft, router]);
 
   return (
     <FormShell
@@ -31,6 +45,16 @@ export default function ApplySuccessPage() {
         <p className="text-xs text-gray-400 mt-4">
           Please keep this reference number for follow-up. Our Human Capital team
           will contact you if you are shortlisted.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push("/careers")}
+          className="mt-8 inline-flex items-center justify-center rounded-lg bg-red-700 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-800 transition-colors"
+        >
+          Back to Careers
+        </button>
+        <p className="text-xs text-gray-400 mt-3">
+          Redirecting to Careers in {secondsLeft}s…
         </p>
       </div>
     </FormShell>

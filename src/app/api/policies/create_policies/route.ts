@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writePolicyAuditLog } from "@/lib/policyAuditLog";
+import { getApiRequestUser } from "@/lib/apiRequestAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -110,6 +112,20 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (versionError) throw versionError;
+
+    // Prefer the caller identity resolved server-side from the Supabase
+    // session over the client-supplied uploaded_by — matches the SOP audit
+    // log's writeSopAuditLog call pattern.
+    const apiUser = await getApiRequestUser(req);
+
+    await writePolicyAuditLog({
+      manual_id: manualId,
+      manual_title: title,
+      action: existing ? "version_added" : "added",
+      detail: existing ? `Version "${version_label}" added` : null,
+      performed_by: apiUser?.id ?? uploaded_by,
+      performed_by_name: apiUser?.name ?? null,
+    });
 
     return NextResponse.json(
       { success: true, manual_id: manualId, version },

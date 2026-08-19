@@ -46,6 +46,23 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     if (body.description !== undefined) {
       updates.description = String(body.description).trim();
     }
+    if (body.role_scope !== undefined) updates.role_scope = body.role_scope;
+    if (body.key_responsibilities !== undefined) {
+      updates.key_responsibilities = body.key_responsibilities;
+    }
+    if (body.minimum_qualifications !== undefined) {
+      updates.minimum_qualifications = body.minimum_qualifications;
+    }
+    if (body.preferred_qualifications !== undefined) {
+      updates.preferred_qualifications = body.preferred_qualifications;
+    }
+    if (body.experience !== undefined) updates.experience = body.experience;
+    if (body.required_skills_attributes !== undefined) {
+      updates.required_skills_attributes = body.required_skills_attributes;
+    }
+    if (body.non_negotiable_standards !== undefined) {
+      updates.non_negotiable_standards = body.non_negotiable_standards;
+    }
     if (body.closes_at !== undefined) updates.closes_at = body.closes_at;
     if (body.jd_file_url !== undefined) updates.jd_file_url = body.jd_file_url;
     if (body.jd_file_public_id !== undefined) {
