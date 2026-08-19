@@ -22,7 +22,13 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: data ?? [] });
+    // Exclude in-progress drafts once submission_status column exists (post-migration).
+    // Before migration the field is absent — all existing rows are treated as submitted.
+    const visible = (data ?? []).filter(
+      (row) => row.submission_status !== "draft",
+    );
+
+    return NextResponse.json({ success: true, data: visible });
   } catch (err) {
     console.error("[GET /api/careers/applications]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

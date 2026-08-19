@@ -30,6 +30,8 @@ export const PANEL_DECISIONS = [
 
 export type PanelDecision = (typeof PANEL_DECISIONS)[number]["value"];
 
+export type SubmissionStatus = "draft" | "submitted";
+
 export interface JobApplication {
   id: string;
   reference_number: string;
@@ -43,6 +45,10 @@ export interface JobApplication {
   cv_url: string | null;
   cv_public_id: string | null;
   status: ApplicationStatus;
+  submission_status?: SubmissionStatus;
+  job_posting_id?: string | null;
+  application_form_data?: Record<string, unknown> | null;
+  draft_token?: string | null;
   hr_notes: string | null;
   interview_form_data: InterviewFormData | null;
   interview_submitted_at: string | null;

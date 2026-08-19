@@ -10,6 +10,11 @@ This implements the agreed hiring flow:
 
 ## 1) Run this SQL in Supabase
 
+**First** run the base schema below, then run:
+
+- `docs/careers/job_postings.sql` — job postings table + draft/submitted application columns
+- `docs/system-definitions/recruitment.sql` — System Definitions module + default application form fields
+
 ```sql
 create extension if not exists "pgcrypto";
 

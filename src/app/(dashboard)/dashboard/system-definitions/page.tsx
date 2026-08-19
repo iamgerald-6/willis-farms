@@ -29,6 +29,8 @@ import type {
 } from "@/lib/moduleRegistry";
 import {
   isEditableBusinessLogicModule,
+  isEditableApplicationFormModule,
+  isEditableJobPostingModule,
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
   isEditableRatingSectionModule,
@@ -41,6 +43,8 @@ import SectionWeightsEditor from "./components/SectionWeightsEditor";
 import RatingSectionsEditor from "./components/RatingSectionsEditor";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
+import ApplicationFormEditor from "./components/ApplicationFormEditor";
+import JobPostingsEditor from "./components/JobPostingsEditor";
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
   view: "Can view",
@@ -281,6 +285,30 @@ function ModuleDetail({
           <EmptyRow>No specific actions listed for this section.</EmptyRow>
         )}
       </SectionCard>
+
+      {isEditableJobPostingModule(m.id) && (
+        <SectionCard
+          icon={Tag}
+          title="Job posting"
+          description="Roles HR can publish on the careers page. Add or remove roles here — interview guide is set internally."
+        >
+          <JobPostingsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
+        </SectionCard>
+      )}
+
+      {isEditableApplicationFormModule(m.id) && (
+        <SectionCard
+          icon={Rows3}
+          title="Job application form"
+          description="Fields shown on the public multi-step job application. Add, edit, or remove fields and steps."
+        >
+          <ApplicationFormEditor
+            moduleId={m.id}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      )}
 
       {isEditableCompetencySectionModule(m.id) && (
         <SectionCard

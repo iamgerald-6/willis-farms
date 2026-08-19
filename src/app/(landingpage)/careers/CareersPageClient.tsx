@@ -1,44 +1,61 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import Link from "next/link";
 import { PageShell } from "@/components/PageShell";
 import { SectionHeading } from "@/components/SectionHeading";
-import { CareersApplyForm } from "@/components/Forms/CareersApplyForm";
 import { siteContent } from "@/content/siteContent";
-import { ALL_CAREER_OPENINGS } from "@/lib/careers/openings";
+import type { JobPosting } from "@/lib/careers/jobPostings";
+import { formatPublicJobTitle, previewDescription } from "@/lib/careers/jobPostings";
 import Image from "next/image";
-import Link from "next/link";
 
-function scrollToApplyForm() {
-  document.getElementById("apply")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
+function JobCard({ posting }: { posting: JobPosting }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-3xl border border-black/5 bg-white p-7 shadow-soft">
+      <p className="text-base font-bold text-brand-dark">
+        {formatPublicJobTitle(posting.title)}
+      </p>
+      <p className="mt-2 text-sm text-brand-gray">
+        {posting.location} · {posting.employment_type}
+      </p>
+      <p className="mt-4 text-sm leading-relaxed text-brand-gray">
+        {expanded ? posting.description : previewDescription(posting.description)}
+      </p>
+      {posting.description.length > 220 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 text-sm font-semibold text-brand-red hover:underline"
+        >
+          {expanded ? "View less" : "View more"}
+        </button>
+      )}
+      <p className="mt-3 text-xs text-brand-gray">
+        Applications close{" "}
+        {new Date(posting.closes_at).toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+      </p>
+      <Link
+        href={`/apply/${posting.id}`}
+        className="mt-5 inline-flex rounded-2xl bg-brand-red px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
+      >
+        Apply now
+      </Link>
+    </div>
+  );
 }
 
-type Props = {
-  defaultRoleSlug?: string;
-};
-
-export default function CareersPageClient({ defaultRoleSlug }: Props) {
+export default function CareersPageClient({
+  postings,
+}: {
+  postings: JobPosting[];
+}) {
   const c = siteContent.careers;
-  const router = useRouter();
-
-  useEffect(() => {
-    if (window.location.hash !== "#apply") return;
-    const timer = window.setTimeout(scrollToApplyForm, 150);
-    return () => window.clearTimeout(timer);
-  }, [defaultRoleSlug]);
-
-  const goToApply = (roleSlug: string) => {
-    router.push(`/careers?role=${roleSlug}#apply`, { scroll: false });
-    window.setTimeout(scrollToApplyForm, 150);
-  };
-
-  const displayOpenings = ALL_CAREER_OPENINGS.filter(
-    (o, i, arr) => arr.findIndex((x) => x.slug === o.slug) === i,
-  );
 
   return (
     <div>
@@ -64,34 +81,30 @@ export default function CareersPageClient({ defaultRoleSlug }: Props) {
           <SectionHeading
             eyebrow="Openings"
             title="Current opportunities"
-            subtitle="Select a role below or apply to our talent pool. Shortlisted candidates will be invited to interview."
+            subtitle="Browse our open roles and apply online. Shortlisted candidates will be invited to interview."
           />
-          <div className="grid gap-5 md:grid-cols-2">
-            {displayOpenings.map((o) => (
-              <div
-                key={o.slug}
-                className="rounded-3xl border border-black/5 bg-white p-7 shadow-soft"
-              >
-                <p className="text-base font-bold text-brand-dark">{o.title}</p>
-                <p className="mt-2 text-sm text-brand-gray">
-                  {o.location} · {o.type}
-                </p>
-                <p className="mt-4 text-sm leading-relaxed text-brand-gray">
-                  {o.summary}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => goToApply(o.slug)}
-                  className="mt-5 inline-flex rounded-2xl bg-brand-red px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
-                >
-                  Apply for this role
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
 
-        <CareersApplyForm defaultRoleSlug={defaultRoleSlug} />
+          {postings.length === 0 ? (
+            <div className="rounded-3xl border border-black/5 bg-white p-8 text-center shadow-soft">
+              <p className="text-sm text-brand-gray">
+                There are no open positions at the moment. Please check back soon or email{" "}
+                <a
+                  href="mailto:info@willsfarms.com"
+                  className="font-semibold text-brand-red hover:underline"
+                >
+                  info@willsfarms.com
+                </a>{" "}
+                to register your interest.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-5 md:grid-cols-2">
+              {postings.map((posting) => (
+                <JobCard key={posting.id} posting={posting} />
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="rounded-3xl bg-brand-light p-7 ring-1 ring-black/5">
           <p className="text-base font-bold text-brand-dark">Questions?</p>
@@ -103,8 +116,7 @@ export default function CareersPageClient({ defaultRoleSlug }: Props) {
             >
               info@willsfarms.com
             </a>{" "}
-            with your reference number if you need to follow up on an
-            application.
+            with your reference number if you need to follow up on an application.
           </p>
         </section>
       </PageShell>
