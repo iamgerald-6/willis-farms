@@ -8,6 +8,7 @@ import {
   type ApplicationFieldStep,
   type ApplicationFormData,
   type ApplicationFormField,
+  type UploadedFile,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
@@ -24,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -156,17 +158,32 @@ export default function JobApplicationWizard({
     }
   };
 
-  const handleFileUpload = async (fieldKey: string, file: File) => {
+  const handleFileUpload = async (fieldKey: string, file: File, multiple: boolean) => {
     setUploadingKey(fieldKey);
     setError(null);
     try {
       const uploaded = await uploadCareersFile(file, "CareersApplications");
-      setFieldValue(fieldKey, uploaded);
+      if (multiple) {
+        setValues((prev) => {
+          const existing = Array.isArray(prev[fieldKey]) ? (prev[fieldKey] as UploadedFile[]) : [];
+          return { ...prev, [fieldKey]: [...existing, uploaded] };
+        });
+        setDraftSavedMessage(null);
+      } else {
+        setFieldValue(fieldKey, uploaded);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploadingKey(null);
     }
+  };
+
+  const handleRemoveFile = (fieldKey: string, index: number) => {
+    setValues((prev) => {
+      const existing = Array.isArray(prev[fieldKey]) ? (prev[fieldKey] as UploadedFile[]) : [];
+      return { ...prev, [fieldKey]: existing.filter((_, i) => i !== index) };
+    });
   };
 
   const renderField = (field: ApplicationFormField) => {
@@ -207,6 +224,53 @@ export default function JobApplicationWizard({
       );
     }
 
+    if (fieldType === "file" && field.rules.multiple) {
+      const files = Array.isArray(value) ? (value as UploadedFile[]) : [];
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <div className="space-y-2">
+            {files.map((f, i) => (
+              <div
+                key={f.public_id ?? `${f.original_name}-${i}`}
+                className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2"
+              >
+                <span className="text-sm text-gray-700 truncate">{f.original_name}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFile(fieldKey, i)}
+                  className="p-1 rounded hover:bg-red-50 shrink-0"
+                  aria-label={`Remove ${f.original_name}`}
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            ))}
+            <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300 hover:bg-red-50/30">
+              {uploadingKey === fieldKey ? (
+                <Loader2 className="w-5 h-5 animate-spin text-red-600" />
+              ) : (
+                <Upload className="w-5 h-5 text-gray-400" />
+              )}
+              <span className="text-sm text-gray-600">
+                {files.length > 0 ? "Add another file" : "Choose file to upload"}
+              </span>
+              <input
+                type="file"
+                className="sr-only"
+                accept={accept}
+                disabled={uploadingKey === fieldKey}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFileUpload(fieldKey, file, true);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </FieldBlock>
+      );
+    }
+
     if (fieldType === "file") {
       const fileVal = value as
         | { secure_url?: string; original_name?: string }
@@ -231,7 +295,7 @@ export default function JobApplicationWizard({
               disabled={uploadingKey === fieldKey}
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void handleFileUpload(fieldKey, file);
+                if (file) void handleFileUpload(fieldKey, file, false);
               }}
             />
           </label>

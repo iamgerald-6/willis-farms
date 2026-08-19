@@ -140,6 +140,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldType: "file",
         required: true,
         accept: ".pdf,image/*",
+        multiple: true,
       },
     ),
     field("opt:recruitment:field:cv", "Curriculum vitae (CV)", "cv", 30, {

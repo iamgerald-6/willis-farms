@@ -46,6 +46,7 @@ type DraftRules = {
   showWhenField: string;
   showWhenEquals: string;
   accept: string;
+  multiple: boolean;
 };
 
 function rulesToDraft(rules: ReturnType<typeof parseApplicationFieldRules>): DraftRules {
@@ -58,6 +59,7 @@ function rulesToDraft(rules: ReturnType<typeof parseApplicationFieldRules>): Dra
     showWhenField: rules.showWhen?.field ?? "",
     showWhenEquals: rules.showWhen?.equals ?? "",
     accept: rules.accept ?? "",
+    multiple: rules.multiple ?? false,
   };
 }
 
@@ -79,6 +81,9 @@ function draftToRules(draft: DraftRules): Record<string, unknown> {
   }
   if (draft.fieldType === "file" && draft.accept.trim()) {
     rules.accept = draft.accept.trim();
+  }
+  if (draft.fieldType === "file" && draft.multiple) {
+    rules.multiple = true;
   }
   return rules;
 }
@@ -102,6 +107,7 @@ export default function ApplicationFormEditor({
     showWhenField: "",
     showWhenEquals: "",
     accept: "",
+    multiple: false,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -400,15 +406,25 @@ function FieldDraftForm({
       )}
 
       {draft.fieldType === "file" && (
-        <label className="block">
-          <span className="text-xs text-gray-500">Accepted file types</span>
-          <input
-            className={inputClass}
-            placeholder=".pdf,image/*"
-            value={draft.accept}
-            onChange={(e) => onDraftChange({ ...draft, accept: e.target.value })}
-          />
-        </label>
+        <>
+          <label className="block">
+            <span className="text-xs text-gray-500">Accepted file types</span>
+            <input
+              className={inputClass}
+              placeholder=".pdf,image/*"
+              value={draft.accept}
+              onChange={(e) => onDraftChange({ ...draft, accept: e.target.value })}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={draft.multiple}
+              onChange={(e) => onDraftChange({ ...draft, multiple: e.target.checked })}
+            />
+            Allow multiple files
+          </label>
+        </>
       )}
 
       <div className="grid sm:grid-cols-2 gap-2">

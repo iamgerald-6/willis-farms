@@ -52,6 +52,14 @@ export interface ApplicationFieldRules {
   options?: string[];
   showWhen?: ApplicationFieldShowWhen;
   accept?: string;
+  /** file fields only — allow uploading more than one file. */
+  multiple?: boolean;
+}
+
+export interface UploadedFile {
+  secure_url: string;
+  public_id: string;
+  original_name: string;
 }
 
 export interface ApplicationFormField {
@@ -104,6 +112,7 @@ export function parseApplicationFieldRules(
           }
         : undefined,
     accept: typeof raw?.accept === "string" ? raw.accept : undefined,
+    multiple: raw?.multiple === true,
   };
 }
 
@@ -180,6 +189,13 @@ export function validateStep(
 
     if (field.rules.fieldType === "file") {
       if (!field.rules.required) continue;
+      if (field.rules.multiple) {
+        const files = Array.isArray(value) ? (value as UploadedFile[]) : [];
+        if (files.length === 0 || !files.every((f) => f?.secure_url)) {
+          errors.push(`${field.label} is required.`);
+        }
+        continue;
+      }
       const fileVal = value as { secure_url?: string } | null | undefined;
       if (!fileVal?.secure_url) {
         errors.push(`${field.label} is required.`);
