@@ -10,6 +10,7 @@ export {
 export {
   SOP_BROWSE_COPY,
   SOP_CATEGORIES,
+  SOP_DESCRIPTION_MAX_CHARS,
   SOP_MANAGE_COPY,
   getSopCategories,
   getSopCategoryBadgeClass,
@@ -23,6 +24,7 @@ export {
 export {
   POLICIES_PAGE_COPY,
   POLICY_CATEGORIES,
+  POLICY_DESCRIPTION_MAX_CHARS,
   getDefaultPolicyCategoryLegacyValue,
   getPolicyCategories,
   getPolicyCategoryBadgeClass,

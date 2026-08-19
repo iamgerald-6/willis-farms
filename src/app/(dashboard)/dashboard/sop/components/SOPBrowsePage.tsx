@@ -162,13 +162,6 @@ function SkeletonCard() {
   );
 }
 
-// ─── Description helper ─────────────────────────────────────────────────────
-function truncateWords(text: string, maxWords: number): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= maxWords) return text;
-  return words.slice(0, maxWords).join(" ") + "…";
-}
-
 // ─── Document/video choice popup ────────────────────────────────────────────
 // Shown instead of auto-opening the document when an SOP has both a document
 // and a video attached — lets the person pick which one they actually want.
@@ -260,8 +253,8 @@ function ContentCard({ content }: { content: Content }) {
           {content.title}
         </h2>
         <p className="text-xs text-gray-400 mb-3">{content.sub_category}</p>
-        <p className="text-sm text-gray-500 line-clamp-2 flex-1">
-          {truncateWords(content.description, 10)}
+        <p className="text-sm text-gray-500 line-clamp-2 flex-1 text-justify">
+          {content.description}
         </p>
 
         <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100">

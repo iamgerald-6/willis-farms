@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
+  Pencil,
+  History,
   Loader2,
   FileText,
   ChevronDown,
@@ -22,6 +24,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
 import ConfirmDeleteDialog from "./components/deletModal";
 import UploadManualModal from "./components/uploadModal";
+import EditManualModal from "./components/editModal";
+import PolicyHistoryDrawer from "./components/historyDrawer";
 import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
   getPolicyCategoryBadgeClass,
@@ -321,10 +325,14 @@ function ManualCard({
   manual,
   isAdmin,
   onDelete,
+  onEdit,
+  onHistory,
 }: {
   manual: Manual;
   isAdmin: boolean;
   onDelete: (id: string, title: string) => void;
+  onEdit: (manual: Manual) => void;
+  onHistory: (manual: Manual) => void;
 }) {
   const latest = manual.versions[0];
 
@@ -343,19 +351,35 @@ function ManualCard({
             {manual.title}
           </h3>
           {manual.description && (
-            <p className="text-sm text-gray-500 mt-1 leading-relaxed line-clamp-2 break-words">
+            <p className="text-sm text-gray-500 mt-1 leading-relaxed break-words text-justify">
               {manual.description}
             </p>
           )}
         </div>
         {isAdmin && (
-          <button
-            onClick={() => onDelete(manual.manual_id, manual.title)}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition flex-shrink-0"
-            title="Delete manual"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={() => onEdit(manual)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-[#C62828] hover:bg-red-50 transition"
+              title="Edit"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onHistory(manual)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition"
+              title="History"
+            >
+              <History className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onDelete(manual.manual_id, manual.title)}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition"
+              title="Delete manual"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -380,9 +404,13 @@ function ManualCard({
 function AdminTableView({
   manuals,
   onDelete,
+  onEdit,
+  onHistory,
 }: {
   manuals: Manual[];
   onDelete: (id: string, title: string) => void;
+  onEdit: (manual: Manual) => void;
+  onHistory: (manual: Manual) => void;
 }) {
   return (
     <div className="w-full flex-1 flex flex-col">
@@ -406,17 +434,34 @@ function AdminTableView({
                       {manual.title}
                     </p>
                     {manual.description && (
-                      <p className="text-xs text-gray-400 line-clamp-2 mt-0.5 break-words">
+                      <p className="text-xs text-gray-400 mt-0.5 break-words text-justify">
                         {manual.description}
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={() => onDelete(manual.manual_id, manual.title)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => onEdit(manual)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                      title="Edit"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onHistory(manual)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                      title="History"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(manual.manual_id, manual.title)}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                      title="Delete manual"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 justify-between border-t border-b border-gray-50 py-2">
@@ -498,11 +543,11 @@ function AdminTableView({
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 max-w-[220px]">
-                          <p className="font-medium text-gray-900 truncate">
+                          <p className="font-medium text-gray-900 break-words">
                             {manual.title}
                           </p>
                           {manual.description && (
-                            <p className="text-xs text-gray-400 truncate">
+                            <p className="text-xs text-gray-400 break-words text-justify">
                               {manual.description}
                             </p>
                           )}
@@ -533,7 +578,21 @@ function AdminTableView({
                       {latest.uploaded_by_name}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          onClick={() => onEdit(manual)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                          title="Edit"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onHistory(manual)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                          title="History"
+                        >
+                          <History className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() =>
                             onDelete(manual.manual_id, manual.title)
@@ -588,6 +647,8 @@ export default function PoliciesPage() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchValue, setSearchValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editingManual, setEditingManual] = useState<Manual | null>(null);
+  const [historyManual, setHistoryManual] = useState<Manual | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{
     open: boolean;
     manualId: string;
@@ -733,6 +794,8 @@ export default function PoliciesPage() {
             onDelete={(id, title) =>
               setConfirmDelete({ open: true, manualId: id, label: title })
             }
+            onEdit={setEditingManual}
+            onHistory={setHistoryManual}
           />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-16 text-center flex-1 flex flex-col items-center justify-center min-h-[320px]">
@@ -756,6 +819,8 @@ export default function PoliciesPage() {
                 onDelete={(id, title) =>
                   setConfirmDelete({ open: true, manualId: id, label: title })
                 }
+                onEdit={setEditingManual}
+                onHistory={setHistoryManual}
               />
             ))}
           </div>
@@ -781,6 +846,22 @@ export default function PoliciesPage() {
         uploadedById={currentUserId ?? ""}
         categories={categoryOptions}
       />
+
+      <EditManualModal
+        open={!!editingManual}
+        onClose={() => setEditingManual(null)}
+        onSuccess={refetch}
+        manual={editingManual}
+        categories={categoryOptions}
+      />
+
+      {historyManual && (
+        <PolicyHistoryDrawer
+          manualId={historyManual.manual_id}
+          manualTitle={historyManual.title}
+          onClose={() => setHistoryManual(null)}
+        />
+      )}
     </div>
   );
 }

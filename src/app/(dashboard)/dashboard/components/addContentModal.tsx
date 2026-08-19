@@ -23,6 +23,7 @@ import {
   getSopCategoryLegacyValues,
   getSopCategoryOptions,
   getSopSubcategoriesForCategory,
+  SOP_DESCRIPTION_MAX_CHARS,
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 
@@ -41,9 +42,9 @@ const contentSchema = z.object({
   description: z
     .string()
     .min(5, "Description must be at least 5 characters")
-    .refine(
-      (v) => v.trim().split(/\s+/).filter(Boolean).length <= 10,
-      "Description must be at most 10 words",
+    .max(
+      SOP_DESCRIPTION_MAX_CHARS,
+      `Description must be at most ${SOP_DESCRIPTION_MAX_CHARS} characters`,
     ),
   document_read_minutes: z.number().min(1, "Read time is required"),
   video_duration_minutes: z.number().optional(),
@@ -68,6 +69,18 @@ interface Props {
   performedBy: { id: string; name: string } | null;
 }
 
+// Cloudinary's unsigned-upload preset on this account caps individual files
+// at 100MB — larger files don't get a graceful JSON error back, the
+// connection just gets cut, which the browser reports as a bare "Failed to
+// fetch" (no status code, no response body to read a real reason from).
+// Checked client-side before ever attempting the upload so that case shows
+// a clear, actionable message instead of that generic network error.
+const MAX_VIDEO_FILE_SIZE_MB = 100;
+
+function formatFileSizeMB(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
 async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
@@ -79,12 +92,28 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const isPdf = file.type === "application/pdf";
   const resourceType = isImage || isPdf ? "image" : isVideo ? "video" : "raw";
 
-  const res = await fetch(cloudinaryUploadUrl(resourceType), {
-    method: "POST",
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(cloudinaryUploadUrl(resourceType), {
+      method: "POST",
+      body: formData,
+    });
+  } catch {
+    // fetch() itself only throws for a network-level failure (connection
+    // reset, dropped, CORS block) — there's no response to inspect, so the
+    // most common real-world cause (an oversized file getting cut off
+    // mid-upload) is the most useful thing to say here.
+    throw new Error(
+      `Upload failed before it could complete — likely because "${file.name}" (${formatFileSizeMB(file.size)}MB) is too large, or the connection dropped. Try a smaller file or a more stable connection.`,
+    );
+  }
+
   const json = await res.json();
-  if (!json.secure_url) throw new Error("Cloudinary upload failed");
+  if (!json.secure_url) {
+    throw new Error(
+      json?.error?.message ?? `Cloudinary upload failed (HTTP ${res.status})`,
+    );
+  }
   return json.secure_url as string;
 }
 
@@ -204,6 +233,7 @@ export default function AddContentModal({
   const [fileErrors, setFileErrors] = useState<{
     cover?: string;
     doc?: string;
+    video?: string;
   }>({});
 
   const {
@@ -260,15 +290,20 @@ export default function AddContentModal({
     : [];
 
   const descriptionValue = watch("description") ?? "";
-  const descriptionWordCount = descriptionValue.trim()
-    ? descriptionValue.trim().split(/\s+/).filter(Boolean).length
-    : 0;
+  const descriptionCharCount = descriptionValue.length;
 
   const validateFiles = () => {
     const errs: { cover?: string; doc?: string } = {};
-    // A document is only optional when editing an SOP that already has one
-    // on file and the user isn't replacing it.
-    if (!docFile && !(isEditing && editingContent?.document_url)) {
+    // Document is only required when creating a brand-new SOP (matches the
+    // Document field's required={!isEditing} hint below). When editing,
+    // whatever the SOP already has — a document, none at all, or one about
+    // to be replaced — is preserved/updated as-is by onSubmit's docUrl
+    // fallback. The previous check instead required editingContent to
+    // already have a document_url to skip this, which silently blocked
+    // "Save Changes" on any video-only SOP (no document ever attached) —
+    // e.g. just replacing its video — with no visible feedback beyond a
+    // small inline error under the Document field.
+    if (!isEditing && !docFile) {
       errs.doc = "Document is required";
     }
     setFileErrors(errs);
@@ -454,34 +489,36 @@ export default function AddContentModal({
             >
               <textarea
                 rows={3}
-                placeholder="What does this SOP cover? (10 words max)"
+                placeholder={`What does this SOP cover? (${SOP_DESCRIPTION_MAX_CHARS} characters max)`}
                 {...register("description")}
                 onChange={(e) => {
                   // Let RHF record the keystroke first, then — if it pushed
-                  // past 10 words — use setValue so both the visible text
-                  // and RHF's internal form state get truncated together.
-                  // Mutating e.target.value directly here would only fix
-                  // the display: RHF already reads the untruncated value
-                  // before a custom onChange runs, so the extra words would
-                  // still slip into the submitted data.
+                  // past the character cap — use setValue so both the
+                  // visible text and RHF's internal form state get
+                  // truncated together. Mutating e.target.value directly
+                  // here would only fix the display: RHF already reads the
+                  // untruncated value before a custom onChange runs, so the
+                  // extra characters would still slip into the submitted
+                  // data.
                   register("description").onChange(e);
-                  const words = e.target.value.split(/\s+/).filter(Boolean);
-                  if (words.length > 10) {
-                    setValue("description", words.slice(0, 10).join(" "), {
-                      shouldValidate: true,
-                    });
+                  if (e.target.value.length > SOP_DESCRIPTION_MAX_CHARS) {
+                    setValue(
+                      "description",
+                      e.target.value.slice(0, SOP_DESCRIPTION_MAX_CHARS),
+                      { shouldValidate: true },
+                    );
                   }
                 }}
                 className={`${inputCls(!!errors.description)} resize-none`}
               />
               <p
                 className={`text-xs text-right ${
-                  descriptionWordCount >= 10
+                  descriptionCharCount >= SOP_DESCRIPTION_MAX_CHARS
                     ? "text-red-500 font-medium"
                     : "text-gray-400"
                 }`}
               >
-                {descriptionWordCount}/10 words
+                {descriptionCharCount}/{SOP_DESCRIPTION_MAX_CHARS} characters
               </p>
             </Field>
 
@@ -568,16 +605,29 @@ export default function AddContentModal({
                 <Field
                   label="Video (Optional)"
                   icon={<Video className="w-4 h-4" />}
+                  error={fileErrors.video}
                 >
                   <FileDropZone
                     accept="video/*"
                     file={videoFile}
-                    onChange={setVideoFile}
+                    onChange={(f) => {
+                      if (f && f.size > MAX_VIDEO_FILE_SIZE_MB * 1024 * 1024) {
+                        setFileErrors((prev) => ({
+                          ...prev,
+                          video: `Video must be under ${MAX_VIDEO_FILE_SIZE_MB}MB — this file is ${formatFileSizeMB(f.size)}MB. Compress it or trim it down and try again.`,
+                        }));
+                        setVideoFile(null);
+                        return;
+                      }
+                      setFileErrors((prev) => ({ ...prev, video: undefined }));
+                      setVideoFile(f);
+                    }}
                     placeholder={
                       isEditing && editingContent?.video_url
                         ? "Existing video on file — click to replace"
                         : "Click to upload a video"
                     }
+                    hasError={!!fileErrors.video}
                   />
                 </Field>
 

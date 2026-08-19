@@ -160,6 +160,14 @@ export function getSopCategoryOptions(): TaxonomyOption[] {
   }));
 }
 
+/**
+ * Character cap on an SOP's description, enforced by the add/edit form —
+ * same mechanism as POLICY_DESCRIPTION_MAX_CHARS (a single shared constant
+ * so the form's cap and its live counter can never drift out of sync).
+ * Replaces the previous 10-word limit with a character limit instead.
+ */
+export const SOP_DESCRIPTION_MAX_CHARS = 100;
+
 export const SOP_BROWSE_COPY = {
   title: "SOPs",
   subtitle: "Browse standard operating procedures across all farm areas",

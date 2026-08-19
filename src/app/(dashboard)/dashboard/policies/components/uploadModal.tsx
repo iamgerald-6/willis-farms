@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import {
   getDefaultPolicyCategoryLegacyValue,
   POLICIES_PAGE_COPY,
+  POLICY_DESCRIPTION_MAX_CHARS,
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 
@@ -213,11 +214,16 @@ export default function UploadManualModal({
             </label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) =>
+                setDescription(e.target.value.slice(0, POLICY_DESCRIPTION_MAX_CHARS))
+              }
               placeholder="Brief description of what this manual covers..."
               rows={2}
               className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
             />
+            <p className="text-xs text-gray-400 mt-1 text-right">
+              {description.length}/{POLICY_DESCRIPTION_MAX_CHARS} characters
+            </p>
           </div>
 
           {/* Version Notes */}
