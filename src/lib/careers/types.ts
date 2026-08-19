@@ -125,6 +125,10 @@ export interface Stage1Review {
   reviewed_at?: string;
   reviewed_by?: string;
   notes?: string;
+  /** AI-generated read of the panel's Stage 1 scores/notes — advisory only, HR still decides. */
+  ai_analysis?: string;
+  ai_recommendation?: "advance_to_stage2" | "reject";
+  ai_generated_at?: string;
 }
 
 export type InterviewStage = 1 | 2 | 3;

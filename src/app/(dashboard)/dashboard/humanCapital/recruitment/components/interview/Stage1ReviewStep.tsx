@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import type { InterviewFormData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
@@ -18,6 +18,8 @@ type Props = {
   onReject: () => void;
   isPending: boolean;
   readOnly?: boolean;
+  onGenerateAnalysis?: () => void;
+  isGeneratingAnalysis?: boolean;
 };
 
 export default function Stage1ReviewStep({
@@ -27,6 +29,8 @@ export default function Stage1ReviewStep({
   onReject,
   isPending,
   readOnly = false,
+  onGenerateAnalysis,
+  isGeneratingAnalysis = false,
 }: Props) {
   const graders = gradersForStage(formData, guide, 1);
   const average = stageAverage(formData, guide, 1);
@@ -91,6 +95,64 @@ export default function Stage1ReviewStep({
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            AI analysis & recommendation
+          </p>
+          {!readOnly && ready && onGenerateAnalysis && (
+            <button
+              type="button"
+              onClick={onGenerateAnalysis}
+              disabled={isGeneratingAnalysis}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 hover:text-purple-900 disabled:opacity-60"
+            >
+              {isGeneratingAnalysis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {formData.stage1_review?.ai_analysis ? "Regenerate" : "Generate"}
+            </button>
+          )}
+        </div>
+
+        {formData.stage1_review?.ai_analysis ? (
+          <>
+            <p className="text-sm text-purple-950 leading-relaxed">
+              {formData.stage1_review.ai_analysis}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  formData.stage1_review.ai_recommendation === "reject"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-green-100 text-green-800"
+                }`}
+              >
+                AI recommends:{" "}
+                {formData.stage1_review.ai_recommendation === "reject"
+                  ? "Reject"
+                  : "Advance to Stage 2"}
+              </span>
+              {formData.stage1_review.ai_generated_at && (
+                <span className="text-xs text-purple-500">
+                  Generated {new Date(formData.stage1_review.ai_generated_at).toLocaleString("en-GB")}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-purple-500">
+              Advisory only — the panel and HR make the final call.
+            </p>
+          </>
+        ) : !ready ? (
+          <p className="text-xs text-purple-700">
+            Available once every panel member and HR have submitted.
+          </p>
+        ) : (
+          <p className="text-xs text-purple-700">
+            Get a quick AI read of everyone&apos;s scores and notes before deciding.
+          </p>
+        )}
       </div>
 
       {reviewed && (

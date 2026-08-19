@@ -204,6 +204,22 @@ export default function InterviewPanelForm({
     },
   });
 
+  const analysisMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/stage1-analysis", {
+        application_id: applicationId,
+      }),
+    onSuccess: (res) => {
+      setFormData(
+        normalizeInterviewFormData(res.data.data.interview_form_data),
+      );
+      toast.success("AI analysis ready.");
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+    },
+  });
+
   const dummyScores = {
     areaScores: formData.summary?.area_scores ?? {},
     total: combinedScore,
@@ -302,7 +318,7 @@ export default function InterviewPanelForm({
             <Stage1ReviewStep
               guide={guide}
               formData={formData}
-              readOnly={!!formData.stage1_review?.reviewed_at}
+              readOnly={!!formData.stage1_review?.reviewed_at || isPastStep}
               onPass={() =>
                 saveMutation.mutate({ action: "stage1_review_pass", data: formData })
               }
@@ -310,6 +326,8 @@ export default function InterviewPanelForm({
                 saveMutation.mutate({ action: "stage1_review_reject", data: formData })
               }
               isPending={saveMutation.isPending}
+              onGenerateAnalysis={() => analysisMutation.mutate()}
+              isGeneratingAnalysis={analysisMutation.isPending}
             />
           ) : activeStep === "stage2_setup" ? (
             <Stage2SetupStep
