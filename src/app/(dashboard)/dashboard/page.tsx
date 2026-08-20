@@ -880,14 +880,14 @@ export default function DashboardPage() {
   // what the viewer's other queries actually return rather than promising a
   // grade-based "L4+ sees everyone" rule the APIs don't back up).
   const activityItems = useMemo((): AttentionItem[] => {
-    const rows: { time: number; module: string; item: AttentionItem }[] = [];
-    const add = (createdAt: string, module: string, item: AttentionItem) => {
-      rows.push({ time: new Date(createdAt).getTime(), module, item });
+    const rows: { time: number; item: AttentionItem }[] = [];
+    const add = (createdAt: string, item: AttentionItem) => {
+      rows.push({ time: new Date(createdAt).getTime(), item });
     };
 
     if (isAdmin) {
       leaveData?.forEach((l) => {
-        add(l.created_at, "Leave", {
+        add(l.created_at, {
           id: `leave-${l.id}`,
           title: `${leavePersonName(l)} — ${l.leave_type} leave`,
           subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
@@ -896,7 +896,7 @@ export default function DashboardPage() {
         });
       });
       appraisalData?.forEach((a) => {
-        add(a.created_at, "Appraisal", {
+        add(a.created_at, {
           id: `appraisal-${a.id}`,
           title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
           subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
@@ -913,7 +913,7 @@ export default function DashboardPage() {
         deleted: "deleted",
       };
       sopActivityData?.forEach((e) => {
-        add(e.performed_at, "SOP", {
+        add(e.performed_at, {
           id: `sop-${e.id}`,
           title: `${e.performed_by_name} ${sopVerb[e.action] ?? e.action} "${e.content_title}"`,
           subtitle: `SOP · ${timeAgo(e.performed_at)}`,
@@ -937,7 +937,7 @@ export default function DashboardPage() {
           (e.previous_values?.title as string | undefined) ??
           "a task";
         const project = e.project_id ? (projectNameById.get(e.project_id) ?? "Task Manager") : "Task Manager";
-        add(e.performed_at, "Task Manager", {
+        add(e.performed_at, {
           id: `tm-task-${e.id}`,
           title: `${e.performed_by_name} ${tmTaskVerb[e.action] ?? e.action} "${title}"`,
           subtitle: `${project} · ${timeAgo(e.performed_at)}`,
@@ -962,7 +962,7 @@ export default function DashboardPage() {
           (e.previous_values?.name as string | undefined) ??
           (e.project_id ? projectNameById.get(e.project_id) : undefined) ??
           "a project";
-        add(e.performed_at, "Task Manager", {
+        add(e.performed_at, {
           id: `tm-project-${e.id}`,
           title: `${e.performed_by_name} ${tmProjectVerb[e.action] ?? e.action} project "${name}"`,
           subtitle: `Task Manager · ${timeAgo(e.performed_at)}`,
@@ -971,7 +971,7 @@ export default function DashboardPage() {
         });
       });
       tmActivityData?.deletions.forEach((d) => {
-        add(d.deleted_at, "Task Manager", {
+        add(d.deleted_at, {
           id: `tm-deletion-${d.id}`,
           title: `${d.deleted_by_name} permanently deleted project "${d.project_name}"`,
           subtitle: `Task Manager · ${timeAgo(d.deleted_at)}`,
@@ -985,7 +985,7 @@ export default function DashboardPage() {
           (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime(),
         );
         if (versions.length === 0) {
-          add(m.created_at, "Policies & Ops", {
+          add(m.created_at, {
             id: `manual-${m.manual_id}`,
             title: `"${m.title}" uploaded`,
             subtitle: `Policies & Ops · ${timeAgo(m.created_at)}`,
@@ -995,7 +995,7 @@ export default function DashboardPage() {
           return;
         }
         versions.forEach((v, i) => {
-          add(v.uploaded_at, "Policies & Ops", {
+          add(v.uploaded_at, {
             id: `manual-${m.manual_id}-${v.version_id}`,
             title: `${v.uploaded_by_name} ${i === 0 ? "uploaded" : "updated"} "${m.title}"`,
             subtitle: `Policies & Ops · ${timeAgo(v.uploaded_at)}`,
@@ -1006,7 +1006,7 @@ export default function DashboardPage() {
       });
 
       applicationsData?.forEach((a) => {
-        add(a.created_at, "Recruitment", {
+        add(a.created_at, {
           id: `application-${a.id}`,
           title: `${a.full_name} applied for ${a.role_title}`,
           subtitle: `${STATUS_LABELS[a.status]} · ${timeAgo(a.created_at)}`,
@@ -1016,7 +1016,7 @@ export default function DashboardPage() {
       });
 
       promotionsData?.forEach((p) => {
-        add(p.created_at, "Promotion", {
+        add(p.created_at, {
           id: `promotion-${p.id}`,
           title: `${p.employee_name} — promotion to ${p.proposed_grade}`,
           subtitle: `${p.final_decision ? p.final_decision.replace(/_/g, " ") : "pending decision"} · ${timeAgo(p.created_at)}`,
@@ -1026,7 +1026,7 @@ export default function DashboardPage() {
       });
     } else {
       myLeave.forEach((l) => {
-        add(l.created_at, "Leave", {
+        add(l.created_at, {
           id: `leave-${l.id}`,
           title: `${l.leave_type} leave (${l.total_days} days)`,
           subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
@@ -1035,7 +1035,7 @@ export default function DashboardPage() {
         });
       });
       myAppraisals.forEach((a) => {
-        add(a.created_at, "Appraisal", {
+        add(a.created_at, {
           id: `appraisal-${a.id}`,
           title: `${a.review_quarter} ${a.review_year} appraisal`,
           subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
@@ -1044,7 +1044,7 @@ export default function DashboardPage() {
         });
       });
       mySkillLogs.forEach((s) => {
-        add(s.created_at, "Skill Log", {
+        add(s.created_at, {
           id: `skill-${s.id}`,
           title: "Skill log entry recorded",
           subtitle: timeAgo(s.created_at),
@@ -1054,55 +1054,23 @@ export default function DashboardPage() {
       });
     }
 
-    // Merging leave + appraisal (+ skill logs, SOP, Task Manager, Policies,
-    // Recruitment, Promotion) needs an explicit sort — each source is
-    // already newest-first on its own, but interleaving them into one feed
-    // only reads as a coherent timeline if it's re-sorted by actual recency.
+    // Merging leave + appraisal (+ skill logs) needs an explicit sort —
+    // each source is already newest-first on its own, but interleaving them
+    // into one feed only reads as a coherent timeline if it's re-sorted by
+    // actual recency.
     //
-    // Capped to this calendar month, most-recent 20 overall — otherwise a
-    // platform-wide feed only grows over time with nothing to bound it.
-    //
-    // A pure global "most recent 20" cut lets high-volume modules (Task
-    // Manager, SOP) crowd out modules that log fewer, coarser-grained
-    // events (Recruitment currently only logs one event per application,
-    // at submission) — so a module with real activity this month could
-    // still show zero items. To guarantee every active module is actually
-    // represented, first reserve a few of each module's own most-recent
-    // items, then fill any remaining slots with whatever's most recent
-    // overall.
+    // Capped to this calendar month, most-recent 20 — otherwise a platform-
+    // wide feed (SOP/task manager/policies/recruitment/promotions on top of
+    // leave/appraisals) only grows over time with nothing to bound it.
     const monthStart = new Date(
       new Date().getFullYear(),
       new Date().getMonth(),
       1,
     ).getTime();
-    const TOTAL_CAP = 20;
-    const RESERVED_PER_MODULE = 3;
-
-    const thisMonth = rows.filter((r) => r.time >= monthStart);
-
-    const byModule = new Map<string, typeof rows>();
-    for (const r of thisMonth) {
-      const list = byModule.get(r.module);
-      if (list) list.push(r);
-      else byModule.set(r.module, [r]);
-    }
-
-    const reserved: typeof rows = [];
-    const remainder: typeof rows = [];
-    for (const list of byModule.values()) {
-      list.sort((a, b) => b.time - a.time);
-      reserved.push(...list.slice(0, RESERVED_PER_MODULE));
-      remainder.push(...list.slice(RESERVED_PER_MODULE));
-    }
-
-    const remainingSlots = Math.max(0, TOTAL_CAP - reserved.length);
-    const fill = remainder
+    return rows
+      .filter((r) => r.time >= monthStart)
       .sort((a, b) => b.time - a.time)
-      .slice(0, remainingSlots);
-
-    return [...reserved, ...fill]
-      .sort((a, b) => b.time - a.time)
-      .slice(0, TOTAL_CAP)
+      .slice(0, 20)
       .map((r) => r.item);
   }, [
     isAdmin,
