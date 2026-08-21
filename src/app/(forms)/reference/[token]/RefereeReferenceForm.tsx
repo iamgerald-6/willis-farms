@@ -18,7 +18,7 @@ type CandidateInfo = {
 type RefereeInfo = {
   name: string;
   email: string;
-  index: 1 | 2;
+  index: number;
 };
 
 type Props = { token: string };

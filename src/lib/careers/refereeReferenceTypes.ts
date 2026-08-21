@@ -38,7 +38,7 @@ export interface RefereeReferenceFormData {
 }
 
 export interface RefereeContactFromApplication {
-  index: 1 | 2;
+  index: number;
   name: string;
   phone: string;
   email: string;
@@ -46,7 +46,7 @@ export interface RefereeContactFromApplication {
 }
 
 export interface RefereeSubmissionSummary {
-  referee_index: 1 | 2;
+  referee_index: number;
   referee_name: string;
   referee_email: string;
   relationship: string;
@@ -55,27 +55,26 @@ export interface RefereeSubmissionSummary {
   form_data: RefereeReferenceFormData;
 }
 
+// Must match MAX_REFEREES in src/lib/systemDefinitions/recruitmentDefaults.ts —
+// applications only ever have reference_1_* through reference_{MAX_REFEREES}_*
+// fields on the form.
+const MAX_REFEREE_SLOTS = 5;
+
 export function extractRefereesFromApplication(
   formData: Record<string, unknown> | null | undefined,
 ): RefereeContactFromApplication[] {
   if (!formData) return [];
 
-  const slots: RefereeContactFromApplication[] = [
-    {
-      index: 1,
-      name: String(formData.reference_1_name ?? "").trim(),
-      phone: String(formData.reference_1_phone ?? "").trim(),
-      email: String(formData.reference_1_email ?? "").trim().toLowerCase(),
-      relationship: String(formData.reference_1_relationship ?? "").trim(),
-    },
-    {
-      index: 2,
-      name: String(formData.reference_2_name ?? "").trim(),
-      phone: String(formData.reference_2_phone ?? "").trim(),
-      email: String(formData.reference_2_email ?? "").trim().toLowerCase(),
-      relationship: String(formData.reference_2_relationship ?? "").trim(),
-    },
-  ];
+  const slots: RefereeContactFromApplication[] = [];
+  for (let index = 1; index <= MAX_REFEREE_SLOTS; index++) {
+    slots.push({
+      index,
+      name: String(formData[`reference_${index}_name`] ?? "").trim(),
+      phone: String(formData[`reference_${index}_phone`] ?? "").trim(),
+      email: String(formData[`reference_${index}_email`] ?? "").trim().toLowerCase(),
+      relationship: String(formData[`reference_${index}_relationship`] ?? "").trim(),
+    });
+  }
 
   return slots.filter((s) => s.name && s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email));
 }

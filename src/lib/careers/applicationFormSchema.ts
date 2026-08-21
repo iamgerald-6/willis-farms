@@ -139,30 +139,11 @@ export function systemOptionToApplicationField(option: SystemOption): Applicatio
 export function normalizeApplicationFields(
   options: SystemOption[],
 ): ApplicationFormField[] {
-  return applyOptionalSecondRefereeRules(
-    options
-      .filter((o) => o.is_active && o.rules && typeof o.rules === "object")
-      .map(systemOptionToApplicationField)
-      .filter((f) => f.rules.fieldKey)
-      .sort((a, b) => a.sort_order - b.sort_order),
-  );
-}
-
-/** Second referee is optional — required only when the applicant chooses to add one. */
-export function applyOptionalSecondRefereeRules(
-  fields: ApplicationFormField[],
-): ApplicationFormField[] {
-  return fields.map((field) => {
-    if (!field.rules.fieldKey.startsWith("reference_2_")) return field;
-    return {
-      ...field,
-      rules: {
-        ...field.rules,
-        required: true,
-        showWhen: { field: "add_second_referee", equals: "Yes" },
-      },
-    };
-  });
+  return options
+    .filter((o) => o.is_active && o.rules && typeof o.rules === "object")
+    .map(systemOptionToApplicationField)
+    .filter((f) => f.rules.fieldKey)
+    .sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export function getGitApplicationFormFields(): ApplicationFormField[] {

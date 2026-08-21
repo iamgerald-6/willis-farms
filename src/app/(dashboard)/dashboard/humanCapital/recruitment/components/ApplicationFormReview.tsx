@@ -74,24 +74,18 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
       { key: "certificates", label: "Certificates" },
     ],
   },
-  {
-    title: "Referee",
+  // Referees 1–5 (1 and 2 required, 3–5 optional "add another" slots — see
+  // MAX_REFEREES in recruitmentDefaults.ts). Sections with no data are
+  // dropped below, so unused optional slots simply don't render.
+  ...Array.from({ length: 5 }, (_, i) => i + 1).map((n) => ({
+    title: `Referee ${n}`,
     fields: [
-      { key: "reference_1_name", label: "Referee name" },
-      { key: "reference_1_phone", label: "Referee phone" },
-      { key: "reference_1_email", label: "Referee email" },
-      { key: "reference_1_relationship", label: "Relationship" },
+      { key: `reference_${n}_name`, label: "Referee name" },
+      { key: `reference_${n}_phone`, label: "Referee phone" },
+      { key: `reference_${n}_email`, label: "Referee email" },
+      { key: `reference_${n}_relationship`, label: "Relationship" },
     ],
-  },
-  {
-    title: "Second referee",
-    fields: [
-      { key: "reference_2_name", label: "Referee name" },
-      { key: "reference_2_phone", label: "Referee phone" },
-      { key: "reference_2_email", label: "Referee email" },
-      { key: "reference_2_relationship", label: "Relationship" },
-    ],
-  },
+  })),
 ];
 
 export default function ApplicationFormReview({ formData }: Props) {

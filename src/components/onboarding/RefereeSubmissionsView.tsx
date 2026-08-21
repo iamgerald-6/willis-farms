@@ -8,7 +8,7 @@ import {
 } from "@/lib/careers/refereeReferenceTypes";
 
 export type RefereeSubmissionDisplay = {
-  referee_index: 1 | 2;
+  referee_index: number;
   referee_name: string;
   referee_email: string;
   relationship: string;

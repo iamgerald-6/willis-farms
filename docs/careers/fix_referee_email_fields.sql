@@ -32,7 +32,16 @@ where module_id = 'mod:recruitment'
   and option_list = 'careers.applicationFields'
   and legacy_value = 'reference_2_email';
 
+-- Also: make Ghana Card number required again, and restore its missing
+-- `step` (older, unrelated damage — the field was still showing, just not
+-- enforced as required). Keeps its existing fieldKey/fieldType/showWhen.
+update system_options
+set rules = rules || jsonb_build_object('step', 'personal', 'required', true)
+where module_id = 'mod:recruitment'
+  and option_list = 'careers.applicationFields'
+  and legacy_value = 'ghana_card_no';
+
 -- Verify:
 -- select legacy_value, rules from system_options
 -- where module_id = 'mod:recruitment' and option_list = 'careers.applicationFields'
--- and legacy_value in ('reference_1_email', 'reference_2_email');
+-- and legacy_value in ('reference_1_email', 'reference_2_email', 'ghana_card_no');
