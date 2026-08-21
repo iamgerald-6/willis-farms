@@ -6,9 +6,24 @@ import {
   type OnboardingStep,
 } from "@/lib/careers/onboardingTypes";
 import {
+  applyOnboardingPrefill,
+  deriveCitizenshipFromApplication,
+  flatToOnboardingForm,
+  getDefaultOnboardingFormFieldsFallback,
+  onboardingFormToFlat,
+  prefillQualificationsFromApplication,
+  validateOnboardingStep,
+} from "@/lib/careers/onboardingFormSchema";
+import {
+  fetchOnboardingFormFields,
+  fetchOnboardingOptionLists,
+  getGitOnboardingOptionLists,
+} from "@/lib/careers/getOnboardingFormFields";
+import {
   validateOnboardingToken,
 } from "@/lib/careers/onboardingTokens";
 import { sendOnboardingSubmittedEmail } from "@/lib/careers/interviewEmails";
+import { fetchRefereeSubmissionsForApplication } from "@/lib/careers/sendRefereeReferenceInvites";
 
 type RouteParams = { params: Promise<{ token: string }> };
 
@@ -35,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   const { data: application, error: appError } = await supabaseAdmin
     .from("job_applications")
     .select(
-      "id, full_name, email, phone, role_title, reference_number, status, location",
+      "id, full_name, email, phone, role_title, reference_number, status, location, application_form_data",
     )
     .eq("id", validation.applicationId)
     .single();
@@ -63,31 +78,49 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 
   const formData = mergeOnboardingForm(submission?.form_data as OnboardingFormData);
-  if (!formData.employment?.position_title) {
-    formData.employment = {
-      ...formData.employment,
-      position_title: application.role_title,
-    };
+
+  let fields;
+  let optionLists;
+  try {
+    [fields, optionLists] = await Promise.all([
+      fetchOnboardingFormFields(supabaseAdmin),
+      fetchOnboardingOptionLists(supabaseAdmin),
+    ]);
+  } catch {
+    fields = getDefaultOnboardingFormFieldsFallback();
+    optionLists = getGitOnboardingOptionLists();
   }
-  if (!formData.personal?.personal_email) {
-    formData.personal = {
-      ...formData.personal,
-      personal_email: application.email,
-    };
-  }
-  if (!formData.personal?.mobile && application.phone) {
-    formData.personal = {
-      ...formData.personal,
-      mobile: application.phone,
-    };
-  }
+
+  const initialFlat = applyOnboardingPrefill(formData, {
+    full_name: application.full_name,
+    email: application.email,
+    phone: application.phone ?? "",
+    role_title: application.role_title,
+    location: application.location,
+    application_form_data: application.application_form_data as Record<string, unknown> | null,
+  });
+
+  const refereeSubmissions = await fetchRefereeSubmissionsForApplication(
+    supabaseAdmin,
+    validation.applicationId,
+  );
+  initialFlat.referee_submissions = refereeSubmissions;
 
   return NextResponse.json({
     success: true,
     data: {
-      application,
+      application: {
+        full_name: application.full_name,
+        email: application.email,
+        phone: application.phone,
+        role_title: application.role_title,
+        reference_number: application.reference_number,
+      },
       submitted: false,
-      form_data: formData,
+      form_data: flatToOnboardingForm(initialFlat),
+      initial_flat: initialFlat,
+      fields,
+      option_lists: optionLists,
       personal_completed_at: submission?.personal_completed_at ?? null,
       medical_completed_at: submission?.medical_completed_at ?? null,
       referee_completed_at: submission?.referee_completed_at ?? null,
@@ -136,6 +169,60 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     ...(existing?.form_data as OnboardingFormData),
     ...form_data,
   });
+
+  const { data: application } = await supabaseAdmin
+    .from("job_applications")
+    .select("application_form_data")
+    .eq("id", validation.applicationId)
+    .single();
+
+  const citizenship = deriveCitizenshipFromApplication(
+    application?.application_form_data as Record<string, unknown> | null,
+  );
+  if (citizenship) {
+    merged.personal = { ...merged.personal, is_citizen: citizenship };
+  }
+
+  const appFormData = application?.application_form_data as Record<string, unknown> | null;
+  const fromApplication = prefillQualificationsFromApplication(appFormData);
+  if (Array.isArray(fromApplication.application_certificates)) {
+    merged.application_certificates = fromApplication.application_certificates;
+  }
+  if (Array.isArray(fromApplication.work_experience) && fromApplication.work_experience.length > 0) {
+    const hasSavedExperience = merged.work_experience?.some((e) => e?.employer?.trim());
+    if (!hasSavedExperience) {
+      merged.work_experience = fromApplication.work_experience;
+    }
+  }
+
+  let fields;
+  let optionLists;
+  try {
+    [fields, optionLists] = await Promise.all([
+      fetchOnboardingFormFields(supabaseAdmin),
+      fetchOnboardingOptionLists(supabaseAdmin),
+    ]);
+  } catch {
+    fields = getDefaultOnboardingFormFieldsFallback();
+    optionLists = getGitOnboardingOptionLists();
+  }
+
+  const flat = onboardingFormToFlat(merged);
+  if (step) {
+    const errors = validateOnboardingStep(fields, step, flat, optionLists);
+    if (errors.length > 0) {
+      return NextResponse.json({ error: errors[0] }, { status: 400 });
+    }
+  }
+
+  if (finalize) {
+    for (const s of ["personal", "medical", "referee"] as OnboardingStep[]) {
+      const errors = validateOnboardingStep(fields, s, flat, optionLists);
+      if (errors.length > 0) {
+        return NextResponse.json({ error: errors[0] }, { status: 400 });
+      }
+    }
+  }
 
   const now = new Date().toISOString();
   const updates: Record<string, unknown> = {

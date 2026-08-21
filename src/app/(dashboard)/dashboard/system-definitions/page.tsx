@@ -30,6 +30,7 @@ import type {
 import {
   isEditableBusinessLogicModule,
   isEditableApplicationFormModule,
+  isEditableOnboardingFormModule,
   isEditableJobPostingModule,
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
@@ -44,7 +45,13 @@ import RatingSectionsEditor from "./components/RatingSectionsEditor";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
+import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import JobPostingsEditor from "./components/JobPostingsEditor";
+import {
+  ONBOARDING_DEPARTMENTS_L1L6_LIST,
+  ONBOARDING_DEPARTMENTS_L7_LIST,
+  ONBOARDING_LOCATIONS_LIST,
+} from "@/lib/systemDefinitions/onboardingDefaults";
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
   view: "Can view",
@@ -308,6 +315,52 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
+      )}
+
+      {isEditableOnboardingFormModule(m.id) && (
+        <>
+          <SectionCard
+            icon={Rows3}
+            title="Employee onboarding form"
+            description="Fields on the post-hire onboarding link. Add inputs, set type (text, select, phone, date, etc.), and conditional visibility."
+          >
+            <OnboardingFormEditor
+              moduleId={m.id}
+              canAdd={canAdd}
+              canEdit={canEdit}
+            />
+          </SectionCard>
+
+          <SectionCard
+            icon={Tag}
+            title="Onboarding dropdown lists"
+            description="Work locations and department options (L1–L6 vs L7 use different department lists)."
+          >
+            <div className="space-y-4">
+              <OptionsEditor
+                moduleId={m.id}
+                optionList={ONBOARDING_LOCATIONS_LIST}
+                title="Work locations"
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
+              <OptionsEditor
+                moduleId={m.id}
+                optionList={ONBOARDING_DEPARTMENTS_L1L6_LIST}
+                title="Departments (L1–L6)"
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
+              <OptionsEditor
+                moduleId={m.id}
+                optionList={ONBOARDING_DEPARTMENTS_L7_LIST}
+                title="Departments (L7)"
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
+            </div>
+          </SectionCard>
+        </>
       )}
 
       {isEditableCompetencySectionModule(m.id) && (

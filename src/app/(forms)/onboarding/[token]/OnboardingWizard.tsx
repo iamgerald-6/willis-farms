@@ -1,15 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  GHANA_REGIONS,
+  ONBOARDING_STEPS,
   ONBOARDING_STEP_LABELS,
+  flatToOnboardingForm,
+  mergeOnboardingFieldDefinitions,
+  onboardingFormToFlat,
+  resolveFieldOptions,
+  validateOnboardingStep,
+  visibleOnboardingFieldsForStep,
+  type OnboardingFieldStep,
+  type OnboardingFlatValues,
+  type OnboardingFormField,
+} from "@/lib/careers/onboardingFormSchema";
+import {
   mergeOnboardingForm,
   type OnboardingFormData,
-  type OnboardingStep,
 } from "@/lib/careers/onboardingTypes";
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
+import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { PhoneNumberInput } from "@/components/PhoneNumberInput";
+import { GhanaCardInput } from "@/components/GhanaCardInput";
+import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
+import { ApplicationCertificatesView, normalizeApplicationCertificates } from "@/components/onboarding/ApplicationCertificatesView";
+import { OnboardingQualificationsInput } from "@/components/onboarding/OnboardingQualificationsInput";
+import { OnboardingCertificationsInput } from "@/components/onboarding/OnboardingCertificationsInput";
+import { OnboardingWorkExperienceInput } from "@/components/onboarding/OnboardingWorkExperienceInput";
+import {
+  RefereeSubmissionsView,
+  type RefereeSubmissionDisplay,
+} from "@/components/onboarding/RefereeSubmissionsView";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
 
 type ApplicationInfo = {
   full_name: string;
@@ -22,23 +52,76 @@ type ApplicationInfo = {
 type Props = {
   token: string;
   application: ApplicationInfo;
-  initialForm: OnboardingFormData;
+  initialFlat: OnboardingFlatValues;
+  fields: OnboardingFormField[];
+  optionLists: Record<string, string[]>;
   expiresAt: string;
 };
 
-const STEPS: OnboardingStep[] = ["personal", "medical", "referee"];
+const inputClass =
+  "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400";
 
-function Field({
+function displaySectionTitle(title: string): string {
+  if (title === "K. Biosecurity declaration") return "Biosecurity";
+  if (title === "L & N. Declarations") return "Consent & signature";
+  if (title === "J. References (two required)") return "References";
+  if (title.startsWith("J. References")) return "References";
+  return title.replace(/^[A-Z](?:\s*&\s*[A-Z])?\.\s*/, "");
+}
+
+function buildInitialValues(flat: OnboardingFlatValues): OnboardingFlatValues {
+  const form = flatToOnboardingForm(flat);
+  const next = onboardingFormToFlat(form) as OnboardingFlatValues;
+  if (form.qualifications?.length) next.qualifications = form.qualifications;
+  if (form.application_certificates?.length) {
+    next.application_certificates = form.application_certificates;
+  }
+  if (form.additional_certifications?.length) {
+    next.additional_certifications = form.additional_certifications;
+  }
+  if (form.work_experience?.length) {
+    next.work_experience = form.work_experience;
+  }
+  if (flat.referee_submissions) {
+    next.referee_submissions = flat.referee_submissions;
+  }
+  // Legacy saves used `certifications` for mixed data — treat as additional only
+  if (!form.additional_certifications?.length && form.certifications?.length) {
+    const legacy = form.certifications.filter(
+      (c) => c?.name?.trim() || c?.file?.secure_url,
+    );
+    if (legacy.length > 0) next.additional_certifications = legacy;
+  }
+  if (!next.qualifications) {
+    next.qualifications = [{ qualification: "", institution: "", field: "", year: "" }];
+  }
+  if (!next.additional_certifications) {
+    next.additional_certifications = [];
+  }
+  if (!next.work_experience) {
+    next.work_experience = [
+      { employer: "", job_title: "", from: "", to: "", reason_leaving: "" },
+    ];
+  }
+  return next;
+}
+
+const lockedClass =
+  "w-full border border-gray-100 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700";
+
+function FieldBlock({
   label,
   required,
   children,
+  half,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
+  half?: boolean;
 }) {
   return (
-    <label className="block">
+    <label className={half ? "block" : "block sm:col-span-2"}>
       <span className="text-xs font-medium text-gray-600">
         {label}
         {required && <span className="text-red-600"> *</span>}
@@ -48,30 +131,120 @@ function Field({
   );
 }
 
-const inputClass =
-  "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400";
-
 export default function OnboardingWizard({
   token,
   application,
-  initialForm,
+  initialFlat,
+  fields,
+  optionLists,
   expiresAt,
 }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
-  const [form, setForm] = useState<OnboardingFormData>(() =>
-    mergeOnboardingForm(initialForm),
+  const [values, setValues] = useState<OnboardingFlatValues>(() =>
+    buildInitialValues(initialFlat),
+  );
+  const [formExtras, setFormExtras] = useState<OnboardingFormData>(() =>
+    mergeOnboardingForm(flatToOnboardingForm(buildInitialValues(initialFlat))),
   );
   const [saving, setSaving] = useState(false);
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [certUploadingIndex, setCertUploadingIndex] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const step = STEPS[stepIndex];
+  const step = ONBOARDING_STEPS[stepIndex];
 
-  const patch = (partial: Partial<OnboardingFormData>) => {
-    setForm((prev) => mergeOnboardingForm({ ...prev, ...partial }));
+  const mergedFields = useMemo(
+    () => mergeOnboardingFieldDefinitions(fields),
+    [fields],
+  );
+
+  const stepFields = useMemo(
+    () => visibleOnboardingFieldsForStep(mergedFields, step, values),
+    [mergedFields, step, values],
+  );
+
+  const sections = useMemo(() => {
+    const map = new Map<string, OnboardingFormField[]>();
+    for (const field of stepFields) {
+      const key = field.rules.section ?? "";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(field);
+    }
+    return [...map.entries()];
+  }, [stepFields]);
+
+  const setFieldValue = (key: string, value: unknown) => {
+    if (key === "personal.is_citizen") return;
+
+    setValues((prev) => {
+      const next = { ...prev, [key]: value };
+
+      if (key === "payment.method") {
+        if (value === "Bank transfer") {
+          delete next["payment.momo_network"];
+          delete next["payment.momo_number"];
+          delete next["payment.momo_registered_name"];
+        } else if (value === "Mobile money") {
+          delete next["payment.bank_name"];
+          delete next["payment.account_name"];
+          delete next["payment.account_number"];
+        }
+      }
+
+      return next;
+    });
+    setError(null);
+  };
+
+  const patchExtras = (partial: Partial<OnboardingFormData>) => {
+    setFormExtras((prev) => mergeOnboardingForm({ ...prev, ...partial }));
+  };
+
+  const buildFormPayload = (): OnboardingFormData => {
+    const fromFlat = flatToOnboardingForm(values);
+    return mergeOnboardingForm({
+      ...fromFlat,
+      medical: {
+        ...fromFlat.medical,
+        ...formExtras.medical,
+      },
+      biosecurity: {
+        ...fromFlat.biosecurity,
+        ...formExtras.biosecurity,
+      },
+      declarations: {
+        ...fromFlat.declarations,
+        ...formExtras.declarations,
+      },
+    });
   };
 
   const saveStep = async (opts: { finalize?: boolean }) => {
+    const stepErrors = validateOnboardingStep(mergedFields, step, values, optionLists);
+    if (stepErrors.length > 0) {
+      setError(stepErrors[0]);
+      return;
+    }
+
+    if (opts.finalize) {
+      for (const s of ONBOARDING_STEPS) {
+        const allErrors = validateOnboardingStep(mergedFields, s, values, optionLists);
+        if (allErrors.length > 0) {
+          setError(allErrors[0]);
+          return;
+        }
+      }
+      if (!formExtras.medical?.acknowledge_referral) {
+        setError("Please confirm your medical report declaration.");
+        return;
+      }
+      if (!formExtras.declarations?.data_consent) {
+        setError("Please consent to data processing before submitting.");
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -80,7 +253,7 @@ export default function OnboardingWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           step,
-          form_data: form,
+          form_data: buildFormPayload(),
           finalize: opts.finalize ?? false,
         }),
       });
@@ -88,7 +261,7 @@ export default function OnboardingWizard({
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       if (opts.finalize) {
         setSubmitted(true);
-      } else if (stepIndex < STEPS.length - 1) {
+      } else if (stepIndex < ONBOARDING_STEPS.length - 1) {
         setStepIndex((i) => i + 1);
       }
     } catch (e) {
@@ -96,6 +269,257 @@ export default function OnboardingWizard({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleFileUpload = async (fieldKey: string, file: File, accept?: string) => {
+    setUploadingKey(fieldKey);
+    setError(null);
+    try {
+      const uploaded = await uploadCareersFile(file, "CareersOnboarding");
+      setFieldValue(fieldKey, uploaded);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  const renderField = (field: OnboardingFormField) => {
+    const { fieldKey, fieldType, required, placeholder, accept, prefillLocked } =
+      field.rules;
+    const value = values[fieldKey];
+    const readOnly = prefillLocked === true;
+    const cls = readOnly ? lockedClass : inputClass;
+    const opts = resolveFieldOptions(field, values, optionLists);
+    const half = field.rules.colSpan === "half";
+
+    if (fieldType === "select") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          {readOnly ? (
+            <input className={lockedClass} readOnly value={String(value ?? "")} />
+          ) : (
+            <select
+              className={cls}
+              value={String(value ?? "")}
+              onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+            >
+              <option value="">Select…</option>
+              {opts.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          )}
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "textarea") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <textarea
+            className={cls}
+            rows={3}
+            readOnly={readOnly}
+            placeholder={placeholder}
+            value={String(value ?? "")}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "phone") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          {readOnly ? (
+            <input className={cls} readOnly value={String(value ?? "")} />
+          ) : (
+            <PhoneNumberInput
+              value={String(value ?? "")}
+              onChange={(v) => setFieldValue(fieldKey, v)}
+            />
+          )}
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "ghana_card") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <GhanaCardInput
+            value={String(value ?? "")}
+            onChange={(v) => setFieldValue(fieldKey, v)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "file") {
+      const fileVal = value as UploadedFile | null | undefined;
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <div className="space-y-2">
+            {fileVal?.secure_url && (
+              <div className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2">
+                <span className="text-sm text-gray-700 truncate">
+                  {fileVal.original_name ?? "Uploaded file"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFieldValue(fieldKey, null)}
+                  className="p-1 rounded hover:bg-red-50 shrink-0"
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            )}
+            <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300 hover:bg-red-50/30">
+              {uploadingKey === fieldKey ? (
+                <Loader2 className="w-5 h-5 animate-spin text-red-600" />
+              ) : (
+                <Upload className="w-5 h-5 text-gray-400" />
+              )}
+              <span className="text-sm text-gray-600">Choose file to upload</span>
+              <input
+                type="file"
+                className="sr-only"
+                accept={accept}
+                disabled={uploadingKey === fieldKey}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFileUpload(fieldKey, file, accept);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "date") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <input
+            className={cls}
+            type="date"
+            readOnly={readOnly}
+            value={String(value ?? "")}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "email") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <input
+            className={cls}
+            type="email"
+            readOnly={readOnly}
+            value={String(value ?? "")}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "bank_account") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <input
+            className={cls}
+            inputMode="numeric"
+            placeholder="10–16 digits"
+            value={String(value ?? "")}
+            onChange={(e) =>
+              setFieldValue(fieldKey, e.target.value.replace(/\D/g, "").slice(0, 16))
+            }
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "gps") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <GhanaPostGpsInput
+            value={String(value ?? "")}
+            placeholder={placeholder ?? "GA-123-4567"}
+            onChange={(v) => setFieldValue(fieldKey, v)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "qualifications_list") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <OnboardingQualificationsInput
+            value={value}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "application_certificates_view") {
+      const certs = Array.isArray(value) ? value : values.application_certificates;
+      return (
+        <FieldBlock key={field.id} label={field.label} required={false}>
+          <ApplicationCertificatesView certificates={normalizeApplicationCertificates(certs)} />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "certifications_list") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <OnboardingCertificationsInput
+            value={value}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+            uploadingIndex={certUploadingIndex}
+            onUploadingChange={setCertUploadingIndex}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "work_experience_list") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required}>
+          <OnboardingWorkExperienceInput
+            value={value}
+            onChange={(next) => setFieldValue(fieldKey, next)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "referee_submissions_view") {
+      const rows = (value ?? values.referee_submissions) as RefereeSubmissionDisplay[] | undefined;
+      return (
+        <FieldBlock key={field.id} label={field.label} required={false}>
+          <RefereeSubmissionsView submissions={Array.isArray(rows) ? rows : []} />
+        </FieldBlock>
+      );
+    }
+
+    return (
+      <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+        <input
+          className={cls}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          value={String(value ?? "")}
+          onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+        />
+      </FieldBlock>
+    );
   };
 
   if (submitted) {
@@ -113,9 +537,8 @@ export default function OnboardingWizard({
       title={application.full_name}
       subtitle={`${application.role_title} · Ref ${application.reference_number} · Link expires ${new Date(expiresAt).toLocaleString("en-GB")}`}
     >
-
       <div className="flex gap-2 mb-8">
-        {STEPS.map((s, i) => (
+        {ONBOARDING_STEPS.map((s, i) => (
           <div
             key={s}
             className={`flex-1 h-1.5 rounded-full ${i <= stepIndex ? "bg-red-600" : "bg-gray-200"}`}
@@ -123,7 +546,7 @@ export default function OnboardingWizard({
         ))}
       </div>
       <p className="text-sm font-semibold text-gray-800 mb-1">
-        Step {stepIndex + 1} of {STEPS.length}
+        Step {stepIndex + 1} of {ONBOARDING_STEPS.length}
       </p>
       <p className="text-xs text-gray-500 mb-6">{ONBOARDING_STEP_LABELS[step]}</p>
 
@@ -133,264 +556,125 @@ export default function OnboardingWizard({
         </div>
       )}
 
-      {step === "personal" && (
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">A. Personal information</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Surname" required>
-                <input className={inputClass} value={form.personal?.surname ?? ""} onChange={(e) => patch({ personal: { ...form.personal, surname: e.target.value } })} />
-              </Field>
-              <Field label="First name" required>
-                <input className={inputClass} value={form.personal?.first_name ?? ""} onChange={(e) => patch({ personal: { ...form.personal, first_name: e.target.value } })} />
-              </Field>
-              <Field label="Middle name(s)">
-                <input className={inputClass} value={form.personal?.middle_names ?? ""} onChange={(e) => patch({ personal: { ...form.personal, middle_names: e.target.value } })} />
-              </Field>
-              <Field label="Date of birth (DD/MM/YYYY)" required>
-                <input className={inputClass} placeholder="DD/MM/YYYY" value={form.personal?.date_of_birth ?? ""} onChange={(e) => patch({ personal: { ...form.personal, date_of_birth: e.target.value } })} />
-              </Field>
-              <Field label="Gender" required>
-                <input className={inputClass} value={form.personal?.gender ?? ""} onChange={(e) => patch({ personal: { ...form.personal, gender: e.target.value } })} />
-              </Field>
-              <Field label="Nationality" required>
-                <input className={inputClass} value={form.personal?.nationality ?? ""} onChange={(e) => patch({ personal: { ...form.personal, nationality: e.target.value } })} />
-              </Field>
-              <Field label="Ghana Card No." required>
-                <input className={inputClass} placeholder="GHA-XXXXXXXXX-X" value={form.personal?.ghana_card_no ?? ""} onChange={(e) => patch({ personal: { ...form.personal, ghana_card_no: e.target.value } })} />
-              </Field>
-              <Field label="SSNIT number" required>
-                <input className={inputClass} value={form.personal?.ssnit_number ?? ""} onChange={(e) => patch({ personal: { ...form.personal, ssnit_number: e.target.value } })} />
-              </Field>
-              <Field label="Mobile number" required>
-                <input className={inputClass} value={form.personal?.mobile ?? ""} onChange={(e) => patch({ personal: { ...form.personal, mobile: e.target.value } })} />
-              </Field>
-              <Field label="Personal email">
-                <input className={inputClass} type="email" value={form.personal?.personal_email ?? ""} onChange={(e) => patch({ personal: { ...form.personal, personal_email: e.target.value } })} />
-              </Field>
-              <Field label="Region" required>
-                <select className={inputClass} value={form.personal?.region ?? ""} onChange={(e) => patch({ personal: { ...form.personal, region: e.target.value } })}>
-                  <option value="">Select region</option>
-                  {GHANA_REGIONS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+      <div className="space-y-6">
+        {sections.map(([sectionTitle, sectionFields]) => {
+          const isBiosecuritySection =
+            sectionTitle === "Biosecurity" ||
+            sectionTitle === "K. Biosecurity declaration";
+          const isConsentSection =
+            sectionTitle === "Consent & signature" ||
+            sectionTitle === "L & N. Declarations";
+
+          return (
+            <section key={sectionTitle || "default"} className="space-y-3">
+              {sectionTitle && (
+                <h2 className="text-sm font-bold text-gray-900">
+                  {displaySectionTitle(sectionTitle)}
+                </h2>
+              )}
+
+              {step === "referee" && isBiosecuritySection && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Wills Farms is a pig production business. These questions help us protect
+                    herd health and comply with biosecurity rules.
+                  </p>
+                  {[
+                    {
+                      key: "household_pigs" as const,
+                      label:
+                        "Do you or anyone in your household keep pigs or have contact with pigs outside work?",
+                    },
+                    {
+                      key: "household_pig_work" as const,
+                      label:
+                        "Does any household member work on another pig farm, animal market, or slaughter facility?",
+                    },
+                    {
+                      key: "visited_swine_site_12m" as const,
+                      label:
+                        "Have you worked on or visited any other swine site in the past 12 months?",
+                    },
+                    {
+                      key: "asf_travel_30d" as const,
+                      label:
+                        "Have you travelled to a region affected by African Swine Fever in the past 30 days?",
+                    },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="text-sm">
+                      <p className="text-gray-700 mb-1">{label}</p>
+                      <div className="flex gap-2">
+                        {(["yes", "no"] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() =>
+                              patchExtras({
+                                biosecurity: { ...formExtras.biosecurity, [key]: v },
+                              })
+                            }
+                            className={`px-3 py-1 rounded-lg text-xs font-medium border ${formExtras.biosecurity?.[key] === v ? "bg-red-600 text-white border-red-600" : "bg-white border-gray-200"}`}
+                          >
+                            {v === "yes" ? "Yes" : "No"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
-                </select>
-              </Field>
-            </div>
-            <Field label="Residential address" required>
-              <textarea className={inputClass} rows={2} value={form.personal?.residential_address ?? ""} onChange={(e) => patch({ personal: { ...form.personal, residential_address: e.target.value } })} />
-            </Field>
-            <Field label="Ghana Post GPS digital address" required>
-              <input className={inputClass} value={form.personal?.gps_address ?? ""} onChange={(e) => patch({ personal: { ...form.personal, gps_address: e.target.value } })} />
-            </Field>
-          </section>
+                </div>
+              )}
 
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">B. Emergency contact & next of kin</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Emergency contact name" required>
-                <input className={inputClass} value={form.emergency?.full_name ?? ""} onChange={(e) => patch({ emergency: { ...form.emergency, full_name: e.target.value } })} />
-              </Field>
-              <Field label="Relationship" required>
-                <input className={inputClass} value={form.emergency?.relationship ?? ""} onChange={(e) => patch({ emergency: { ...form.emergency, relationship: e.target.value } })} />
-              </Field>
-              <Field label="Phone" required>
-                <input className={inputClass} value={form.emergency?.phone ?? ""} onChange={(e) => patch({ emergency: { ...form.emergency, phone: e.target.value } })} />
-              </Field>
-              <Field label="Next of kin name" required>
-                <input className={inputClass} value={form.next_of_kin?.full_name ?? ""} onChange={(e) => patch({ next_of_kin: { ...form.next_of_kin, full_name: e.target.value } })} />
-              </Field>
-              <Field label="Next of kin phone" required>
-                <input className={inputClass} value={form.next_of_kin?.phone ?? ""} onChange={(e) => patch({ next_of_kin: { ...form.next_of_kin, phone: e.target.value } })} />
-              </Field>
-            </div>
-          </section>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {sectionFields.map((field) => renderField(field))}
+              </div>
 
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">D. Employment & E. Payment</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Position title" required>
-                <input className={inputClass} value={form.employment?.position_title ?? ""} onChange={(e) => patch({ employment: { ...form.employment, position_title: e.target.value } })} />
-              </Field>
-              <Field label="Department / division" required>
-                <input className={inputClass} value={form.employment?.department ?? ""} onChange={(e) => patch({ employment: { ...form.employment, department: e.target.value } })} />
-              </Field>
-              <Field label="Farm site / work location" required>
-                <input className={inputClass} value={form.employment?.farm_site ?? ""} onChange={(e) => patch({ employment: { ...form.employment, farm_site: e.target.value } })} />
-              </Field>
-              <Field label="Employment type" required>
-                <select className={inputClass} value={form.employment?.employment_type ?? ""} onChange={(e) => patch({ employment: { ...form.employment, employment_type: e.target.value } })}>
-                  <option value="">Select</option>
-                  {["Full-time", "Part-time", "Casual", "Seasonal", "Contract"].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Payment method" required>
-                <select className={inputClass} value={form.payment?.method ?? ""} onChange={(e) => patch({ payment: { ...form.payment, method: e.target.value } })}>
-                  <option value="">Select</option>
-                  <option value="Bank transfer">Bank transfer</option>
-                  <option value="Mobile money">Mobile money</option>
-                </select>
-              </Field>
-              <Field label="Bank / mobile money details">
-                <input className={inputClass} placeholder="Bank name or MoMo network" value={form.payment?.bank_name ?? form.payment?.momo_network ?? ""} onChange={(e) => patch({ payment: { ...form.payment, bank_name: e.target.value } })} />
-              </Field>
-              <Field label="Account / MoMo number">
-                <input className={inputClass} value={form.payment?.account_number ?? form.payment?.momo_number ?? ""} onChange={(e) => patch({ payment: { ...form.payment, account_number: e.target.value, momo_number: e.target.value } })} />
-              </Field>
-            </div>
-          </section>
-        </div>
-      )}
+              {step === "referee" && isConsentSection && (
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-red-600"
+                    checked={formExtras.declarations?.data_consent ?? false}
+                    onChange={(e) =>
+                      patchExtras({
+                        declarations: {
+                          ...formExtras.declarations,
+                          data_consent: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span>
+                    I consent to the collection and processing of my personal data for employment
+                    administration, and I certify that the information provided is accurate and
+                    complete.
+                  </span>
+                </label>
+              )}
+            </section>
+          );
+        })}
 
-      {step === "medical" && (
-        <div className="space-y-6">
+        {step === "medical" && (
           <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">F–H. Qualifications, experience & skills</h2>
-            <Field label="Highest qualification">
-              <input className={inputClass} value={form.qualifications?.[0]?.qualification ?? ""} onChange={(e) => {
-                const q = [...(form.qualifications ?? [])];
-                q[0] = { ...q[0], qualification: e.target.value };
-                patch({ qualifications: q });
-              }} />
-            </Field>
-            <Field label="Institution">
-              <input className={inputClass} value={form.qualifications?.[0]?.institution ?? ""} onChange={(e) => {
-                const q = [...(form.qualifications ?? [])];
-                q[0] = { ...q[0], institution: e.target.value };
-                patch({ qualifications: q });
-              }} />
-            </Field>
-            <Field label="Most recent employer">
-              <input className={inputClass} value={form.work_experience?.[0]?.employer ?? ""} onChange={(e) => {
-                const w = [...(form.work_experience ?? [])];
-                w[0] = { ...w[0], employer: e.target.value };
-                patch({ work_experience: w });
-              }} />
-            </Field>
-            <Field label="Relevant skills">
-              <textarea className={inputClass} rows={3} value={form.skills?.relevant_skills ?? ""} onChange={(e) => patch({ skills: { ...form.skills, relevant_skills: e.target.value } })} />
-            </Field>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">I. Medical & safety self-declaration</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Blood group">
-                <input className={inputClass} value={form.medical?.blood_group ?? ""} onChange={(e) => patch({ medical: { ...form.medical, blood_group: e.target.value } })} />
-              </Field>
-              <Field label="Allergies">
-                <input className={inputClass} value={form.medical?.allergies ?? ""} onChange={(e) => patch({ medical: { ...form.medical, allergies: e.target.value } })} />
-              </Field>
-            </div>
-            <Field label="Medical conditions relevant to assigned duties">
-              <textarea className={inputClass} rows={2} value={form.medical?.conditions ?? ""} onChange={(e) => patch({ medical: { ...form.medical, conditions: e.target.value } })} />
-            </Field>
             <label className="flex items-start gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 className="mt-1 accent-red-600"
-                checked={form.medical?.acknowledge_referral ?? false}
-                onChange={(e) => patch({ medical: { ...form.medical, acknowledge_referral: e.target.checked } })}
+                checked={formExtras.medical?.acknowledge_referral ?? false}
+                onChange={(e) =>
+                  patchExtras({ medical: { ...formExtras.medical, acknowledge_referral: e.target.checked } })
+                }
               />
               <span>
-                I understand that after submission, HR will issue a Medical Examination Referral for evaluation at Wills Farms&apos; designated facility. The facility submits the report directly to HR.
+                I confirm the medical report uploaded above is genuine and current. HR may
+                verify it with the issuing facility. I understand Wills Farms may arrange
+                further examination if required.
               </span>
             </label>
           </section>
-        </div>
-      )}
+        )}
 
-      {step === "referee" && (
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">J. References (two required)</h2>
-            {(form.referees ?? []).map((ref, i) => (
-              <div key={i} className="border border-gray-100 rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-gray-500">Referee {i + 1}</p>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Field label="Full name" required>
-                    <input className={inputClass} value={ref.full_name ?? ""} onChange={(e) => {
-                      const refs = [...(form.referees ?? [])];
-                      refs[i] = { ...refs[i], full_name: e.target.value };
-                      patch({ referees: refs });
-                    }} />
-                  </Field>
-                  <Field label="Relationship" required>
-                    <input className={inputClass} value={ref.relationship ?? ""} onChange={(e) => {
-                      const refs = [...(form.referees ?? [])];
-                      refs[i] = { ...refs[i], relationship: e.target.value };
-                      patch({ referees: refs });
-                    }} />
-                  </Field>
-                  <Field label="Phone" required>
-                    <input className={inputClass} value={ref.phone ?? ""} onChange={(e) => {
-                      const refs = [...(form.referees ?? [])];
-                      refs[i] = { ...refs[i], phone: e.target.value };
-                      patch({ referees: refs });
-                    }} />
-                  </Field>
-                  <Field label="Email" required>
-                    <input className={inputClass} type="email" value={ref.email ?? ""} onChange={(e) => {
-                      const refs = [...(form.referees ?? [])];
-                      refs[i] = { ...refs[i], email: e.target.value };
-                      patch({ referees: refs });
-                    }} />
-                  </Field>
-                </div>
-              </div>
-            ))}
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">K. Biosecurity declaration</h2>
-            {[
-              { key: "household_pigs" as const, label: "Do you or anyone in your household keep pigs or have contact with pigs outside work?" },
-              { key: "household_pig_work" as const, label: "Does any household member work on another pig farm, animal market, or slaughter facility?" },
-              { key: "visited_swine_site_12m" as const, label: "Have you worked on or visited any other swine site in the past 12 months?" },
-              { key: "asf_travel_30d" as const, label: "Have you travelled to a region affected by African Swine Fever in the past 30 days?" },
-            ].map(({ key, label }) => (
-              <div key={key} className="text-sm">
-                <p className="text-gray-700 mb-1">{label}</p>
-                <div className="flex gap-2">
-                  {(["yes", "no"] as const).map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => patch({ biosecurity: { ...form.biosecurity, [key]: v } })}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium border ${form.biosecurity?.[key] === v ? "bg-red-600 text-white border-red-600" : "bg-white border-gray-200"}`}
-                    >
-                      {v === "yes" ? "Yes" : "No"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <Field label="Biosecurity commitment initials">
-              <input className={inputClass} value={form.biosecurity?.commitment_initials ?? ""} onChange={(e) => patch({ biosecurity: { ...form.biosecurity, commitment_initials: e.target.value } })} />
-            </Field>
-          </section>
-
-          <section className="space-y-3">
-            <h2 className="text-sm font-bold text-gray-900">L & N. Declarations</h2>
-            <Field label="Typed full name (signature)">
-              <input className={inputClass} value={form.declarations?.signature_name ?? ""} onChange={(e) => patch({ declarations: { ...form.declarations, signature_name: e.target.value } })} />
-            </Field>
-            <label className="flex items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1 accent-red-600"
-                checked={form.declarations?.data_consent ?? false}
-                onChange={(e) => patch({ declarations: { ...form.declarations, data_consent: e.target.checked } })}
-              />
-              <span>
-                I consent to the collection and processing of my personal data for employment administration, and I certify that the information provided is accurate and complete.
-              </span>
-            </label>
-          </section>
-        </div>
-      )}
+      </div>
 
       <div className="flex gap-2 mt-8 pt-6 border-t border-gray-100">
         {stepIndex > 0 && (
@@ -407,9 +691,7 @@ export default function OnboardingWizard({
         <button
           type="button"
           disabled={saving}
-          onClick={() =>
-            saveStep({ finalize: stepIndex === STEPS.length - 1 })
-          }
+          onClick={() => saveStep({ finalize: stepIndex === ONBOARDING_STEPS.length - 1 })}
           className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
         >
           {saving ? (
@@ -417,7 +699,7 @@ export default function OnboardingWizard({
               <Loader2 className="w-4 h-4 animate-spin" />
               Saving…
             </>
-          ) : stepIndex === STEPS.length - 1 ? (
+          ) : stepIndex === ONBOARDING_STEPS.length - 1 ? (
             "Submit onboarding"
           ) : (
             <>

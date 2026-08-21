@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { APPLICATION_STATUSES } from "@/lib/careers/types";
+import { validateHrStatusChange } from "@/lib/careers/applicationStatusRules";
 
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin();
@@ -66,6 +67,26 @@ export async function PATCH(req: NextRequest) {
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+
+    if (status !== undefined) {
+      const { data: existing, error: existingErr } = await supabaseAdmin
+        .from("job_applications")
+        .select("status, ai_screening")
+        .eq("id", id)
+        .single();
+
+      if (existingErr || !existing) {
+        return NextResponse.json(
+          { error: existingErr?.message ?? "Application not found." },
+          { status: 404 },
+        );
+      }
+
+      const validationError = validateHrStatusChange(existing, status);
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
     }
 
     const { data, error } = await supabaseAdmin

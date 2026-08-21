@@ -9,6 +9,20 @@ export const RECRUITMENT_JOB_POSTINGS_LIST = "careers.jobPostings";
 /** @deprecated use RECRUITMENT_JOB_POSTINGS_LIST */
 export const RECRUITMENT_JOB_TITLES_LIST = RECRUITMENT_JOB_POSTINGS_LIST;
 
+/** Form value toggled in JobApplicationWizard when the applicant adds a second referee. */
+export const ADD_SECOND_REFEREE_KEY = "add_second_referee";
+
+export const REFERENCE_2_FIELD_KEYS = [
+  "reference_2_name",
+  "reference_2_phone",
+  "reference_2_email",
+  "reference_2_relationship",
+] as const;
+
+export function hasSecondRefereeData(values: Record<string, unknown>): boolean {
+  return REFERENCE_2_FIELD_KEYS.some((key) => String(values[key] ?? "").trim() !== "");
+}
+
 function field(
   id: string,
   label: string,
@@ -156,27 +170,27 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       fieldType: "textarea",
       required: true,
     }),
-    field("opt:recruitment:field:ref1_name", "Reference 1 — full name", "reference_1_name", 32, {
+    field("opt:recruitment:field:ref1_name", "Referee — full name", "reference_1_name", 32, {
       step: "documents",
       fieldKey: "reference_1_name",
       fieldType: "text",
       required: true,
     }),
-    field("opt:recruitment:field:ref1_phone", "Reference 1 — phone", "reference_1_phone", 33, {
+    field("opt:recruitment:field:ref1_phone", "Referee — phone", "reference_1_phone", 33, {
       step: "documents",
       fieldKey: "reference_1_phone",
       fieldType: "phone",
       required: true,
     }),
-    field("opt:recruitment:field:ref1_email", "Reference 1 — email", "reference_1_email", 34, {
+    field("opt:recruitment:field:ref1_email", "Referee — email", "reference_1_email", 34, {
       step: "documents",
       fieldKey: "reference_1_email",
       fieldType: "email",
-      required: false,
+      required: true,
     }),
     field(
       "opt:recruitment:field:ref1_rel",
-      "Reference 1 — relationship",
+      "Referee — relationship",
       "reference_1_relationship",
       35,
       {
@@ -186,27 +200,30 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         required: true,
       },
     ),
-    field("opt:recruitment:field:ref2_name", "Reference 2 — full name", "reference_2_name", 36, {
+    field("opt:recruitment:field:ref2_name", "Second referee — full name", "reference_2_name", 36, {
       step: "documents",
       fieldKey: "reference_2_name",
       fieldType: "text",
       required: true,
+      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
-    field("opt:recruitment:field:ref2_phone", "Reference 2 — phone", "reference_2_phone", 37, {
+    field("opt:recruitment:field:ref2_phone", "Second referee — phone", "reference_2_phone", 37, {
       step: "documents",
       fieldKey: "reference_2_phone",
       fieldType: "phone",
       required: true,
+      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
-    field("opt:recruitment:field:ref2_email", "Reference 2 — email", "reference_2_email", 38, {
+    field("opt:recruitment:field:ref2_email", "Second referee — email", "reference_2_email", 38, {
       step: "documents",
       fieldKey: "reference_2_email",
       fieldType: "email",
-      required: false,
+      required: true,
+      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
     field(
       "opt:recruitment:field:ref2_rel",
-      "Reference 2 — relationship",
+      "Second referee — relationship",
       "reference_2_relationship",
       39,
       {
@@ -214,6 +231,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldKey: "reference_2_relationship",
         fieldType: "text",
         required: true,
+        showWhen: { field: "add_second_referee", equals: "Yes" },
       },
     ),
   ];

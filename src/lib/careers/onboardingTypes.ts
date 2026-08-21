@@ -29,7 +29,10 @@ export interface OnboardingFormData {
     gender?: string;
     marital_status?: string;
     nationality?: string;
+    is_citizen?: string;
     ghana_card_no?: string;
+    passport_number?: string;
+    passport_bio_page?: { secure_url?: string; public_id?: string; original_name?: string };
     ssnit_number?: string;
     personal_tin?: string;
     work_permit?: string;
@@ -88,6 +91,21 @@ export interface OnboardingFormData {
     issuing_body?: string;
     licence_no?: string;
     expiry?: string;
+    file?: { secure_url?: string; public_id?: string; original_name?: string } | null;
+  }[];
+  /** Certificates uploaded during job application — read-only reference. */
+  application_certificates?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  }[];
+  /** Optional extra certificates uploaded during onboarding. */
+  additional_certifications?: {
+    name?: string;
+    issuing_body?: string;
+    licence_no?: string;
+    expiry?: string;
+    file?: { secure_url?: string; public_id?: string; original_name?: string } | null;
   }[];
   work_experience?: {
     employer?: string;
@@ -106,6 +124,7 @@ export interface OnboardingFormData {
     blood_group?: string;
     allergies?: string;
     conditions?: string;
+    medical_report?: { secure_url?: string; public_id?: string; original_name?: string };
     accommodation_needs?: string;
     ppe_boots?: string;
     ppe_overall?: string;
@@ -199,7 +218,9 @@ export function emptyOnboardingForm(): OnboardingFormData {
     employment: {},
     payment: {},
     qualifications: [{ qualification: "", institution: "", field: "", certificate_no: "", year: "" }],
-    certifications: [{ name: "", issuing_body: "", licence_no: "", expiry: "" }],
+    certifications: [{ name: "", issuing_body: "", licence_no: "", expiry: "", file: null }],
+    application_certificates: [],
+    additional_certifications: [],
     work_experience: [{ employer: "", job_title: "", from: "", to: "", reason_leaving: "" }],
     skills: {},
     medical: { acknowledge_referral: false },
@@ -316,6 +337,12 @@ export function mergeOnboardingForm(
     dependents: raw.dependents?.length ? raw.dependents : base.dependents,
     qualifications: raw.qualifications?.length ? raw.qualifications : base.qualifications,
     certifications: raw.certifications?.length ? raw.certifications : base.certifications,
+    application_certificates: raw.application_certificates?.length
+      ? raw.application_certificates
+      : base.application_certificates,
+    additional_certifications: raw.additional_certifications?.length
+      ? raw.additional_certifications
+      : base.additional_certifications,
     work_experience: raw.work_experience?.length ? raw.work_experience : base.work_experience,
     referees: raw.referees?.length ? raw.referees : base.referees,
   };

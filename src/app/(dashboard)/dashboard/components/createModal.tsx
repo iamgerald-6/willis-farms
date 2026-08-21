@@ -136,6 +136,13 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     });
   };
 
+  // Re-apply prefill when the onboarded list refreshes (e.g. after HR saves Section O).
+  useEffect(() => {
+    if (!open || loadingCandidates || !selectedOnboardingId) return;
+    applyOnboardedCandidate(selectedOnboardingId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loadingCandidates, onboardedCandidates, selectedOnboardingId]);
+
   const fieldClass = (name: string) =>
     lockedFields.has(name) ? lockedClass : inputClass;
 
@@ -209,14 +216,15 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
                 {onboardedCandidates.map((c) => (
                   <option key={c.application_id} value={c.application_id}>
                     {c.full_name} · {c.reference_number}
-                    {c.prefill.job_position ? ` · ${c.prefill.job_position}` : ""}
+                    {c.prefill.company_id ? ` · ${c.prefill.company_id}` : ""}
+                    {c.prefill.email ? ` · ${c.prefill.email}` : ""}
                   </option>
                 ))}
               </select>
               {selectedOnboardingId && (
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Fields from onboarding are pre-filled. You still choose role and
-                  complete any missing details.
+                  Pre-filled from onboarding HR fields — company email and employee ID from
+                  Section O. You can edit the email before sending the invite.
                 </p>
               )}
             </div>
@@ -255,11 +263,15 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
             <div>
               <input
                 type="email"
-                placeholder="Email Address"
-                readOnly={lockedFields.has("email")}
+                placeholder="Company email @willsfarms.com"
                 {...register("email")}
-                className={fieldClass("email")}
+                className={inputClass}
               />
+              <p className="text-[11px] text-gray-500 mt-1">
+                {selectedOnboardingId
+                  ? "From onboarding HR — this is the address the invite is sent to. Edit if needed."
+                  : "Work email for the WillsOne account invite."}
+              </p>
               {errors.email && (
                 <p className="text-red-500 text-xs mt-1">
                   {errors.email.message}
@@ -278,11 +290,16 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
             <div>
               <input
                 type="text"
-                placeholder="Employee ID"
+                placeholder="Employee ID (e.g. WF7-042)"
                 readOnly={lockedFields.has("company_id")}
                 {...register("company_id")}
                 className={fieldClass("company_id")}
               />
+              {selectedOnboardingId && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  From onboarding HR employee ID — used as the company ID on their account.
+                </p>
+              )}
               {errors.company_id && (
                 <p className="text-red-500 text-xs mt-1">
                   {errors.company_id.message}
