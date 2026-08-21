@@ -13,7 +13,6 @@ import {
   isAiFlagged,
   type ApplicationStatus,
   type JobApplication,
-  type PanelDecision,
 } from "@/lib/careers/types";
 import {
   canHrChangeStatus,
@@ -94,9 +93,6 @@ function ApplicationDetail({
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(application.status);
   const [hrNotes, setHrNotes] = useState(application.hr_notes ?? "");
-  const [selectedDecision, setSelectedDecision] = useState<PanelDecision | "">(
-    application.interview_form_data?.summary?.decision ?? "",
-  );
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -111,7 +107,6 @@ function ApplicationDetail({
   useEffect(() => {
     setStatus(application.status);
     setHrNotes(application.hr_notes ?? "");
-    setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
   }, [application]);
 
   const allowedStatusOptions = useMemo(
@@ -125,36 +120,6 @@ function ApplicationDetail({
   const decision = application.interview_form_data?.summary?.decision;
   const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
   const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
-  const canConfirmOutcome =
-    !!application.interview_submitted_at && !decisionConfirmed;
-
-  const confirmMutation = useMutation({
-    mutationFn: () =>
-      api.post("/careers/interview", {
-        application_id: application.id,
-        interview_form_data: {
-          ...application.interview_form_data,
-          summary: {
-            ...application.interview_form_data?.summary,
-            decision: selectedDecision,
-          },
-        },
-        submitted_by: adminId,
-        action: "confirm_decision",
-      }),
-    onSuccess: (res) => {
-      const warnings = res.data.email_warnings as string[] | undefined;
-      if (warnings?.length) {
-        toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
-      } else {
-        toast.success("Outcome confirmed.");
-      }
-      onUpdated();
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Confirm failed.");
-    },
-  });
 
   const resendOnboarding = useMutation({
     mutationFn: () =>
@@ -522,61 +487,6 @@ function ApplicationDetail({
                   average)
                 </p>
               )}
-
-            {canConfirmOutcome && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
-                <p className="text-sm font-semibold text-amber-900">
-                  Confirm interview outcome
-                </p>
-                <p className="text-xs text-amber-800">
-                  Interview evaluation is complete. Choose an outcome after your team discussion.
-                  {application.interview_form_data?.summary?.total_weighted != null && (
-                    <>
-                      {" "}
-                      Combined score:{" "}
-                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
-                    </>
-                  )}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {PANEL_DECISIONS.map((d) => (
-                    <button
-                      key={d.value}
-                      type="button"
-                      onClick={() => setSelectedDecision(d.value)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                        selectedDecision === d.value
-                          ? "bg-amber-800 text-white border-amber-800"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedDecision && (
-                  <p className="text-xs text-amber-700">
-                    {selectedDecision === "hire"
-                      ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
-                      : selectedDecision === "hold"
-                        ? "Hold does not send a candidate email."
-                        : "Confirming rejection sends a professional decline email."}
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => confirmMutation.mutate()}
-                  disabled={confirmMutation.isPending || !selectedDecision}
-                  className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
-                >
-                  {confirmMutation.isPending
-                    ? "Confirming…"
-                    : selectedDecision
-                      ? `Confirm: ${PANEL_DECISIONS.find((d) => d.value === selectedDecision)?.label}`
-                      : "Select an outcome to confirm"}
-                </button>
-              </div>
-            )}
 
             {decisionConfirmed && (
               <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
