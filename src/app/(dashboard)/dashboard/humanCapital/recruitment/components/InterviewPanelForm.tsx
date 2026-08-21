@@ -467,7 +467,7 @@ export default function InterviewPanelForm({
               disabled={saveMutation.isPending || isLoading}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
             >
-              {saveMutation.isPending ? "Submitting…" : "Submit evaluation"}
+              {saveMutation.isPending ? "Submitting…" : "Finish"}
             </button>
           </div>
         )}

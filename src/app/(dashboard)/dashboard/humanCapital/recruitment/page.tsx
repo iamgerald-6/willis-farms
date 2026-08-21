@@ -41,6 +41,7 @@ const STATUS_STYLES: Record<ApplicationStatus, string> = {
   under_review: "bg-amber-50 text-amber-700 border border-amber-200",
   shortlisted: "bg-purple-50 text-purple-700 border border-purple-200",
   interview: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  evaluation: "bg-cyan-50 text-cyan-700 border border-cyan-200",
   hold: "bg-orange-50 text-orange-700 border border-orange-200",
   onboarding: "bg-teal-50 text-teal-700 border border-teal-200",
   offer: "bg-green-50 text-green-700 border border-green-200",
@@ -69,6 +70,7 @@ function formatDate(iso: string) {
 
 const INTERVIEW_GUIDE_STATUSES: ApplicationStatus[] = [
   "interview",
+  "evaluation",
   "hold",
   "onboarding",
   "offer",

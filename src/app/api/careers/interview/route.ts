@@ -494,9 +494,7 @@ export async function POST(req: NextRequest) {
     if (action === "finalize") {
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
-      if (application.status === "shortlisted") {
-        updates.status = "interview";
-      }
+      updates.status = "evaluation";
     } else if (action === "confirm_decision") {
       if (!application.interview_submitted_at) {
         return NextResponse.json(
