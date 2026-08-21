@@ -1,5 +1,5 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
-import type { RoleInterviewReport } from "@/lib/careers/types";
+import type { InterviewReport, PanelDecision, RoleInterviewReport } from "@/lib/careers/types";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -15,6 +15,18 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Rejected",
   onboarding: "Hired",
   offer: "Hired",
+};
+
+const DECISION_COLOR: Record<PanelDecision, string> = {
+  hire: GREEN,
+  hold: AMBER,
+  do_not_hire: RED,
+};
+
+const DECISION_LABEL: Record<PanelDecision, string> = {
+  hire: "Hire",
+  hold: "Hold / Reserve",
+  do_not_hire: "Do not hire",
 };
 
 const styles = StyleSheet.create({
@@ -50,6 +62,26 @@ const styles = StyleSheet.create({
 
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 7, color: GRAY, textAlign: "center" },
   emptyNote: { fontSize: 8.5, color: GRAY, fontStyle: "italic" },
+
+  candidateHeader: { fontSize: 15, fontWeight: 700, color: DARK, marginBottom: 2 },
+  candidateSubtitle: { fontSize: 9, color: GRAY, marginBottom: 10 },
+  subsectionTitle: { fontSize: 10.5, fontWeight: 700, color: DARK, marginTop: 14, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
+
+  detailsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  detailCard: { flexGrow: 1, flexBasis: "45%", backgroundColor: LIGHT, borderRadius: 6, padding: 8 },
+  detailLabel: { fontSize: 7, color: GRAY, textTransform: "uppercase", letterSpacing: 0.4 },
+  detailValue: { fontSize: 9.5, fontWeight: 700, color: DARK, marginTop: 2 },
+
+  competencyRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  competencyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 },
+  competencyArea: { fontSize: 9.5, fontWeight: 700, color: DARK },
+  competencyScore: { fontSize: 9.5, fontWeight: 700, color: RED },
+  competencyText: { fontSize: 8.5, color: GRAY, lineHeight: 1.4 },
+
+  candidateRecBox: { borderRadius: 6, padding: 10, marginTop: 6 },
+  candidateRecLabel: { fontSize: 7.5, color: GRAY, textTransform: "uppercase", letterSpacing: 0.4 },
+  candidateRecDecision: { fontSize: 11.5, fontWeight: 700, marginTop: 2 },
+  candidateRecRationale: { fontSize: 8.5, color: DARK, lineHeight: 1.4, marginTop: 4 },
 });
 
 function fmtDate(iso: string | null) {
@@ -68,6 +100,119 @@ function Bullets({ items }: { items: string[] }) {
         </View>
       ))}
     </>
+  );
+}
+
+// One candidate's full individual comprehensive report, condensed onto its
+// own page — this is what makes the role report "the individual reports
+// plus the new role-level information", per the brief.
+function CandidateReportPage({
+  name,
+  referenceNumber,
+  report,
+  roleTitle,
+}: {
+  name: string;
+  referenceNumber: string;
+  report: InterviewReport | null;
+  roleTitle: string;
+}) {
+  return (
+    <Page size="A4" style={styles.page}>
+      <Text style={styles.candidateHeader}>{name}</Text>
+      <Text style={styles.candidateSubtitle}>Ref {referenceNumber}</Text>
+
+      {!report ? (
+        <Text style={styles.emptyNote}>
+          No individual comprehensive report was generated for this candidate.
+        </Text>
+      ) : (
+        <>
+          <View wrap={false}>
+            <Text style={styles.subsectionTitle}>Executive Summary</Text>
+            <Text style={styles.paragraph}>{report.executive_summary}</Text>
+          </View>
+
+          <Text style={styles.subsectionTitle}>Applicant &amp; Interview Details</Text>
+          <View style={styles.detailsGrid}>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Interview panel</Text>
+              <Text style={styles.detailValue}>
+                {report.applicant_details.panel_names.length
+                  ? report.applicant_details.panel_names.join(", ")
+                  : "—"}
+              </Text>
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Location</Text>
+              <Text style={styles.detailValue}>{report.applicant_details.location ?? "—"}</Text>
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Overall rating</Text>
+              <Text style={styles.detailValue}>
+                {report.applicant_details.overall_rating != null
+                  ? `${report.applicant_details.overall_rating.toFixed(2)} / 5`
+                  : "—"}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.subsectionTitle}>Core Competencies</Text>
+          {report.core_competencies.length === 0 ? (
+            <Text style={styles.emptyNote}>No competency data available.</Text>
+          ) : (
+            report.core_competencies.map((c, i) => (
+              <View key={i} style={styles.competencyRow} wrap={false}>
+                <View style={styles.competencyHeader}>
+                  <Text style={styles.competencyArea}>{c.area}</Text>
+                  <Text style={styles.competencyScore}>{c.score != null ? `${c.score.toFixed(2)} / 5` : "—"}</Text>
+                </View>
+                <Text style={styles.competencyText}>{c.assessment}</Text>
+              </View>
+            ))
+          )}
+
+          <View wrap={false}>
+            <Text style={styles.subsectionTitle}>Key Observations</Text>
+            <Text style={[styles.paragraph, { marginBottom: 8 }]}>{report.key_observations.summary}</Text>
+          </View>
+
+          <View style={{ flexDirection: "row", gap: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 8.5, fontWeight: 700, color: GREEN, marginBottom: 4, textTransform: "uppercase" }}>
+                Strengths
+              </Text>
+              <Bullets items={report.key_observations.strengths} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 8.5, fontWeight: 700, color: AMBER, marginBottom: 4, textTransform: "uppercase" }}>
+                Weaknesses
+              </Text>
+              <Bullets items={report.key_observations.weaknesses} />
+            </View>
+          </View>
+
+          <Text style={styles.subsectionTitle}>Final Recommendation</Text>
+          <View
+            style={[
+              styles.candidateRecBox,
+              { backgroundColor: LIGHT, borderLeft: `3pt solid ${DECISION_COLOR[report.final_recommendation.decision]}` },
+            ]}
+            wrap={false}
+          >
+            <Text style={styles.candidateRecLabel}>Recommended decision</Text>
+            <Text style={[styles.candidateRecDecision, { color: DECISION_COLOR[report.final_recommendation.decision] }]}>
+              {DECISION_LABEL[report.final_recommendation.decision]}
+            </Text>
+            <Text style={styles.candidateRecRationale}>{report.final_recommendation.rationale}</Text>
+          </View>
+        </>
+      )}
+
+      <Text style={styles.footer} fixed>
+        Wills Farms Ltd — Human Capital — Role Hiring Summary for {roleTitle}
+      </Text>
+    </Page>
   );
 }
 
@@ -161,6 +306,16 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           Wills Farms Ltd — Human Capital — Role Hiring Summary for {report.role_title}
         </Text>
       </Page>
+
+      {report.candidate_reports.map((c) => (
+        <CandidateReportPage
+          key={c.application_id}
+          name={c.name}
+          referenceNumber={c.reference_number}
+          report={c.report}
+          roleTitle={report.role_title}
+        />
+      ))}
     </Document>
   );
 }

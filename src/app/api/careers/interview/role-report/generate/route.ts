@@ -163,6 +163,18 @@ export async function POST(req: NextRequest) {
     // ones don't need a recommendation.
     const topUndecided = rankings.find((r) => r.status === "evaluation") ?? null;
 
+    // --- Embedded individual reports (this role report = the individual
+    // reports plus the role-level information above) ---------------------------
+    const candidateReports = completedApplicants.map((a) => {
+      const formData = normalizeInterviewFormData(a.interview_form_data);
+      return {
+        application_id: a.id,
+        name: a.full_name,
+        reference_number: a.reference_number,
+        report: formData.summary?.interview_report_edit ?? formData.summary?.interview_report ?? null,
+      };
+    });
+
     // --- Source material for the AI (HR notes + each candidate's own report) ---
     const candidateBlocks = completedApplicants.map((a) => {
       const formData = normalizeInterviewFormData(a.interview_form_data);
@@ -243,6 +255,7 @@ export async function POST(req: NextRequest) {
         combined_score: r.combined_score,
         status: r.status as ApplicationStatus,
       })),
+      candidate_reports: candidateReports,
       final_recommendation: {
         application_id: topUndecided?.application_id ?? null,
         candidate_name: topUndecided?.name ?? null,

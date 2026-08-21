@@ -221,6 +221,21 @@ export interface RoleInterviewReport {
     combined_score: number | null;
     status: ApplicationStatus;
   }[];
+  /**
+   * This role report is the individual reports plus the new role-level
+   * information above — so every completed candidate's full comprehensive
+   * report (executive summary, applicant/interview details, core
+   * competencies, key observations, final recommendation) is embedded here
+   * verbatim (their edited copy if HR saved one, otherwise the AI original).
+   * Null for a candidate who completed the interview but never had an
+   * individual report generated.
+   */
+  candidate_reports: {
+    application_id: string;
+    name: string;
+    reference_number: string;
+    report: InterviewReport | null;
+  }[];
   final_recommendation: {
     /** Null if no currently-undecided (Evaluation status) candidate qualifies for a recommendation. */
     application_id: string | null;

@@ -2030,6 +2030,7 @@ function RoleReportModal({
   const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(null);
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
+  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
 
   const selectedRole = roles.find((r) => r.slug === selectedSlug);
 
@@ -2280,6 +2281,53 @@ function RoleReportModal({
                         <span className="font-semibold text-gray-900 w-16 text-right">
                           {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
                         </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Individual candidate reports
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  This report combines each candidate&apos;s own comprehensive interview report with the
+                  role-level information above. Click a name to expand their full report.
+                </p>
+                {reportDraft.candidate_reports.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No candidate completed the full interview for this role.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {reportDraft.candidate_reports.map((c) => (
+                      <div key={c.application_id} className="border border-gray-100 rounded-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedCandidateId(expandedCandidateId === c.application_id ? null : c.application_id)
+                          }
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-sm bg-gray-50 hover:bg-gray-100"
+                        >
+                          <span className="font-medium text-gray-900">
+                            {c.name} <span className="text-xs text-gray-400 font-normal">({c.reference_number})</span>
+                          </span>
+                          <span className="text-xs text-red-600 font-medium">
+                            {expandedCandidateId === c.application_id ? "Hide" : c.report ? "View report" : "No report"}
+                          </span>
+                        </button>
+                        {expandedCandidateId === c.application_id && (
+                          <div className="p-4 border-t border-gray-100">
+                            {c.report ? (
+                              <InterviewReportReadOnly report={c.report} />
+                            ) : (
+                              <p className="text-xs text-gray-400 italic">
+                                No individual comprehensive report was generated for this candidate.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
