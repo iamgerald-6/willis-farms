@@ -13,6 +13,7 @@ import {
 } from "@/lib/careers/jobPostings";
 import type { JobPostingOption } from "@/lib/careers/jobPostingOptions";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { SectionTextEditor } from "@/components/SectionTextEditor";
 import {
@@ -423,21 +424,27 @@ export default function CareersTab() {
                     <input
                       type="file"
                       className="sr-only"
-                      accept=".pdf,.doc,.docx,image/*"
+                      accept={ACCEPT_JD}
                       disabled={uploadingJd}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
                         setUploadingJd(true);
                         try {
-                          const uploaded = await uploadCareersFile(file, "CareersJD");
+                          const uploaded = await uploadCareersFile(
+                            file,
+                            "CareersJD",
+                            ACCEPT_JD,
+                          );
                           setForm((f) => ({
                             ...f,
                             jd_file_url: uploaded.secure_url,
                             jd_file_public_id: uploaded.public_id,
                           }));
-                        } catch {
-                          toast.error("JD upload failed.");
+                        } catch (err) {
+                          toast.error(
+                            err instanceof Error ? err.message : "JD upload failed.",
+                          );
                         } finally {
                           setUploadingJd(false);
                         }

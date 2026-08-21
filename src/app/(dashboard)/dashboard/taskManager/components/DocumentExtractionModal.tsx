@@ -24,6 +24,10 @@ import { User } from "@/types";
 import { minTaskDate } from "@/lib/taskDateLimits";
 import { MAX_EXTRACTION_PAGES, MAX_DOCUMENT_PAGES, MAX_EXTRACTION_FILES as MAX_FILES, getPdfPageCount } from "@/lib/pdfPages";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import {
+  ACCEPT_TASK_MANAGER_DOC,
+  validateTaskManagerDocumentFile,
+} from "@/lib/uploadConstraints";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 import PdfPagePicker from "./PdfPagePicker";
@@ -140,6 +144,14 @@ export default function DocumentExtractionModal({
 
   const addFiles = (picked: FileList | null) => {
     if (!picked) return;
+    const incoming = Array.from(picked);
+    for (const file of incoming) {
+      const validationError = validateTaskManagerDocumentFile(file);
+      if (validationError) {
+        toast.error(validationError);
+        return;
+      }
+    }
     setFiles((prev) => {
       const merged = [...prev, ...Array.from(picked)];
       // De-dupe by name+size — picking the same file twice from the
@@ -411,7 +423,7 @@ export default function DocumentExtractionModal({
                       id="tm-doc-upload"
                       type="file"
                       multiple
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp,image/gif"
+                      accept={ACCEPT_TASK_MANAGER_DOC}
                       className="hidden"
                       onChange={(e) => {
                         addFiles(e.target.files);

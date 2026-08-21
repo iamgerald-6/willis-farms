@@ -1,10 +1,14 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Loader2, Plus, Trash2, Upload } from "lucide-react";
 import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
 import type { OnboardingCertificationEntry } from "@/lib/careers/onboardingEntryTypes";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import {
+  ACCEPT_PDF_OR_IMAGE,
+  uploadHintForField,
+} from "@/lib/uploadConstraints";
 
 export type { OnboardingCertificationEntry };
 
@@ -53,6 +57,7 @@ export function OnboardingCertificationsInput({
 }: Props) {
   const entries = normalize(value);
   const idBase = useId();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const update = (index: number, patch: Partial<OnboardingCertificationEntry>) => {
     onChange(entries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
@@ -64,13 +69,20 @@ export function OnboardingCertificationsInput({
 
   const uploadFile = async (index: number, file: File) => {
     onUploadingChange(index);
+    setUploadError(null);
     try {
-      const uploaded = await uploadCareersFile(file, "CareersOnboarding");
+      const uploaded = await uploadCareersFile(
+        file,
+        "CareersOnboarding",
+        ACCEPT_PDF_OR_IMAGE,
+      );
       const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
       update(index, {
         file: uploaded,
         name: entries[index]?.name?.trim() ? entries[index].name : baseName,
       });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       onUploadingChange(null);
     }
@@ -83,6 +95,9 @@ export function OnboardingCertificationsInput({
         with your job application. Certificates from your application are shown above — you
         do not need to upload those again.
       </p>
+      {uploadError && (
+        <p className="text-xs text-red-600">{uploadError}</p>
+      )}
 
       {entries.length === 0 && (
         <p className="text-sm text-gray-400 italic">No additional certifications added.</p>
@@ -156,12 +171,12 @@ export function OnboardingCertificationsInput({
                     <Upload className="w-5 h-5 text-gray-400" />
                   )}
                   <span className="text-sm text-gray-600">
-                    {entry.file?.secure_url ? "Replace file" : "Choose PDF or image"}
+                    {entry.file?.secure_url ? "Replace file" : "Choose PDF, Word, or image"}
                   </span>
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".pdf,image/*"
+                    accept={ACCEPT_PDF_OR_IMAGE}
                     disabled={uploadingIndex === index}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -170,6 +185,9 @@ export function OnboardingCertificationsInput({
                     }}
                   />
                 </label>
+                <p className="text-[11px] text-gray-400">
+                  {uploadHintForField(undefined, ACCEPT_PDF_OR_IMAGE)}
+                </p>
               </div>
             </label>
           </div>

@@ -22,7 +22,7 @@ export const maxDuration = 90;
 // Keeps a batch fast enough to plausibly finish inside maxDuration and the
 // combined request small enough for the Messages API — "a couple of
 // related documents", not an entire filing cabinet in one go.
-const MAX_BYTES_PER_FILE = 25 * 1024 * 1024;
+const MAX_BYTES_PER_FILE = 5 * 1024 * 1024;
 const MAX_BYTES_TOTAL = 40 * 1024 * 1024;
 
 // Plain Levenshtein edit distance — used to forgive small misreadings of a

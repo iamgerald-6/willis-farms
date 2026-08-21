@@ -26,6 +26,12 @@ import {
   SOP_DESCRIPTION_MAX_CHARS,
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import {
+  ACCEPT_IMAGE_JPEG_PNG,
+  ACCEPT_PDF_OR_WORD,
+  validateImageFile,
+  validatePdfOrWordFile,
+} from "@/lib/uploadConstraints";
 
 const SOP_CATEGORY_VALUES = getSopCategoryLegacyValues() as unknown as [
   string,
@@ -531,11 +537,25 @@ export default function AddContentModal({
               <Field
                 label="Cover Image"
                 icon={<FileImage className="w-4 h-4" />}
+                error={fileErrors.cover}
               >
                 <FileDropZone
-                  accept="image/*"
+                  accept={ACCEPT_IMAGE_JPEG_PNG}
                   file={coverFile}
-                  onChange={setCoverFile}
+                  onChange={(f) => {
+                    if (!f) {
+                      setCoverFile(null);
+                      return;
+                    }
+                    const validationError = validateImageFile(f);
+                    if (validationError) {
+                      setFileErrors((prev) => ({ ...prev, cover: validationError }));
+                      setCoverFile(null);
+                      return;
+                    }
+                    setFileErrors((prev) => ({ ...prev, cover: undefined }));
+                    setCoverFile(f);
+                  }}
                   placeholder={
                     isEditing
                       ? "Click to replace (optional)"
@@ -568,12 +588,21 @@ export default function AddContentModal({
                   error={fileErrors.doc}
                 >
                   <FileDropZone
-                    accept=".pdf,.doc,.docx"
+                    accept={ACCEPT_PDF_OR_WORD}
                     file={docFile}
                     onChange={(f) => {
+                      if (!f) {
+                        setDocFile(null);
+                        return;
+                      }
+                      const validationError = validatePdfOrWordFile(f);
+                      if (validationError) {
+                        setFileErrors((prev) => ({ ...prev, doc: validationError }));
+                        setDocFile(null);
+                        return;
+                      }
                       setDocFile(f);
-                      if (f)
-                        setFileErrors((prev) => ({ ...prev, doc: undefined }));
+                      setFileErrors((prev) => ({ ...prev, doc: undefined }));
                     }}
                     placeholder={
                       isEditing && editingContent?.document_url

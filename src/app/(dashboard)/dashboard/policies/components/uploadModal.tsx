@@ -10,6 +10,7 @@ import {
   POLICY_DESCRIPTION_MAX_CHARS,
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import { ACCEPT_PDF_OR_WORD, validatePdfOrWordFile } from "@/lib/uploadConstraints";
 
 const DEFAULT_CATEGORY = getDefaultPolicyCategoryLegacyValue();
 
@@ -55,8 +56,9 @@ export default function UploadManualModal({
   };
 
   const handleFile = (f: File) => {
-    if (f.type !== "application/pdf") {
-      setErrors((prev) => ({ ...prev, file: "Only PDF files are accepted" }));
+    const validationError = validatePdfOrWordFile(f);
+    if (validationError) {
+      setErrors((prev) => ({ ...prev, file: validationError }));
       return;
     }
     setFile(f);
@@ -271,7 +273,7 @@ export default function UploadManualModal({
               <input
                 id="manual-pdf-upload"
                 type="file"
-                accept="application/pdf"
+                accept={ACCEPT_PDF_OR_WORD}
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
