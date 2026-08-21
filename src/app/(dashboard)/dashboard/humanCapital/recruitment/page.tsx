@@ -285,32 +285,40 @@ function ApplicationDetail({
               )}
             </div>
 
-            {application.cv_url && (
-              <a
-                href={application.cv_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
-              >
-                <FileText className="w-4 h-4" />
-                View CV
-                <ExternalLink className="w-3 h-3" />
-              </a>
+            {(application.cv_url ||
+              (application.application_form_data &&
+                application.status === "evaluation")) && (
+              <div className="flex flex-col items-start gap-2">
+                {application.cv_url && (
+                  <a
+                    href={application.cv_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+                  >
+                    <FileText className="w-4 h-4" />
+                    View CV
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {application.application_form_data &&
+                  application.status === "evaluation" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowApplicationFormModal(true)}
+                      className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+                    >
+                      <FileText className="w-4 h-4" />
+                      View job application details
+                    </button>
+                  )}
+              </div>
             )}
 
-            {application.application_form_data && (
-              application.status === "evaluation" ? (
-                <button
-                  type="button"
-                  onClick={() => setShowApplicationFormModal(true)}
-                  className="text-sm font-medium text-red-600 hover:underline"
-                >
-                  View job application details
-                </button>
-              ) : (
+            {application.application_form_data &&
+              application.status !== "evaluation" && (
                 <ApplicationFormReview formData={application.application_form_data} />
-              )
-            )}
+              )}
 
             {application.ai_screening && (
               <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
