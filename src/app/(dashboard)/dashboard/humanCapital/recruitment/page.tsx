@@ -644,88 +644,113 @@ function ApplicationDetail({
                         Applicant &amp; interview details
                       </label>
                       <div className="grid sm:grid-cols-2 gap-2">
-                        <input
-                          value={reportDraft.applicant_details.name}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: { ...reportDraft.applicant_details, name: e.target.value },
-                            })
-                          }
-                          placeholder="Candidate name"
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={reportDraft.applicant_details.role}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: { ...reportDraft.applicant_details, role: e.target.value },
-                            })
-                          }
-                          placeholder="Role"
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={reportDraft.applicant_details.panel_names.join(", ")}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: {
-                                ...reportDraft.applicant_details,
-                                panel_names: e.target.value
-                                  .split(",")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean),
-                              },
-                            })
-                          }
-                          placeholder="Panel members (comma-separated)"
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm sm:col-span-2"
-                        />
-                        <input
-                          type="date"
-                          value={reportDraft.applicant_details.interview_date?.slice(0, 10) ?? ""}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: {
-                                ...reportDraft.applicant_details,
-                                interview_date: e.target.value ? `${e.target.value}T00:00:00Z` : null,
-                              },
-                            })
-                          }
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
-                        <input
-                          value={reportDraft.applicant_details.location ?? ""}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: { ...reportDraft.applicant_details, location: e.target.value },
-                            })
-                          }
-                          placeholder="Location"
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="5"
-                          value={reportDraft.applicant_details.overall_rating ?? ""}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              applicant_details: {
-                                ...reportDraft.applicant_details,
-                                overall_rating: e.target.value === "" ? null : Number(e.target.value),
-                              },
-                            })
-                          }
-                          placeholder="Overall rating"
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Candidate name
+                          </label>
+                          <input
+                            value={reportDraft.applicant_details.name}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: { ...reportDraft.applicant_details, name: e.target.value },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Role applied for
+                          </label>
+                          <input
+                            value={reportDraft.applicant_details.role}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: { ...reportDraft.applicant_details, role: e.target.value },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Interview panel (comma-separated)
+                          </label>
+                          <input
+                            value={reportDraft.applicant_details.panel_names.join(", ")}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  panel_names: e.target.value
+                                    .split(",")
+                                    .map((s) => s.trim())
+                                    .filter(Boolean),
+                                },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Interview date
+                          </label>
+                          <input
+                            type="date"
+                            value={reportDraft.applicant_details.interview_date?.slice(0, 10) ?? ""}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  interview_date: e.target.value ? `${e.target.value}T00:00:00Z` : null,
+                                },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Location
+                          </label>
+                          <input
+                            value={reportDraft.applicant_details.location ?? ""}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: { ...reportDraft.applicant_details, location: e.target.value },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
+                            Overall rating (out of 5)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="5"
+                            value={reportDraft.applicant_details.overall_rating ?? ""}
+                            onChange={(e) =>
+                              setReportDraft({
+                                ...reportDraft,
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  overall_rating: e.target.value === "" ? null : Number(e.target.value),
+                                },
+                              })
+                            }
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
                       </div>
                     </div>
 
