@@ -1192,7 +1192,7 @@ function ApplicationDetail({
                 {selectedDecision && (
                   <p className="text-xs text-amber-700">
                     {selectedDecision === "hire"
-                      ? "Confirming hire moves this applicant to Offer status in the Employment tab. No email is sent yet — send the congratulations email with the onboarding link from there when you're ready."
+                      ? "Confirming hire moves this applicant to Offer status in the Offer tab. No email is sent yet — send the congratulations email with the onboarding link from there when you're ready."
                       : selectedDecision === "hold"
                         ? "Hold does not send a candidate email."
                         : "Confirming rejection sends a professional decline email."}
@@ -2042,7 +2042,7 @@ function ApprovalsTab({
 // offer but not yet sent the congratulations/onboarding-link email. Sending
 // that email (via /careers/onboarding/start) is what moves them into the
 // existing Onboarding tab.
-function EmploymentTab({
+function OfferTab({
   applications,
   isLoading,
   onSelect,
@@ -2766,10 +2766,10 @@ function RecruitmentPageContent() {
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
-    "applications" | "employment" | "onboarding" | "careers" | "ai_rejects" | "approvals"
+    "applications" | "offer" | "onboarding" | "careers" | "ai_rejects" | "approvals"
   >(
-    tabParam === "employment"
-      ? "employment"
+    tabParam === "offer"
+      ? "offer"
       : tabParam === "onboarding"
         ? "onboarding"
         : tabParam === "careers"
@@ -2838,14 +2838,14 @@ function RecruitmentPageContent() {
     [nonAiApplications],
   );
   // Every applicant with a confirmed Hire decision — status "offer" — moves
-  // to the Employment tab. From there HR sends the congratulations email
-  // with the onboarding link, which is what advances them to "onboarding".
-  const employmentApplications = useMemo(
+  // to the Offer tab. From there HR sends the congratulations email with
+  // the onboarding link, which is what advances them to "onboarding".
+  const offerApplications = useMemo(
     () => nonAiApplications.filter((a) => a.status === "offer"),
     [nonAiApplications],
   );
   // Once an applicant's evaluation is finalized they move to the Approvals
-  // tab, a confirmed hire moves to the Employment tab, and a Hold/Reserve or
+  // tab, a confirmed hire moves to the Offer tab, and a Hold/Reserve or
   // Do-not-hire outcome moves to the Rejects tab — none of these should
   // clutter the Applications tab.
   const mainApplications = useMemo(
@@ -2915,7 +2915,7 @@ function RecruitmentPageContent() {
   const awaitingScreeningCount = (data ?? []).filter(isAwaitingAiScreening).length;
 
   useEffect(() => {
-    if (tabParam === "employment") setActiveTab("employment");
+    if (tabParam === "offer") setActiveTab("offer");
     else if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "careers") setActiveTab("careers");
     else if (tabParam === "ai_rejects" || tabParam === "rejects") setActiveTab("ai_rejects");
@@ -2972,7 +2972,7 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "ai_rejects", "approvals", "employment", "careers", "onboarding"] as const).map((tab) => (
+        {(["applications", "ai_rejects", "approvals", "offer", "careers", "onboarding"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -2989,8 +2989,8 @@ function RecruitmentPageContent() {
                 ? "Rejects"
                 : tab === "approvals"
                   ? "Approvals"
-                  : tab === "employment"
-                    ? "Employment"
+                  : tab === "offer"
+                    ? "Offer"
                     : tab === "careers"
                       ? "Careers"
                       : "Onboarding"}
@@ -3004,9 +3004,9 @@ function RecruitmentPageContent() {
                 {approvalApplications.length}
               </span>
             )}
-            {tab === "employment" && employmentApplications.length > 0 && (
+            {tab === "offer" && offerApplications.length > 0 && (
               <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {employmentApplications.length}
+                {offerApplications.length}
               </span>
             )}
           </button>
@@ -3024,9 +3024,9 @@ function RecruitmentPageContent() {
           onSelect={setSelected}
           adminId={session?.user?.id ?? ""}
         />
-      ) : activeTab === "employment" ? (
-        <EmploymentTab
-          applications={employmentApplications}
+      ) : activeTab === "offer" ? (
+        <OfferTab
+          applications={offerApplications}
           isLoading={isLoading}
           onSelect={setSelected}
           adminId={session?.user?.id ?? ""}
@@ -3161,7 +3161,7 @@ function RecruitmentPageContent() {
         </>
       )}
 
-      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals" || activeTab === "employment") && (
+      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals" || activeTab === "offer") && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}
