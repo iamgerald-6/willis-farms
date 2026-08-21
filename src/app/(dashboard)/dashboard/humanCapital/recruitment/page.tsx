@@ -813,12 +813,110 @@ function RejectsTab({
   );
 }
 
+// Applications whose interview evaluation has been finalized (status
+// "evaluation") — ranked by combined evaluation score (highest first) so HR
+// can compare candidates before deciding hire/hold/reject.
+function ApprovalsTab({
+  applications,
+  isLoading,
+  onSelect,
+}: {
+  applications: JobApplication[];
+  isLoading: boolean;
+  onSelect: (application: JobApplication) => void;
+}) {
+  const ranked = useMemo(
+    () =>
+      [...applications].sort((a, b) => {
+        const scoreA = a.interview_form_data?.summary?.total_weighted;
+        const scoreB = b.interview_form_data?.summary?.total_weighted;
+        if (scoreA == null && scoreB == null) return 0;
+        if (scoreA == null) return 1;
+        if (scoreB == null) return -1;
+        return scoreB - scoreA;
+      }),
+    [applications],
+  );
+
+  return (
+    <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+      <table className="w-full text-left text-sm min-w-[800px]">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="px-4 py-3 font-semibold text-gray-600">Rank</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Applied</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+            <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+              Action
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <tr key={i} className="border-b border-gray-100">
+                <td colSpan={7} className="px-4 py-3">
+                  <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                </td>
+              </tr>
+            ))
+          ) : ranked.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                No applications awaiting approval.
+              </td>
+            </tr>
+          ) : (
+            ranked.map((a, i) => (
+              <tr
+                key={a.id}
+                className="border-b border-gray-100 hover:bg-gray-50/80"
+              >
+                <td className="px-4 py-3 font-medium text-gray-900">{i + 1}</td>
+                <td className="px-4 py-3">
+                  <p className="font-medium text-gray-900">{a.full_name}</p>
+                  <p className="text-xs text-gray-400">{a.email}</p>
+                </td>
+                <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                  {a.reference_number}
+                </td>
+                <td className="px-4 py-3 text-gray-600">
+                  {formatDate(a.created_at)}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                  >
+                    {STATUS_LABELS[a.status]}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => onSelect(a)}
+                    className="text-xs font-medium text-red-600 hover:underline"
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
-    "applications" | "onboarding" | "careers" | "ai_rejects"
+    "applications" | "onboarding" | "careers" | "ai_rejects" | "approvals"
   >(
     tabParam === "onboarding"
       ? "onboarding"
@@ -826,7 +924,9 @@ function RecruitmentPageContent() {
         ? "careers"
         : tabParam === "ai_rejects" || tabParam === "rejects"
           ? "ai_rejects"
-          : "applications",
+          : tabParam === "approvals"
+            ? "approvals"
+            : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -879,6 +979,10 @@ function RecruitmentPageContent() {
   const aiRejectApplications = useMemo(
     () => (data ?? []).filter(isAiFlagged),
     [data],
+  );
+  const approvalApplications = useMemo(
+    () => mainApplications.filter((a) => a.status === "evaluation"),
+    [mainApplications],
   );
 
   // Cross-filtering: each field's option list is scoped by the OTHER active
@@ -946,6 +1050,7 @@ function RecruitmentPageContent() {
     if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "careers") setActiveTab("careers");
     else if (tabParam === "ai_rejects" || tabParam === "rejects") setActiveTab("ai_rejects");
+    else if (tabParam === "approvals") setActiveTab("approvals");
   }, [tabParam]);
 
   useEffect(() => {
@@ -998,7 +1103,7 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "ai_rejects", "careers", "onboarding"] as const).map((tab) => (
+        {(["applications", "ai_rejects", "approvals", "careers", "onboarding"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1013,12 +1118,19 @@ function RecruitmentPageContent() {
               ? "Applications"
               : tab === "ai_rejects"
                 ? "Rejects"
-                : tab === "careers"
-                  ? "Careers"
-                  : "Onboarding"}
+                : tab === "approvals"
+                  ? "Approvals"
+                  : tab === "careers"
+                    ? "Careers"
+                    : "Onboarding"}
             {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {aiRejectApplications.length}
+              </span>
+            )}
+            {tab === "approvals" && approvalApplications.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {approvalApplications.length}
               </span>
             )}
           </button>
@@ -1029,6 +1141,8 @@ function RecruitmentPageContent() {
         <CareersTab />
       ) : activeTab === "ai_rejects" ? (
         <RejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
+      ) : activeTab === "approvals" ? (
+        <ApprovalsTab applications={approvalApplications} isLoading={isLoading} onSelect={setSelected} />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
       ) : (
@@ -1159,7 +1273,7 @@ function RecruitmentPageContent() {
         </>
       )}
 
-      {selected && (activeTab === "applications" || activeTab === "ai_rejects") && (
+      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals") && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}
