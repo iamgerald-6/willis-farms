@@ -162,6 +162,22 @@ function ApplicationDetail({
     enabled: showPanelResponses,
   });
 
+  // The consolidated hiring summary for this applicant's role (generated
+  // from the Approvals tab) — surfaced here so HR reviewing a single
+  // applicant can also jump to the comprehensive report covering everyone
+  // who applied for the same role. Cheap GET, so no need to gate it behind
+  // a specific status — it simply renders nothing if none exists yet.
+  const { data: roleReportRow } = useQuery({
+    queryKey: ["role_interview_report", application.role_slug],
+    queryFn: async () => {
+      const res = await api.get(
+        `/careers/interview/role-report?role_slug=${application.role_slug}`,
+      );
+      return res.data.data as RoleInterviewReportRow | null;
+    },
+    enabled: !!application.role_slug,
+  });
+
   const allowedStatusOptions = useMemo(
     () => getAllowedHrStatusOptions(application) ?? [],
     [application],
@@ -191,8 +207,9 @@ function ApplicationDetail({
   // material rather than something to keep editing — shown as links for
   // Hold/Rejected (where it doubles as reconsideration context), Offer, and
   // Onboarding alike. Only "evaluation" still gets the live editable form.
-  const showReportLinks =
-    !!decisionConfirmed && hasGeneratedReport && application.status !== "evaluation";
+  // Rendered even without a generated report so HR gets an explicit "none
+  // generated" note instead of the section silently disappearing.
+  const showReportSection = !!decisionConfirmed && application.status !== "evaluation";
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -497,7 +514,7 @@ function ApplicationDetail({
 
             {(application.cv_url ||
               (application.application_form_data &&
-                application.status === "evaluation")) && (
+                (application.status === "evaluation" || application.status === "offer"))) && (
               <div className="flex flex-col items-start gap-2">
                 {application.cv_url && (
                   <a
@@ -512,7 +529,7 @@ function ApplicationDetail({
                   </a>
                 )}
                 {application.application_form_data &&
-                  application.status === "evaluation" && (
+                  (application.status === "evaluation" || application.status === "offer") && (
                     <button
                       type="button"
                       onClick={() => setShowApplicationFormModal(true)}
@@ -526,11 +543,14 @@ function ApplicationDetail({
             )}
 
             {application.application_form_data &&
-              application.status !== "evaluation" && (
+              application.status !== "evaluation" &&
+              application.status !== "offer" && (
                 <ApplicationFormReview formData={application.application_form_data} />
               )}
 
-            {application.ai_screening && application.status !== "evaluation" && (
+            {application.ai_screening &&
+              application.status !== "evaluation" &&
+              application.status !== "offer" && (
               <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
                 <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
                   AI screening — {application.ai_screening.score}% match
@@ -1077,47 +1097,69 @@ function ApplicationDetail({
               </div>
             )}
 
-            {showReportLinks && (
+            {showReportSection && (
               <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
                 <p className="text-sm font-semibold text-gray-900">Interview Report</p>
                 <p className="text-xs text-gray-500">
                   This applicant&apos;s outcome has already been confirmed, so the report is
                   shown as reference links rather than an editable form.
                 </p>
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowOriginalReportModal(true)}
-                    className="text-xs font-medium text-gray-600 hover:underline"
-                  >
-                    View AI-generated report
-                  </button>
-                  {hasEditedReport && (
+                {hasGeneratedReport ? (
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
                     <button
                       type="button"
-                      onClick={() => setShowEditedReportModal(true)}
+                      onClick={() => setShowOriginalReportModal(true)}
                       className="text-xs font-medium text-gray-600 hover:underline"
                     >
-                      View HR-edited report
+                      View AI-generated report
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowPanelResponses(true)}
-                    className="text-xs font-medium text-gray-600 hover:underline"
-                  >
-                    View all panel responses
-                  </button>
-                  <a
-                    href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download PDF
-                  </a>
-                </div>
+                    {hasEditedReport && (
+                      <button
+                        type="button"
+                        onClick={() => setShowEditedReportModal(true)}
+                        className="text-xs font-medium text-gray-600 hover:underline"
+                      >
+                        View HR-edited report
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowPanelResponses(true)}
+                      className="text-xs font-medium text-gray-600 hover:underline"
+                    >
+                      View all panel responses
+                    </button>
+                    <a
+                      href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download PDF
+                    </a>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic pt-1">
+                    No individual comprehensive report was generated for this candidate.
+                  </p>
+                )}
+                {roleReportRow && (
+                  <div className="pt-2 mt-2 border-t border-gray-100">
+                    <a
+                      href={`/api/careers/interview/role-report/pdf?role_slug=${application.role_slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download role hiring summary ({application.role_title})
+                    </a>
+                    <p className="text-xs text-gray-400 mt-1">
+                      The consolidated report covering every applicant for this role.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2110,60 +2152,17 @@ function OfferTab({
   applications,
   isLoading,
   onSelect,
-  adminId,
 }: {
   applications: JobApplication[];
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
-  adminId: string;
 }) {
-  const queryClient = useQueryClient();
-
-  const startOnboardingMutation = useMutation({
-    mutationFn: (applicationId: string) =>
-      api.post("/careers/onboarding/start", {
-        application_id: applicationId,
-        started_by: adminId,
-      }),
-    onSuccess: async (res) => {
-      if (res.data.email_warning) {
-        toast.warning(`Moved to onboarding, but: ${res.data.email_warning}`);
-      } else {
-        toast.success("Congratulations email sent — moved to onboarding.");
-      }
-      await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
-      await queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Failed to start onboarding.");
-    },
-  });
-
-  const rescindOfferMutation = useMutation({
-    mutationFn: (applicationId: string) =>
-      api.post("/careers/onboarding/rescind", {
-        application_id: applicationId,
-        rescinded_by: adminId,
-      }),
-    onSuccess: async (res) => {
-      if (res.data.email_warning) {
-        toast.warning(`Offer rescinded, but: ${res.data.email_warning}`);
-      } else {
-        toast.success("Offer rescinded — applicant moved to Rejects.");
-      }
-      await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Failed to rescind offer.");
-    },
-  });
-
   return (
     <div className="space-y-4">
       <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
-        Applicants confirmed Hire land here with an outstanding offer. Send the congratulations
-        email with the onboarding link when you&apos;re ready — that moves them to the Onboarding
-        tab.
+        Applicants confirmed Hire land here with an outstanding offer. Open an applicant to send
+        the congratulations email with the onboarding link (moves them to the Onboarding tab), or
+        to rescind the offer.
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -2217,40 +2216,13 @@ function OfferTab({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => startOnboardingMutation.mutate(a.id)}
-                        disabled={startOnboardingMutation.isPending || rescindOfferMutation.isPending}
-                        className="text-xs font-medium text-green-700 hover:underline disabled:opacity-60"
-                      >
-                        Send onboarding link
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (
-                            !confirm(
-                              `Rescind the offer to ${a.full_name}? They'll be moved to Rejects and sent a decline email.`,
-                            )
-                          ) {
-                            return;
-                          }
-                          rescindOfferMutation.mutate(a.id);
-                        }}
-                        disabled={rescindOfferMutation.isPending || startOnboardingMutation.isPending}
-                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-60"
-                      >
-                        Rescind offer
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onSelect(a)}
-                        className="text-xs font-medium text-gray-600 hover:underline"
-                      >
-                        View
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(a)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               ))
@@ -3129,7 +3101,6 @@ function RecruitmentPageContent() {
           applications={offerApplications}
           isLoading={isLoading}
           onSelect={setSelected}
-          adminId={session?.user?.id ?? ""}
         />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
