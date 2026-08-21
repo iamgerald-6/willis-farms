@@ -218,6 +218,41 @@ function ApplicationDetail({
     });
   };
 
+  // Shortlisted applications get two direct-action buttons (Reject /
+  // Interview) instead of the general status dropdown — no separate "Save
+  // changes" click needed, the decision applies immediately. Uses its own
+  // mutation (rather than `mutation` above) so the modal stays open and
+  // refreshes in place afterward, instead of closing — moving to Interview
+  // should immediately make "Open interview guide" available.
+  const quickStatusMutation = useMutation({
+    mutationFn: (next: ApplicationStatus) =>
+      api.patch("/careers/applications", {
+        id: application.id,
+        status: next,
+        hr_notes: hrNotes,
+      }),
+    onSuccess: async (_res, next) => {
+      toast.success(
+        next === "rejected"
+          ? "Moved to Rejects."
+          : "Moved to Interview — you can now open the interview guide.",
+      );
+      await onRefreshApplication();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Update failed.");
+    },
+  });
+
+  const applyQuickStatus = (next: ApplicationStatus) => {
+    const validationError = validateHrStatusChange(application, next);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    quickStatusMutation.mutate(next);
+  };
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-40 p-0 sm:p-4">
@@ -351,6 +386,25 @@ function ApplicationDetail({
                 <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                   {STATUS_LABELS[application.status]}
                 </p>
+              ) : application.status === "shortlisted" ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => applyQuickStatus("rejected")}
+                    disabled={quickStatusMutation.isPending}
+                    className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyQuickStatus("interview")}
+                    disabled={quickStatusMutation.isPending}
+                    className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    Interview
+                  </button>
+                </div>
               ) : (
                 <select
                   value={status}
@@ -366,7 +420,7 @@ function ApplicationDetail({
               )}
               {application.status === "shortlisted" && statusEditable && (
                 <p className="text-xs text-gray-500 mt-2">
-                  Review the application above, then move to Interview when you are ready to
+                  Reject to send this application to the Rejects tab, or move to Interview to
                   open the interview guide.
                 </p>
               )}
