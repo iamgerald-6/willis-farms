@@ -34,6 +34,13 @@ export type PanelDecision = (typeof PANEL_DECISIONS)[number]["value"];
 
 export type SubmissionStatus = "draft" | "submitted";
 
+/** One entry per status change — see src/lib/careers/statusHistory.ts for the shared append helper every write path routes through. */
+export interface StatusHistoryEntry {
+  status: ApplicationStatus;
+  changed_at: string;
+  changed_by: string | null;
+}
+
 export interface JobApplication {
   id: string;
   reference_number: string;
@@ -47,6 +54,7 @@ export interface JobApplication {
   cv_url: string | null;
   cv_public_id: string | null;
   status: ApplicationStatus;
+  status_history?: StatusHistoryEntry[];
   submission_status?: SubmissionStatus;
   job_posting_id?: string | null;
   application_form_data?: Record<string, unknown> | null;

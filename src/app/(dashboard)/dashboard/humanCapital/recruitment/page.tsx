@@ -304,6 +304,7 @@ function ApplicationDetail({
       id: string;
       status?: ApplicationStatus;
       hr_notes?: string;
+      changed_by?: string;
     }) => api.patch("/careers/applications", payload),
     onSuccess: () => {
       toast.success("Application updated.");
@@ -343,6 +344,7 @@ function ApplicationDetail({
       id: application.id,
       status,
       hr_notes: hrNotes,
+      changed_by: adminId,
     });
   };
 
@@ -358,6 +360,7 @@ function ApplicationDetail({
         id: application.id,
         status: next,
         hr_notes: hrNotes,
+        changed_by: adminId,
       }),
     onSuccess: async (_res, next) => {
       toast.success(

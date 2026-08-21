@@ -1,4 +1,4 @@
-import type { InterviewFormData, PanelDecision } from "./types";
+import type { ApplicationStatus, InterviewFormData, PanelDecision } from "./types";
 
 export type ScoreStanding =
   | "strong_hire"
@@ -63,7 +63,7 @@ export function validatePanelDecision(
   return null;
 }
 
-export function statusForDecision(decision: PanelDecision): string {
+export function statusForDecision(decision: PanelDecision): ApplicationStatus {
   switch (decision) {
     case "hire":
       return "onboarding";

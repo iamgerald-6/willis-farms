@@ -94,10 +94,24 @@ export async function POST(req: NextRequest) {
     const roleTitle = applications[0].role_title as string;
     const apps = applications as JobApplication[];
 
+    // Reliable now that status_history is logged on every status change —
+    // "shortlisted" appearing anywhere in it means they passed the gate,
+    // regardless of where they ended up after. Falls back to the current
+    // status for rows whose history was only ever seeded with their status
+    // at migration time (pre-existing rows, before this log existed) and
+    // therefore doesn't capture an earlier "shortlisted" step.
+    function wasEverShortlisted(a: JobApplication): boolean {
+      if ((a.status_history ?? []).some((h) => h.status === "shortlisted")) return true;
+      if (a.status === "applied" || a.status === "under_review") return false;
+      if (a.status === "rejected" && isAiFlagged(a)) return false;
+      return true;
+    }
+
     // --- Funnel classification -------------------------------------------------
-    // Status alone doesn't preserve history, so this is a best-effort read of
-    // where each applicant's process got to, using the fields that actually
-    // track progress (interview setup + interview_submitted_at).
+    // "Ever shortlisted" now comes from status_history (see wasEverShortlisted
+    // above); the remaining stage-1-vs-completed split still uses the interview
+    // setup fields (stage1_invites_sent_at / interview_submitted_at), which were
+    // already reliable structured fields rather than heuristics.
     let neverShortlisted = 0;
     let neverStartedInterview = 0;
     let reachedStage1Only = 0;
@@ -107,14 +121,7 @@ export async function POST(req: NextRequest) {
     const completedApplicants: JobApplication[] = [];
 
     for (const a of apps) {
-      if (a.status === "applied" || a.status === "under_review") {
-        neverShortlisted++;
-        continue;
-      }
-      // A "rejected" status can mean either an early AI reject (never
-      // reached Shortlisted) or a real post-shortlist rejection — isAiFlagged
-      // is the same signal the Rejects tab already uses to tell them apart.
-      if (a.status === "rejected" && isAiFlagged(a)) {
+      if (!wasEverShortlisted(a)) {
         neverShortlisted++;
         continue;
       }

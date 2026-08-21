@@ -238,6 +238,7 @@ export async function POST(req: NextRequest) {
       submission_status: finalize ? "submitted" : "draft",
       draft_token: finalize ? null : token,
       status: finalize ? "applied" : "applied",
+      status_history: [{ status: "applied", changed_at: new Date().toISOString(), changed_by: null }],
     };
 
     const { data: created, error: insertErr } = await supabaseAdmin

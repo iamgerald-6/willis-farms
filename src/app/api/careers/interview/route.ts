@@ -28,6 +28,7 @@ import {
   scoreSubmission,
   stageAverage,
 } from "@/lib/careers/panelInterview";
+import { appendStatusHistory } from "@/lib/careers/statusHistory";
 
 const INTERVIEW_STATUSES = new Set([
   "shortlisted",
@@ -499,12 +500,14 @@ export async function POST(req: NextRequest) {
 
     if (action === "stage1_review_reject") {
       updates.status = "rejected";
+      updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
     }
 
     if (action === "finalize") {
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
       updates.status = "evaluation";
+      updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
     } else if (action === "confirm_decision") {
       if (!application.interview_submitted_at) {
         return NextResponse.json(
@@ -542,6 +545,7 @@ export async function POST(req: NextRequest) {
       };
       updates.interview_form_data = merged;
       updates.status = statusForDecision(decision);
+      updates.status_history = appendStatusHistory(application.status_history, statusForDecision(decision), submitted_by);
 
       if (decision === "hire") {
         const tokenRecord = await createOnboardingToken(
@@ -634,6 +638,7 @@ export async function POST(req: NextRequest) {
         };
         updates.interview_form_data = merged;
         updates.status = "evaluation";
+        updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
       } else {
         merged = {
           ...merged,
@@ -646,6 +651,7 @@ export async function POST(req: NextRequest) {
         };
         updates.interview_form_data = merged;
         updates.status = "rejected";
+        updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
 
         const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
@@ -662,6 +668,7 @@ export async function POST(req: NextRequest) {
       application.status === "shortlisted"
     ) {
       updates.status = "interview";
+      updates.status_history = appendStatusHistory(application.status_history, "interview", submitted_by);
     }
 
     const { data, error } = await supabaseAdmin
