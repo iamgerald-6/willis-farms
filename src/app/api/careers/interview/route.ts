@@ -123,12 +123,15 @@ export async function POST(req: NextRequest) {
       submitted_by,
       action = "save_draft",
       stage2_scheduled_at,
+      reconsider_to,
     }: {
       application_id: string;
       interview_form_data: InterviewFormData;
       submitted_by?: string;
       action?: InterviewAction;
       stage2_scheduled_at?: string;
+      /** Only used with action "reconsider_decision". */
+      reconsider_to?: "evaluation" | "rejected";
     } = body;
 
     if (!application_id || !interview_form_data) {
@@ -602,37 +605,48 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const newDecision = merged.summary?.decision;
-      if (newDecision !== "hire" && newDecision !== "do_not_hire") {
+      if (reconsider_to !== "evaluation" && reconsider_to !== "rejected") {
         return NextResponse.json(
-          { error: "Invalid reconsideration decision." },
+          { error: "Invalid reconsideration choice." },
           { status: 400 },
         );
       }
-      if (application.status === "rejected" && newDecision !== "hire") {
+      if (reconsider_to === "rejected" && application.status !== "hold") {
         return NextResponse.json(
-          { error: "A rejected applicant can only be reconsidered as Hire." },
+          { error: "Only a Hold/Reserve applicant can be reconsidered as Reject." },
           { status: 400 },
         );
       }
 
-      merged = {
-        ...merged,
-        summary: {
-          ...merged.summary,
-          decision: newDecision,
-          decision_confirmed_at: new Date().toISOString(),
-          decision_confirmed_by: submitted_by ?? undefined,
-        },
-      };
-      updates.interview_form_data = merged;
-      // Reconsidered hires move to "offer" rather than straight to
-      // "onboarding" — the offer-status flow (and its own interview report
-      // behaviour) is a separate step to be defined later, so no onboarding
-      // email is sent here.
-      updates.status = newDecision === "hire" ? "offer" : "rejected";
+      if (reconsider_to === "evaluation") {
+        // Reopen: send them back to the evaluation stage exactly as if they
+        // hadn't been decided yet — clears the prior decision so "Confirm
+        // interview outcome" reappears, while the interview submission,
+        // scores, and generated report all stay untouched. No email.
+        merged = {
+          ...merged,
+          summary: {
+            ...merged.summary,
+            decision: "",
+            decision_confirmed_at: undefined,
+            decision_confirmed_by: undefined,
+          },
+        };
+        updates.interview_form_data = merged;
+        updates.status = "evaluation";
+      } else {
+        merged = {
+          ...merged,
+          summary: {
+            ...merged.summary,
+            decision: "do_not_hire",
+            decision_confirmed_at: new Date().toISOString(),
+            decision_confirmed_by: submitted_by ?? undefined,
+          },
+        };
+        updates.interview_form_data = merged;
+        updates.status = "rejected";
 
-      if (newDecision === "do_not_hire") {
         const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
           candidateEmail: application.email,

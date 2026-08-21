@@ -106,7 +106,7 @@ function ApplicationDetail({
     application.interview_form_data?.summary?.decision ?? "",
   );
   const [selectedReconsiderDecision, setSelectedReconsiderDecision] = useState<
-    "hire" | "do_not_hire" | ""
+    "evaluation" | "rejected" | ""
   >("");
   const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
@@ -219,11 +219,12 @@ function ApplicationDetail({
           ...application.interview_form_data,
           summary: {
             ...application.interview_form_data?.summary,
-            decision: selectedReconsiderDecision,
+            decision: selectedReconsiderDecision === "rejected" ? "do_not_hire" : "",
           },
         },
         submitted_by: adminId,
         action: "reconsider_decision",
+        reconsider_to: selectedReconsiderDecision,
       }),
     onSuccess: (res) => {
       const warnings = res.data.email_warnings as string[] | undefined;
@@ -1195,27 +1196,27 @@ function ApplicationDetail({
                   This applicant already completed the full interview process and was confirmed{" "}
                   {application.status === "hold" ? "Hold / Reserve" : "Do not hire"}.{" "}
                   {application.status === "hold"
-                    ? "Choose Hire to move them to Offer, or Reject to confirm rejection."
-                    : "Choose Hire to move them to Offer."}
+                    ? "Reopen for evaluation to reconsider them fresh, or Reject to confirm rejection."
+                    : "Reopen for evaluation to reconsider them fresh."}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedReconsiderDecision("hire")}
+                    onClick={() => setSelectedReconsiderDecision("evaluation")}
                     className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                      selectedReconsiderDecision === "hire"
+                      selectedReconsiderDecision === "evaluation"
                         ? "bg-indigo-800 text-white border-indigo-800"
                         : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
                     }`}
                   >
-                    Hire
+                    Reopen for evaluation
                   </button>
                   {application.status === "hold" && (
                     <button
                       type="button"
-                      onClick={() => setSelectedReconsiderDecision("do_not_hire")}
+                      onClick={() => setSelectedReconsiderDecision("rejected")}
                       className={`px-4 py-2 rounded-lg text-sm font-medium border ${
-                        selectedReconsiderDecision === "do_not_hire"
+                        selectedReconsiderDecision === "rejected"
                           ? "bg-indigo-800 text-white border-indigo-800"
                           : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
                       }`}
@@ -1226,8 +1227,8 @@ function ApplicationDetail({
                 </div>
                 {selectedReconsiderDecision && (
                   <p className="text-xs text-indigo-700">
-                    {selectedReconsiderDecision === "hire"
-                      ? "Moves this applicant to Offer status. No email is sent at this step."
+                    {selectedReconsiderDecision === "evaluation"
+                      ? "Moves this applicant back to Evaluation status so you can make a fresh decision. No email is sent."
                       : "Confirming rejection sends a professional decline email and moves them to Rejected."}
                   </p>
                 )}
@@ -1239,9 +1240,9 @@ function ApplicationDetail({
                 >
                   {reconsiderMutation.isPending
                     ? "Confirming…"
-                    : selectedReconsiderDecision === "hire"
-                      ? "Confirm: Move to Offer"
-                      : selectedReconsiderDecision === "do_not_hire"
+                    : selectedReconsiderDecision === "evaluation"
+                      ? "Confirm: Reopen for evaluation"
+                      : selectedReconsiderDecision === "rejected"
                         ? "Confirm: Reject"
                         : "Select an outcome to confirm"}
                 </button>
