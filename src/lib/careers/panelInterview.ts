@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import {
-  computeWeightedScore,
+  computeStage1Score,
+  computeStage2Score,
   type InterviewGuideConfig,
 } from "@/lib/careers/interviewFormConfigs";
 import type {
@@ -100,17 +101,9 @@ export function scoreSubmission(
   stage: 1 | 2,
 ) {
   if (stage === 1) {
-    return computeWeightedScore(
-      guide,
-      submission.question_ratings ?? {},
-      {},
-    );
+    return computeStage1Score(guide, submission.question_ratings ?? {});
   }
-  return computeWeightedScore(
-    guide,
-    {},
-    submission.scenario_ratings ?? {},
-  );
+  return computeStage2Score(guide, submission.scenario_ratings ?? {});
 }
 
 export type GraderResult = {

@@ -4,29 +4,18 @@ import {
   requireUserManagementAccess,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
-import { getOpeningBySlug } from "@/lib/careers/openings";
+import {
+  inferGradeLevel,
+  suggestCompanyEmail,
+  suggestEmployeeId,
+  collectExistingEmployeeIds,
+} from "@/lib/careers/hrEmployeeDefaults";
 import {
   mergeOnboardingForm,
   parseApplicantName,
   type OnboardingFormData,
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
-
-const GRADE_LEVELS = new Set(["L1", "L2", "L3", "L4", "L5", "L6", "L7"]);
-
-function inferGradeLevel(
-  roleSlug: string,
-  hrData: OnboardingHrData | null | undefined,
-): string | undefined {
-  const fromHr = hrData?.grade_level?.trim().toUpperCase();
-  if (fromHr && GRADE_LEVELS.has(fromHr)) return fromHr;
-
-  const opening = getOpeningBySlug(roleSlug);
-  const key = opening?.interviewGuideKey?.toUpperCase();
-  if (key && GRADE_LEVELS.has(key)) return key;
-
-  return undefined;
-}
 
 export type OnboardedInviteCandidate = {
   application_id: string;
@@ -45,7 +34,6 @@ export type OnboardedInviteCandidate = {
   locked_fields: (
     | "first_name"
     | "last_name"
-    | "email"
     | "phone"
     | "job_position"
     | "grade_level"
@@ -78,6 +66,11 @@ export async function GET(req: NextRequest) {
     if (usersError) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });
     }
+
+    const { companyIds, companyEmails: existingCompanyEmails } =
+      await collectExistingEmployeeIds(supabaseAdmin);
+
+    const assignedIdsThisBatch = new Set<string>();
 
     const invitedEmails = new Set(
       (existingUsers ?? [])
@@ -123,10 +116,7 @@ export async function GET(req: NextRequest) {
         reference_number: string;
       } | null;
 
-      if (!app?.email) continue;
-
-      const email = app.email.trim().toLowerCase();
-      if (invitedEmails.has(email)) continue;
+      if (!app?.full_name) continue;
 
       const form = mergeOnboardingForm(row.form_data as OnboardingFormData);
       const hr = (row.hr_data ?? {}) as OnboardingHrData;
@@ -135,18 +125,39 @@ export async function GET(req: NextRequest) {
       const first_name =
         form.personal?.first_name?.trim() || parsed.first_name;
       const last_name = form.personal?.surname?.trim() || parsed.surname;
+      const middle_names =
+        form.personal?.middle_names?.trim() || parsed.middle_names;
       const phone = form.personal?.mobile?.trim() || app.phone?.trim() || "";
       const job_position =
         form.employment?.position_title?.trim() ||
         app.role_title?.trim() ||
         "";
       const grade_level = inferGradeLevel(app.role_slug, hr);
-      const company_id = hr.employee_id?.trim() || undefined;
+
+      // Prefer values HR saved on the onboarding record (Section O).
+      let company_id = hr.employee_id?.trim() || undefined;
+      if (!company_id && grade_level) {
+        const idsPool = [...companyIds, ...assignedIdsThisBatch];
+        company_id = suggestEmployeeId(grade_level, idsPool) ?? undefined;
+        if (company_id) assignedIdsThisBatch.add(company_id);
+      }
+
+      const inviteEmail =
+        hr.company_email?.trim().toLowerCase() ||
+        suggestCompanyEmail({
+          firstName: first_name,
+          middleNames: middle_names,
+          lastName: last_name,
+          existingEmails: existingCompanyEmails,
+        });
+
+      if (!inviteEmail) continue;
+
+      if (invitedEmails.has(inviteEmail)) continue;
 
       const locked_fields: OnboardedInviteCandidate["locked_fields"] = [];
       if (first_name) locked_fields.push("first_name");
       if (last_name) locked_fields.push("last_name");
-      if (email) locked_fields.push("email");
       if (phone) locked_fields.push("phone");
       if (job_position) locked_fields.push("job_position");
       if (grade_level) locked_fields.push("grade_level");
@@ -159,7 +170,7 @@ export async function GET(req: NextRequest) {
         prefill: {
           first_name,
           last_name,
-          email: app.email.trim().toLowerCase(),
+          email: inviteEmail,
           phone,
           job_position,
           grade_level,

@@ -1,6 +1,7 @@
 import OnboardingWizard from "./OnboardingWizard";
 import { FormShell } from "@/components/Forms/FormShell";
-import { mergeOnboardingForm, type OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import type { OnboardingFlatValues } from "@/lib/careers/onboardingFormSchema";
+import type { OnboardingFormField } from "@/lib/careers/onboardingFormSchema";
 
 type PageProps = { params: Promise<{ token: string }> };
 
@@ -25,7 +26,15 @@ export default async function OnboardingPage({ params }: PageProps) {
   }
 
   const json = await res.json();
-  const { application, submitted, form_data, expires_at, submitted_at } = json.data;
+  const {
+    application,
+    submitted,
+    initial_flat,
+    fields,
+    option_lists,
+    expires_at,
+    submitted_at,
+  } = json.data;
 
   if (submitted) {
     return (
@@ -43,7 +52,9 @@ export default async function OnboardingPage({ params }: PageProps) {
     <OnboardingWizard
       token={token}
       application={application}
-      initialForm={mergeOnboardingForm(form_data as OnboardingFormData)}
+      initialFlat={initial_flat as OnboardingFlatValues}
+      fields={fields as OnboardingFormField[]}
+      optionLists={option_lists as Record<string, string[]>}
       expiresAt={expires_at}
     />
   );

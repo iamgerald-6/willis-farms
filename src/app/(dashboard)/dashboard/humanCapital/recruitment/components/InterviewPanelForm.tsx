@@ -280,7 +280,7 @@ export default function InterviewPanelForm({
 
         <div className="overflow-y-auto flex-1 p-6">
           {isPastStep && (
-            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
+            <div className="mt-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5">
               <p className="text-xs text-amber-800">
                 Viewing a completed step — read-only.
               </p>
@@ -319,13 +319,25 @@ export default function InterviewPanelForm({
               onSaveDraft={() =>
                 saveMutation.mutate({
                   action: "save_draft",
-                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage1: hrStage1 } },
+                  data: {
+                    ...formData,
+                    hr_submission: {
+                      ...formData.hr_submission,
+                      stage1: hrStage1,
+                    },
+                  },
                 })
               }
               onSubmit={() =>
                 saveMutation.mutate({
                   action: "submit_hr_stage1",
-                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage1: hrStage1 } },
+                  data: {
+                    ...formData,
+                    hr_submission: {
+                      ...formData.hr_submission,
+                      stage1: hrStage1,
+                    },
+                  },
                 })
               }
               isPending={saveMutation.isPending}
@@ -336,10 +348,16 @@ export default function InterviewPanelForm({
               formData={formData}
               readOnly={!!formData.stage1_review?.reviewed_at || isPastStep}
               onPass={() =>
-                saveMutation.mutate({ action: "stage1_review_pass", data: formData })
+                saveMutation.mutate({
+                  action: "stage1_review_pass",
+                  data: formData,
+                })
               }
               onReject={() =>
-                saveMutation.mutate({ action: "stage1_review_reject", data: formData })
+                saveMutation.mutate({
+                  action: "stage1_review_reject",
+                  data: formData,
+                })
               }
               isPending={saveMutation.isPending}
               onGenerateAnalysis={() => analysisMutation.mutate()}
@@ -376,13 +394,25 @@ export default function InterviewPanelForm({
               onSaveDraft={() =>
                 saveMutation.mutate({
                   action: "save_draft",
-                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage2: hrStage2 } },
+                  data: {
+                    ...formData,
+                    hr_submission: {
+                      ...formData.hr_submission,
+                      stage2: hrStage2,
+                    },
+                  },
                 })
               }
               onSubmit={() =>
                 saveMutation.mutate({
                   action: "submit_hr_stage2",
-                  data: { ...formData, hr_submission: { ...formData.hr_submission, stage2: hrStage2 } },
+                  data: {
+                    ...formData,
+                    hr_submission: {
+                      ...formData.hr_submission,
+                      stage2: hrStage2,
+                    },
+                  },
                 })
               }
               isPending={saveMutation.isPending}
@@ -429,7 +459,8 @@ export default function InterviewPanelForm({
         {activeStep === "evaluation" && interviewSubmitted && (
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 shrink-0">
             <p className="text-sm text-gray-600 text-center">
-              Evaluation submitted. Review results in the application view, discuss as a team, then confirm hire, hold, or reject.
+              Evaluation submitted. Review results in the application view,
+              discuss as a team, then confirm hire, hold, or reject.
             </p>
           </div>
         )}

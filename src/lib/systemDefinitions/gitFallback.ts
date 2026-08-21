@@ -10,6 +10,16 @@ import {
   getDefaultApplicationFormFields,
 } from "./recruitmentDefaults";
 import {
+  ONBOARDING_DEPARTMENTS_L1L6_LIST,
+  ONBOARDING_DEPARTMENTS_L7_LIST,
+  ONBOARDING_FIELDS_LIST,
+  ONBOARDING_LOCATIONS_LIST,
+  getDefaultOnboardingDepartmentsL1L6,
+  getDefaultOnboardingDepartmentsL7,
+  getDefaultOnboardingFormFields,
+  getDefaultOnboardingLocations,
+} from "./onboardingDefaults";
+import {
   SKILL_LOG_MODULE_ID,
   SKILL_LOG_REVIEW_PERIODS_LIST,
   SKILL_LOG_SECTIONS_LIST,
@@ -64,6 +74,28 @@ export function getGitFallbackOptions(
     return getDefaultApplicationFormFields();
   }
 
+  if (moduleId === RECRUITMENT_MODULE_ID && optionList === ONBOARDING_FIELDS_LIST) {
+    return getDefaultOnboardingFormFields();
+  }
+
+  if (moduleId === RECRUITMENT_MODULE_ID && optionList === ONBOARDING_LOCATIONS_LIST) {
+    return getDefaultOnboardingLocations();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_DEPARTMENTS_L1L6_LIST
+  ) {
+    return getDefaultOnboardingDepartmentsL1L6();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_DEPARTMENTS_L7_LIST
+  ) {
+    return getDefaultOnboardingDepartmentsL7();
+  }
+
   if (
     moduleId === RECRUITMENT_MODULE_ID &&
     (optionList === RECRUITMENT_JOB_POSTINGS_LIST ||
@@ -98,6 +130,10 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
     [RECRUITMENT_MODULE_ID]: [
       RECRUITMENT_APPLICATION_FIELDS_LIST,
       RECRUITMENT_JOB_POSTINGS_LIST,
+      ONBOARDING_FIELDS_LIST,
+      ONBOARDING_LOCATIONS_LIST,
+      ONBOARDING_DEPARTMENTS_L1L6_LIST,
+      ONBOARDING_DEPARTMENTS_L7_LIST,
     ],
     [SKILL_LOG_MODULE_ID]: [
       SKILL_LOG_TYPES_LIST,

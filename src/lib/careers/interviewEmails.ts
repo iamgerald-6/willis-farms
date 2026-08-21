@@ -1,4 +1,4 @@
-import { recruitmentInterviewUrl, panelInterviewUrl } from "@/lib/appUrl";
+import { recruitmentInterviewUrl, panelInterviewUrl, refereeReferenceUrl } from "@/lib/appUrl";
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
 type SendResult = { sent: boolean; error?: string };
@@ -535,6 +535,81 @@ export async function sendOnboardingSubmittedEmail(params: {
 
   return sendViaResend({
     to: hrEmail,
+    subject,
+    html,
+    text,
+  });
+}
+
+/** Referee reference form invite — sent when candidate submits job application */
+export async function sendRefereeReferenceInviteEmail(params: {
+  refereeName: string;
+  refereeEmail: string;
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  accessToken: string;
+  expiresAt: string;
+}): Promise<SendResult> {
+  const link = refereeReferenceUrl(params.accessToken);
+  const expiryDate = new Date(params.expiresAt).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const subject = `Reference request — ${params.candidateName} (${params.referenceNumber})`;
+
+  const text = [
+    `Dear ${params.refereeName},`,
+    "",
+    `${params.candidateName} has listed you as a referee for their application to Wills Farms Ltd.`,
+    "",
+    `Role applied for: ${params.roleTitle}`,
+    `Application reference: ${params.referenceNumber}`,
+    "",
+    "Please complete the confidential reference form using the link below:",
+    link,
+    "",
+    `This link expires on ${expiryDate}.`,
+    "",
+    "Your responses are confidential and processed under the Data Protection Act, 2012 (Act 843).",
+    "",
+    "Kind regards,",
+    "Human Capital Team",
+    "Wills Farms Ltd.",
+  ].join("\n");
+
+  const html = emailShell(
+    "Referee reference request",
+    `
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        Dear ${escapeHtml(params.refereeName)},
+      </p>
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        <strong>${escapeHtml(params.candidateName)}</strong> has listed you as a referee for their
+        application to Wills Farms Ltd.
+      </p>
+      <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
+        <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
+          <p style="margin:0 0 8px;"><strong>Role applied for:</strong> ${escapeHtml(params.roleTitle)}</p>
+          <p style="margin:0;"><strong>Application reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 24px;">
+        <a href="${escapeHtml(link)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Complete reference form</a>
+      </p>
+      <p style="margin:0 0 12px;font-size:13px;color:#6b7280;">
+        Link expires ${escapeHtml(expiryDate)}. No account is required.
+      </p>
+      <p style="margin:0;font-size:13px;color:#6b7280;">
+        Your responses are confidential and processed under the Data Protection Act, 2012 (Act 843).
+      </p>
+    `,
+  );
+
+  return sendViaResend({
+    to: params.refereeEmail,
     subject,
     html,
     text,

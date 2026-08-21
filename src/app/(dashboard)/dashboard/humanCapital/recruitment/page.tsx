@@ -15,7 +15,14 @@ import {
   type JobApplication,
   type PanelDecision,
 } from "@/lib/careers/types";
+import {
+  canHrChangeStatus,
+  getAllowedHrStatusOptions,
+  isAwaitingAiScreening,
+  validateHrStatusChange,
+} from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
+import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import CareersTab from "./components/CareersTab";
 import {
@@ -61,8 +68,12 @@ function formatDate(iso: string) {
   });
 }
 
-/** HR can set these manually — offer is set by the system after hire/onboarding. */
-const HR_MANUAL_STATUSES = APPLICATION_STATUSES.filter((s) => s !== "offer");
+const INTERVIEW_GUIDE_STATUSES: ApplicationStatus[] = [
+  "interview",
+  "hold",
+  "onboarding",
+  "offer",
+];
 
 function ApplicationDetail({
   application,
@@ -103,9 +114,14 @@ function ApplicationDetail({
     setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
   }, [application]);
 
-  const canInterview = ["shortlisted", "interview", "hold", "onboarding", "offer"].includes(
-    application.status,
+  const allowedStatusOptions = useMemo(
+    () => getAllowedHrStatusOptions(application) ?? [],
+    [application],
   );
+  const awaitingAiScreening = isAwaitingAiScreening(application);
+  const statusEditable = canHrChangeStatus(application);
+  const showApplicationReview = application.status === "shortlisted";
+  const canOpenInterviewGuide = INTERVIEW_GUIDE_STATUSES.includes(application.status);
 
   const decision = application.interview_form_data?.summary?.decision;
   const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
@@ -171,7 +187,31 @@ function ApplicationDetail({
     },
   });
 
+  const screenMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/applications/screen", { application_id: application.id }),
+    onSuccess: (res) => {
+      const screening = res.data.screening as { status: string; score: number };
+      toast.success(
+        screening.status === "shortlisted"
+          ? `Shortlisted by AI (${screening.score}% match). Review the application, then move to Interview when ready.`
+          : `Sent to Rejects for your review (${screening.score}% match).`,
+      );
+      void onRefreshApplication();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "AI shortlisting failed.");
+    },
+  });
+
   const save = () => {
+    if (status !== application.status) {
+      const validationError = validateHrStatusChange(application, status);
+      if (validationError) {
+        toast.error(validationError);
+        return;
+      }
+    }
     mutation.mutate({
       id: application.id,
       status,
@@ -243,17 +283,6 @@ function ApplicationDetail({
               )}
             </div>
 
-            {application.cover_note && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Cover note
-                </p>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-xl p-4">
-                  {application.cover_note}
-                </p>
-              </div>
-            )}
-
             {application.cv_url && (
               <a
                 href={application.cv_url}
@@ -265,6 +294,10 @@ function ApplicationDetail({
                 View CV
                 <ExternalLink className="w-3 h-3" />
               </a>
+            )}
+
+            {showApplicationReview && application.application_form_data && (
+              <ApplicationFormReview formData={application.application_form_data} />
             )}
 
             {application.ai_screening && (
@@ -279,6 +312,30 @@ function ApplicationDetail({
               </div>
             )}
 
+            {awaitingAiScreening && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-3">
+                <p className="text-sm text-blue-900">
+                  This application is waiting for AI shortlisting. Run it now to review the
+                  candidate, or wait for the daily batch.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => screenMutation.mutate()}
+                  disabled={screenMutation.isPending}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-60"
+                >
+                  {screenMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    "Generate shortlisting"
+                  )}
+                </button>
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                 Update status
@@ -287,18 +344,37 @@ function ApplicationDetail({
                 <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                   {STATUS_LABELS.offer} — set automatically when an offer is made.
                 </p>
+              ) : awaitingAiScreening ? (
+                <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  {STATUS_LABELS.applied} — status unlocks after AI shortlisting.
+                </p>
+              ) : !statusEditable ? (
+                <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  {STATUS_LABELS[application.status]}
+                </p>
               ) : (
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 >
-                  {HR_MANUAL_STATUSES.map((s) => (
+                  {allowedStatusOptions.map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABELS[s]}
                     </option>
                   ))}
                 </select>
+              )}
+              {application.status === "shortlisted" && statusEditable && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Review the application above, then move to Interview when you are ready to
+                  open the interview guide.
+                </p>
+              )}
+              {application.status === "under_review" && application.ai_screening && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Shortlist to override the AI recommendation, or confirm Rejected.
+                </p>
               )}
             </div>
 
@@ -467,7 +543,7 @@ function ApplicationDetail({
               >
                 {mutation.isPending ? "Saving…" : "Save changes"}
               </button>
-              {canInterview && (
+              {canOpenInterviewGuide && (
                 <button
                   type="button"
                   onClick={() => setShowInterview(true)}
@@ -650,12 +726,9 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
-// Applications the AI screened at 60% or below (status "under_review"), plus
-// any HR has since confirmed "rejected" starting from that same AI call —
-// kept here rather than deleted so there's a record, per the retention
-// policy (up to 5 years). HR can open one and either shortlist it (override
-// the AI) or reject it, using the same status control as the main list.
-function AiRejectsTab({
+// Applications the AI screened below threshold (status "under_review"), plus
+// any HR has since confirmed "rejected" — kept here for the record.
+function RejectsTab({
   applications,
   isLoading,
   onSelect,
@@ -744,10 +817,9 @@ function AiRejectsTab({
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
-        Applications the AI scored at 60% or below against the job's requirements land here
-        instead of the main Applications list. Review each one and either shortlist it if you
-        disagree with the AI, or confirm the reject — confirmed rejects stay listed here rather
-        than being deleted.
+        Applications the AI scored below the shortlist threshold land here for HR review.
+        Open each one and either shortlist it if you disagree with the AI, or confirm
+        Rejected — confirmed rejects stay listed here rather than being deleted.
       </div>
 
       <div>
@@ -778,7 +850,7 @@ function RecruitmentPageContent() {
       ? "onboarding"
       : tabParam === "careers"
         ? "careers"
-        : tabParam === "ai_rejects"
+        : tabParam === "ai_rejects" || tabParam === "rejects"
           ? "ai_rejects"
           : "applications",
   );
@@ -825,10 +897,7 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  // Applications the AI has soft-rejected (or HR has since confirmed
-  // rejected, starting from an AI soft-reject) live in the AI Rejects tab
-  // instead of the main list — split once here so every view below just
-  // reads the right pool.
+  // AI soft-rejects and HR-confirmed rejects live in the Rejects tab.
   const mainApplications = useMemo(
     () => (data ?? []).filter((a) => !isAiFlagged(a)),
     [data],
@@ -897,20 +966,19 @@ function RecruitmentPageContent() {
     setStatusFilters([]);
   };
 
-  const newCount = (data ?? []).filter((a) => a.status === "applied").length;
+  const awaitingScreeningCount = (data ?? []).filter(isAwaitingAiScreening).length;
 
   useEffect(() => {
     if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "careers") setActiveTab("careers");
-    else if (tabParam === "ai_rejects") setActiveTab("ai_rejects");
+    else if (tabParam === "ai_rejects" || tabParam === "rejects") setActiveTab("ai_rejects");
   }, [tabParam]);
 
   useEffect(() => {
     if (!interviewParam || !data?.length || !session?.user?.id) return;
     const app = data.find((a) => a.id === interviewParam);
     if (!app) return;
-    if (!["shortlisted", "interview", "hold", "onboarding", "offer"].includes(app.status))
-      return;
+    if (!INTERVIEW_GUIDE_STATUSES.includes(app.status)) return;
     setSelected(app);
     setAutoOpenInterviewId(app.id);
   }, [interviewParam, data, session?.user?.id]);
@@ -948,9 +1016,9 @@ function RecruitmentPageContent() {
             Job applications, panel interviews, and onboarding
           </p>
         </div>
-        {newCount > 0 && activeTab === "applications" && (
+        {awaitingScreeningCount > 0 && activeTab === "applications" && (
           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-xs font-medium w-fit">
-            {newCount} new application{newCount !== 1 ? "s" : ""}
+            {awaitingScreeningCount} awaiting AI shortlisting
           </span>
         )}
       </div>
@@ -970,7 +1038,7 @@ function RecruitmentPageContent() {
             {tab === "applications"
               ? "Applications"
               : tab === "ai_rejects"
-                ? "AI Rejects"
+                ? "Rejects"
                 : tab === "careers"
                   ? "Careers"
                   : "Onboarding"}
@@ -986,7 +1054,7 @@ function RecruitmentPageContent() {
       {activeTab === "careers" ? (
         <CareersTab />
       ) : activeTab === "ai_rejects" ? (
-        <AiRejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
+        <RejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
       ) : (
@@ -1126,8 +1194,10 @@ function RecruitmentPageContent() {
           onInterviewOpened={() => setAutoOpenInterviewId(null)}
           onRefreshApplication={async () => {
             await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
-            const apps = queryClient.getQueryData<JobApplication[]>(["job_applications"]);
-            const fresh = apps?.find((a) => a.id === selected.id);
+            const res = await api.get("/careers/applications");
+            const apps = res.data.data as JobApplication[];
+            queryClient.setQueryData(["job_applications"], apps);
+            const fresh = apps.find((a) => a.id === selected.id);
             if (fresh) setSelected(fresh);
           }}
           onUpdated={() => {
