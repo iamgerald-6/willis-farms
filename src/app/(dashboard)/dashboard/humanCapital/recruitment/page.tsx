@@ -586,16 +586,14 @@ function ApplicationDetail({
               </div>
             )}
 
-            {application.status !== "evaluation" && !canReconsider && (
+            {application.status !== "evaluation" &&
+              application.status !== "offer" &&
+              !canReconsider && (
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Update status
                 </label>
-                {application.status === "offer" ? (
-                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                    {STATUS_LABELS.offer} — set automatically when an offer is made.
-                  </p>
-                ) : awaitingAiScreening ? (
+                {awaitingAiScreening ? (
                   <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                     {STATUS_LABELS.applied} — status unlocks after AI shortlisting.
                   </p>
