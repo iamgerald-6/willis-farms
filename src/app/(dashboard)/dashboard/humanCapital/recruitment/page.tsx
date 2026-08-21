@@ -11,6 +11,7 @@ import {
   STATUS_LABELS,
   PANEL_DECISIONS,
   isAiFlagged,
+  normalizeRoleInterviewReport,
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
@@ -2048,7 +2049,9 @@ function RoleReportModal({
   });
 
   useEffect(() => {
-    setReportDraft(reportRow ? (reportRow.report_edit ?? reportRow.report) : null);
+    setReportDraft(
+      reportRow ? normalizeRoleInterviewReport(reportRow.report_edit ?? reportRow.report) : null,
+    );
   }, [reportRow]);
 
   const generateMutation = useMutation({

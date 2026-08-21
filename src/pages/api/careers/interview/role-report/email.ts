@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import type { RoleInterviewReportRow } from "@/lib/careers/types";
+import { normalizeRoleInterviewReport, type RoleInterviewReportRow } from "@/lib/careers/types";
 import { renderRoleInterviewReportPdf } from "@/lib/reports/renderRoleInterviewReportPdf";
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const row = data as RoleInterviewReportRow;
-    const report = row.report_edit ?? row.report;
+    const report = normalizeRoleInterviewReport(row.report_edit ?? row.report);
 
     const pdfBuffer = await renderRoleInterviewReportPdf(report);
     const fileName = `role-hiring-summary-${row.role_title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`;

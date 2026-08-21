@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import type { RoleInterviewReport, RoleInterviewReportRow } from "@/lib/careers/types";
+import {
+  normalizeRoleInterviewReport,
+  type RoleInterviewReport,
+  type RoleInterviewReportRow,
+} from "@/lib/careers/types";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -24,7 +28,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: (data as RoleInterviewReportRow | null) ?? null });
+    const row = data as RoleInterviewReportRow | null;
+    const normalized: RoleInterviewReportRow | null = row
+      ? {
+          ...row,
+          report: normalizeRoleInterviewReport(row.report),
+          report_edit: row.report_edit ? normalizeRoleInterviewReport(row.report_edit) : null,
+        }
+      : null;
+
+    return NextResponse.json({ success: true, data: normalized });
   } catch (err) {
     console.error("[GET /api/careers/interview/role-report]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

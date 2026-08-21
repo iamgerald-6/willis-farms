@@ -275,6 +275,22 @@ export interface RoleInterviewReportRow {
   updated_at: string;
 }
 
+/**
+ * Backfills fields added to RoleInterviewReport after a given report was
+ * generated (e.g. candidate_summaries, candidate_reports) with safe empty
+ * defaults, so older rows in role_interview_reports don't crash the UI/PDF
+ * when read back. Always run report/report_edit through this before use.
+ */
+export function normalizeRoleInterviewReport(report: RoleInterviewReport): RoleInterviewReport {
+  return {
+    ...report,
+    constraints: report.constraints ?? [],
+    candidate_rankings: report.candidate_rankings ?? [],
+    candidate_summaries: report.candidate_summaries ?? [],
+    candidate_reports: report.candidate_reports ?? [],
+  };
+}
+
 export type InterviewStage = 1 | 2 | 3;
 
 export interface InterviewFormData {
