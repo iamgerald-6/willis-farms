@@ -50,7 +50,7 @@ const STEP_LABELS: Record<WorkflowStep, string> = {
   stage1_review: "Review",
   stage2_setup: "Stage 2 setup",
   stage2: "Stage 2",
-  evaluation: "Evaluation",
+  evaluation: "Stage 3 Evaluation",
 };
 
 const STEP_ORDER: WorkflowStep[] = [
