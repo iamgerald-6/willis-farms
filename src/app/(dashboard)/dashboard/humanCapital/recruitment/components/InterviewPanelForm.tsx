@@ -279,6 +279,9 @@ export default function InterviewPanelForm({
               onStepClick={(step) =>
                 setManualStep(step === workflowStep ? null : step)
               }
+              isStepDone={(step, _i, defaultDone) =>
+                step === "evaluation" ? interviewSubmitted : defaultDone
+              }
             />
           )}
         </div>
