@@ -53,6 +53,10 @@ const styles = StyleSheet.create({
 
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 7, color: GRAY, textAlign: "center" },
   emptyNote: { fontSize: 8.5, color: GRAY, fontStyle: "italic" },
+
+  appendixStageHeader: { fontSize: 10.5, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 16, marginBottom: 8 },
+  appendixCard: { backgroundColor: LIGHT, borderRadius: 6, padding: 10, marginBottom: 8 },
+  appendixText: { fontSize: 8.5, color: DARK, lineHeight: 1.6 },
 });
 
 function fmtDate(iso: string | null) {
@@ -169,6 +173,30 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
           Wills Farms Ltd — Human Capital — Interview Report for {d.name}
         </Text>
       </Page>
+
+      {report.panel_responses && report.panel_responses.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <Text style={styles.sectionTitle}>Appendix — Full Panel Responses</Text>
+          <Text style={[styles.paragraph, { marginBottom: 10 }]}>
+            Every panel member&apos;s and HR&apos;s full raw ratings and notes across both
+            interview stages, captured at the time this report was generated.
+          </Text>
+          {report.panel_responses.map((block, i) =>
+            block.trim().toUpperCase().startsWith("STAGE") ? (
+              <Text key={i} style={styles.appendixStageHeader}>
+                {block.trim()}
+              </Text>
+            ) : (
+              <View key={i} style={styles.appendixCard}>
+                <Text style={styles.appendixText}>{block}</Text>
+              </View>
+            ),
+          )}
+          <Text style={styles.footer} fixed>
+            Wills Farms Ltd — Human Capital — Interview Report for {d.name}
+          </Text>
+        </Page>
+      )}
     </Document>
   );
 }

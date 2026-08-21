@@ -159,6 +159,13 @@ export interface InterviewReport {
     decision: PanelDecision;
     rationale: string;
   };
+  /**
+   * Every panel member's (and HR's) full raw responses across Stage 1 and
+   * Stage 2 — one readable text block per grader, captured at generation
+   * time. Shown as an appendix in the downloaded/emailed PDF. Absent on
+   * reports generated before this field was added.
+   */
+  panel_responses?: string[];
 }
 
 export type InterviewStage = 1 | 2 | 3;

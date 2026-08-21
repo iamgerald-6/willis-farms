@@ -261,6 +261,10 @@ export async function POST(req: NextRequest) {
         rationale:
           typeof result.recommendation_rationale === "string" ? result.recommendation_rationale : "",
       },
+      // Same per-grader text blocks (plus stage headers) already assembled
+      // above for the AI prompt — captured verbatim so the PDF/email report
+      // can show every panel member's full raw responses as an appendix.
+      panel_responses: sections,
     };
 
     const updatedFormData = {
