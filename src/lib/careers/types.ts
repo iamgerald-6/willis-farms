@@ -177,18 +177,30 @@ export interface InterviewReport {
 }
 
 /**
- * Consolidated, AI-generated hiring summary for a single role — combines
- * every applicant's funnel progress and (where available) individual
- * interview report for that role into one report. One per role, generated
+ * Consolidated, AI-generated hiring summary for a single role — the report
+ * HR uses to make the final call on who to hire. One per role, generated
  * once (src/app/api/careers/interview/role-report/generate), then editable
  * by HR indefinitely with every save logged. Stored in the standalone
  * role_interview_reports table (job_applications span multiple roles, so
  * this can't live on a single application row the way InterviewReport does).
+ *
+ * Because this drives a still-open hire decision, every "who should we
+ * hire" section (candidate_rankings, the competency/observation tables,
+ * final_recommendation) is scoped to candidates currently in Evaluation
+ * status only — Hold/Rejected/Hired candidates already have a decision and
+ * aren't part of choosing who to hire now. The funnel and applicant_roster
+ * below are the exception: they cover every applicant for the role,
+ * regardless of status, as pipeline-wide context.
  */
 export interface RoleInterviewReport {
   generated_at: string;
   role_slug: string;
   role_title: string;
+
+  // 1. Executive summary
+  executive_summary: string;
+
+  // 2. Applicant funnel — whole pipeline, every status.
   funnel: {
     total_applicants: number;
     /** Screened out at Applied/Under review — never reached Shortlisted. */
@@ -209,51 +221,51 @@ export interface RoleInterviewReport {
       hired: number;
     };
   };
-  executive_summary: string;
-  /** Constraints flagged in HR notes or panel notes across candidates who completed the interview (availability, salary expectations, disqualifiers, etc.) — empty if none noted. */
-  constraints: string[];
-  /** Every candidate who completed the full interview, ranked per the same combined-score ranking used on the Approvals tab. */
+
+  // 3. Candidate ranking — Evaluation status only (who's actually still in the running).
   candidate_rankings: {
     application_id: string;
     name: string;
     reference_number: string;
     rank: number;
     combined_score: number | null;
-    status: ApplicationStatus;
   }[];
-  /**
-   * The heart of "read this and know everything without having gone to the
-   * interviews": one compact, complete summary per candidate who completed
-   * the interview — pulled from their individual report where one exists
-   * (their edited copy if HR saved one, otherwise the AI original), with
-   * sensible fallbacks from the raw interview data where it doesn't.
-   */
-  candidate_summaries: {
+
+  // 4. Full applicant roster — every applicant for the role, regardless of status.
+  applicant_roster: {
     application_id: string;
     name: string;
-    reference_number: string;
-    status: ApplicationStatus;
+    role_title: string;
+    /** Human-readable label for how far they got, e.g. "Never shortlisted", "Shortlisted — interview not started", "Reached Stage 1", "Completed — Evaluation" / "— Hold" / "— Rejected" / "— Hired". */
+    stage_reached: string;
     panel_names: string[];
-    location: string | null;
     interview_date: string | null;
-    combined_score: number | null;
+    location: string | null;
+    stage1_rating: number | null;
+    stage2_rating: number | null;
+  }[];
+
+  // 5. Core competencies — narrative synthesis + per-candidate table, Evaluation status only.
+  core_competencies_summary: string;
+  core_competencies_table: {
+    application_id: string;
+    name: string;
+    competencies: { area: string; score: number | null; assessment: string }[];
+  }[];
+
+  // 6. Key observations — narrative synthesis + per-candidate strengths/weaknesses, Evaluation status only.
+  key_observations_summary: string;
+  key_observations_table: {
+    application_id: string;
+    name: string;
     strengths: string[];
     weaknesses: string[];
-    /** True if this candidate never had an individual report generated — strengths/weaknesses may be empty as a result. */
-    has_individual_report: boolean;
   }[];
-  /**
-   * Every completed candidate's full comprehensive report, verbatim (their
-   * edited copy if HR saved one, otherwise the AI original) — kept as
-   * drill-down detail behind candidate_summaries above, not the primary
-   * reading surface. Null for a candidate who never had one generated.
-   */
-  candidate_reports: {
-    application_id: string;
-    name: string;
-    reference_number: string;
-    report: InterviewReport | null;
-  }[];
+
+  // 7. Constraints flagged in HR notes across Evaluation-status candidates (availability, salary expectations, disqualifiers, etc.) — empty if none noted.
+  constraints: string[];
+
+  // 8. Final recommendation on who to hire, based on candidate_rankings.
   final_recommendation: {
     /** Null if no currently-undecided (Evaluation status) candidate qualifies for a recommendation. */
     application_id: string | null;
@@ -261,6 +273,21 @@ export interface RoleInterviewReport {
     reference_number: string | null;
     rationale: string;
   };
+
+  /**
+   * Appendix — links back into the app for every applicant who had at
+   * least one interview stage (panel forms/responses, and their individual
+   * comprehensive report if one was generated), regardless of status.
+   */
+  candidate_links: {
+    application_id: string;
+    name: string;
+    reference_number: string;
+    /** Deep link into the recruitment dashboard, opened straight to this applicant's panel responses. */
+    panel_forms_url: string;
+    /** Their individual interview report PDF (includes the full panel-responses appendix) — null if none was generated. */
+    individual_report_url: string | null;
+  }[];
 }
 
 export interface RoleInterviewReportRow {
@@ -277,17 +304,21 @@ export interface RoleInterviewReportRow {
 
 /**
  * Backfills fields added to RoleInterviewReport after a given report was
- * generated (e.g. candidate_summaries, candidate_reports) with safe empty
- * defaults, so older rows in role_interview_reports don't crash the UI/PDF
- * when read back. Always run report/report_edit through this before use.
+ * generated with safe empty defaults, so older rows in
+ * role_interview_reports don't crash the UI/PDF when read back. Always run
+ * report/report_edit through this before use.
  */
 export function normalizeRoleInterviewReport(report: RoleInterviewReport): RoleInterviewReport {
   return {
     ...report,
     constraints: report.constraints ?? [],
     candidate_rankings: report.candidate_rankings ?? [],
-    candidate_summaries: report.candidate_summaries ?? [],
-    candidate_reports: report.candidate_reports ?? [],
+    applicant_roster: report.applicant_roster ?? [],
+    core_competencies_summary: report.core_competencies_summary ?? "",
+    core_competencies_table: report.core_competencies_table ?? [],
+    key_observations_summary: report.key_observations_summary ?? "",
+    key_observations_table: report.key_observations_table ?? [],
+    candidate_links: report.candidate_links ?? [],
   };
 }
 

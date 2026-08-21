@@ -2007,14 +2007,6 @@ function ApprovalsTab({
   );
 }
 
-const ROLE_REPORT_STATUS_LABEL: Record<string, string> = {
-  evaluation: "Still deciding",
-  hold: "Hold / Reserve",
-  rejected: "Rejected",
-  onboarding: "Hired",
-  offer: "Hired",
-};
-
 // Consolidated AI hiring summary for one role — combines every candidate's
 // funnel progress and (where available) individual interview report into a
 // single report HR can generate once, then edit/download/email freely.
@@ -2031,7 +2023,6 @@ function RoleReportModal({
   const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(null);
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
-  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
 
   const selectedRole = roles.find((r) => r.slug === selectedSlug);
 
@@ -2205,8 +2196,10 @@ function RoleReportModal({
                     ["Never started interview", reportDraft.funnel.never_started_interview],
                     ["Reached Stage 1 only", reportDraft.funnel.reached_stage1_only],
                     ["Completed full interview", reportDraft.funnel.completed_full_interview],
+                    ["Still deciding", reportDraft.funnel.completed_breakdown.still_deciding],
                     ["On hold", reportDraft.funnel.completed_breakdown.hold],
                     ["Rejected", reportDraft.funnel.completed_breakdown.rejected],
+                    ["Hired", reportDraft.funnel.completed_breakdown.hired],
                   ].map(([label, value]) => (
                     <div key={label as string} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
                       <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
@@ -2265,9 +2258,13 @@ function RoleReportModal({
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Candidate ranking
                 </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Candidates still awaiting a decision only — Hold, Rejected, and Hired candidates
+                  already have one.
+                </p>
                 {reportDraft.candidate_rankings.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
-                    No candidate completed the full interview for this role.
+                    No candidate is currently awaiting a decision for this role.
                   </p>
                 ) : (
                   <div className="border border-gray-100 rounded-lg overflow-hidden">
@@ -2278,9 +2275,7 @@ function RoleReportModal({
                       >
                         <span className="font-bold text-red-600 w-5">{c.rank}</span>
                         <span className="flex-1 text-gray-900">{c.name}</span>
-                        <span className="text-xs text-gray-400 w-24">
-                          {ROLE_REPORT_STATUS_LABEL[c.status] ?? c.status}
-                        </span>
+                        <span className="text-xs text-gray-400 w-28">{c.reference_number}</span>
                         <span className="font-semibold text-gray-900 w-16 text-right">
                           {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
                         </span>
@@ -2292,102 +2287,151 @@ function RoleReportModal({
 
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  Candidate summaries
+                  All applicants
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
-                  Everything needed to understand each candidate&apos;s interview without having sat in on
-                  it — panel, location, score, strengths, and weaknesses. The full individual report for
-                  each is available below if you want more detail.
-                </p>
-                {reportDraft.candidate_summaries.length === 0 ? (
+                {reportDraft.applicant_roster.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No applicants for this role.</p>
+                ) : (
+                  <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                    <table className="w-full text-xs min-w-[640px]">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                          <th className="text-left font-semibold px-3 py-2">Name</th>
+                          <th className="text-left font-semibold px-3 py-2">Stage reached</th>
+                          <th className="text-left font-semibold px-3 py-2">Panel</th>
+                          <th className="text-left font-semibold px-3 py-2">Date</th>
+                          <th className="text-left font-semibold px-3 py-2">Location</th>
+                          <th className="text-right font-semibold px-3 py-2">S1</th>
+                          <th className="text-right font-semibold px-3 py-2">S2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportDraft.applicant_roster.map((a) => (
+                          <tr key={a.application_id} className="border-t border-gray-100">
+                            <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                            <td className="px-3 py-2 text-gray-700">{a.stage_reached}</td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {a.panel_names.length ? a.panel_names.join(", ") : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {a.interview_date ? formatDate(a.interview_date) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">{a.location ?? "—"}</td>
+                            <td className="px-3 py-2 text-gray-700 text-right">
+                              {a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 text-right">
+                              {a.stage2_rating != null ? a.stage2_rating.toFixed(2) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Core competencies
+                </label>
+                <textarea
+                  value={reportDraft.core_competencies_summary}
+                  onChange={(e) =>
+                    setReportDraft({ ...reportDraft, core_competencies_summary: e.target.value })
+                  }
+                  rows={4}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify mb-3"
+                />
+                {reportDraft.core_competencies_table.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
-                    No candidate completed the full interview for this role.
+                    No candidate is currently awaiting a decision for this role.
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {reportDraft.candidate_summaries.map((c) => {
-                      const fullReport = reportDraft.candidate_reports.find(
-                        (r) => r.application_id === c.application_id,
-                      )?.report;
-                      return (
-                        <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900">{c.name}</p>
-                              <p className="text-xs text-gray-400">
-                                {c.reference_number} · {ROLE_REPORT_STATUS_LABEL[c.status] ?? c.status}
-                              </p>
-                            </div>
-                            <span className="text-base font-bold text-gray-900">
-                              {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
-                              <span className="text-xs font-normal text-gray-400"> / 5</span>
-                            </span>
+                    {reportDraft.core_competencies_table.map((c) => (
+                      <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                        <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                        {c.competencies.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic">No competency data available.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {c.competencies.map((comp, i) => (
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <span className="font-semibold text-gray-900 w-32 flex-shrink-0">
+                                  {comp.area}
+                                </span>
+                                <span className="font-semibold text-red-600 w-14 flex-shrink-0">
+                                  {comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}
+                                </span>
+                                <span className="text-gray-600">{comp.assessment || "—"}</span>
+                              </div>
+                            ))}
                           </div>
-                          <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
-                            <div>
-                              <p className="text-gray-400 uppercase tracking-wide">Panel</p>
-                              <p className="text-gray-800 mt-0.5">{c.panel_names.length ? c.panel_names.join(", ") : "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400 uppercase tracking-wide">Location</p>
-                              <p className="text-gray-800 mt-0.5">{c.location ?? "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400 uppercase tracking-wide">Interview date</p>
-                              <p className="text-gray-800 mt-0.5">{c.interview_date ? formatDate(c.interview_date) : "—"}</p>
-                            </div>
-                          </div>
-                          {!c.has_individual_report ? (
-                            <p className="text-xs text-gray-400 italic">
-                              No individual comprehensive report was generated for this candidate.
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Key observations
+                </label>
+                <textarea
+                  value={reportDraft.key_observations_summary}
+                  onChange={(e) =>
+                    setReportDraft({ ...reportDraft, key_observations_summary: e.target.value })
+                  }
+                  rows={4}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify mb-3"
+                />
+                {reportDraft.key_observations_table.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No candidate is currently awaiting a decision for this role.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {reportDraft.key_observations_table.map((c) => (
+                      <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                        <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <p className="font-semibold text-green-700 uppercase tracking-wide mb-1">
+                              Strengths
                             </p>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-4 text-xs mb-2">
-                              <div>
-                                <p className="font-semibold text-green-700 uppercase tracking-wide mb-1">Strengths</p>
-                                {c.strengths.length ? (
-                                  <ul className="space-y-1">
-                                    {c.strengths.map((s, i) => (
-                                      <li key={i} className="text-gray-700">— {s}</li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-gray-400 italic">None noted.</p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="font-semibold text-amber-700 uppercase tracking-wide mb-1">Weaknesses</p>
-                                {c.weaknesses.length ? (
-                                  <ul className="space-y-1">
-                                    {c.weaknesses.map((s, i) => (
-                                      <li key={i} className="text-gray-700">— {s}</li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-gray-400 italic">None noted.</p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                          {fullReport && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedCandidateId(expandedCandidateId === c.application_id ? null : c.application_id)
-                              }
-                              className="text-xs font-medium text-red-600 hover:underline"
-                            >
-                              {expandedCandidateId === c.application_id ? "Hide full report" : "View full report"}
-                            </button>
-                          )}
-                          {expandedCandidateId === c.application_id && fullReport && (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <InterviewReportReadOnly report={fullReport} />
-                            </div>
-                          )}
+                            {c.strengths.length ? (
+                              <ul className="space-y-1">
+                                {c.strengths.map((s, i) => (
+                                  <li key={i} className="text-gray-700">
+                                    — {s}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-400 italic">None noted.</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-amber-700 uppercase tracking-wide mb-1">
+                              Weaknesses
+                            </p>
+                            {c.weaknesses.length ? (
+                              <ul className="space-y-1">
+                                {c.weaknesses.map((s, i) => (
+                                  <li key={i} className="text-gray-700">
+                                    — {s}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-400 italic">None noted.</p>
+                            )}
+                          </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -2412,6 +2456,49 @@ function RoleReportModal({
                   rows={5}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Appendix — panel forms &amp; individual reports
+                </label>
+                {reportDraft.candidate_links.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No applicant has started the interview process yet.
+                  </p>
+                ) : (
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    {reportDraft.candidate_links.map((c) => (
+                      <div
+                        key={c.application_id}
+                        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs border-b border-gray-100 last:border-b-0"
+                      >
+                        <span className="font-semibold text-gray-900">{c.name}</span>
+                        <span className="text-gray-400">{c.reference_number}</span>
+                        <a
+                          href={c.panel_forms_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-red-600 hover:underline"
+                        >
+                          Panel forms
+                        </a>
+                        {c.individual_report_url ? (
+                          <a
+                            href={c.individual_report_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-red-600 hover:underline"
+                          >
+                            Individual report
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 italic">No individual report generated.</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2 pt-2">
