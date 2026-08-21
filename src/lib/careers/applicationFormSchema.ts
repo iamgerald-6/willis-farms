@@ -64,6 +64,8 @@ export interface ApplicationFieldRules {
   accept?: string;
   /** file fields only — allow uploading more than one file. */
   multiple?: boolean;
+  /** textarea / text — maximum character count. */
+  maxLength?: number;
 }
 
 export interface UploadedFile {
@@ -94,6 +96,18 @@ export const APPLICATION_STEPS: ApplicationFieldStep[] = [
 
 export type ApplicationFormData = Record<string, unknown>;
 
+export const COVER_LETTER_MAX_CHARS = 1500;
+
+export function effectiveMaxLength(field: ApplicationFormField): number | undefined {
+  if (field.rules.maxLength != null && field.rules.maxLength > 0) {
+    return field.rules.maxLength;
+  }
+  if (field.rules.fieldKey === "cover_letter") {
+    return COVER_LETTER_MAX_CHARS;
+  }
+  return undefined;
+}
+
 export function parseApplicationFieldRules(
   raw: Record<string, unknown> | null | undefined,
 ): ApplicationFieldRules {
@@ -123,6 +137,10 @@ export function parseApplicationFieldRules(
         : undefined,
     accept: typeof raw?.accept === "string" ? raw.accept : undefined,
     multiple: raw?.multiple === true,
+    maxLength:
+      typeof raw?.maxLength === "number" && raw.maxLength > 0
+        ? raw.maxLength
+        : undefined,
   };
 }
 
@@ -311,6 +329,11 @@ export function validateStep(
       if (!/^GHA-\d{9}-\d$/.test(String(value).trim())) {
         errors.push(`${field.label} needs all 10 digits (9 digits + 1 check digit).`);
       }
+    }
+
+    const maxLen = effectiveMaxLength(field);
+    if (!isEmpty && maxLen != null && String(value).length > maxLen) {
+      errors.push(`${field.label} must be ${maxLen} characters or fewer.`);
     }
   }
   return errors;

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { classNames } from "@/lib/utils";
 import { ALL_CAREER_OPENINGS } from "@/lib/careers/openings";
 import { uploadCvToCloudinary } from "@/lib/careers/uploadCv";
+import { ACCEPT_CV, validateCvOrJdFile } from "@/lib/uploadConstraints";
 import { CheckCircle2, Loader2, Upload } from "lucide-react";
 
 type Status = "idle" | "uploading" | "submitting" | "success" | "error";
@@ -33,6 +34,7 @@ export function CareersApplyForm({ defaultRoleSlug }: Props) {
   const [referenceNumber, setReferenceNumber] = useState("");
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [cvName, setCvName] = useState("");
+  const [cvError, setCvError] = useState<string | null>(null);
 
   const form = useForm<ApplyFormValues>({
     resolver: zodResolver(ApplySchema),
@@ -207,15 +209,32 @@ export function CareersApplyForm({ defaultRoleSlug }: Props) {
                 {cvName || "Choose file"}
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx,application/pdf"
+                  accept={ACCEPT_CV}
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0] ?? null;
+                    if (!file) {
+                      setCvFile(null);
+                      setCvName("");
+                      setCvError(null);
+                      return;
+                    }
+                    const validationError = validateCvOrJdFile(file);
+                    if (validationError) {
+                      setCvFile(null);
+                      setCvName("");
+                      setCvError(validationError);
+                      return;
+                    }
+                    setCvError(null);
                     setCvFile(file);
-                    setCvName(file?.name ?? "");
+                    setCvName(file.name);
                   }}
                 />
               </label>
+              {cvError && (
+                <p className="text-xs text-red-600">{cvError}</p>
+              )}
               {cvFile && (
                 <button
                   type="button"

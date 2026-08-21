@@ -1,5 +1,9 @@
 import type { SystemOption } from "./types";
 import { GHANA_REGIONS } from "@/lib/careers/onboardingTypes";
+import {
+  ACCEPT_PASSPORT_BIO,
+  ACCEPT_PDF_WORD_OR_IMAGE,
+} from "@/lib/uploadConstraints";
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const ONBOARDING_FIELDS_LIST = "careers.onboardingFields";
@@ -149,7 +153,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       fieldKey: "personal.passport_bio_page",
       fieldType: "file",
       required: true,
-      accept: "image/*,.pdf",
+      accept: ACCEPT_PASSPORT_BIO,
       showWhen: { field: "personal.is_citizen", equals: "Non-citizen" },
     }),
     field("opt:onboarding:field:ssnit", "SSNIT number", "personal.ssnit_number", 10, {
@@ -413,7 +417,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
         fieldKey: "medical.medical_report",
         fieldType: "file",
         required: true,
-        accept: ".pdf,image/*",
+        accept: ACCEPT_PDF_WORD_OR_IMAGE,
       },
     ),
 

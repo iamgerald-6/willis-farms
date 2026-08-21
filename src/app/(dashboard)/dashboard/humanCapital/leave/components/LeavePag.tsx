@@ -25,6 +25,11 @@ import {
   CLOUDINARY_UPLOAD_PRESET,
   cloudinaryUploadUrl,
 } from "@/lib/cloudinary";
+import {
+  ACCEPT_PDF_OR_IMAGE,
+  validatePdfOrImageFile,
+  uploadHintForField,
+} from "@/lib/uploadConstraints";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LeaveRequest {
@@ -89,6 +94,11 @@ type LeaveFormValues = z.infer<typeof leaveFormSchema>;
 async function uploadLeaveDocument(
   file: File,
 ): Promise<string> {
+  const validationError = validatePdfOrImageFile(file);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
@@ -166,6 +176,7 @@ function ApplyLeaveModal({
   onSuccess: () => void;
 }) {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentError, setDocumentError] = useState<string | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
   const { data: leaveTypeOptions = [], isLoading: optionsLoading } =
@@ -376,15 +387,36 @@ function ApplyLeaveModal({
               <label className="flex items-center gap-3 border border-dashed border-gray-300 rounded-lg px-3 py-3 cursor-pointer hover:border-red-300 hover:bg-red-50/30 transition">
                 <Upload className="w-4 h-4 text-gray-400 shrink-0" />
                 <span className="text-sm text-gray-600 truncate">
-                  {documentFile ? documentFile.name : "Choose PDF or image…"}
+                  {documentFile ? documentFile.name : "Choose PDF, Word, or image…"}
                 </span>
                 <input
                   type="file"
-                  accept="application/pdf,image/*"
+                  accept={ACCEPT_PDF_OR_IMAGE}
                   className="sr-only"
-                  onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (!file) {
+                      setDocumentFile(null);
+                      setDocumentError(null);
+                      return;
+                    }
+                    const validationError = validatePdfOrImageFile(file);
+                    if (validationError) {
+                      setDocumentFile(null);
+                      setDocumentError(validationError);
+                      return;
+                    }
+                    setDocumentError(null);
+                    setDocumentFile(file);
+                  }}
                 />
               </label>
+              <p className="text-[11px] text-gray-400 mt-1">
+                {uploadHintForField(undefined, ACCEPT_PDF_OR_IMAGE)}
+              </p>
+              {documentError && (
+                <p className="text-xs text-red-500 mt-1">{documentError}</p>
+              )}
               {documentFile && (
                 <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                   <FileText className="w-3 h-3" /> {documentFile.name}

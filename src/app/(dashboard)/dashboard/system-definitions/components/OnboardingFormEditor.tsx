@@ -456,7 +456,7 @@ function FieldDraftForm({
           <span className="text-xs text-gray-500">Accepted file types</span>
           <input
             className={inputClass}
-            placeholder="image/*,.pdf"
+            placeholder="image/jpeg,image/png,.jpg,.jpeg,.png"
             value={draft.accept}
             onChange={(e) => onDraftChange({ ...draft, accept: e.target.value })}
           />

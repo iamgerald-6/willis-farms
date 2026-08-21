@@ -1,5 +1,10 @@
 import type { SystemOption } from "./types";
 import { COUNTRY_NAMES } from "@/lib/careers/countryNames";
+import {
+  ACCEPT_CV,
+  ACCEPT_PASSPORT_BIO,
+  ACCEPT_PDF_WORD_OR_IMAGE,
+} from "@/lib/uploadConstraints";
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const RECRUITMENT_APPLICATION_FIELDS_LIST = "careers.applicationFields";
@@ -50,7 +55,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       fieldKey: "cv",
       fieldType: "file",
       required: true,
-      accept: ".pdf,.doc,.docx,image/*",
+      accept: ACCEPT_CV,
     }),
     field("opt:recruitment:field:first_name", "First name", "first_name", 1, {
       step: "personal",
@@ -134,7 +139,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldKey: "passport_bio_page",
         fieldType: "file",
         required: true,
-        accept: "image/*,.pdf",
+        accept: ACCEPT_PASSPORT_BIO,
         showWhen: { field: "is_citizen", equals: "No" },
       },
     ),
@@ -160,7 +165,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldKey: "certificates",
         fieldType: "file",
         required: true,
-        accept: ".pdf,image/*",
+        accept: ACCEPT_PDF_WORD_OR_IMAGE,
         multiple: true,
       },
     ),
@@ -169,6 +174,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       fieldKey: "cover_letter",
       fieldType: "textarea",
       required: true,
+      maxLength: 1500,
     }),
     field("opt:recruitment:field:ref1_name", "Referee — full name", "reference_1_name", 32, {
       step: "documents",

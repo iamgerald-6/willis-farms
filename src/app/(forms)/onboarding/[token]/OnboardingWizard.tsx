@@ -20,6 +20,7 @@ import {
 } from "@/lib/careers/onboardingTypes";
 import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { uploadHintForField } from "@/lib/uploadConstraints";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
@@ -275,7 +276,12 @@ export default function OnboardingWizard({
     setUploadingKey(fieldKey);
     setError(null);
     try {
-      const uploaded = await uploadCareersFile(file, "CareersOnboarding");
+      const uploaded = await uploadCareersFile(
+        file,
+        "CareersOnboarding",
+        accept,
+        fieldKey,
+      );
       setFieldValue(fieldKey, uploaded);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
@@ -395,6 +401,9 @@ export default function OnboardingWizard({
                 }}
               />
             </label>
+            <p className="text-[11px] text-gray-400">
+              {uploadHintForField(fieldKey, accept)}
+            </p>
           </div>
         </FieldBlock>
       );

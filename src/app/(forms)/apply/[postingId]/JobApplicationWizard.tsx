@@ -11,12 +11,14 @@ import {
   type EducationEntry,
   type UploadedFile,
   type WorkHistoryEntry,
+  effectiveMaxLength,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
 import type { JobPosting } from "@/lib/careers/jobPostings";
 import { formatPublicJobTitle } from "@/lib/careers/jobPostings";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { uploadHintForField } from "@/lib/uploadConstraints";
 import { FormShell } from "@/components/Forms/FormShell";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
@@ -305,11 +307,21 @@ export default function JobApplicationWizard({
     }
   };
 
-  const handleFileUpload = async (fieldKey: string, file: File, multiple: boolean) => {
+  const handleFileUpload = async (
+    fieldKey: string,
+    file: File,
+    multiple: boolean,
+    accept?: string,
+  ) => {
     setUploadingKey(fieldKey);
     setError(null);
     try {
-      const uploaded = await uploadCareersFile(file, "CareersApplications");
+      const uploaded = await uploadCareersFile(
+        file,
+        "CareersApplications",
+        accept,
+        fieldKey,
+      );
       if (multiple) {
         setValues((prev) => {
           const existing = Array.isArray(prev[fieldKey]) ? (prev[fieldKey] as UploadedFile[]) : [];
@@ -361,15 +373,42 @@ export default function JobApplicationWizard({
     }
 
     if (fieldType === "textarea") {
+      const text = String(value ?? "");
+      const maxLen = effectiveMaxLength(field);
+      const remaining =
+        maxLen != null ? Math.max(0, maxLen - text.length) : null;
+
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <textarea
             className={inputClass}
-            rows={4}
+            rows={6}
             placeholder={placeholder}
-            value={String(value ?? "")}
-            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+            value={text}
+            maxLength={maxLen}
+            onChange={(e) => {
+              let next = e.target.value;
+              if (maxLen != null && next.length > maxLen) {
+                next = next.slice(0, maxLen);
+              }
+              setFieldValue(fieldKey, next);
+            }}
           />
+          {maxLen != null && (
+            <p
+              className={`text-xs mt-1 ${
+                remaining === 0
+                  ? "text-red-600 font-medium"
+                  : remaining <= 100
+                    ? "text-amber-600"
+                    : "text-gray-400"
+              }`}
+            >
+              {remaining} character{remaining === 1 ? "" : "s"} remaining
+              <span className="text-gray-300 mx-1">·</span>
+              {text.length}/{maxLen}
+            </p>
+          )}
         </FieldBlock>
       );
     }
@@ -411,11 +450,14 @@ export default function JobApplicationWizard({
                 disabled={uploadingKey === fieldKey}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) void handleFileUpload(fieldKey, file, true);
+                  if (file) void handleFileUpload(fieldKey, file, true, accept);
                   e.target.value = "";
                 }}
               />
             </label>
+            <p className="text-[11px] text-gray-400">
+              {uploadHintForField(fieldKey, accept)}
+            </p>
           </div>
         </FieldBlock>
       );
@@ -445,10 +487,13 @@ export default function JobApplicationWizard({
               disabled={uploadingKey === fieldKey}
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void handleFileUpload(fieldKey, file, false);
+                if (file) void handleFileUpload(fieldKey, file, false, accept);
               }}
             />
           </label>
+          <p className="text-[11px] text-gray-400 mt-1">
+            {uploadHintForField(fieldKey, accept)}
+          </p>
         </FieldBlock>
       );
     }
