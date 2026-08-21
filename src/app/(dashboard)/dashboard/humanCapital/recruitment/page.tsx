@@ -116,6 +116,7 @@ function ApplicationDetail({
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showEditedReportModal, setShowEditedReportModal] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
+  const [showEvaluationResultsModal, setShowEvaluationResultsModal] = useState(false);
   const [selectedGraderView, setSelectedGraderView] = useState<
     { grader: GraderResult; stage: 1 | 2 } | null
   >(null);
@@ -186,6 +187,12 @@ function ApplicationDetail({
     !!decisionConfirmed &&
     ((application.status === "hold" && decision === "hold") ||
       (application.status === "rejected" && decision === "do_not_hire"));
+  // Once a decision has been confirmed, the report is read-only reference
+  // material rather than something to keep editing — shown as links for
+  // Hold/Rejected (where it doubles as reconsideration context), Offer, and
+  // Onboarding alike. Only "evaluation" still gets the live editable form.
+  const showReportLinks =
+    !!decisionConfirmed && hasGeneratedReport && application.status !== "evaluation";
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -275,6 +282,25 @@ function ApplicationDetail({
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Failed to start onboarding.");
+    },
+  });
+
+  const rescindOffer = useMutation({
+    mutationFn: () =>
+      api.post("/careers/onboarding/rescind", {
+        application_id: application.id,
+        rescinded_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.data.email_warning) {
+        toast.warning(`Offer rescinded, but: ${res.data.email_warning}`);
+      } else {
+        toast.success("Offer rescinded — applicant moved to Rejects.");
+      }
+      onUpdated();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Failed to rescind offer.");
     },
   });
 
@@ -613,64 +639,14 @@ function ApplicationDetail({
             )}
 
             {application.interview_submitted_at && application.interview_form_data && (
-              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-2">
-                <p className="text-sm font-semibold text-indigo-900">
-                  Interview evaluation results
-                </p>
-                {application.interview_form_data.summary?.stage1_average != null && (
-                  <p className="text-xs text-indigo-800">
-                    Stage 1 average:{" "}
-                    <strong>
-                      {application.interview_form_data.summary.stage1_average.toFixed(2)}
-                    </strong>
-                  </p>
-                )}
-                {application.interview_form_data.summary?.stage2_average != null && (
-                  <p className="text-xs text-indigo-800">
-                    Stage 2 average:{" "}
-                    <strong>
-                      {application.interview_form_data.summary.stage2_average.toFixed(2)}
-                    </strong>
-                  </p>
-                )}
-                {application.interview_form_data.summary?.total_weighted != null && (
-                  <p className="text-xs text-indigo-800">
-                    Combined score:{" "}
-                    <strong>
-                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
-                    </strong>
-                  </p>
-                )}
-                {application.interview_form_data.summary?.ai_analysis && (
-                  <div className="mt-2 pt-2 border-t border-indigo-100 space-y-1.5">
-                    <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">
-                      AI analysis
-                    </p>
-                    <p className="text-xs text-indigo-900 leading-relaxed">
-                      {application.interview_form_data.summary.ai_analysis}
-                    </p>
-                    {application.interview_form_data.summary.ai_recommendation && (
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          AI_RECOMMENDATION_CLASSES[
-                            application.interview_form_data.summary.ai_recommendation
-                          ]
-                        }`}
-                      >
-                        AI recommends:{" "}
-                        {
-                          AI_RECOMMENDATION_LABELS[
-                            application.interview_form_data.summary.ai_recommendation
-                          ]
-                        }
-                      </span>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-indigo-700/80 mt-2">
-                  Review scores and discuss as a team before confirming an outcome.
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowEvaluationResultsModal(true)}
+                className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+              >
+                <FileText className="w-4 h-4" />
+                View evaluation results
+              </button>
             )}
 
             {application.status === "evaluation" && (
@@ -1101,7 +1077,7 @@ function ApplicationDetail({
               </div>
             )}
 
-            {canReconsider && hasGeneratedReport && (
+            {showReportLinks && (
               <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
                 <p className="text-sm font-semibold text-gray-900">Interview Report</p>
                 <p className="text-xs text-gray-500">
@@ -1292,14 +1268,33 @@ function ApplicationDetail({
             )}
 
             {application.status === "offer" && decision === "hire" && (
-              <button
-                type="button"
-                onClick={() => startOnboarding.mutate()}
-                disabled={startOnboarding.isPending}
-                className="w-full py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
-              >
-                {startOnboarding.isPending ? "Sending…" : "Send congratulations & onboarding link"}
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => startOnboarding.mutate()}
+                  disabled={startOnboarding.isPending || rescindOffer.isPending}
+                  className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
+                >
+                  {startOnboarding.isPending ? "Sending…" : "Send congratulations & onboarding link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
+                      )
+                    ) {
+                      return;
+                    }
+                    rescindOffer.mutate();
+                  }}
+                  disabled={rescindOffer.isPending || startOnboarding.isPending}
+                  className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                >
+                  {rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
+                </button>
+              </div>
             )}
 
             {application.status === "onboarding" && decision === "hire" && (
@@ -1387,6 +1382,75 @@ function ApplicationDetail({
             </div>
             <div className="p-5 overflow-y-auto min-h-0">
               <ApplicationFormReview formData={application.application_form_data} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEvaluationResultsModal && application.interview_form_data && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowEvaluationResultsModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">Interview evaluation results</h2>
+              <button
+                type="button"
+                onClick={() => setShowEvaluationResultsModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0 space-y-2">
+              {application.interview_form_data.summary?.stage1_average != null && (
+                <p className="text-sm text-gray-700">
+                  Stage 1 average:{" "}
+                  <strong>{application.interview_form_data.summary.stage1_average.toFixed(2)}</strong>
+                </p>
+              )}
+              {application.interview_form_data.summary?.stage2_average != null && (
+                <p className="text-sm text-gray-700">
+                  Stage 2 average:{" "}
+                  <strong>{application.interview_form_data.summary.stage2_average.toFixed(2)}</strong>
+                </p>
+              )}
+              {application.interview_form_data.summary?.total_weighted != null && (
+                <p className="text-sm text-gray-700">
+                  Combined score:{" "}
+                  <strong>{application.interview_form_data.summary.total_weighted.toFixed(2)}</strong>
+                </p>
+              )}
+              {application.interview_form_data.summary?.ai_analysis && (
+                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+                  <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">
+                    AI analysis
+                  </p>
+                  <p className="text-sm text-gray-800 leading-relaxed">
+                    {application.interview_form_data.summary.ai_analysis}
+                  </p>
+                  {application.interview_form_data.summary.ai_recommendation && (
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        AI_RECOMMENDATION_CLASSES[
+                          application.interview_form_data.summary.ai_recommendation
+                        ]
+                      }`}
+                    >
+                      AI recommends:{" "}
+                      {
+                        AI_RECOMMENDATION_LABELS[
+                          application.interview_form_data.summary.ai_recommendation
+                        ]
+                      }
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2075,6 +2139,25 @@ function OfferTab({
     },
   });
 
+  const rescindOfferMutation = useMutation({
+    mutationFn: (applicationId: string) =>
+      api.post("/careers/onboarding/rescind", {
+        application_id: applicationId,
+        rescinded_by: adminId,
+      }),
+    onSuccess: async (res) => {
+      if (res.data.email_warning) {
+        toast.warning(`Offer rescinded, but: ${res.data.email_warning}`);
+      } else {
+        toast.success("Offer rescinded — applicant moved to Rejects.");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Failed to rescind offer.");
+    },
+  });
+
   return (
     <div className="space-y-4">
       <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
@@ -2138,15 +2221,32 @@ function OfferTab({
                       <button
                         type="button"
                         onClick={() => startOnboardingMutation.mutate(a.id)}
-                        disabled={startOnboardingMutation.isPending}
+                        disabled={startOnboardingMutation.isPending || rescindOfferMutation.isPending}
                         className="text-xs font-medium text-green-700 hover:underline disabled:opacity-60"
                       >
                         Send onboarding link
                       </button>
                       <button
                         type="button"
+                        onClick={() => {
+                          if (
+                            !confirm(
+                              `Rescind the offer to ${a.full_name}? They'll be moved to Rejects and sent a decline email.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          rescindOfferMutation.mutate(a.id);
+                        }}
+                        disabled={rescindOfferMutation.isPending || startOnboardingMutation.isPending}
+                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-60"
+                      >
+                        Rescind offer
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => onSelect(a)}
-                        className="text-xs font-medium text-red-600 hover:underline"
+                        className="text-xs font-medium text-gray-600 hover:underline"
                       >
                         View
                       </button>
