@@ -168,6 +168,72 @@ export interface InterviewReport {
   panel_responses?: string[];
 }
 
+/**
+ * Consolidated, AI-generated hiring summary for a single role — combines
+ * every applicant's funnel progress and (where available) individual
+ * interview report for that role into one report. One per role, generated
+ * once (src/app/api/careers/interview/role-report/generate), then editable
+ * by HR indefinitely with every save logged. Stored in the standalone
+ * role_interview_reports table (job_applications span multiple roles, so
+ * this can't live on a single application row the way InterviewReport does).
+ */
+export interface RoleInterviewReport {
+  generated_at: string;
+  role_slug: string;
+  role_title: string;
+  funnel: {
+    total_applicants: number;
+    /** Screened out at Applied/Under review — never reached Shortlisted. */
+    never_shortlisted: number;
+    /** Reached Shortlisted at some point (sum of the three buckets below). */
+    shortlisted_total: number;
+    /** Shortlisted, but the interview process was never started. */
+    never_started_interview: number;
+    /** Interview started but not finished — never completed Stage 2. */
+    reached_stage1_only: number;
+    /** Completed both interview stages in full. */
+    completed_full_interview: number;
+    /** Breakdown of the completed_full_interview group by current outcome. */
+    completed_breakdown: {
+      still_deciding: number;
+      hold: number;
+      rejected: number;
+      hired: number;
+    };
+  };
+  executive_summary: string;
+  /** Constraints flagged in HR notes or panel notes across candidates who completed the interview (availability, salary expectations, disqualifiers, etc.) — empty if none noted. */
+  constraints: string[];
+  /** Every candidate who completed the full interview, ranked per the same combined-score ranking used on the Approvals tab. */
+  candidate_rankings: {
+    application_id: string;
+    name: string;
+    reference_number: string;
+    rank: number;
+    combined_score: number | null;
+    status: ApplicationStatus;
+  }[];
+  final_recommendation: {
+    /** Null if no currently-undecided (Evaluation status) candidate qualifies for a recommendation. */
+    application_id: string | null;
+    candidate_name: string | null;
+    reference_number: string | null;
+    rationale: string;
+  };
+}
+
+export interface RoleInterviewReportRow {
+  id: string;
+  role_slug: string;
+  role_title: string;
+  report: RoleInterviewReport;
+  report_edit: RoleInterviewReport | null;
+  report_edit_log: { edited_at: string; edited_by: string }[];
+  generated_at: string;
+  generated_by: string | null;
+  updated_at: string;
+}
+
 export type InterviewStage = 1 | 2 | 3;
 
 export interface InterviewFormData {

@@ -15,6 +15,8 @@ import {
   type JobApplication,
   type PanelDecision,
   type InterviewReport,
+  type RoleInterviewReport,
+  type RoleInterviewReportRow,
 } from "@/lib/careers/types";
 import {
   canHrChangeStatus,
@@ -1865,11 +1867,25 @@ function ApprovalsTab({
   applications,
   isLoading,
   onSelect,
+  adminId,
 }: {
   applications: JobApplication[];
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
+  adminId: string;
 }) {
+  const [showRoleReport, setShowRoleReport] = useState(false);
+
+  const roles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of applications) {
+      if (!map.has(a.role_slug)) map.set(a.role_slug, a.role_title);
+    }
+    return Array.from(map.entries())
+      .map(([slug, title]) => ({ slug, title }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [applications]);
+
   const ranked = useMemo(() => {
     const byRole = new Map<string, JobApplication[]>();
     for (const a of applications) {
@@ -1898,6 +1914,22 @@ function ApprovalsTab({
   }, [applications]);
 
   return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowRoleReport(true)}
+          disabled={roles.length === 0}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
+        >
+          Generate role report
+        </button>
+      </div>
+
+      {showRoleReport && (
+        <RoleReportModal roles={roles} adminId={adminId} onClose={() => setShowRoleReport(false)} />
+      )}
+
     <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
       <table className="w-full text-left text-sm min-w-[800px]">
         <thead>
@@ -1966,6 +1998,382 @@ function ApprovalsTab({
           )}
         </tbody>
       </table>
+    </div>
+    </div>
+  );
+}
+
+const ROLE_REPORT_STATUS_LABEL: Record<string, string> = {
+  evaluation: "Still deciding",
+  hold: "Hold / Reserve",
+  rejected: "Rejected",
+  onboarding: "Hired",
+  offer: "Hired",
+};
+
+// Consolidated AI hiring summary for one role — combines every candidate's
+// funnel progress and (where available) individual interview report into a
+// single report HR can generate once, then edit/download/email freely.
+function RoleReportModal({
+  roles,
+  adminId,
+  onClose,
+}: {
+  roles: { slug: string; title: string }[];
+  adminId: string;
+  onClose: () => void;
+}) {
+  const [selectedSlug, setSelectedSlug] = useState(roles[0]?.slug ?? "");
+  const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(null);
+  const [emailTo, setEmailTo] = useState("info@willsfarms.com");
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  const selectedRole = roles.find((r) => r.slug === selectedSlug);
+
+  const {
+    data: reportRow,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["role_interview_report", selectedSlug],
+    queryFn: async () => {
+      const res = await api.get(`/careers/interview/role-report?role_slug=${selectedSlug}`);
+      return res.data.data as RoleInterviewReportRow | null;
+    },
+    enabled: !!selectedSlug,
+  });
+
+  useEffect(() => {
+    setReportDraft(reportRow ? (reportRow.report_edit ?? reportRow.report) : null);
+  }, [reportRow]);
+
+  const generateMutation = useMutation({
+    mutationFn: () => api.post("/careers/interview/role-report/generate", { role_slug: selectedSlug }),
+    onSuccess: async () => {
+      toast.success("Role report generated.");
+      await refetch();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Report generation failed.");
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.patch("/careers/interview/role-report", {
+        role_slug: selectedSlug,
+        report: reportDraft,
+        edited_by: adminId,
+      }),
+    onSuccess: async () => {
+      toast.success("Report saved.");
+      await refetch();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Save failed.");
+    },
+  });
+
+  const emailMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/role-report/email", { role_slug: selectedSlug, to: emailTo }),
+    onSuccess: () => {
+      toast.success(`Report emailed to ${emailTo}.`);
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Email failed.");
+    },
+  });
+
+  const editLog = reportRow?.report_edit_log ?? [];
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+          <h2 className="text-base font-bold text-gray-900">Role hiring summary</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 overflow-y-auto min-h-0 space-y-5">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+              Role
+            </label>
+            <select
+              value={selectedSlug}
+              onChange={(e) => setSelectedSlug(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              {roles.map((r) => (
+                <option key={r.slug} value={r.slug}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {isLoading ? (
+            <div className="h-32 bg-gray-50 animate-pulse rounded-lg" />
+          ) : !reportRow ? (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                Generates one consolidated report for {selectedRole?.title ?? "this role"} — applicant
+                funnel numbers, constraints flagged in HR/panel notes, and a final hire recommendation
+                based on the current ranking. This can only be generated once per role; after that you
+                can edit it freely.
+              </p>
+              <button
+                type="button"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
+              >
+                {generateMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  "Generate role report"
+                )}
+              </button>
+            </div>
+          ) : reportDraft ? (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-3">
+                {reportRow.report_edit && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOriginal(true)}
+                    className="text-xs font-medium text-gray-600 hover:underline"
+                  >
+                    View original AI report
+                  </button>
+                )}
+                <a
+                  href={`/api/careers/interview/role-report/pdf?role_slug=${selectedSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download PDF
+                </a>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Executive summary
+                </label>
+                <textarea
+                  value={reportDraft.executive_summary}
+                  onChange={(e) => setReportDraft({ ...reportDraft, executive_summary: e.target.value })}
+                  rows={5}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Applicant funnel
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    ["Total applicants", reportDraft.funnel.total_applicants],
+                    ["Never shortlisted", reportDraft.funnel.never_shortlisted],
+                    ["Shortlisted (total)", reportDraft.funnel.shortlisted_total],
+                    ["Never started interview", reportDraft.funnel.never_started_interview],
+                    ["Reached Stage 1 only", reportDraft.funnel.reached_stage1_only],
+                    ["Completed full interview", reportDraft.funnel.completed_full_interview],
+                    ["On hold", reportDraft.funnel.completed_breakdown.hold],
+                    ["Rejected", reportDraft.funnel.completed_breakdown.rejected],
+                  ].map(([label, value]) => (
+                    <div key={label as string} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
+                      <p className="text-lg font-bold text-gray-900 mt-0.5">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Constraints noted
+                </label>
+                <div className="space-y-2">
+                  {reportDraft.constraints.map((c, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-gray-400 mt-2">—</span>
+                      <textarea
+                        value={c}
+                        onChange={(e) => {
+                          const next = [...reportDraft.constraints];
+                          next[i] = e.target.value;
+                          setReportDraft({ ...reportDraft, constraints: next });
+                        }}
+                        rows={2}
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = reportDraft.constraints.filter((_, idx) => idx !== i);
+                          setReportDraft({ ...reportDraft, constraints: next });
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setReportDraft({ ...reportDraft, constraints: [...reportDraft.constraints, ""] })
+                    }
+                    className="text-xs font-medium text-red-600 hover:underline"
+                  >
+                    + Add constraint
+                  </button>
+                  {reportDraft.constraints.length === 0 && (
+                    <p className="text-xs text-gray-400 italic">None noted.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Candidate ranking
+                </label>
+                {reportDraft.candidate_rankings.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No candidate completed the full interview for this role.
+                  </p>
+                ) : (
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    {reportDraft.candidate_rankings.map((c) => (
+                      <div
+                        key={c.application_id}
+                        className="flex items-center gap-3 px-3 py-2 text-sm border-b border-gray-100 last:border-b-0"
+                      >
+                        <span className="font-bold text-red-600 w-5">{c.rank}</span>
+                        <span className="flex-1 text-gray-900">{c.name}</span>
+                        <span className="text-xs text-gray-400 w-24">
+                          {ROLE_REPORT_STATUS_LABEL[c.status] ?? c.status}
+                        </span>
+                        <span className="font-semibold text-gray-900 w-16 text-right">
+                          {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                  Final recommendation
+                </label>
+                <p className="text-sm font-semibold text-gray-900 mb-2">
+                  {reportDraft.final_recommendation.candidate_name
+                    ? `${reportDraft.final_recommendation.candidate_name} (${reportDraft.final_recommendation.reference_number})`
+                    : "No candidate currently recommendable"}
+                </p>
+                <textarea
+                  value={reportDraft.final_recommendation.rationale}
+                  onChange={(e) =>
+                    setReportDraft({
+                      ...reportDraft,
+                      final_recommendation: { ...reportDraft.final_recommendation, rationale: e.target.value },
+                    })
+                  }
+                  rows={5}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                  className="flex-1 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save changes"}
+                </button>
+                <input
+                  type="email"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="Email address"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => emailMutation.mutate()}
+                  disabled={emailMutation.isPending || !emailTo}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  {emailMutation.isPending ? "Sending…" : "Email report"}
+                </button>
+              </div>
+
+              {editLog.length > 0 && (
+                <p className="text-xs text-gray-400">
+                  Edited {editLog.length} time{editLog.length === 1 ? "" : "s"} — last saved{" "}
+                  {formatDate(editLog[editLog.length - 1].edited_at)}
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {showOriginal && reportRow?.report && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
+          onClick={() => setShowOriginal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">Original AI report</h2>
+              <button
+                type="button"
+                onClick={() => setShowOriginal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0 space-y-3 text-sm text-gray-800">
+              <p className="text-xs text-gray-400 mb-2">
+                This is the report exactly as AI generated it — unaffected by any edits made above.
+              </p>
+              <p className="whitespace-pre-wrap text-justify">{reportRow.report.executive_summary}</p>
+              <p className="whitespace-pre-wrap text-justify">
+                {reportRow.report.final_recommendation.rationale}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2223,7 +2631,12 @@ function RecruitmentPageContent() {
       ) : activeTab === "ai_rejects" ? (
         <RejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
       ) : activeTab === "approvals" ? (
-        <ApprovalsTab applications={approvalApplications} isLoading={isLoading} onSelect={setSelected} />
+        <ApprovalsTab
+          applications={approvalApplications}
+          isLoading={isLoading}
+          onSelect={setSelected}
+          adminId={session?.user?.id ?? ""}
+        />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
       ) : (
