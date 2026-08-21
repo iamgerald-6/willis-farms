@@ -16,6 +16,9 @@ type Props = {
   onSendStage2Invites: (scheduledAt: string) => void;
   isPending: boolean;
   readOnly?: boolean;
+  /** Persists edited member name/email while readOnly, without resending invites. */
+  onSaveMemberEdits?: () => void;
+  isSavingMemberEdits?: boolean;
 };
 
 // Same date + IOSTimePicker split used when creating a job posting
@@ -40,6 +43,8 @@ export default function Stage2SetupStep({
   onSendStage2Invites,
   isPending,
   readOnly = false,
+  onSaveMemberEdits,
+  isSavingMemberEdits = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -111,7 +116,8 @@ export default function Stage2SetupStep({
 
       {readOnly && (
         <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          Viewing Stage 2 panel setup — read-only.
+          Viewing Stage 2 panel setup. The practical date, time, location, and panel list are
+          locked — you can still fix a panel member&apos;s name or email below.
         </p>
       )}
 
@@ -214,17 +220,15 @@ export default function Stage2SetupStep({
                 type="text"
                 placeholder="Full name *"
                 value={member.name}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={member.email}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               {!readOnly && (
                 <button
@@ -245,6 +249,18 @@ export default function Stage2SetupStep({
           Stage 2 invites sent{" "}
           {new Date(setup.stage2_invites_sent_at).toLocaleString("en-GB")}
         </p>
+      )}
+
+      {readOnly && onSaveMemberEdits && (
+        <button
+          type="button"
+          onClick={onSaveMemberEdits}
+          disabled={isSavingMemberEdits}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isSavingMemberEdits ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Save name/email changes
+        </button>
       )}
 
       {!readOnly && (

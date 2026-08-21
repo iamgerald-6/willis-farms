@@ -381,6 +381,10 @@ export default function InterviewPanelForm({
               }
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
+              onSaveMemberEdits={() =>
+                saveMutation.mutate({ action: "save_draft", data: formData })
+              }
+              isSavingMemberEdits={saveMutation.isPending}
             />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
