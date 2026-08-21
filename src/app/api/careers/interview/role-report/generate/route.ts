@@ -13,9 +13,13 @@ import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
 import { getAppBaseUrl, recruitmentInterviewUrl } from "@/lib/appUrl";
 
-// Generates the consolidated per-role hiring summary report once per role
-// (HR can edit freely afterward — see the PATCH handler in ../route.ts for
-// the "edit always writes to report_edit, never overwrites report" model).
+// Generates the consolidated per-role hiring summary report for a role. Can
+// be run more than once — each run overwrites the AI-generated `report` with
+// a fresh one built from the applicants' current state, and clears out any
+// HR edit (report_edit/report_edit_log) so the edit history doesn't linger
+// against a report it no longer describes. Between generations, HR can edit
+// freely — see the PATCH handler in ../route.ts for the "edit always writes
+// to report_edit, never overwrites report" model.
 //
 // This report exists to make the final hire decision, so everything that
 // drives that decision (ranking, competency/observation tables, final
@@ -95,13 +99,6 @@ export async function POST(req: NextRequest) {
       .select("id")
       .eq("role_slug", role_slug)
       .maybeSingle();
-
-    if (existing) {
-      return NextResponse.json(
-        { error: "A report has already been generated for this role." },
-        { status: 400 },
-      );
-    }
 
     const { data: applications, error: fetchError } = await supabaseAdmin
       .from("job_applications")
@@ -359,21 +356,34 @@ export async function POST(req: NextRequest) {
       candidate_links: candidateLinks,
     };
 
-    const { data: inserted, error: insertError } = await supabaseAdmin
-      .from("role_interview_reports")
-      .insert({
-        role_slug,
-        role_title: roleTitle,
-        report,
-      })
-      .select()
-      .single();
+    const { data: saved, error: saveError } = existing
+      ? await supabaseAdmin
+          .from("role_interview_reports")
+          .update({
+            role_title: roleTitle,
+            report,
+            report_edit: null,
+            report_edit_log: [],
+            updated_at: new Date().toISOString(),
+          })
+          .eq("role_slug", role_slug)
+          .select()
+          .single()
+      : await supabaseAdmin
+          .from("role_interview_reports")
+          .insert({
+            role_slug,
+            role_title: roleTitle,
+            report,
+          })
+          .select()
+          .single();
 
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    if (saveError) {
+      return NextResponse.json({ error: saveError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: inserted });
+    return NextResponse.json({ success: true, data: saved });
   } catch (err) {
     console.error("[POST /api/careers/interview/role-report/generate]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

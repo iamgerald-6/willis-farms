@@ -39,6 +39,7 @@ import {
   FileText,
   Loader2,
   Mail,
+  RefreshCw,
   Search,
   UserPlus,
   X,
@@ -2128,10 +2129,10 @@ function RoleReportModal({
           ) : !reportRow ? (
             <div className="space-y-2">
               <p className="text-xs text-gray-500">
-                Generates one consolidated report for {selectedRole?.title ?? "this role"} — applicant
+                Generates a consolidated report for {selectedRole?.title ?? "this role"} — applicant
                 funnel numbers, constraints flagged in HR/panel notes, and a final hire recommendation
-                based on the current ranking. This can only be generated once per role; after that you
-                can edit it freely.
+                based on the current ranking. You can edit it freely afterward, and regenerate it again
+                any time the applicant pool changes.
               </p>
               <button
                 type="button"
@@ -2170,6 +2171,24 @@ function RoleReportModal({
                   <Download className="w-3.5 h-3.5" />
                   Download PDF
                 </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        "Regenerate this report from the current applicant pool? Any edits you've made will be discarded.",
+                      )
+                    ) {
+                      return;
+                    }
+                    generateMutation.mutate();
+                  }}
+                  disabled={generateMutation.isPending}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:underline disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${generateMutation.isPending ? "animate-spin" : ""}`} />
+                  {generateMutation.isPending ? "Regenerating…" : "Regenerate report"}
+                </button>
               </div>
 
               <div>
