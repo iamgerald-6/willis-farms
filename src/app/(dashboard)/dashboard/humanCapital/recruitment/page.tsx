@@ -988,7 +988,7 @@ function RecruitmentPageContent() {
   });
 
   // AI soft-rejects and HR-confirmed rejects live in the Rejects tab.
-  const mainApplications = useMemo(
+  const nonAiApplications = useMemo(
     () => (data ?? []).filter((a) => !isAiFlagged(a)),
     [data],
   );
@@ -997,8 +997,14 @@ function RecruitmentPageContent() {
     [data],
   );
   const approvalApplications = useMemo(
-    () => mainApplications.filter((a) => a.status === "evaluation"),
-    [mainApplications],
+    () => nonAiApplications.filter((a) => a.status === "evaluation"),
+    [nonAiApplications],
+  );
+  // Once an applicant's evaluation is finalized they move to the Approvals
+  // tab and no longer clutter the Applications tab.
+  const mainApplications = useMemo(
+    () => nonAiApplications.filter((a) => a.status !== "evaluation"),
+    [nonAiApplications],
   );
 
   // Cross-filtering: each field's option list is scoped by the OTHER active
