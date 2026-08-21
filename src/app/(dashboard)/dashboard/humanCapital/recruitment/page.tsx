@@ -2289,47 +2289,102 @@ function RoleReportModal({
 
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  Individual candidate reports
+                  Candidate summaries
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  This report combines each candidate&apos;s own comprehensive interview report with the
-                  role-level information above. Click a name to expand their full report.
+                  Everything needed to understand each candidate&apos;s interview without having sat in on
+                  it — panel, location, score, strengths, and weaknesses. The full individual report for
+                  each is available below if you want more detail.
                 </p>
-                {reportDraft.candidate_reports.length === 0 ? (
+                {reportDraft.candidate_summaries.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
                     No candidate completed the full interview for this role.
                   </p>
                 ) : (
-                  <div className="space-y-2">
-                    {reportDraft.candidate_reports.map((c) => (
-                      <div key={c.application_id} className="border border-gray-100 rounded-lg overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedCandidateId(expandedCandidateId === c.application_id ? null : c.application_id)
-                          }
-                          className="w-full flex items-center justify-between px-3 py-2.5 text-sm bg-gray-50 hover:bg-gray-100"
-                        >
-                          <span className="font-medium text-gray-900">
-                            {c.name} <span className="text-xs text-gray-400 font-normal">({c.reference_number})</span>
-                          </span>
-                          <span className="text-xs text-red-600 font-medium">
-                            {expandedCandidateId === c.application_id ? "Hide" : c.report ? "View report" : "No report"}
-                          </span>
-                        </button>
-                        {expandedCandidateId === c.application_id && (
-                          <div className="p-4 border-t border-gray-100">
-                            {c.report ? (
-                              <InterviewReportReadOnly report={c.report} />
-                            ) : (
-                              <p className="text-xs text-gray-400 italic">
-                                No individual comprehensive report was generated for this candidate.
+                  <div className="space-y-3">
+                    {reportDraft.candidate_summaries.map((c) => {
+                      const fullReport = reportDraft.candidate_reports.find(
+                        (r) => r.application_id === c.application_id,
+                      )?.report;
+                      return (
+                        <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{c.name}</p>
+                              <p className="text-xs text-gray-400">
+                                {c.reference_number} · {ROLE_REPORT_STATUS_LABEL[c.status] ?? c.status}
                               </p>
-                            )}
+                            </div>
+                            <span className="text-base font-bold text-gray-900">
+                              {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
+                              <span className="text-xs font-normal text-gray-400"> / 5</span>
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
+                            <div>
+                              <p className="text-gray-400 uppercase tracking-wide">Panel</p>
+                              <p className="text-gray-800 mt-0.5">{c.panel_names.length ? c.panel_names.join(", ") : "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 uppercase tracking-wide">Location</p>
+                              <p className="text-gray-800 mt-0.5">{c.location ?? "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 uppercase tracking-wide">Interview date</p>
+                              <p className="text-gray-800 mt-0.5">{c.interview_date ? formatDate(c.interview_date) : "—"}</p>
+                            </div>
+                          </div>
+                          {!c.has_individual_report ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No individual comprehensive report was generated for this candidate.
+                            </p>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-4 text-xs mb-2">
+                              <div>
+                                <p className="font-semibold text-green-700 uppercase tracking-wide mb-1">Strengths</p>
+                                {c.strengths.length ? (
+                                  <ul className="space-y-1">
+                                    {c.strengths.map((s, i) => (
+                                      <li key={i} className="text-gray-700">— {s}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-gray-400 italic">None noted.</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-semibold text-amber-700 uppercase tracking-wide mb-1">Weaknesses</p>
+                                {c.weaknesses.length ? (
+                                  <ul className="space-y-1">
+                                    {c.weaknesses.map((s, i) => (
+                                      <li key={i} className="text-gray-700">— {s}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-gray-400 italic">None noted.</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {fullReport && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedCandidateId(expandedCandidateId === c.application_id ? null : c.application_id)
+                              }
+                              className="text-xs font-medium text-red-600 hover:underline"
+                            >
+                              {expandedCandidateId === c.application_id ? "Hide full report" : "View full report"}
+                            </button>
+                          )}
+                          {expandedCandidateId === c.application_id && fullReport && (
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <InterviewReportReadOnly report={fullReport} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -222,13 +222,31 @@ export interface RoleInterviewReport {
     status: ApplicationStatus;
   }[];
   /**
-   * This role report is the individual reports plus the new role-level
-   * information above — so every completed candidate's full comprehensive
-   * report (executive summary, applicant/interview details, core
-   * competencies, key observations, final recommendation) is embedded here
-   * verbatim (their edited copy if HR saved one, otherwise the AI original).
-   * Null for a candidate who completed the interview but never had an
-   * individual report generated.
+   * The heart of "read this and know everything without having gone to the
+   * interviews": one compact, complete summary per candidate who completed
+   * the interview — pulled from their individual report where one exists
+   * (their edited copy if HR saved one, otherwise the AI original), with
+   * sensible fallbacks from the raw interview data where it doesn't.
+   */
+  candidate_summaries: {
+    application_id: string;
+    name: string;
+    reference_number: string;
+    status: ApplicationStatus;
+    panel_names: string[];
+    location: string | null;
+    interview_date: string | null;
+    combined_score: number | null;
+    strengths: string[];
+    weaknesses: string[];
+    /** True if this candidate never had an individual report generated — strengths/weaknesses may be empty as a result. */
+    has_individual_report: boolean;
+  }[];
+  /**
+   * Every completed candidate's full comprehensive report, verbatim (their
+   * edited copy if HR saved one, otherwise the AI original) — kept as
+   * drill-down detail behind candidate_summaries above, not the primary
+   * reading surface. Null for a candidate who never had one generated.
    */
   candidate_reports: {
     application_id: string;

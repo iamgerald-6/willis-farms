@@ -9,6 +9,7 @@ import {
   type JobApplication,
   type RoleInterviewReport,
 } from "@/lib/careers/types";
+import { stageMembers } from "@/lib/careers/panelInterview";
 
 // Generates the consolidated per-role hiring summary report once per role
 // (HR can edit freely afterward — see the PATCH handler in ../route.ts for
@@ -27,7 +28,7 @@ const ROLE_REPORT_TOOL = {
       executive_summary: {
         type: "string",
         description:
-          "A tight 3-6 sentence overview of the hiring round for this role: how many candidates were considered, how competitive the field was, and where things landed — the kind of overview a senior manager would want first.",
+          "A 4-7 sentence overview a senior manager could read on its own and know everything that happened in this hiring round without attending a single interview: how many candidates were considered, how competitive the field was, who the standout candidate is and the single biggest reason why, and where things currently stand.",
       },
       constraints: {
         type: "array",
@@ -38,7 +39,7 @@ const ROLE_REPORT_TOOL = {
       recommendation_rationale: {
         type: "string",
         description:
-          "2-4 sentences explaining the final hire recommendation, referencing the recommended candidate's ranking and standout points versus the others. If no candidate is currently recommendable (e.g. none are still awaiting a decision, or the field is empty), explain why not instead.",
+          "3-6 sentences making the explicit case for why the recommended candidate is the best choice — name their specific standout strengths, then directly contrast them against the next 1-2 highest-ranked candidates' specific weaknesses or gaps by name, so a reader who never sat in on the interviews understands exactly why this candidate won out. If no candidate is currently recommendable (e.g. none are still awaiting a decision, or the field is empty), explain why not instead.",
       },
     },
     required: ["executive_summary", "constraints", "recommendation_rationale"],
@@ -163,8 +164,38 @@ export async function POST(req: NextRequest) {
     // ones don't need a recommendation.
     const topUndecided = rankings.find((r) => r.status === "evaluation") ?? null;
 
-    // --- Embedded individual reports (this role report = the individual
-    // reports plus the role-level information above) ---------------------------
+    // --- Per-candidate summaries — the "know everything without having gone
+    // to the interviews" surface: panel, location, score, strengths,
+    // weaknesses, pulled straight from each candidate's own report where one
+    // exists, with fallbacks to the raw interview data where it doesn't. ------
+    const candidateSummaries = completedApplicants.map((a) => {
+      const formData = normalizeInterviewFormData(a.interview_form_data);
+      const report = formData.summary?.interview_report_edit ?? formData.summary?.interview_report ?? null;
+      const stage1Names = stageMembers(formData, 1).map((m) => m.name).filter(Boolean);
+      const stage2Names = stageMembers(formData, 2).map((m) => m.name).filter(Boolean);
+      return {
+        application_id: a.id,
+        name: a.full_name,
+        reference_number: a.reference_number,
+        status: a.status,
+        panel_names: report
+          ? report.applicant_details.panel_names
+          : Array.from(new Set([...stage1Names, ...stage2Names])),
+        location: report
+          ? report.applicant_details.location
+          : (formData.setup?.stage2_location ?? formData.setup?.location ?? null),
+        interview_date: report
+          ? report.applicant_details.interview_date
+          : (formData.setup?.stage2_scheduled_at ?? formData.setup?.interview_start_at ?? null),
+        combined_score: formData.summary?.total_weighted ?? null,
+        strengths: report?.key_observations.strengths ?? [],
+        weaknesses: report?.key_observations.weaknesses ?? [],
+        has_individual_report: !!report,
+      };
+    });
+
+    // --- Embedded individual reports — drill-down detail behind the summaries
+    // above, not the primary reading surface. -----------------------------------
     const candidateReports = completedApplicants.map((a) => {
       const formData = normalizeInterviewFormData(a.interview_form_data);
       return {
@@ -179,10 +210,12 @@ export async function POST(req: NextRequest) {
     const candidateBlocks = completedApplicants.map((a) => {
       const formData = normalizeInterviewFormData(a.interview_form_data);
       const report = formData.summary?.interview_report_edit ?? formData.summary?.interview_report;
+      const summary = candidateSummaries.find((s) => s.application_id === a.id);
       const lines = [
         `— ${a.full_name} (Ref ${a.reference_number}), status: ${a.status}, combined score: ${
           formData.summary?.total_weighted?.toFixed(2) ?? "—"
         }/5`,
+        `  Panel: ${summary?.panel_names.length ? summary.panel_names.join(", ") : "—"}. Location: ${summary?.location ?? "—"}.`,
       ];
       if (a.hr_notes?.trim()) lines.push(`  HR notes: ${a.hr_notes.trim()}`);
       if (report) {
@@ -201,7 +234,7 @@ export async function POST(req: NextRequest) {
     });
 
     const prompt = [
-      `You are writing a consolidated hiring summary for Wills Farms' Human Capital team, for the role "${roleTitle}".`,
+      `You are writing a consolidated hiring summary for Wills Farms' Human Capital team, for the role "${roleTitle}". The reader will not have attended any interviews — your job is to make sure they understand everything that matters from this report alone.`,
       `${completedFull} candidate(s) completed the full interview process for this role. Combined-score ranking (highest first):`,
       rankings
         .map((r) => `${r.rank}. ${r.name} (Ref ${r.reference_number}) — ${r.status}, score ${r.combined_score?.toFixed(2) ?? "—"}/5`)
@@ -209,9 +242,9 @@ export async function POST(req: NextRequest) {
       topUndecided
         ? `The highest-ranked candidate still awaiting a decision (Evaluation status) is ${topUndecided.name} (Ref ${topUndecided.reference_number}), score ${topUndecided.combined_score?.toFixed(2) ?? "—"}/5. Your recommendation should generally back this candidate unless the notes below give clear reason not to — in that case say so plainly.`
         : "No candidate for this role is currently awaiting a decision (Evaluation status) — say plainly that there is no one to recommend right now.",
-      "Per-candidate detail (HR notes and their own interview report, where one exists):",
+      "Per-candidate detail (panel, location, HR notes, and their own interview report, where one exists):",
       ...candidateBlocks,
-      "Using the record_role_interview_report tool, produce the executive summary, any constraints flagged in the notes above, and the recommendation rationale.",
+      "Using the record_role_interview_report tool: write the executive summary so it names the standout candidate and why; list any constraints flagged in the notes above; and in the recommendation rationale, explicitly compare the top candidate's specific strengths against the specific weaknesses or gaps of the next 1-2 highest-ranked candidates, by name, so the case for the recommendation is unambiguous.",
     ].join("\n\n");
 
     const message = await anthropic.messages.create({
@@ -254,6 +287,19 @@ export async function POST(req: NextRequest) {
         rank: r.rank,
         combined_score: r.combined_score,
         status: r.status as ApplicationStatus,
+      })),
+      candidate_summaries: candidateSummaries.map((s) => ({
+        application_id: s.application_id,
+        name: s.name,
+        reference_number: s.reference_number,
+        status: s.status,
+        panel_names: s.panel_names,
+        location: s.location,
+        interview_date: s.interview_date,
+        combined_score: s.combined_score,
+        strengths: s.strengths,
+        weaknesses: s.weaknesses,
+        has_individual_report: s.has_individual_report,
       })),
       candidate_reports: candidateReports,
       final_recommendation: {

@@ -82,6 +82,15 @@ const styles = StyleSheet.create({
   candidateRecLabel: { fontSize: 7.5, color: GRAY, textTransform: "uppercase", letterSpacing: 0.4 },
   candidateRecDecision: { fontSize: 11.5, fontWeight: 700, marginTop: 2 },
   candidateRecRationale: { fontSize: 8.5, color: DARK, lineHeight: 1.4, marginTop: 4 },
+
+  summaryCard: { border: `0.5pt solid ${BORDER}`, borderRadius: 6, padding: 10, marginBottom: 8 },
+  summaryHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 },
+  summaryName: { fontSize: 10.5, fontWeight: 700, color: DARK },
+  summaryRef: { fontSize: 7.5, color: GRAY, fontFamily: "Courier" },
+  summaryScore: { fontSize: 12, fontWeight: 700, color: RED },
+  summaryMetaRow: { flexDirection: "row", gap: 16, marginBottom: 6 },
+  summaryMetaLabel: { fontSize: 7, color: GRAY, textTransform: "uppercase", letterSpacing: 0.3 },
+  summaryMetaValue: { fontSize: 8.5, color: DARK, marginTop: 1 },
 });
 
 function fmtDate(iso: string | null) {
@@ -291,6 +300,68 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           ))
         )}
 
+        <Text style={styles.footer} fixed>
+          Wills Farms Ltd — Human Capital — Role Hiring Summary for {report.role_title}
+        </Text>
+      </Page>
+
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Candidate Summaries</Text>
+        <Text style={[styles.paragraph, { marginBottom: 10 }]}>
+          Everything needed to understand each candidate&apos;s interview without having sat in on it.
+        </Text>
+        {report.candidate_summaries.length === 0 ? (
+          <Text style={styles.emptyNote}>No candidate completed the full interview for this role.</Text>
+        ) : (
+          report.candidate_summaries.map((c) => (
+            <View key={c.application_id} style={styles.summaryCard} wrap={false}>
+              <View style={styles.summaryHeaderRow}>
+                <View>
+                  <Text style={styles.summaryName}>{c.name}</Text>
+                  <Text style={styles.summaryRef}>
+                    {c.reference_number} · {STATUS_LABEL[c.status] ?? c.status}
+                  </Text>
+                </View>
+                <Text style={styles.summaryScore}>
+                  {c.combined_score != null ? `${c.combined_score.toFixed(2)} / 5` : "—"}
+                </Text>
+              </View>
+              <View style={styles.summaryMetaRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.summaryMetaLabel}>Panel</Text>
+                  <Text style={styles.summaryMetaValue}>{c.panel_names.length ? c.panel_names.join(", ") : "—"}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.summaryMetaLabel}>Location</Text>
+                  <Text style={styles.summaryMetaValue}>{c.location ?? "—"}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.summaryMetaLabel}>Interview date</Text>
+                  <Text style={styles.summaryMetaValue}>{fmtDate(c.interview_date)}</Text>
+                </View>
+              </View>
+              {!c.has_individual_report ? (
+                <Text style={styles.emptyNote}>No individual comprehensive report was generated for this candidate.</Text>
+              ) : (
+                <View style={{ flexDirection: "row", gap: 16 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 7.5, fontWeight: 700, color: GREEN, marginBottom: 3, textTransform: "uppercase" }}>
+                      Strengths
+                    </Text>
+                    <Bullets items={c.strengths} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 7.5, fontWeight: 700, color: AMBER, marginBottom: 3, textTransform: "uppercase" }}>
+                      Weaknesses
+                    </Text>
+                    <Bullets items={c.weaknesses} />
+                  </View>
+                </View>
+              )}
+            </View>
+          ))
+        )}
+
         <Text style={styles.sectionTitle}>Final Recommendation</Text>
         <View style={styles.recommendationBox} wrap={false}>
           <Text style={styles.recommendationLabel}>Recommended candidate</Text>
@@ -302,6 +373,17 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           <Text style={styles.recommendationRationale}>{report.final_recommendation.rationale}</Text>
         </View>
 
+        <Text style={styles.footer} fixed>
+          Wills Farms Ltd — Human Capital — Role Hiring Summary for {report.role_title}
+        </Text>
+      </Page>
+
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.sectionTitle}>Appendix — Full Individual Reports</Text>
+        <Text style={[styles.paragraph, { marginBottom: 10 }]}>
+          The complete comprehensive report for each candidate above, for anyone who wants the full detail
+          behind the summaries.
+        </Text>
         <Text style={styles.footer} fixed>
           Wills Farms Ltd — Human Capital — Role Hiring Summary for {report.role_title}
         </Text>
