@@ -1,31 +1,34 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextApiRequest, NextApiResponse } from "next";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 import { renderInterviewReportPdf } from "@/lib/reports/renderInterviewReportPdf";
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 
+// This lives in the Pages Router (src/pages/api/...) rather than the App
+// Router, for the same reason as src/pages/api/task-manager/reports/send.tsx:
+// @react-pdf/renderer's renderToBuffer() crashes with "Minified React error
+// #31" specifically inside Next's App Router request handling (unresolved
+// upstream issue — see https://github.com/diegomura/react-pdf/issues/2994).
 // Emails the interview report PDF (whichever version is current) to an
 // address HR provides.
-export async function POST(req: NextRequest) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    return res.status(500).json({ error: "Server configuration error" });
   }
   if (!process.env.RESEND_API_KEY) {
-    return NextResponse.json({ error: "RESEND_API_KEY is not configured" }, { status: 500 });
+    return res.status(500).json({ error: "RESEND_API_KEY is not configured" });
   }
 
   try {
-    const { application_id, to } = (await req.json()) as {
-      application_id?: string;
-      to?: string;
-    };
-
+    const { application_id, to } = req.body ?? {};
     if (!application_id || !to) {
-      return NextResponse.json(
-        { error: "application_id and to are required." },
-        { status: 400 },
-      );
+      return res.status(400).json({ error: "application_id and to are required." });
     }
 
     const { data: application, error: fetchError } = await supabaseAdmin
@@ -35,20 +38,14 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (fetchError || !application) {
-      return NextResponse.json(
-        { error: fetchError?.message ?? "Application not found." },
-        { status: 404 },
-      );
+      return res.status(404).json({ error: fetchError?.message ?? "Application not found." });
     }
 
     const formData = normalizeInterviewFormData(application.interview_form_data);
     const report = formData.summary?.interview_report_edit ?? formData.summary?.interview_report;
 
     if (!report) {
-      return NextResponse.json(
-        { error: "No interview report has been generated for this applicant yet." },
-        { status: 400 },
-      );
+      return res.status(400).json({ error: "No interview report has been generated for this applicant yet." });
     }
 
     const pdfBuffer = await renderInterviewReportPdf(report);
@@ -82,12 +79,12 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 502 });
+      return res.status(502).json({ error: error.message });
     }
 
-    return NextResponse.json({ success: true });
+    return res.status(200).json({ success: true });
   } catch (err) {
     console.error("[POST /api/careers/interview/report/email]", err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return res.status(500).json({ error: "Server error" });
   }
 }
