@@ -96,8 +96,10 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Executive Summary</Text>
-        <Text style={styles.paragraph}>{report.executive_summary}</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>Executive Summary</Text>
+          <Text style={styles.paragraph}>{report.executive_summary}</Text>
+        </View>
 
         <Text style={styles.sectionTitle}>Applicant &amp; Interview Details</Text>
         <View style={styles.detailsGrid}>
@@ -142,8 +144,10 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
           ))
         )}
 
-        <Text style={styles.sectionTitle}>Key Observations</Text>
-        <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.key_observations.summary}</Text>
+        <View wrap={false}>
+          <Text style={styles.sectionTitle}>Key Observations</Text>
+          <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.key_observations.summary}</Text>
+        </View>
 
         <View style={{ flexDirection: "row", gap: 20 }}>
           <View style={{ flex: 1 }}>

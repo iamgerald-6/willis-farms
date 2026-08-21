@@ -58,7 +58,7 @@ const REPORT_TOOL = {
       },
       observations_summary: {
         type: "string",
-        description: "2-4 sentences synthesising the strengths and weaknesses into an overall read of the candidate's fit, consistency across graders, and any disagreement worth flagging.",
+        description: "2-4 complete sentences synthesising the strengths and weaknesses into an overall read of the candidate's fit, consistency across graders, and any disagreement worth flagging. Every sentence must be fully finished — never trail off or stop mid-sentence.",
       },
       recommendation_decision: {
         type: "string",
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
 
     const message = await anthropic.messages.create({
       model: TASK_MANAGER_AI_MODEL,
-      max_tokens: 2000,
+      max_tokens: 3000,
       tools: [REPORT_TOOL],
       tool_choice: { type: "tool", name: "record_interview_report" },
       messages: [{ role: "user", content: prompt }],
