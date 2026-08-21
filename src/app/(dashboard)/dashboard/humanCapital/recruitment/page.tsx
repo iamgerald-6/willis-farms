@@ -15,6 +15,8 @@ import {
   type JobApplication,
 } from "@/lib/careers/types";
 import {
+  canHrChangeStatus,
+  getAllowedHrStatusOptions,
   isAwaitingAiScreening,
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
@@ -110,7 +112,12 @@ function ApplicationDetail({
     setHrNotes(application.hr_notes ?? "");
   }, [application]);
 
+  const allowedStatusOptions = useMemo(
+    () => getAllowedHrStatusOptions(application) ?? [],
+    [application],
+  );
   const awaitingAiScreening = isAwaitingAiScreening(application);
+  const statusEditable = canHrChangeStatus(application);
   const canOpenInterviewGuide = INTERVIEW_GUIDE_STATUSES.includes(application.status);
 
   const decision = application.interview_form_data?.summary?.decision;
@@ -177,6 +184,41 @@ function ApplicationDetail({
       status,
       hr_notes: hrNotes,
     });
+  };
+
+  // Shortlisted applications get two direct-action buttons (Reject /
+  // Interview) instead of the general status dropdown — no separate "Save
+  // changes" click needed, the decision applies immediately. Uses its own
+  // mutation (rather than `mutation` above) so the modal stays open and
+  // refreshes in place afterward, instead of closing — moving to Interview
+  // should immediately make "Open interview guide" available.
+  const quickStatusMutation = useMutation({
+    mutationFn: (next: ApplicationStatus) =>
+      api.patch("/careers/applications", {
+        id: application.id,
+        status: next,
+        hr_notes: hrNotes,
+      }),
+    onSuccess: async (_res, next) => {
+      toast.success(
+        next === "rejected"
+          ? "Moved to Rejects."
+          : "Moved to Interview — you can now open the interview guide.",
+      );
+      await onRefreshApplication();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Update failed.");
+    },
+  });
+
+  const applyQuickStatus = (next: ApplicationStatus) => {
+    const validationError = validateHrStatusChange(application, next);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    quickStatusMutation.mutate(next);
   };
 
   return (
@@ -278,6 +320,18 @@ function ApplicationDetail({
                 <ApplicationFormReview formData={application.application_form_data} />
               )}
 
+            {application.ai_screening && application.status !== "evaluation" && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                  AI screening — {application.ai_screening.score}% match
+                </p>
+                <p className="text-sm text-purple-900">{application.ai_screening.summary}</p>
+                <p className="text-xs text-purple-500 mt-2">
+                  Screened {formatDate(application.ai_screening.screened_at)}
+                </p>
+              </div>
+            )}
+
             {awaitingAiScreening && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-3">
                 <p className="text-sm text-blue-900">
@@ -299,6 +353,78 @@ function ApplicationDetail({
                     "Generate shortlisting"
                   )}
                 </button>
+              </div>
+            )}
+
+            {application.status !== "evaluation" && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  Update status
+                </label>
+                {application.status === "offer" ? (
+                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    {STATUS_LABELS.offer} — set automatically when an offer is made.
+                  </p>
+                ) : awaitingAiScreening ? (
+                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    {STATUS_LABELS.applied} — status unlocks after AI shortlisting.
+                  </p>
+                ) : !statusEditable ? (
+                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    {STATUS_LABELS[application.status]}
+                  </p>
+                ) : application.status === "shortlisted" ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyQuickStatus("rejected")}
+                      disabled={quickStatusMutation.isPending}
+                      className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickStatus("interview")}
+                      disabled={quickStatusMutation.isPending}
+                      className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      Interview
+                    </button>
+                  </div>
+                ) : application.status === "interview" ? (
+                  <button
+                    type="button"
+                    onClick={() => applyQuickStatus("rejected")}
+                    disabled={quickStatusMutation.isPending}
+                    className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                ) : (
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {allowedStatusOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {application.status === "shortlisted" && statusEditable && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Reject to send this application to the Rejects tab, or move to Interview to
+                    open the interview guide.
+                  </p>
+                )}
+                {application.status === "under_review" && application.ai_screening && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Shortlist to override the AI recommendation, or confirm Rejected.
+                  </p>
+                )}
               </div>
             )}
 
