@@ -103,6 +103,7 @@ function ApplicationDetail({
     application.interview_form_data?.summary?.decision ?? "",
   );
   const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
+  const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -587,15 +588,26 @@ function ApplicationDetail({
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-gray-900">Interview Report</p>
                   {reportDraft && (
-                    <a
-                      href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Download PDF
-                    </a>
+                    <div className="flex items-center gap-3">
+                      {application.interview_form_data?.summary?.interview_report && (
+                        <button
+                          type="button"
+                          onClick={() => setShowOriginalReportModal(true)}
+                          className="text-xs font-medium text-gray-600 hover:underline"
+                        >
+                          View original AI report
+                        </button>
+                      )}
+                      <a
+                        href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download PDF
+                      </a>
+                    </div>
                   )}
                 </div>
 
@@ -634,8 +646,8 @@ function ApplicationDetail({
                         onChange={(e) =>
                           setReportDraft({ ...reportDraft, executive_summary: e.target.value })
                         }
-                        rows={3}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        rows={6}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
                       />
                     </div>
 
@@ -774,8 +786,8 @@ function ApplicationDetail({
                                 next[i] = { ...next[i], assessment: e.target.value };
                                 setReportDraft({ ...reportDraft, core_competencies: next });
                               }}
-                              rows={2}
-                              className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                              rows={4}
+                              className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
                             />
                           </div>
                         ))}
@@ -785,47 +797,111 @@ function ApplicationDetail({
                     <div className="grid sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
-                          Strengths (one per line)
+                          Strengths
                         </label>
-                        <textarea
-                          value={reportDraft.key_observations.strengths.join("\n")}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              key_observations: {
-                                ...reportDraft.key_observations,
-                                strengths: e.target.value
-                                  .split("\n")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean),
-                              },
-                            })
-                          }
-                          rows={4}
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
-                        />
+                        <div className="space-y-1.5">
+                          {reportDraft.key_observations.strengths.map((s, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <span className="text-gray-400 text-xs mt-2">—</span>
+                              <textarea
+                                value={s}
+                                onChange={(e) => {
+                                  const next = [...reportDraft.key_observations.strengths];
+                                  next[i] = e.target.value;
+                                  setReportDraft({
+                                    ...reportDraft,
+                                    key_observations: { ...reportDraft.key_observations, strengths: next },
+                                  });
+                                }}
+                                rows={2}
+                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = reportDraft.key_observations.strengths.filter((_, idx) => idx !== i);
+                                  setReportDraft({
+                                    ...reportDraft,
+                                    key_observations: { ...reportDraft.key_observations, strengths: next },
+                                  });
+                                }}
+                                className="text-gray-300 hover:text-red-500 mt-2"
+                                title="Remove"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setReportDraft({
+                                ...reportDraft,
+                                key_observations: {
+                                  ...reportDraft.key_observations,
+                                  strengths: [...reportDraft.key_observations.strengths, ""],
+                                },
+                              })
+                            }
+                            className="text-xs font-medium text-red-600 hover:underline"
+                          >
+                            + Add strength
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
-                          Weaknesses (one per line)
+                          Weaknesses
                         </label>
-                        <textarea
-                          value={reportDraft.key_observations.weaknesses.join("\n")}
-                          onChange={(e) =>
-                            setReportDraft({
-                              ...reportDraft,
-                              key_observations: {
-                                ...reportDraft.key_observations,
-                                weaknesses: e.target.value
-                                  .split("\n")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean),
-                              },
-                            })
-                          }
-                          rows={4}
-                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
-                        />
+                        <div className="space-y-1.5">
+                          {reportDraft.key_observations.weaknesses.map((s, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <span className="text-gray-400 text-xs mt-2">—</span>
+                              <textarea
+                                value={s}
+                                onChange={(e) => {
+                                  const next = [...reportDraft.key_observations.weaknesses];
+                                  next[i] = e.target.value;
+                                  setReportDraft({
+                                    ...reportDraft,
+                                    key_observations: { ...reportDraft.key_observations, weaknesses: next },
+                                  });
+                                }}
+                                rows={2}
+                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = reportDraft.key_observations.weaknesses.filter((_, idx) => idx !== i);
+                                  setReportDraft({
+                                    ...reportDraft,
+                                    key_observations: { ...reportDraft.key_observations, weaknesses: next },
+                                  });
+                                }}
+                                className="text-gray-300 hover:text-red-500 mt-2"
+                                title="Remove"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setReportDraft({
+                                ...reportDraft,
+                                key_observations: {
+                                  ...reportDraft.key_observations,
+                                  weaknesses: [...reportDraft.key_observations.weaknesses, ""],
+                                },
+                              })
+                            }
+                            className="text-xs font-medium text-red-600 hover:underline"
+                          >
+                            + Add weakness
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -841,8 +917,8 @@ function ApplicationDetail({
                             key_observations: { ...reportDraft.key_observations, summary: e.target.value },
                           })
                         }
-                        rows={3}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        rows={6}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
                       />
                     </div>
 
@@ -885,8 +961,8 @@ function ApplicationDetail({
                             },
                           })
                         }
-                        rows={3}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        rows={6}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
                         placeholder="Rationale"
                       />
                     </div>
@@ -1101,7 +1177,129 @@ function ApplicationDetail({
           </div>
         </div>
       )}
+
+      {showOriginalReportModal && application.interview_form_data?.summary?.interview_report && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowOriginalReportModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">Original AI report</h2>
+              <button
+                type="button"
+                onClick={() => setShowOriginalReportModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0">
+              <p className="text-xs text-gray-400 mb-4">
+                This is the report exactly as AI generated it — unaffected by any edits made below.
+              </p>
+              <InterviewReportReadOnly report={application.interview_form_data.summary.interview_report} />
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+// Read-only rendering of an interview report — used for the "View original
+// AI report" comparison modal.
+function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
+  const decisionLabel = PANEL_DECISIONS.find((d) => d.value === report.final_recommendation.decision)?.label;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Executive summary</p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">{report.executive_summary}</p>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Applicant &amp; interview details
+        </p>
+        <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-gray-700">
+          <p><span className="text-gray-400">Candidate: </span>{report.applicant_details.name}</p>
+          <p><span className="text-gray-400">Role: </span>{report.applicant_details.role}</p>
+          <p className="sm:col-span-2">
+            <span className="text-gray-400">Panel: </span>
+            {report.applicant_details.panel_names.length ? report.applicant_details.panel_names.join(", ") : "—"}
+          </p>
+          <p>
+            <span className="text-gray-400">Date: </span>
+            {report.applicant_details.interview_date ? formatDate(report.applicant_details.interview_date) : "—"}
+          </p>
+          <p><span className="text-gray-400">Location: </span>{report.applicant_details.location ?? "—"}</p>
+          <p>
+            <span className="text-gray-400">Overall rating: </span>
+            {report.applicant_details.overall_rating != null
+              ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
+              : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Core competencies</p>
+        <div className="space-y-2">
+          {report.core_competencies.map((c, i) => (
+            <div key={i} className="border border-gray-100 rounded-lg p-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-gray-800">{c.area}</p>
+                <p className="text-xs text-gray-500">{c.score != null ? `${c.score.toFixed(2)}/5` : "—"}</p>
+              </div>
+              <p className="text-xs text-gray-600 text-justify leading-relaxed">{c.assessment}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Strengths</p>
+          <ul className="space-y-1">
+            {report.key_observations.strengths.map((s, i) => (
+              <li key={i} className="flex gap-1.5 text-xs text-gray-700">
+                <span className="text-gray-400">—</span>
+                <span className="text-justify">{s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Weaknesses</p>
+          <ul className="space-y-1">
+            {report.key_observations.weaknesses.map((s, i) => (
+              <li key={i} className="flex gap-1.5 text-xs text-gray-700">
+                <span className="text-gray-400">—</span>
+                <span className="text-justify">{s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Key observations summary</p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">{report.key_observations.summary}</p>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Final recommendation</p>
+        <p className="text-sm font-semibold text-gray-900">{decisionLabel}</p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed mt-1">
+          {report.final_recommendation.rationale}
+        </p>
+      </div>
+    </div>
   );
 }
 
