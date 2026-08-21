@@ -59,7 +59,7 @@ export default function GraderSubmissionModal({
             <p className="text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-xl p-4">
               No submission yet.
             </p>
-          ) : (
+          ) : stage === 1 ? (
             <>
               <section>
                 <h3 className="text-sm font-bold text-gray-900 mb-3">Section A — Screening</h3>
@@ -114,6 +114,25 @@ export default function GraderSubmissionModal({
                 </div>
               </section>
             </>
+          ) : (
+            <section>
+              <h3 className="text-sm font-bold text-gray-900 mb-3">
+                Section C — Scenarios / practical
+              </h3>
+              <div className="space-y-4">
+                {guide.scenarios.map((s) => (
+                  <RatingRow
+                    key={s.id}
+                    label={`${s.id} — ${s.title}`}
+                    lookFor={s.observe}
+                    value={submission.scenario_ratings?.[s.id]?.rating ?? null}
+                    notes={submission.scenario_ratings?.[s.id]?.notes ?? ""}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                ))}
+              </div>
+            </section>
           )}
         </div>
       </div>

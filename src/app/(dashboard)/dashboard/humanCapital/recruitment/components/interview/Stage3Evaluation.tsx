@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   computeWeightedScore,
   RATING_LABELS,
@@ -9,11 +10,19 @@ import {
   scoreStanding,
   standingLabel,
 } from "@/lib/careers/panelDecision";
-import type { InterviewFormData } from "@/lib/careers/types";
+import type { InterviewFormData, StageSubmissionData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { gradersForStage, stageAverage } from "@/lib/careers/panelInterview";
+import {
+  gradersForStage,
+  getSubmission,
+  stageAverage,
+  type GraderResult,
+} from "@/lib/careers/panelInterview";
 import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { StageInfoBanner } from "./shared";
+import GraderSubmissionModal from "./GraderSubmissionModal";
+
+type SelectedGrader = { grader: GraderResult; stage: 1 | 2 };
 
 const RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -31,10 +40,12 @@ function GraderMatrix({
   formData,
   guide,
   stage,
+  onGraderClick,
 }: {
   formData: InterviewFormData;
   guide: InterviewGuideConfig;
   stage: 1 | 2;
+  onGraderClick: (grader: GraderResult, stage: 1 | 2) => void;
 }) {
   const graders = gradersForStage(formData, guide, stage);
   const avg = stageAverage(formData, guide, stage);
@@ -55,9 +66,20 @@ function GraderMatrix({
         </thead>
         <tbody>
           {graders.map((g) => (
-            <tr key={g.id} className="border-b border-gray-100">
+            <tr
+              key={g.id}
+              onClick={() => g.submitted_at && onGraderClick(g, stage)}
+              className={`border-b border-gray-100 ${
+                g.submitted_at ? "cursor-pointer hover:bg-gray-50" : ""
+              }`}
+              title={g.submitted_at ? "View filled form" : undefined}
+            >
               <td className="px-4 py-2 text-gray-900">
-                {g.label}
+                {g.submitted_at ? (
+                  <span className="text-red-700 hover:underline">{g.label}</span>
+                ) : (
+                  g.label
+                )}
                 <span className="text-xs text-gray-400 ml-1">({g.role})</span>
               </td>
               <td className="px-4 py-2 text-center font-medium">
@@ -132,6 +154,14 @@ export default function Stage3Evaluation({
   const standingClass = STANDING_CLASSES[standing];
   const observedDqs = observedDisqualifiers(formData, guide.disqualifiers);
 
+  const [selected, setSelected] = useState<SelectedGrader | null>(null);
+  const submissionForGrader = (g: GraderResult, stage: 1 | 2): StageSubmissionData | undefined => {
+    if (g.role === "hr") {
+      return stage === 1 ? formData.hr_submission?.stage1 : formData.hr_submission?.stage2;
+    }
+    return getSubmission(formData, g.id, stage);
+  };
+
   return (
     <div className="space-y-8">
       <StageInfoBanner
@@ -143,12 +173,22 @@ export default function Stage3Evaluation({
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 1 scores</h3>
-        <GraderMatrix formData={formData} guide={guide} stage={1} />
+        <GraderMatrix
+          formData={formData}
+          guide={guide}
+          stage={1}
+          onGraderClick={(grader, stage) => setSelected({ grader, stage })}
+        />
       </section>
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 2 scores</h3>
-        <GraderMatrix formData={formData} guide={guide} stage={2} />
+        <GraderMatrix
+          formData={formData}
+          guide={guide}
+          stage={2}
+          onGraderClick={(grader, stage) => setSelected({ grader, stage })}
+        />
       </section>
 
       {observedDqs.length > 0 && (
@@ -346,6 +386,17 @@ export default function Stage3Evaluation({
           ))}
         </div>
       </section>
+
+      {selected && (
+        <GraderSubmissionModal
+          guide={guide}
+          graderLabel={selected.grader.label}
+          graderRole={selected.grader.role}
+          stage={selected.stage}
+          submission={submissionForGrader(selected.grader, selected.stage)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
