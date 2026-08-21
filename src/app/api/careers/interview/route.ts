@@ -49,7 +49,14 @@ type InterviewAction =
   | "schedule_stage2"
   | "complete_stage2"
   | "finalize"
-  | "confirm_decision";
+  | "confirm_decision"
+  | "reconsider_decision";
+
+// confirm_decision runs while status is "evaluation" and reconsider_decision
+// runs while status is "hold" or "rejected" — neither is in INTERVIEW_STATUSES
+// (which gates opening/editing the interview guide itself), so both are
+// exempted from that guard below.
+const DECISION_ACTIONS = new Set<InterviewAction>(["confirm_decision", "reconsider_decision"]);
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -144,7 +151,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!INTERVIEW_STATUSES.has(application.status)) {
+    if (!DECISION_ACTIONS.has(action) && !INTERVIEW_STATUSES.has(application.status)) {
       return NextResponse.json(
         {
           error:
@@ -566,6 +573,66 @@ export async function POST(req: NextRequest) {
           );
         }
       } else if (decision === "do_not_hire") {
+        const rejectResult = await sendRejectionEmail({
+          candidateName: application.full_name,
+          candidateEmail: application.email,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+        });
+        if (!rejectResult.sent) {
+          emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
+        }
+      }
+    } else if (action === "reconsider_decision") {
+      // Second look at an applicant who already went through the full
+      // interview evaluation and was confirmed Hold/Reserve or Do not hire.
+      // Only reachable from those two states — a fresh "rejected" applicant
+      // who never went through evaluation (e.g. an early AI reject) is not
+      // eligible, since they never have a confirmed evaluation decision.
+      const priorSummary = normalizeInterviewFormData(application.interview_form_data).summary;
+      const eligible =
+        !!priorSummary?.decision_confirmed_at &&
+        ((application.status === "hold" && priorSummary.decision === "hold") ||
+          (application.status === "rejected" && priorSummary.decision === "do_not_hire"));
+
+      if (!eligible) {
+        return NextResponse.json(
+          { error: "This applicant is not eligible for reconsideration." },
+          { status: 400 },
+        );
+      }
+
+      const newDecision = merged.summary?.decision;
+      if (newDecision !== "hire" && newDecision !== "do_not_hire") {
+        return NextResponse.json(
+          { error: "Invalid reconsideration decision." },
+          { status: 400 },
+        );
+      }
+      if (application.status === "rejected" && newDecision !== "hire") {
+        return NextResponse.json(
+          { error: "A rejected applicant can only be reconsidered as Hire." },
+          { status: 400 },
+        );
+      }
+
+      merged = {
+        ...merged,
+        summary: {
+          ...merged.summary,
+          decision: newDecision,
+          decision_confirmed_at: new Date().toISOString(),
+          decision_confirmed_by: submitted_by ?? undefined,
+        },
+      };
+      updates.interview_form_data = merged;
+      // Reconsidered hires move to "offer" rather than straight to
+      // "onboarding" — the offer-status flow (and its own interview report
+      // behaviour) is a separate step to be defined later, so no onboarding
+      // email is sent here.
+      updates.status = newDecision === "hire" ? "offer" : "rejected";
+
+      if (newDecision === "do_not_hire") {
         const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
           candidateEmail: application.email,

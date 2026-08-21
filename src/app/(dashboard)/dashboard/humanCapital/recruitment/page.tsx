@@ -105,8 +105,12 @@ function ApplicationDetail({
   const [selectedDecision, setSelectedDecision] = useState<PanelDecision | "">(
     application.interview_form_data?.summary?.decision ?? "",
   );
+  const [selectedReconsiderDecision, setSelectedReconsiderDecision] = useState<
+    "hire" | "do_not_hire" | ""
+  >("");
   const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
+  const [showEditedReportModal, setShowEditedReportModal] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
   const [selectedGraderView, setSelectedGraderView] = useState<
     { grader: GraderResult; stage: 1 | 2 } | null
@@ -132,6 +136,7 @@ function ApplicationDetail({
     setStatus(application.status);
     setHrNotes(application.hr_notes ?? "");
     setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
+    setSelectedReconsiderDecision("");
     setReportDraft(existingReport);
     // existingReport is derived fresh from `application` every render — depending on
     // `application` alone (not existingReport, which is a new object identity each
@@ -166,7 +171,17 @@ function ApplicationDetail({
   const canConfirmOutcome =
     !!application.interview_submitted_at && !decisionConfirmed;
   const hasGeneratedReport = !!application.interview_form_data?.summary?.interview_report;
+  const hasEditedReport = !!application.interview_form_data?.summary?.interview_report_edit;
   const reportEditLog = application.interview_form_data?.summary?.interview_report_edit_log ?? [];
+  // True only for applicants who already went through the full interview
+  // evaluation and were confirmed Hold/Reserve or Do not hire — not for a
+  // plain "hold"/"rejected" reached some other way (e.g. directly from
+  // Shortlisted, or an early AI reject). These are the ones HR can take a
+  // second look at from the Rejects tab.
+  const canReconsider =
+    !!decisionConfirmed &&
+    ((application.status === "hold" && decision === "hold") ||
+      (application.status === "rejected" && decision === "do_not_hire"));
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -188,6 +203,34 @@ function ApplicationDetail({
         toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
       } else {
         toast.success("Outcome confirmed.");
+      }
+      onUpdated();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Confirm failed.");
+    },
+  });
+
+  const reconsiderMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview", {
+        application_id: application.id,
+        interview_form_data: {
+          ...application.interview_form_data,
+          summary: {
+            ...application.interview_form_data?.summary,
+            decision: selectedReconsiderDecision,
+          },
+        },
+        submitted_by: adminId,
+        action: "reconsider_decision",
+      }),
+    onSuccess: (res) => {
+      const warnings = res.data.email_warnings as string[] | undefined;
+      if (warnings?.length) {
+        toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
+      } else {
+        toast.success("Outcome updated.");
       }
       onUpdated();
     },
@@ -470,7 +513,7 @@ function ApplicationDetail({
               </div>
             )}
 
-            {application.status !== "evaluation" && (
+            {application.status !== "evaluation" && !canReconsider && (
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Update status
@@ -1031,6 +1074,50 @@ function ApplicationDetail({
               </div>
             )}
 
+            {canReconsider && hasGeneratedReport && (
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
+                <p className="text-sm font-semibold text-gray-900">Interview Report</p>
+                <p className="text-xs text-gray-500">
+                  This applicant&apos;s outcome has already been confirmed, so the report is
+                  shown as reference links rather than an editable form.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowOriginalReportModal(true)}
+                    className="text-xs font-medium text-gray-600 hover:underline"
+                  >
+                    View AI-generated report
+                  </button>
+                  {hasEditedReport && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEditedReportModal(true)}
+                      className="text-xs font-medium text-gray-600 hover:underline"
+                    >
+                      View HR-edited report
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowPanelResponses(true)}
+                    className="text-xs font-medium text-gray-600 hover:underline"
+                  >
+                    View all panel responses
+                  </button>
+                  <a
+                    href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download PDF
+                  </a>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                 HR notes (internal)
@@ -1095,6 +1182,68 @@ function ApplicationDetail({
                     : selectedDecision
                       ? `Confirm: ${PANEL_DECISIONS.find((d) => d.value === selectedDecision)?.label}`
                       : "Select an outcome to confirm"}
+                </button>
+              </div>
+            )}
+
+            {canReconsider && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4 space-y-3">
+                <p className="text-sm font-semibold text-indigo-900">
+                  Reconsider outcome
+                </p>
+                <p className="text-xs text-indigo-800">
+                  This applicant already completed the full interview process and was confirmed{" "}
+                  {application.status === "hold" ? "Hold / Reserve" : "Do not hire"}.{" "}
+                  {application.status === "hold"
+                    ? "Choose Hire to move them to Offer, or Reject to confirm rejection."
+                    : "Choose Hire to move them to Offer."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReconsiderDecision("hire")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                      selectedReconsiderDecision === "hire"
+                        ? "bg-indigo-800 text-white border-indigo-800"
+                        : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
+                    }`}
+                  >
+                    Hire
+                  </button>
+                  {application.status === "hold" && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReconsiderDecision("do_not_hire")}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                        selectedReconsiderDecision === "do_not_hire"
+                          ? "bg-indigo-800 text-white border-indigo-800"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300"
+                      }`}
+                    >
+                      Reject
+                    </button>
+                  )}
+                </div>
+                {selectedReconsiderDecision && (
+                  <p className="text-xs text-indigo-700">
+                    {selectedReconsiderDecision === "hire"
+                      ? "Moves this applicant to Offer status. No email is sent at this step."
+                      : "Confirming rejection sends a professional decline email and moves them to Rejected."}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => reconsiderMutation.mutate()}
+                  disabled={reconsiderMutation.isPending || !selectedReconsiderDecision}
+                  className="w-full py-2.5 bg-indigo-700 text-white text-sm font-medium rounded-lg hover:bg-indigo-800 disabled:opacity-60"
+                >
+                  {reconsiderMutation.isPending
+                    ? "Confirming…"
+                    : selectedReconsiderDecision === "hire"
+                      ? "Confirm: Move to Offer"
+                      : selectedReconsiderDecision === "do_not_hire"
+                        ? "Confirm: Reject"
+                        : "Select an outcome to confirm"}
                 </button>
               </div>
             )}
@@ -1229,6 +1378,35 @@ function ApplicationDetail({
                 This is the report exactly as AI generated it — unaffected by any edits made below.
               </p>
               <InterviewReportReadOnly report={application.interview_form_data.summary.interview_report} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditedReportModal && application.interview_form_data?.summary?.interview_report_edit && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowEditedReportModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">HR-edited report</h2>
+              <button
+                type="button"
+                onClick={() => setShowEditedReportModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0">
+              <p className="text-xs text-gray-400 mb-4">
+                This is HR&apos;s most recently saved edit of the report.
+              </p>
+              <InterviewReportReadOnly report={application.interview_form_data.summary.interview_report_edit} />
             </div>
           </div>
         </div>
@@ -1568,6 +1746,7 @@ function RejectsTab({
 }) {
   const pending = applications.filter((a) => a.status === "under_review");
   const confirmed = applications.filter((a) => a.status === "rejected");
+  const held = applications.filter((a) => a.status === "hold");
 
   const renderRow = (a: JobApplication) => (
     <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
@@ -1646,9 +1825,10 @@ function RejectsTab({
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
-        Applications the AI scored below the shortlist threshold land here for HR review.
-        Open each one and either shortlist it if you disagree with the AI, or confirm
-        Rejected — confirmed rejects stay listed here rather than being deleted.
+        Applications the AI scored below the shortlist threshold land here for HR review, along
+        with applicants confirmed Hold/Reserve or Do not hire after their full interview
+        evaluation. Nothing here is deleted — open one to review it, or reconsider a Hold/Reserve
+        or Do-not-hire outcome now that the process is complete.
       </div>
 
       <div>
@@ -1656,6 +1836,13 @@ function RejectsTab({
           Awaiting your review ({pending.length})
         </h3>
         {renderTable(pending, "Nothing waiting on your review.")}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">
+          Hold / Reserve ({held.length})
+        </h3>
+        {renderTable(held, "No applicants on hold.")}
       </div>
 
       <div>
@@ -1782,6 +1969,20 @@ function ApprovalsTab({
   );
 }
 
+// True for applicants who completed the full interview evaluation and were
+// confirmed Hold/Reserve or Do not hire — these move into the Rejects tab
+// (rather than staying in the main Applications list) so HR can review and
+// reconsider them there. Mirrors the `canReconsider` check in ApplicationDetail.
+function isEvaluationOutcome(a: JobApplication): boolean {
+  const decision = a.interview_form_data?.summary?.decision;
+  const confirmedAt = a.interview_form_data?.summary?.decision_confirmed_at;
+  return (
+    !!confirmedAt &&
+    ((a.status === "hold" && decision === "hold") ||
+      (a.status === "rejected" && decision === "do_not_hire"))
+  );
+}
+
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
@@ -1842,13 +2043,14 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  // AI soft-rejects and HR-confirmed rejects live in the Rejects tab.
+  // AI soft-rejects, HR-confirmed rejects, and evaluation Hold/Reserve or
+  // Do-not-hire outcomes all live in the Rejects tab.
   const nonAiApplications = useMemo(
-    () => (data ?? []).filter((a) => !isAiFlagged(a)),
+    () => (data ?? []).filter((a) => !isAiFlagged(a) && !isEvaluationOutcome(a)),
     [data],
   );
   const aiRejectApplications = useMemo(
-    () => (data ?? []).filter(isAiFlagged),
+    () => (data ?? []).filter((a) => isAiFlagged(a) || isEvaluationOutcome(a)),
     [data],
   );
   const approvalApplications = useMemo(
@@ -1856,7 +2058,8 @@ function RecruitmentPageContent() {
     [nonAiApplications],
   );
   // Once an applicant's evaluation is finalized they move to the Approvals
-  // tab and no longer clutter the Applications tab.
+  // tab, and once a Hold/Reserve or Do-not-hire outcome is confirmed they
+  // move to the Rejects tab — neither should clutter the Applications tab.
   const mainApplications = useMemo(
     () => nonAiApplications.filter((a) => a.status !== "evaluation"),
     [nonAiApplications],
