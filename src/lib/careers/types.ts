@@ -131,6 +131,36 @@ export interface Stage1Review {
   ai_generated_at?: string;
 }
 
+/**
+ * Comprehensive interview report for an evaluation-status applicant.
+ * Generated once by AI (src/app/api/careers/interview/report/generate);
+ * HR can then edit freely — edits always save to a separate copy
+ * (summary.interview_report_edit) so the original AI version is preserved.
+ */
+export interface InterviewReport {
+  generated_at: string;
+  executive_summary: string;
+  applicant_details: {
+    name: string;
+    role: string;
+    reference_number: string;
+    panel_names: string[];
+    interview_date: string | null;
+    location: string | null;
+    overall_rating: number | null;
+  };
+  core_competencies: { area: string; score: number | null; assessment: string }[];
+  key_observations: {
+    strengths: string[];
+    weaknesses: string[];
+    summary: string;
+  };
+  final_recommendation: {
+    decision: PanelDecision;
+    rationale: string;
+  };
+}
+
 export type InterviewStage = 1 | 2 | 3;
 
 export interface InterviewFormData {
@@ -176,6 +206,12 @@ export interface InterviewFormData {
     ai_analysis?: string;
     ai_recommendation?: PanelDecision;
     ai_generated_at?: string;
+    /** The comprehensive interview report, generated once by AI — never overwritten after generation. */
+    interview_report?: InterviewReport;
+    /** HR's editable copy of the report. Saving always writes here, never to interview_report. Falls back to interview_report when this doesn't exist yet. */
+    interview_report_edit?: InterviewReport;
+    /** Every time HR saves an edit to interview_report_edit, an entry is appended here. */
+    interview_report_edit_log?: { edited_at: string; edited_by: string }[];
   };
   /** @deprecated legacy panel fields — migrated on read */
   panel?: {

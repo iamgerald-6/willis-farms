@@ -14,6 +14,7 @@ import {
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
+  type InterviewReport,
 } from "@/lib/careers/types";
 import {
   canHrChangeStatus,
@@ -27,9 +28,11 @@ import OnboardingTab from "./components/OnboardingTab";
 import CareersTab from "./components/CareersTab";
 import {
   ChevronDown,
+  Download,
   ExternalLink,
   FileText,
   Loader2,
+  Mail,
   Search,
   UserPlus,
   X,
@@ -103,6 +106,12 @@ function ApplicationDetail({
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
+  const existingReport =
+    application.interview_form_data?.summary?.interview_report_edit ??
+    application.interview_form_data?.summary?.interview_report ??
+    null;
+  const [reportDraft, setReportDraft] = useState<InterviewReport | null>(existingReport);
+  const [reportEmailTo, setReportEmailTo] = useState("info@willsfarms.com");
 
   useEffect(() => {
     if (openInterviewOnMount) {
@@ -115,6 +124,11 @@ function ApplicationDetail({
     setStatus(application.status);
     setHrNotes(application.hr_notes ?? "");
     setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
+    setReportDraft(existingReport);
+    // existingReport is derived fresh from `application` every render — depending on
+    // `application` alone (not existingReport, which is a new object identity each
+    // render) is what actually gates this to real data changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [application]);
 
   const allowedStatusOptions = useMemo(
@@ -130,6 +144,8 @@ function ApplicationDetail({
   const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
   const canConfirmOutcome =
     !!application.interview_submitted_at && !decisionConfirmed;
+  const hasGeneratedReport = !!application.interview_form_data?.summary?.interview_report;
+  const reportEditLog = application.interview_form_data?.summary?.interview_report_edit_log ?? [];
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -171,6 +187,48 @@ function ApplicationDetail({
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Resend failed.");
+    },
+  });
+
+  const generateReportMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/report/generate", { application_id: application.id }),
+    onSuccess: async () => {
+      toast.success("Interview report generated.");
+      await onRefreshApplication();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Report generation failed.");
+    },
+  });
+
+  const saveReportMutation = useMutation({
+    mutationFn: () =>
+      api.patch("/careers/interview/report", {
+        application_id: application.id,
+        report: reportDraft,
+        edited_by: adminId,
+      }),
+    onSuccess: async () => {
+      toast.success("Report saved.");
+      await onRefreshApplication();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Save failed.");
+    },
+  });
+
+  const emailReportMutation = useMutation({
+    mutationFn: () =>
+      api.post("/careers/interview/report/email", {
+        application_id: application.id,
+        to: reportEmailTo,
+      }),
+    onSuccess: () => {
+      toast.success(`Report emailed to ${reportEmailTo}.`);
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Email failed.");
     },
   });
 
@@ -521,6 +579,327 @@ function ApplicationDetail({
                 <p className="text-xs text-indigo-700/80 mt-2">
                   Review scores and discuss as a team before confirming an outcome.
                 </p>
+              </div>
+            )}
+
+            {application.status === "evaluation" && (
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-900">Interview Report</p>
+                  {reportDraft && (
+                    <a
+                      href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download PDF
+                    </a>
+                  )}
+                </div>
+
+                {!hasGeneratedReport ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500">
+                      Generates a comprehensive report — executive summary, applicant &amp;
+                      interview details, core competencies, key observations, and a final
+                      recommendation. This can only be generated once; after that you can edit
+                      it freely.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => generateReportMutation.mutate()}
+                      disabled={generateReportMutation.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
+                    >
+                      {generateReportMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating…
+                        </>
+                      ) : (
+                        "Generate interview report"
+                      )}
+                    </button>
+                  </div>
+                ) : reportDraft ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                        Executive summary
+                      </label>
+                      <textarea
+                        value={reportDraft.executive_summary}
+                        onChange={(e) =>
+                          setReportDraft({ ...reportDraft, executive_summary: e.target.value })
+                        }
+                        rows={3}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                        Applicant &amp; interview details
+                      </label>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <input
+                          value={reportDraft.applicant_details.name}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: { ...reportDraft.applicant_details, name: e.target.value },
+                            })
+                          }
+                          placeholder="Candidate name"
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={reportDraft.applicant_details.role}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: { ...reportDraft.applicant_details, role: e.target.value },
+                            })
+                          }
+                          placeholder="Role"
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={reportDraft.applicant_details.panel_names.join(", ")}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: {
+                                ...reportDraft.applicant_details,
+                                panel_names: e.target.value
+                                  .split(",")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean),
+                              },
+                            })
+                          }
+                          placeholder="Panel members (comma-separated)"
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm sm:col-span-2"
+                        />
+                        <input
+                          type="date"
+                          value={reportDraft.applicant_details.interview_date?.slice(0, 10) ?? ""}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: {
+                                ...reportDraft.applicant_details,
+                                interview_date: e.target.value ? `${e.target.value}T00:00:00Z` : null,
+                              },
+                            })
+                          }
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
+                        <input
+                          value={reportDraft.applicant_details.location ?? ""}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: { ...reportDraft.applicant_details, location: e.target.value },
+                            })
+                          }
+                          placeholder="Location"
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="5"
+                          value={reportDraft.applicant_details.overall_rating ?? ""}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              applicant_details: {
+                                ...reportDraft.applicant_details,
+                                overall_rating: e.target.value === "" ? null : Number(e.target.value),
+                              },
+                            })
+                          }
+                          placeholder="Overall rating"
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                        Core competencies
+                      </label>
+                      <div className="space-y-2">
+                        {reportDraft.core_competencies.map((c, i) => (
+                          <div key={i} className="border border-gray-200 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <p className="text-xs font-semibold text-gray-800">{c.area}</p>
+                              <p className="text-xs text-gray-500">
+                                {c.score != null ? `${c.score.toFixed(2)}/5` : "—"}
+                              </p>
+                            </div>
+                            <textarea
+                              value={c.assessment}
+                              onChange={(e) => {
+                                const next = [...reportDraft.core_competencies];
+                                next[i] = { ...next[i], assessment: e.target.value };
+                                setReportDraft({ ...reportDraft, core_competencies: next });
+                              }}
+                              rows={2}
+                              className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                          Strengths (one per line)
+                        </label>
+                        <textarea
+                          value={reportDraft.key_observations.strengths.join("\n")}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              key_observations: {
+                                ...reportDraft.key_observations,
+                                strengths: e.target.value
+                                  .split("\n")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean),
+                              },
+                            })
+                          }
+                          rows={4}
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                          Weaknesses (one per line)
+                        </label>
+                        <textarea
+                          value={reportDraft.key_observations.weaknesses.join("\n")}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              key_observations: {
+                                ...reportDraft.key_observations,
+                                weaknesses: e.target.value
+                                  .split("\n")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean),
+                              },
+                            })
+                          }
+                          rows={4}
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                        Key observations summary
+                      </label>
+                      <textarea
+                        value={reportDraft.key_observations.summary}
+                        onChange={(e) =>
+                          setReportDraft({
+                            ...reportDraft,
+                            key_observations: { ...reportDraft.key_observations, summary: e.target.value },
+                          })
+                        }
+                        rows={3}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                        Final recommendation
+                      </label>
+                      <div className="flex gap-2 mb-2">
+                        {PANEL_DECISIONS.map((d) => (
+                          <button
+                            key={d.value}
+                            type="button"
+                            onClick={() =>
+                              setReportDraft({
+                                ...reportDraft,
+                                final_recommendation: {
+                                  ...reportDraft.final_recommendation,
+                                  decision: d.value,
+                                },
+                              })
+                            }
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                              reportDraft.final_recommendation.decision === d.value
+                                ? "bg-gray-900 text-white border-gray-900"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={reportDraft.final_recommendation.rationale}
+                        onChange={(e) =>
+                          setReportDraft({
+                            ...reportDraft,
+                            final_recommendation: {
+                              ...reportDraft.final_recommendation,
+                              rationale: e.target.value,
+                            },
+                          })
+                        }
+                        rows={3}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        placeholder="Rationale"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => saveReportMutation.mutate()}
+                        disabled={saveReportMutation.isPending}
+                        className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {saveReportMutation.isPending ? "Saving…" : "Save changes"}
+                      </button>
+                      <input
+                        value={reportEmailTo}
+                        onChange={(e) => setReportEmailTo(e.target.value)}
+                        placeholder="HR email"
+                        className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => emailReportMutation.mutate()}
+                        disabled={emailReportMutation.isPending || !reportEmailTo}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        {emailReportMutation.isPending ? "Sending…" : "Email report"}
+                      </button>
+                    </div>
+
+                    {reportEditLog.length > 0 && (
+                      <p className="text-xs text-gray-400">
+                        Edited {reportEditLog.length} time{reportEditLog.length === 1 ? "" : "s"} —
+                        last saved {formatDate(reportEditLog[reportEditLog.length - 1].edited_at)}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
 
