@@ -95,6 +95,7 @@ function ApplicationDetail({
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(application.status);
   const [hrNotes, setHrNotes] = useState(application.hr_notes ?? "");
+  const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -298,7 +299,17 @@ function ApplicationDetail({
             )}
 
             {application.application_form_data && (
-              <ApplicationFormReview formData={application.application_form_data} />
+              application.status === "evaluation" ? (
+                <button
+                  type="button"
+                  onClick={() => setShowApplicationFormModal(true)}
+                  className="text-sm font-medium text-red-600 hover:underline"
+                >
+                  View job application details
+                </button>
+              ) : (
+                <ApplicationFormReview formData={application.application_form_data} />
+              )
             )}
 
             {application.ai_screening && (
@@ -557,6 +568,34 @@ function ApplicationDetail({
             await onRefreshApplication();
           }}
         />
+      )}
+
+      {showApplicationFormModal && application.application_form_data && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowApplicationFormModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">
+                Job application details
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowApplicationFormModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0">
+              <ApplicationFormReview formData={application.application_form_data} />
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
