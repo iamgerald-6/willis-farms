@@ -2,16 +2,33 @@
 -- any more). Referees 3-5 are optional, added one at a time via "Add
 -- another referee" on the application form. Run this whole file once.
 
--- 1) Referee 2 fields: drop the old conditional showWhen, relabel to match
---    the new "Referee 2" naming (was "Second referee"), keep required: true.
+-- 1) Referee 2 fields: fully rebuild rules (not merge — reference_2_email in
+--    particular may still be sitting on corrupted rules from an earlier
+--    incident, which a merge would have preserved instead of fixing).
+--    Relabel to match the new "Referee 2" naming (was "Second referee").
 update system_options
-set label = replace(label, 'Second referee', 'Referee 2'),
-    rules = (rules - 'showWhen') || jsonb_build_object('required', true)
-where module_id = 'mod:recruitment'
-  and option_list = 'careers.applicationFields'
-  and legacy_value in (
-    'reference_2_name', 'reference_2_phone', 'reference_2_email', 'reference_2_relationship'
-  );
+set label = 'Referee 2 — full name',
+    rules = jsonb_build_object('step','documents','fieldKey','reference_2_name','fieldType','text','required',true)
+where module_id = 'mod:recruitment' and option_list = 'careers.applicationFields'
+  and legacy_value = 'reference_2_name';
+
+update system_options
+set label = 'Referee 2 — phone',
+    rules = jsonb_build_object('step','documents','fieldKey','reference_2_phone','fieldType','phone','required',true)
+where module_id = 'mod:recruitment' and option_list = 'careers.applicationFields'
+  and legacy_value = 'reference_2_phone';
+
+update system_options
+set label = 'Referee 2 — email',
+    rules = jsonb_build_object('step','documents','fieldKey','reference_2_email','fieldType','email','required',true)
+where module_id = 'mod:recruitment' and option_list = 'careers.applicationFields'
+  and legacy_value = 'reference_2_email';
+
+update system_options
+set label = 'Referee 2 — relationship',
+    rules = jsonb_build_object('step','documents','fieldKey','reference_2_relationship','fieldType','text','required',true)
+where module_id = 'mod:recruitment' and option_list = 'careers.applicationFields'
+  and legacy_value = 'reference_2_relationship';
 
 -- 2) Relabel referee 1 fields for consistency (was plain "Referee — X").
 update system_options
