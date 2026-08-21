@@ -320,18 +320,6 @@ function ApplicationDetail({
                 <ApplicationFormReview formData={application.application_form_data} />
               )}
 
-            {application.ai_screening && (
-              <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
-                <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                  AI screening — {application.ai_screening.score}% match
-                </p>
-                <p className="text-sm text-purple-900">{application.ai_screening.summary}</p>
-                <p className="text-xs text-purple-500 mt-2">
-                  Screened {formatDate(application.ai_screening.screened_at)}
-                </p>
-              </div>
-            )}
-
             {awaitingAiScreening && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-3">
                 <p className="text-sm text-blue-900">
