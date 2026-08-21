@@ -405,6 +405,15 @@ function ApplicationDetail({
                     Interview
                   </button>
                 </div>
+              ) : application.status === "interview" ? (
+                <button
+                  type="button"
+                  onClick={() => applyQuickStatus("rejected")}
+                  disabled={quickStatusMutation.isPending}
+                  className="w-full py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                >
+                  Reject
+                </button>
               ) : (
                 <select
                   value={status}
