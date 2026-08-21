@@ -259,6 +259,25 @@ function ApplicationDetail({
     },
   });
 
+  const startOnboarding = useMutation({
+    mutationFn: () =>
+      api.post("/careers/onboarding/start", {
+        application_id: application.id,
+        started_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.data.email_warning) {
+        toast.warning(`Moved to onboarding, but: ${res.data.email_warning}`);
+      } else {
+        toast.success("Congratulations email sent — moved to onboarding.");
+      }
+      onUpdated();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Failed to start onboarding.");
+    },
+  });
+
   const generateReportMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/report/generate", { application_id: application.id }),
@@ -1173,7 +1192,7 @@ function ApplicationDetail({
                 {selectedDecision && (
                   <p className="text-xs text-amber-700">
                     {selectedDecision === "hire"
-                      ? "Confirming hire sends a congratulations email with a 7-day onboarding link."
+                      ? "Confirming hire moves this applicant to Offer status in the Employment tab. No email is sent yet — send the congratulations email with the onboarding link from there when you're ready."
                       : selectedDecision === "hold"
                         ? "Hold does not send a candidate email."
                         : "Confirming rejection sends a professional decline email."}
@@ -1270,6 +1289,17 @@ function ApplicationDetail({
                 Outcome confirmed {formatDate(decisionConfirmed)}
                 {decisionLabel ? ` · ${decisionLabel}` : ""}
               </p>
+            )}
+
+            {application.status === "offer" && decision === "hire" && (
+              <button
+                type="button"
+                onClick={() => startOnboarding.mutate()}
+                disabled={startOnboarding.isPending}
+                className="w-full py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
+              >
+                {startOnboarding.isPending ? "Sending…" : "Send congratulations & onboarding link"}
+              </button>
             )}
 
             {application.status === "onboarding" && decision === "hire" && (
@@ -2008,6 +2038,130 @@ function ApprovalsTab({
   );
 }
 
+// Applicants with a confirmed Hire decision (status "offer") — extended an
+// offer but not yet sent the congratulations/onboarding-link email. Sending
+// that email (via /careers/onboarding/start) is what moves them into the
+// existing Onboarding tab.
+function EmploymentTab({
+  applications,
+  isLoading,
+  onSelect,
+  adminId,
+}: {
+  applications: JobApplication[];
+  isLoading: boolean;
+  onSelect: (application: JobApplication) => void;
+  adminId: string;
+}) {
+  const queryClient = useQueryClient();
+
+  const startOnboardingMutation = useMutation({
+    mutationFn: (applicationId: string) =>
+      api.post("/careers/onboarding/start", {
+        application_id: applicationId,
+        started_by: adminId,
+      }),
+    onSuccess: async (res) => {
+      if (res.data.email_warning) {
+        toast.warning(`Moved to onboarding, but: ${res.data.email_warning}`);
+      } else {
+        toast.success("Congratulations email sent — moved to onboarding.");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+      await queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Failed to start onboarding.");
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
+        Applicants confirmed Hire land here with an outstanding offer. Send the congratulations
+        email with the onboarding link when you&apos;re ready — that moves them to the Onboarding
+        tab.
+      </div>
+
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Offer confirmed</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : applications.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                  No applicants with an outstanding offer right now.
+                </td>
+              </tr>
+            ) : (
+              applications.map((a) => (
+                <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{a.full_name}</p>
+                    <p className="text-xs text-gray-400">{a.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    {a.reference_number}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {a.interview_form_data?.summary?.decision_confirmed_at
+                      ? formatDate(a.interview_form_data.summary.decision_confirmed_at)
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                    >
+                      {STATUS_LABELS[a.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => startOnboardingMutation.mutate(a.id)}
+                        disabled={startOnboardingMutation.isPending}
+                        className="text-xs font-medium text-green-700 hover:underline disabled:opacity-60"
+                      >
+                        Send onboarding link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(a)}
+                        className="text-xs font-medium text-red-600 hover:underline"
+                      >
+                        View
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // Consolidated AI hiring summary for one role — combines every candidate's
 // funnel progress and (where available) individual interview report into a
 // single report HR can generate once, then edit/download/email freely.
@@ -2612,17 +2766,19 @@ function RecruitmentPageContent() {
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
-    "applications" | "onboarding" | "careers" | "ai_rejects" | "approvals"
+    "applications" | "employment" | "onboarding" | "careers" | "ai_rejects" | "approvals"
   >(
-    tabParam === "onboarding"
-      ? "onboarding"
-      : tabParam === "careers"
-        ? "careers"
-        : tabParam === "ai_rejects" || tabParam === "rejects"
-          ? "ai_rejects"
-          : tabParam === "approvals"
-            ? "approvals"
-            : "applications",
+    tabParam === "employment"
+      ? "employment"
+      : tabParam === "onboarding"
+        ? "onboarding"
+        : tabParam === "careers"
+          ? "careers"
+          : tabParam === "ai_rejects" || tabParam === "rejects"
+            ? "ai_rejects"
+            : tabParam === "approvals"
+              ? "approvals"
+              : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -2681,11 +2837,19 @@ function RecruitmentPageContent() {
     () => nonAiApplications.filter((a) => a.status === "evaluation"),
     [nonAiApplications],
   );
+  // Every applicant with a confirmed Hire decision — status "offer" — moves
+  // to the Employment tab. From there HR sends the congratulations email
+  // with the onboarding link, which is what advances them to "onboarding".
+  const employmentApplications = useMemo(
+    () => nonAiApplications.filter((a) => a.status === "offer"),
+    [nonAiApplications],
+  );
   // Once an applicant's evaluation is finalized they move to the Approvals
-  // tab, and once a Hold/Reserve or Do-not-hire outcome is confirmed they
-  // move to the Rejects tab — neither should clutter the Applications tab.
+  // tab, a confirmed hire moves to the Employment tab, and a Hold/Reserve or
+  // Do-not-hire outcome moves to the Rejects tab — none of these should
+  // clutter the Applications tab.
   const mainApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status !== "evaluation"),
+    () => nonAiApplications.filter((a) => a.status !== "evaluation" && a.status !== "offer"),
     [nonAiApplications],
   );
 
@@ -2751,7 +2915,8 @@ function RecruitmentPageContent() {
   const awaitingScreeningCount = (data ?? []).filter(isAwaitingAiScreening).length;
 
   useEffect(() => {
-    if (tabParam === "onboarding") setActiveTab("onboarding");
+    if (tabParam === "employment") setActiveTab("employment");
+    else if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "careers") setActiveTab("careers");
     else if (tabParam === "ai_rejects" || tabParam === "rejects") setActiveTab("ai_rejects");
     else if (tabParam === "approvals") setActiveTab("approvals");
@@ -2807,7 +2972,7 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "ai_rejects", "approvals", "careers", "onboarding"] as const).map((tab) => (
+        {(["applications", "ai_rejects", "approvals", "employment", "careers", "onboarding"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -2824,9 +2989,11 @@ function RecruitmentPageContent() {
                 ? "Rejects"
                 : tab === "approvals"
                   ? "Approvals"
-                  : tab === "careers"
-                    ? "Careers"
-                    : "Onboarding"}
+                  : tab === "employment"
+                    ? "Employment"
+                    : tab === "careers"
+                      ? "Careers"
+                      : "Onboarding"}
             {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {aiRejectApplications.length}
@@ -2835,6 +3002,11 @@ function RecruitmentPageContent() {
             {tab === "approvals" && approvalApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {approvalApplications.length}
+              </span>
+            )}
+            {tab === "employment" && employmentApplications.length > 0 && (
+              <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {employmentApplications.length}
               </span>
             )}
           </button>
@@ -2848,6 +3020,13 @@ function RecruitmentPageContent() {
       ) : activeTab === "approvals" ? (
         <ApprovalsTab
           applications={approvalApplications}
+          isLoading={isLoading}
+          onSelect={setSelected}
+          adminId={session?.user?.id ?? ""}
+        />
+      ) : activeTab === "employment" ? (
+        <EmploymentTab
+          applications={employmentApplications}
           isLoading={isLoading}
           onSelect={setSelected}
           adminId={session?.user?.id ?? ""}
@@ -2982,7 +3161,7 @@ function RecruitmentPageContent() {
         </>
       )}
 
-      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals") && (
+      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals" || activeTab === "employment") && (
         <ApplicationDetail
           application={selected}
           onClose={() => setSelected(null)}

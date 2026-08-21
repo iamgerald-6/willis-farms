@@ -66,7 +66,7 @@ export function validatePanelDecision(
 export function statusForDecision(decision: PanelDecision): ApplicationStatus {
   switch (decision) {
     case "hire":
-      return "onboarding";
+      return "offer";
     case "hold":
       return "hold";
     case "do_not_hire":
