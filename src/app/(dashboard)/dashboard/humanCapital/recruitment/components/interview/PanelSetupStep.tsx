@@ -14,6 +14,9 @@ type Props = {
   onContinueWithoutResend?: () => void;
   isPending: boolean;
   readOnly?: boolean;
+  /** Persists edited member name/email while readOnly, without resending invites. */
+  onSaveMemberEdits?: () => void;
+  isSavingMemberEdits?: boolean;
 };
 
 export default function PanelSetupStep({
@@ -24,6 +27,8 @@ export default function PanelSetupStep({
   onContinueWithoutResend,
   isPending,
   readOnly = false,
+  onSaveMemberEdits,
+  isSavingMemberEdits = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const members = setup.stage1_members?.length
@@ -84,7 +89,8 @@ export default function PanelSetupStep({
 
       {readOnly && (
         <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          Viewing Stage 1 panel setup — read-only.
+          Viewing Stage 1 panel setup. The interview date, location, and panel list are locked —
+          you can still fix a panel member&apos;s name or email below.
         </p>
       )}
 
@@ -162,17 +168,15 @@ export default function PanelSetupStep({
                 type="text"
                 placeholder="Full name *"
                 value={member.name}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={member.email}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               {!readOnly && (
                 <button
@@ -197,6 +201,20 @@ export default function PanelSetupStep({
           )}
           .
         </p>
+      )}
+
+      {readOnly && onSaveMemberEdits && (
+        <button
+          type="button"
+          onClick={onSaveMemberEdits}
+          disabled={isSavingMemberEdits}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isSavingMemberEdits ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : null}
+          Save name/email changes
+        </button>
       )}
 
       {!readOnly && invitesSent && (
