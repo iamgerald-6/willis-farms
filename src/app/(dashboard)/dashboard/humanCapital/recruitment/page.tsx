@@ -26,6 +26,9 @@ import InterviewPanelForm from "./components/InterviewPanelForm";
 import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import CareersTab from "./components/CareersTab";
+import GraderSubmissionModal from "./components/interview/GraderSubmissionModal";
+import { gradersForStage, getSubmission, type GraderResult } from "@/lib/careers/panelInterview";
+import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
   ChevronDown,
   Download,
@@ -104,6 +107,10 @@ function ApplicationDetail({
   );
   const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
+  const [showPanelResponses, setShowPanelResponses] = useState(false);
+  const [selectedGraderView, setSelectedGraderView] = useState<
+    { grader: GraderResult; stage: 1 | 2 } | null
+  >(null);
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -131,6 +138,19 @@ function ApplicationDetail({
     // render) is what actually gates this to real data changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [application]);
+
+  // Fetched only once "View all panel responses" is opened — same endpoint
+  // the interview guide itself uses, so the raw stage 1 + stage 2 submissions
+  // and their guide config (question text, "look for" hints, etc.) come from
+  // one source of truth rather than being duplicated here.
+  const { data: panelResponsesData, isLoading: panelResponsesLoading } = useQuery({
+    queryKey: ["interview_panel_responses", application.id],
+    queryFn: async () => {
+      const res = await api.get(`/careers/interview?application_id=${application.id}`);
+      return res.data.data as { application: JobApplication; guide: InterviewGuideConfig | null };
+    },
+    enabled: showPanelResponses,
+  });
 
   const allowedStatusOptions = useMemo(
     () => getAllowedHrStatusOptions(application) ?? [],
@@ -598,6 +618,13 @@ function ApplicationDetail({
                           View original AI report
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setShowPanelResponses(true)}
+                        className="text-xs font-medium text-gray-600 hover:underline"
+                      >
+                        View all panel responses
+                      </button>
                       <a
                         href={`/api/careers/interview/report/pdf?application_id=${application.id}`}
                         target="_blank"
@@ -1205,6 +1232,93 @@ function ApplicationDetail({
             </div>
           </div>
         </div>
+      )}
+
+      {showPanelResponses && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowPanelResponses(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">All panel responses</h2>
+              <button
+                type="button"
+                onClick={() => setShowPanelResponses(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-2 overflow-y-auto min-h-0">
+              {panelResponsesLoading || !panelResponsesData?.guide ? (
+                <p className="text-sm text-gray-400 px-3 py-6 text-center">
+                  {panelResponsesLoading ? "Loading…" : "No interview guide found for this role."}
+                </p>
+              ) : (
+                ([1, 2] as const).map((stage) => {
+                  const graders = gradersForStage(
+                    panelResponsesData.application.interview_form_data!,
+                    panelResponsesData.guide!,
+                    stage,
+                  );
+                  if (graders.length === 0) return null;
+                  return (
+                    <div key={stage} className="mb-2">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2">
+                        Stage {stage}
+                      </p>
+                      {graders.map((g) => (
+                        <button
+                          key={`${stage}-${g.id}`}
+                          type="button"
+                          onClick={() => g.submitted_at && setSelectedGraderView({ grader: g, stage })}
+                          disabled={!g.submitted_at}
+                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{g.label}</p>
+                            <p className="text-xs text-gray-400">
+                              {g.role === "hr" ? "HR" : "Panel member"}
+                              {!g.submitted_at && " · Not submitted"}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-gray-700">
+                            {g.total != null ? `${g.total.toFixed(2)}/5` : "—"}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedGraderView && panelResponsesData?.guide && panelResponsesData.application.interview_form_data && (
+        <GraderSubmissionModal
+          guide={panelResponsesData.guide}
+          graderLabel={selectedGraderView.grader.label}
+          graderRole={selectedGraderView.grader.role}
+          stage={selectedGraderView.stage}
+          submission={
+            selectedGraderView.grader.role === "hr"
+              ? selectedGraderView.stage === 1
+                ? panelResponsesData.application.interview_form_data.hr_submission?.stage1
+                : panelResponsesData.application.interview_form_data.hr_submission?.stage2
+              : getSubmission(
+                  panelResponsesData.application.interview_form_data,
+                  selectedGraderView.grader.id,
+                  selectedGraderView.stage,
+                )
+          }
+          onClose={() => setSelectedGraderView(null)}
+        />
       )}
     </>
   );
