@@ -9,14 +9,18 @@ type Props = {
 function formatValue(key: string, value: unknown): string | null {
   if (value === undefined || value === null || value === "") return null;
 
-  if (key === "cv" && typeof value === "object" && value !== null) {
+  // Any single-file upload field (cv, passport_bio_page, ...) is an object
+  // with secure_url — not just "cv" specifically.
+  if (typeof value === "object" && value !== null && "secure_url" in value) {
     const file = value as { original_name?: string; secure_url?: string };
     return file.original_name ?? file.secure_url ?? "Uploaded";
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) return null;
-    if (key === "work_history") {
+    // Field keys match ApplicationFieldRules.fieldKey in recruitmentDefaults.ts
+    // — "work_experience" and "education", not "work_history"/"education_history".
+    if (key === "work_experience") {
       return (value as WorkHistoryEntry[])
         .map((entry) => {
           const end = entry.current ? "Present" : entry.end || "—";
@@ -24,7 +28,7 @@ function formatValue(key: string, value: unknown): string | null {
         })
         .join("\n");
     }
-    if (key === "education_history") {
+    if (key === "education") {
       return (value as EducationEntry[])
         .map((entry) => {
           const degree = entry.degree?.trim() ? ` — ${entry.degree}` : "";
@@ -42,6 +46,10 @@ function formatValue(key: string, value: unknown): string | null {
   return String(value);
 }
 
+// Keys here must match ApplicationFieldRules.fieldKey in
+// src/lib/systemDefinitions/recruitmentDefaults.ts — this is meant to show
+// everything an applicant filled in, so a stale/mismatched key here just
+// silently hides that field from HR.
 const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] }[] = [
   {
     title: "Personal",
@@ -51,28 +59,25 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
       { key: "email", label: "Email" },
       { key: "phone", label: "Phone" },
       { key: "date_of_birth", label: "Date of birth" },
+      { key: "gender", label: "Gender" },
       { key: "nationality", label: "Nationality" },
       { key: "is_citizen", label: "Ghana citizen" },
-      { key: "ghana_card", label: "Ghana Card" },
+      { key: "ghana_card_no", label: "Ghana Card" },
       { key: "passport_number", label: "Passport number" },
-      { key: "location", label: "Location" },
+      { key: "passport_bio_page", label: "Passport bio page" },
     ],
   },
   {
     title: "Experience & qualifications",
     fields: [
-      { key: "work_history", label: "Work history" },
-      { key: "education_history", label: "Education" },
-      { key: "years_experience", label: "Years of experience" },
-      { key: "skills", label: "Skills" },
+      { key: "work_experience", label: "Work history" },
+      { key: "education", label: "Education" },
+      { key: "certificates", label: "Educational certificates" },
     ],
   },
   {
     title: "Documents",
-    fields: [
-      { key: "cover_letter", label: "Cover letter" },
-      { key: "certificates", label: "Certificates" },
-    ],
+    fields: [{ key: "cover_letter", label: "Cover letter" }],
   },
   // Referees 1–5 (1 and 2 required, 3–5 optional "add another" slots — see
   // MAX_REFEREES in recruitmentDefaults.ts). Sections with no data are

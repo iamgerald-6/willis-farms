@@ -120,7 +120,6 @@ function ApplicationDetail({
   );
   const awaitingAiScreening = isAwaitingAiScreening(application);
   const statusEditable = canHrChangeStatus(application);
-  const showApplicationReview = application.status === "shortlisted";
   const canOpenInterviewGuide = INTERVIEW_GUIDE_STATUSES.includes(application.status);
 
   const decision = application.interview_form_data?.summary?.decision;
@@ -296,7 +295,7 @@ function ApplicationDetail({
               </a>
             )}
 
-            {showApplicationReview && application.application_form_data && (
+            {application.application_form_data && (
               <ApplicationFormReview formData={application.application_form_data} />
             )}
 
