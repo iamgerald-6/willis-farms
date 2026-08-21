@@ -35,6 +35,10 @@ export function onboardingMagicLinkUrl(token: string): string {
   return `${getAppBaseUrl()}/onboarding/${token}`;
 }
 
+export function refereeReferenceUrl(token: string): string {
+  return `${getAppBaseUrl()}/reference/${token}`;
+}
+
 export function recruitmentApplicationsUrl(): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment`;
 }

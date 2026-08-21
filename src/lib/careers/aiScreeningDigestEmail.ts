@@ -39,11 +39,11 @@ export function buildAiScreeningDigestEmail(
     "",
     `Total applications: ${total}`,
     `Shortlisted by AI: ${shortlisted}`,
-    `Sent to AI Rejects for review: ${underReview}`,
+    `Sent to Rejects for review: ${underReview}`,
     pendingLine,
     "",
     `Applications: ${applicationsUrl}`,
-    `AI Rejects (needs your review): ${aiRejectsUrl}`,
+    `Rejects (needs your review): ${aiRejectsUrl}`,
     "",
     "Kind regards,",
     "Wills Farms Careers System",
@@ -99,7 +99,7 @@ export function buildAiScreeningDigestEmail(
                     <a href="${applicationsUrl}" style="display:inline-block;background:#991b1b;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:8px;">View Applications</a>
                   </td>
                   <td>
-                    <a href="${aiRejectsUrl}" style="display:inline-block;background:#ffffff;color:#991b1b;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:8px;border:1px solid #991b1b;">View AI Rejects</a>
+                    <a href="${aiRejectsUrl}" style="display:inline-block;background:#ffffff;color:#991b1b;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:8px;border:1px solid #991b1b;">View Rejects</a>
                   </td>
                 </tr>
               </table>

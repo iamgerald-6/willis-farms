@@ -67,9 +67,7 @@ export interface AiScreening {
   screened_at: string;
 }
 
-/** Applications the AI screening cron has flagged and that HR hasn't
- * overridden back into the normal pipeline yet — these are the ones that
- * belong in the "AI Rejects" tab instead of the main Applications list. */
+/** Applications the AI screening has flagged — shown in the Rejects tab. */
 export function isAiFlagged(application: Pick<JobApplication, "ai_screening" | "status">): boolean {
   return !!application.ai_screening && ["under_review", "rejected"].includes(application.status);
 }

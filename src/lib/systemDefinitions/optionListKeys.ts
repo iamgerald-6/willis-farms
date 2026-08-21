@@ -21,7 +21,13 @@ export const EDITABLE_OPTION_LISTS: Partial<
     "skillLog.tierAuthorisations",
     "skillLog.reviewPeriods",
   ],
-  "mod:recruitment": ["careers.applicationFields"],
+  "mod:recruitment": [
+    "careers.applicationFields",
+    "careers.onboardingFields",
+    "careers.onboardingLocations",
+    "careers.onboardingDepartmentsL1L6",
+    "careers.onboardingDepartmentsL7",
+  ],
 };
 
 /** Modules whose job posting roles are editable in System Definitions. */
@@ -38,6 +44,15 @@ export function isEditableJobPostingModule(moduleId: string): boolean {
 
 /** @deprecated use isEditableJobPostingModule */
 export const isEditableJobTitleModule = isEditableJobPostingModule;
+
+/** Modules whose employee onboarding form fields are editable in System Definitions. */
+export const EDITABLE_ONBOARDING_FORM_MODULES = ["mod:recruitment"] as const;
+
+export function isEditableOnboardingFormModule(moduleId: string): boolean {
+  return EDITABLE_ONBOARDING_FORM_MODULES.includes(
+    moduleId as (typeof EDITABLE_ONBOARDING_FORM_MODULES)[number],
+  );
+}
 
 /** Modules whose job application form fields are editable in System Definitions. */
 export const EDITABLE_APPLICATION_FORM_MODULES = ["mod:recruitment"] as const;

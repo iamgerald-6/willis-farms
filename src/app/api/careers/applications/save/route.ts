@@ -11,6 +11,7 @@ import { isPostingPublic } from "@/lib/careers/jobPostings";
 import { generateReferenceNumber } from "@/lib/careers/openings";
 import { sendApplicationConfirmationEmail } from "@/lib/careers/applicationConfirmationEmail";
 import { sendApplicationHrNotificationEmail } from "@/lib/careers/applicationHrNotificationEmail";
+import { sendRefereeReferenceInvites, type SendRefereeInvitesResult } from "@/lib/careers/sendRefereeReferenceInvites";
 
 function createDraftToken(): string {
   return randomBytes(24).toString("hex");
@@ -174,13 +175,24 @@ export async function POST(req: NextRequest) {
       }
 
       if (finalize) {
-        await sendSubmissionEmails({
+        const refereeInvites = await sendSubmissionEmails(supabaseAdmin, {
+          applicationId: updated.id,
+          formData: form_data,
           fullName: summary.full_name,
           email: summary.email,
           phone: summary.phone,
           roleTitle: updated.role_title,
           referenceNumber: updated.reference_number,
           submittedAt: updated.updated_at ?? updated.created_at,
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            ...updated,
+            submitted: true,
+            referee_invites: refereeInvites,
+          },
         });
       }
 
@@ -242,13 +254,24 @@ export async function POST(req: NextRequest) {
     }
 
     if (finalize) {
-      await sendSubmissionEmails({
+      const refereeInvites = await sendSubmissionEmails(supabaseAdmin, {
+        applicationId: created.id,
+        formData: form_data,
         fullName: summary.full_name,
         email: summary.email,
         phone: summary.phone,
         roleTitle: created.role_title,
         referenceNumber: created.reference_number,
         submittedAt: created.created_at,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...created,
+          submitted: true,
+          referee_invites: refereeInvites,
+        },
       });
     }
 
@@ -265,14 +288,19 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function sendSubmissionEmails(params: {
-  fullName: string;
-  email: string;
-  phone: string;
-  roleTitle: string;
-  referenceNumber: string;
-  submittedAt: string;
-}) {
+async function sendSubmissionEmails(
+  supabaseAdmin: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  params: {
+    applicationId: string;
+    formData: Record<string, unknown>;
+    fullName: string;
+    email: string;
+    phone: string;
+    roleTitle: string;
+    referenceNumber: string;
+    submittedAt: string;
+  },
+): Promise<SendRefereeInvitesResult | null> {
   const candidateResult = await sendApplicationConfirmationEmail({
     fullName: params.fullName,
     email: params.email,
@@ -295,4 +323,22 @@ async function sendSubmissionEmails(params: {
       hrResult.error,
     );
   }
+
+  const refereeResult = await sendRefereeReferenceInvites(supabaseAdmin, {
+    applicationId: params.applicationId,
+    formData: params.formData,
+    candidateName: params.fullName,
+    roleTitle: params.roleTitle,
+    referenceNumber: params.referenceNumber,
+  });
+
+  if (refereeResult.errors.length > 0) {
+    console.error("[applications/save] Referee invite issues:", refereeResult.errors);
+  } else if (refereeResult.sent > 0) {
+    console.info(
+      `[applications/save] Referee invites sent: ${refereeResult.sent}, skipped: ${refereeResult.skipped}`,
+    );
+  }
+
+  return refereeResult;
 }

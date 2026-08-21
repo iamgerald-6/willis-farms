@@ -591,3 +591,84 @@ export function computeWeightedScore(
 
   return { areaScores, total: hasAny ? Math.round(total * 100) / 100 : null };
 }
+
+function scenarioIdSet(config: InterviewGuideConfig): Set<string> {
+  return new Set(config.scenarios.map((s) => s.id));
+}
+
+/** Stage 1 — structured questions only, normalized to 1–5 (excludes practical row). */
+export function computeStage1Score(
+  config: InterviewGuideConfig,
+  questionRatings: Record<string, { rating: number | null }>,
+): { areaScores: Record<string, number | null>; total: number | null } {
+  const scenarios = scenarioIdSet(config);
+  const areaScores: Record<string, number | null> = {};
+  let weightedSum = 0;
+  let weightTotal = 0;
+
+  for (const row of config.weights) {
+    if (row.questionIds.every((id) => scenarios.has(id))) continue;
+
+    const vals = row.questionIds
+      .map((id) => questionRatings[id]?.rating)
+      .filter((r): r is number => r != null && r >= 1 && r <= 5);
+    const avg =
+      vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    areaScores[row.area] = avg;
+    if (avg != null) {
+      weightedSum += avg * row.weight;
+      weightTotal += row.weight;
+    }
+  }
+
+  const total =
+    weightTotal > 0
+      ? Math.round((weightedSum / weightTotal) * 100) / 100
+      : null;
+  return { areaScores, total };
+}
+
+/** Stage 2 — practical/scenarios only, normalized to 1–5 (not 15% of full sheet). */
+export function computeStage2Score(
+  config: InterviewGuideConfig,
+  scenarioRatings: Record<string, { rating: number | null }>,
+): { areaScores: Record<string, number | null>; total: number | null } {
+  const scenarios = scenarioIdSet(config);
+  const areaScores: Record<string, number | null> = {};
+  let weightedSum = 0;
+  let weightTotal = 0;
+
+  for (const row of config.weights) {
+    if (!row.questionIds.every((id) => scenarios.has(id))) continue;
+
+    const vals = row.questionIds
+      .map((id) => scenarioRatings[id]?.rating)
+      .filter((r): r is number => r != null && r >= 1 && r <= 5);
+    const avg =
+      vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    areaScores[row.area] = avg;
+    if (avg != null) {
+      weightedSum += avg * row.weight;
+      weightTotal += row.weight;
+    }
+  }
+
+  if (weightTotal > 0) {
+    return {
+      areaScores,
+      total: Math.round((weightedSum / weightTotal) * 100) / 100,
+    };
+  }
+
+  const vals = config.scenarios
+    .map((s) => scenarioRatings[s.id]?.rating)
+    .filter((r): r is number => r != null && r >= 1 && r <= 5);
+  const avg =
+    vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  if (avg != null) {
+    areaScores["Practical assessment"] = avg;
+    return { areaScores, total: Math.round(avg * 100) / 100 };
+  }
+
+  return { areaScores, total: null };
+}

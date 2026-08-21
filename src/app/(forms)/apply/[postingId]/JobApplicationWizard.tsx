@@ -27,9 +27,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Plus,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
+import {
+  ADD_SECOND_REFEREE_KEY,
+  REFERENCE_2_FIELD_KEYS,
+  hasSecondRefereeData,
+} from "@/lib/systemDefinitions/recruitmentDefaults";
 
 type Props = {
   posting: JobPosting;
@@ -69,7 +76,13 @@ export default function JobApplicationWizard({
 }: Props) {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
-  const [values, setValues] = useState<ApplicationFormData>(initialValues);
+  const [values, setValues] = useState<ApplicationFormData>(() => ({
+    ...initialValues,
+    [ADD_SECOND_REFEREE_KEY]:
+      initialValues[ADD_SECOND_REFEREE_KEY] === "Yes" || hasSecondRefereeData(initialValues)
+        ? "Yes"
+        : "",
+  }));
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +96,47 @@ export default function JobApplicationWizard({
     () => visibleFieldsForStep(fields, step, values),
     [fields, step, values],
   );
+  const documentsFieldsBeforeReferees = useMemo(
+    () =>
+      step === "documents"
+        ? stepFields.filter((f) => !f.rules.fieldKey.startsWith("reference_"))
+        : [],
+    [step, stepFields],
+  );
+  const refereeFields = useMemo(
+    () =>
+      step === "documents"
+        ? stepFields.filter((f) => f.rules.fieldKey.startsWith("reference_"))
+        : [],
+    [step, stepFields],
+  );
+  const primaryRefereeFields = useMemo(
+    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_1_")),
+    [refereeFields],
+  );
+  const secondaryRefereeFields = useMemo(
+    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_2_")),
+    [refereeFields],
+  );
+  const showSecondReferee = values[ADD_SECOND_REFEREE_KEY] === "Yes";
+
+  const addSecondReferee = () => {
+    setValues((prev) => ({ ...prev, [ADD_SECOND_REFEREE_KEY]: "Yes" }));
+    setDraftSavedMessage(null);
+    setError(null);
+  };
+
+  const removeSecondReferee = () => {
+    setValues((prev) => {
+      const next: ApplicationFormData = { ...prev, [ADD_SECOND_REFEREE_KEY]: "" };
+      for (const key of REFERENCE_2_FIELD_KEYS) {
+        next[key] = "";
+      }
+      return next;
+    });
+    setDraftSavedMessage(null);
+    setError(null);
+  };
 
   const setFieldValue = (key: string, value: unknown) => {
     setValues((prev) => {
@@ -506,23 +560,95 @@ export default function JobApplicationWizard({
         </div>
       )}
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        {stepFields.map((field) => (
-          <div
-            key={field.id}
-            className={
-              field.rules.fieldType === "textarea" ||
-              field.rules.fieldType === "file" ||
-              field.rules.fieldType === "work_history" ||
-              field.rules.fieldType === "education_history"
-                ? "sm:col-span-2"
-                : ""
-            }
-          >
-            {renderField(field)}
+      {step === "documents" ? (
+        <>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {documentsFieldsBeforeReferees.map((field) => (
+              <div
+                key={field.id}
+                className={
+                  field.rules.fieldType === "textarea" ||
+                  field.rules.fieldType === "file" ||
+                  field.rules.fieldType === "work_history" ||
+                  field.rules.fieldType === "education_history"
+                    ? "sm:col-span-2"
+                    : ""
+                }
+              >
+                {renderField(field)}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+
+          {refereeFields.length > 0 && (
+            <>
+              <div className="mt-8 mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+                <p className="font-semibold text-blue-950 mb-1">Referee</p>
+                <p>
+                  One referee is required. When you click{" "}
+                  <span className="font-medium">Submit application</span>, we will email each
+                  referee you list below a secure link to complete a short reference form on
+                  your behalf. Please double-check their email addresses before submitting.
+                </p>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                {primaryRefereeFields.map((field) => (
+                  <div key={field.id}>{renderField(field)}</div>
+                ))}
+              </div>
+
+              {!showSecondReferee ? (
+                <button
+                  type="button"
+                  onClick={addSecondReferee}
+                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add another referee (optional)
+                </button>
+              ) : (
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-gray-900">Second referee (optional)</p>
+                    <button
+                      type="button"
+                      onClick={removeSecondReferee}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {secondaryRefereeFields.map((field) => (
+                      <div key={field.id}>{renderField(field)}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {stepFields.map((field) => (
+            <div
+              key={field.id}
+              className={
+                field.rules.fieldType === "textarea" ||
+                field.rules.fieldType === "file" ||
+                field.rules.fieldType === "work_history" ||
+                field.rules.fieldType === "education_history"
+                  ? "sm:col-span-2"
+                  : ""
+              }
+            >
+              {renderField(field)}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-gray-100">
         {stepIndex > 0 && (
