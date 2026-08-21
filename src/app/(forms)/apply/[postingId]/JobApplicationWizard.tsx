@@ -31,6 +31,17 @@ import {
   Upload,
 } from "lucide-react";
 
+// Applicants must be at least 15 years old — the latest a birthdate can be
+// is exactly 15 years before today. Computed once at module load rather
+// than per render/keystroke.
+function minApplicantBirthdate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 15);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+const MIN_APPLICANT_BIRTHDATE = minApplicantBirthdate();
+
 type Props = {
   posting: JobPosting;
   fields: ApplicationFormField[];
@@ -447,12 +458,21 @@ export default function JobApplicationWizard({
           ? "date"
           : "text";
 
+    // Applicants must be at least 15 — the date_of_birth picker can't
+    // select a date more recent than 15 years ago, so nobody younger can
+    // even pick a valid birthdate.
+    const dateMax =
+      fieldType === "date" && fieldKey === "date_of_birth"
+        ? MIN_APPLICANT_BIRTHDATE
+        : undefined;
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
           className={inputClass}
           type={inputType}
           placeholder={placeholder}
+          max={dateMax}
           value={String(value ?? "")}
           onChange={(e) => setFieldValue(fieldKey, e.target.value)}
         />
