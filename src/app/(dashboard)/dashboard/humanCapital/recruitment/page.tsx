@@ -370,7 +370,6 @@ function ApplicationDetail({
               </div>
             )}
 
-            {application.status !== "interview" && (
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                 Update status
@@ -406,6 +405,15 @@ function ApplicationDetail({
                     Interview
                   </button>
                 </div>
+              ) : application.status === "interview" ? (
+                <button
+                  type="button"
+                  onClick={() => applyQuickStatus("rejected")}
+                  disabled={quickStatusMutation.isPending}
+                  className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                >
+                  Reject
+                </button>
               ) : (
                 <select
                   value={status}
@@ -431,7 +439,6 @@ function ApplicationDetail({
                 </p>
               )}
             </div>
-            )}
 
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
@@ -605,16 +612,6 @@ function ApplicationDetail({
                   className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100"
                 >
                   Open interview guide
-                </button>
-              )}
-              {application.status === "interview" && (
-                <button
-                  type="button"
-                  onClick={() => applyQuickStatus("rejected")}
-                  disabled={quickStatusMutation.isPending}
-                  className="px-4 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
-                >
-                  Reject
                 </button>
               )}
             </div>
