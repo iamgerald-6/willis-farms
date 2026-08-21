@@ -241,6 +241,57 @@ export function combinedInterviewAverage(
   return s1 ?? s2;
 }
 
+/**
+ * Per-area score for the "Combined scores" table on the Evaluation step.
+ * For each assessment area (e.g. "B1 Motivation & trainability" — Q1-Q3),
+ * each grader's (every panel member + HR) own score for that area is the
+ * average of their ratings across just that area's questionIds. The value
+ * shown here is the average of those per-grader area scores — same
+ * "average across graders" approach combinedInterviewAverage already uses
+ * for the overall total, just applied one area at a time instead of only
+ * at the end.
+ */
+export function combinedAreaScores(
+  data: InterviewFormData,
+  guide: InterviewGuideConfig,
+): Record<string, number | null> {
+  const scenarioIds = new Set(guide.scenarios.map((s) => s.id));
+  const result: Record<string, number | null> = {};
+
+  for (const row of guide.weights) {
+    const isStage2Area = row.questionIds.every((id) => scenarioIds.has(id));
+    const stage: 1 | 2 = isStage2Area ? 2 : 1;
+
+    const graderAreaAverages: number[] = [];
+    for (const g of gradersForStage(data, guide, stage)) {
+      const sub: StageSubmissionData | undefined =
+        g.role === "hr"
+          ? stage === 1
+            ? data.hr_submission?.stage1
+            : data.hr_submission?.stage2
+          : getSubmission(data, g.id, stage);
+      if (!sub) continue;
+
+      const ratings = isStage2Area ? sub.scenario_ratings : sub.question_ratings;
+      const vals = row.questionIds
+        .map((id) => ratings?.[id]?.rating)
+        .filter((r): r is number => r != null && r >= 1 && r <= 5);
+      if (vals.length === 0) continue;
+
+      graderAreaAverages.push(vals.reduce((a, b) => a + b, 0) / vals.length);
+    }
+
+    result[row.area] =
+      graderAreaAverages.length > 0
+        ? Math.round(
+            (graderAreaAverages.reduce((a, b) => a + b, 0) / graderAreaAverages.length) * 100,
+          ) / 100
+        : null;
+  }
+
+  return result;
+}
+
 export function findPanelByToken(
   applications: PanelTokenLookup["application"][],
   token: string,

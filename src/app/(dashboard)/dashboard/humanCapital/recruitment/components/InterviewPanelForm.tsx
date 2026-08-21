@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
+  combinedAreaScores,
   combinedInterviewAverage,
   interviewWorkflowStepV2,
   type WorkflowStep,
@@ -236,8 +237,12 @@ export default function InterviewPanelForm({
     },
   });
 
-  const dummyScores = {
-    areaScores: formData.summary?.area_scores ?? {},
+  // Per-area figures for the Evaluation step's Combined scores table — see
+  // combinedAreaScores() for how each area is averaged across every grader.
+  // formData.summary.area_scores is never populated by anything, so reading
+  // it directly (as this used to) always showed an empty column.
+  const evaluationScores = {
+    areaScores: guide ? combinedAreaScores(formData, guide) : {},
     total: combinedScore,
   };
 
@@ -429,7 +434,7 @@ export default function InterviewPanelForm({
             <Stage3Evaluation
               guide={guide}
               formData={formData}
-              scores={dummyScores}
+              scores={evaluationScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
               onGenerateAnalysis={() => finalAnalysisMutation.mutate()}

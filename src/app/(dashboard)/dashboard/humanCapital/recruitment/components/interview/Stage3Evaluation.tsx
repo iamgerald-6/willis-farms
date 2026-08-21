@@ -213,41 +213,25 @@ export default function Stage3Evaluation({
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Combined scores</h3>
         <div className="overflow-x-auto border border-gray-200 rounded-xl">
-          <table className="w-full text-sm min-w-[520px]">
+          <table className="w-full text-sm min-w-[360px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">
                   Assessment area
                 </th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-600 w-24">
-                  Weight
-                </th>
                 <th className="text-center px-4 py-3 font-semibold text-gray-600 w-28">
                   Avg score (1–5)
-                </th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-600 w-28">
-                  Weighted
                 </th>
               </tr>
             </thead>
             <tbody>
               {guide.weights.map((row) => {
                 const avg = scores.areaScores[row.area];
-                const weighted =
-                  avg != null
-                    ? Math.round(avg * (row.weight / 100) * 100) / 100
-                    : null;
                 return (
                   <tr key={row.area} className="border-b border-gray-100">
                     <td className="px-4 py-3 text-gray-800">{row.area}</td>
-                    <td className="px-4 py-3 text-center text-gray-600">
-                      {row.weight}%
-                    </td>
                     <td className="px-4 py-3 text-center font-medium">
                       {avg?.toFixed(2) ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center font-medium">
-                      {weighted?.toFixed(2) ?? "—"}
                     </td>
                   </tr>
                 );
@@ -255,11 +239,11 @@ export default function Stage3Evaluation({
             </tbody>
             <tfoot>
               <tr className="bg-gray-50 font-bold">
-                <td className="px-4 py-3" colSpan={2}>
+                <td className="px-4 py-3">
                   Total weighted score
-                </td>
-                <td className="px-4 py-3 text-center text-xs font-normal text-gray-500">
-                  (1 = Unsatisfactory … 5 = Excellent)
+                  <span className="block text-xs font-normal text-gray-500 mt-0.5">
+                    (1 = Unsatisfactory … 5 = Excellent)
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-center text-red-700 text-base">
                   {total?.toFixed(2) ?? "—"} / 5.00
