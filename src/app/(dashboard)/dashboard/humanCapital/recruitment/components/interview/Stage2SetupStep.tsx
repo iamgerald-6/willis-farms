@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { Clock, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { stageMembers } from "@/lib/careers/panelInterview";
+import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { StageInfoBanner } from "./shared";
 
 type Props = {
@@ -17,12 +18,19 @@ type Props = {
   readOnly?: boolean;
 };
 
-function toLocalDatetime(iso?: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// Same date + IOSTimePicker split used when creating a job posting
+// (CareersTab.tsx) — Ghana has no DST and is always UTC+0, so the picker
+// values are stored as literal UTC ("...THH:mm:00Z") rather than run
+// through Date parsing, which would reinterpret them using whichever
+// timezone the admin's own computer happens to be set to.
+function isoDatePart(iso?: string) {
+  return iso ? iso.slice(0, 10) : "";
+}
+function isoTimePart(iso?: string) {
+  return iso ? iso.slice(11, 16) : "";
+}
+function combineDateTime(date: string, time: string): string {
+  return date && time ? `${date}T${time}:00Z` : "";
 }
 
 export default function Stage2SetupStep({
@@ -116,15 +124,15 @@ export default function Stage2SetupStep({
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Stage 2 practical date & time *
+              Stage 2 practical date *
             </label>
             <input
-              type="datetime-local"
-              value={toLocalDatetime(scheduledAt)}
+              type="date"
+              value={isoDatePart(scheduledAt)}
               disabled={readOnly}
               onChange={(e) => {
-                const val = e.target.value;
-                const iso = val ? new Date(val).toISOString() : "";
+                const time = isoTimePart(scheduledAt) || "09:00";
+                const iso = combineDateTime(e.target.value, time);
                 onChange({
                   ...formData,
                   stage2_scheduled_at: iso,
@@ -136,6 +144,30 @@ export default function Stage2SetupStep({
                 });
               }}
               className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              Stage 2 practical time *
+            </label>
+            <IOSTimePicker
+              value={isoTimePart(scheduledAt)}
+              disabled={readOnly}
+              onChange={(time) => {
+                const date = isoDatePart(scheduledAt);
+                if (!date) return;
+                const iso = combineDateTime(date, time);
+                onChange({
+                  ...formData,
+                  stage2_scheduled_at: iso,
+                  setup: {
+                    ...setup,
+                    stage2_scheduled_at: iso,
+                    stage2_members: stage2Members,
+                  },
+                });
+              }}
             />
           </div>
           <div>

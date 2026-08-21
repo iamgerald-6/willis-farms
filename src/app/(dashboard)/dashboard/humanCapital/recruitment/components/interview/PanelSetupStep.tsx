@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { Clock, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { StageInfoBanner } from "./shared";
 
 type Props = {
@@ -66,13 +67,15 @@ export default function PanelSetupStep({
     });
   };
 
-  const toLocalDatetime = (iso?: string) => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
+  // Same date + IOSTimePicker split used when creating a job posting
+  // (CareersTab.tsx) — Ghana has no DST and is always UTC+0, so the picker
+  // values are stored as literal UTC ("...T HH:mm:00Z") rather than run
+  // through Date parsing, which would reinterpret them using whichever
+  // timezone the admin's own computer happens to be set to.
+  const isoDatePart = (iso?: string) => (iso ? iso.slice(0, 10) : "");
+  const isoTimePart = (iso?: string) => (iso ? iso.slice(11, 16) : "");
+  const combineDateTime = (date: string, time: string) =>
+    date && time ? `${date}T${time}:00Z` : undefined;
 
   const invitesSent =
     setup.stage1_invites_sent_at ?? setup.invites_sent_at;
@@ -103,25 +106,44 @@ export default function PanelSetupStep({
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Stage 1 interview start *
+              Stage 1 interview date *
             </label>
             <input
-              type="datetime-local"
-              value={toLocalDatetime(setup.interview_start_at)}
+              type="date"
+              value={isoDatePart(setup.interview_start_at)}
               disabled={readOnly}
               onChange={(e) => {
-                const val = e.target.value;
+                const time = isoTimePart(setup.interview_start_at) || "09:00";
                 onChange({
                   ...formData,
                   setup: {
                     ...setup,
-                    interview_start_at: val
-                      ? new Date(val).toISOString()
-                      : undefined,
+                    interview_start_at: combineDateTime(e.target.value, time),
                   },
                 });
               }}
               className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              Stage 1 interview time *
+            </label>
+            <IOSTimePicker
+              value={isoTimePart(setup.interview_start_at)}
+              disabled={readOnly}
+              onChange={(time) => {
+                const date = isoDatePart(setup.interview_start_at);
+                if (!date) return;
+                onChange({
+                  ...formData,
+                  setup: {
+                    ...setup,
+                    interview_start_at: combineDateTime(date, time),
+                  },
+                });
+              }}
             />
           </div>
           <div>
