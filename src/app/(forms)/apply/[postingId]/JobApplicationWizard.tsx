@@ -630,10 +630,10 @@ export default function JobApplicationWizard({
               <div className="mt-8 mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
                 <p className="font-semibold text-blue-950 mb-1">Referees</p>
                 <p>
-                  At least two referees are required. When you click{" "}
-                  <span className="font-medium">Submit application</span>, we will email each
-                  referee you list below a secure link to complete a short reference form on
-                  your behalf. Please double-check their email addresses before submitting.
+                  At least two referees are required. If you are selected for the role, we will
+                  email each referee you list below a secure link to complete a short reference
+                  form on your behalf. Please double-check their email addresses before
+                  submitting.
                 </p>
               </div>
 

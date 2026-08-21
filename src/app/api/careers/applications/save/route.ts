@@ -11,7 +11,6 @@ import { isPostingPublic } from "@/lib/careers/jobPostings";
 import { generateReferenceNumber } from "@/lib/careers/openings";
 import { sendApplicationConfirmationEmail } from "@/lib/careers/applicationConfirmationEmail";
 import { sendApplicationHrNotificationEmail } from "@/lib/careers/applicationHrNotificationEmail";
-import { sendRefereeReferenceInvites, type SendRefereeInvitesResult } from "@/lib/careers/sendRefereeReferenceInvites";
 
 function createDraftToken(): string {
   return randomBytes(24).toString("hex");
@@ -175,7 +174,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (finalize) {
-        const refereeInvites = await sendSubmissionEmails(supabaseAdmin, {
+        await sendSubmissionEmails(supabaseAdmin, {
           applicationId: updated.id,
           formData: form_data,
           fullName: summary.full_name,
@@ -191,7 +190,6 @@ export async function POST(req: NextRequest) {
           data: {
             ...updated,
             submitted: true,
-            referee_invites: refereeInvites,
           },
         });
       }
@@ -254,7 +252,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (finalize) {
-      const refereeInvites = await sendSubmissionEmails(supabaseAdmin, {
+      await sendSubmissionEmails(supabaseAdmin, {
         applicationId: created.id,
         formData: form_data,
         fullName: summary.full_name,
@@ -270,7 +268,6 @@ export async function POST(req: NextRequest) {
         data: {
           ...created,
           submitted: true,
-          referee_invites: refereeInvites,
         },
       });
     }
@@ -300,7 +297,7 @@ async function sendSubmissionEmails(
     referenceNumber: string;
     submittedAt: string;
   },
-): Promise<SendRefereeInvitesResult | null> {
+): Promise<void> {
   const candidateResult = await sendApplicationConfirmationEmail({
     fullName: params.fullName,
     email: params.email,
@@ -324,21 +321,7 @@ async function sendSubmissionEmails(
     );
   }
 
-  const refereeResult = await sendRefereeReferenceInvites(supabaseAdmin, {
-    applicationId: params.applicationId,
-    formData: params.formData,
-    candidateName: params.fullName,
-    roleTitle: params.roleTitle,
-    referenceNumber: params.referenceNumber,
-  });
-
-  if (refereeResult.errors.length > 0) {
-    console.error("[applications/save] Referee invite issues:", refereeResult.errors);
-  } else if (refereeResult.sent > 0) {
-    console.info(
-      `[applications/save] Referee invites sent: ${refereeResult.sent}, skipped: ${refereeResult.skipped}`,
-    );
-  }
-
-  return refereeResult;
+  // Referee reference-check invites are NOT sent here — they only go out
+  // once a candidate is actually hired and starts onboarding/probation
+  // (see the "confirm_decision" hire branch in /api/careers/interview).
 }

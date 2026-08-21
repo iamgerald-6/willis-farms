@@ -18,6 +18,7 @@ import {
   statusForDecision,
 } from "@/lib/careers/panelDecision";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
+import { sendRefereeReferenceInvites } from "@/lib/careers/sendRefereeReferenceInvites";
 import {
   normalizeInterviewFormData,
   type InterviewFormData,
@@ -566,6 +567,19 @@ export async function POST(req: NextRequest) {
           emailWarnings.push(
             hireResult.error ?? "Hire / onboarding email not sent",
           );
+        }
+
+        // Referee reference checks go out now — once someone is actually
+        // hired and starting probation — not when they first applied.
+        const refereeResult = await sendRefereeReferenceInvites(supabaseAdmin, {
+          applicationId: application_id,
+          formData: (application.application_form_data ?? {}) as Record<string, unknown>,
+          candidateName: application.full_name,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+        });
+        if (refereeResult.errors.length > 0) {
+          emailWarnings.push(...refereeResult.errors);
         }
       } else if (decision === "do_not_hire") {
         const rejectResult = await sendRejectionEmail({
