@@ -815,7 +815,9 @@ function RejectsTab({
 
 // Applications whose interview evaluation has been finalized (status
 // "evaluation") — ranked by combined evaluation score (highest first) so HR
-// can compare candidates before deciding hire/hold/reject.
+// can compare candidates before deciding hire/hold/reject. Ranking is scoped
+// per role: candidates only compete for rank against others who applied for
+// the same role.
 function ApprovalsTab({
   applications,
   isLoading,
@@ -825,18 +827,32 @@ function ApprovalsTab({
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
 }) {
-  const ranked = useMemo(
-    () =>
-      [...applications].sort((a, b) => {
-        const scoreA = a.interview_form_data?.summary?.total_weighted;
-        const scoreB = b.interview_form_data?.summary?.total_weighted;
-        if (scoreA == null && scoreB == null) return 0;
-        if (scoreA == null) return 1;
-        if (scoreB == null) return -1;
-        return scoreB - scoreA;
-      }),
-    [applications],
-  );
+  const ranked = useMemo(() => {
+    const byRole = new Map<string, JobApplication[]>();
+    for (const a of applications) {
+      const group = byRole.get(a.role_title) ?? [];
+      group.push(a);
+      byRole.set(a.role_title, group);
+    }
+
+    const byScoreDesc = (a: JobApplication, b: JobApplication) => {
+      const scoreA = a.interview_form_data?.summary?.total_weighted;
+      const scoreB = b.interview_form_data?.summary?.total_weighted;
+      if (scoreA == null && scoreB == null) return 0;
+      if (scoreA == null) return 1;
+      if (scoreB == null) return -1;
+      return scoreB - scoreA;
+    };
+
+    const rows: { application: JobApplication; rank: number }[] = [];
+    for (const role of Array.from(byRole.keys()).sort((a, b) => a.localeCompare(b))) {
+      byRole
+        .get(role)!
+        .sort(byScoreDesc)
+        .forEach((a, i) => rows.push({ application: a, rank: i + 1 }));
+    }
+    return rows;
+  }, [applications]);
 
   return (
     <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -870,12 +886,12 @@ function ApprovalsTab({
               </td>
             </tr>
           ) : (
-            ranked.map((a, i) => (
+            ranked.map(({ application: a, rank }) => (
               <tr
                 key={a.id}
                 className="border-b border-gray-100 hover:bg-gray-50/80"
               >
-                <td className="px-4 py-3 font-medium text-gray-900">{i + 1}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">{rank}</td>
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-900">{a.full_name}</p>
                   <p className="text-xs text-gray-400">{a.email}</p>
