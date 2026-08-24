@@ -64,6 +64,8 @@ export interface ApplicationFieldRules {
   accept?: string;
   /** file fields only — allow uploading more than one file. */
   multiple?: boolean;
+  /** textarea / text — maximum character count. */
+  maxLength?: number;
 }
 
 export interface UploadedFile {
@@ -94,6 +96,18 @@ export const APPLICATION_STEPS: ApplicationFieldStep[] = [
 
 export type ApplicationFormData = Record<string, unknown>;
 
+export const COVER_LETTER_MAX_CHARS = 1500;
+
+export function effectiveMaxLength(field: ApplicationFormField): number | undefined {
+  if (field.rules.maxLength != null && field.rules.maxLength > 0) {
+    return field.rules.maxLength;
+  }
+  if (field.rules.fieldKey === "cover_letter") {
+    return COVER_LETTER_MAX_CHARS;
+  }
+  return undefined;
+}
+
 export function parseApplicationFieldRules(
   raw: Record<string, unknown> | null | undefined,
 ): ApplicationFieldRules {
@@ -123,6 +137,10 @@ export function parseApplicationFieldRules(
         : undefined,
     accept: typeof raw?.accept === "string" ? raw.accept : undefined,
     multiple: raw?.multiple === true,
+    maxLength:
+      typeof raw?.maxLength === "number" && raw.maxLength > 0
+        ? raw.maxLength
+        : undefined,
   };
 }
 
@@ -294,21 +312,9 @@ export function validateStep(
       }
     }
 
-    // Applicants must be at least 15 — the date picker's `max` attribute
-    // stops most people picking an invalid date, but that's a soft UI
-    // constraint some browsers don't fully enforce on manual typing, so
-    // it's re-checked here too.
-    if (field.rules.fieldType === "date" && field.rules.fieldKey === "date_of_birth" && !isEmpty) {
-      const dob = new Date(String(value));
-      if (Number.isNaN(dob.getTime())) {
-        errors.push(`${field.label} isn't a valid date.`);
-      } else {
-        const fifteenYearsAgo = new Date();
-        fifteenYearsAgo.setFullYear(fifteenYearsAgo.getFullYear() - 15);
-        if (dob.getTime() > fifteenYearsAgo.getTime()) {
-          errors.push(`${field.label}: applicants must be at least 15 years old.`);
-        }
-      }
+    const maxLen = effectiveMaxLength(field);
+    if (!isEmpty && maxLen != null && String(value).length > maxLen) {
+      errors.push(`${field.label} must be ${maxLen} characters or fewer.`);
     }
   }
   return errors;

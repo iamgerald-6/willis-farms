@@ -1,5 +1,12 @@
-import { recruitmentInterviewUrl, panelInterviewUrl, refereeReferenceUrl } from "@/lib/appUrl";
-import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+import {
+  recruitmentInterviewUrl,
+  panelInterviewUrl,
+  refereeReferenceUrl,
+} from "@/lib/appUrl";
+import {
+  getResendFromAddress,
+  getReplyToEmail,
+} from "@/lib/email/resendClient";
 
 type SendResult = { sent: boolean; error?: string };
 
@@ -226,7 +233,7 @@ export async function sendInterviewInvitationEmail(params: {
   });
 }
 
-/** Notify candidate (+ HR copy) of Stage 2 practical date and expectations */
+/** Notify candidate (+ HR copy) of Stage 2 practical date and time */
 export async function sendStage2ScheduleEmail(params: {
   candidateName: string;
   candidateEmail: string;
@@ -235,7 +242,6 @@ export async function sendStage2ScheduleEmail(params: {
   scheduledAt: string;
   location?: string;
   stage2Duration: string;
-  practicalExpectations: string[];
 }): Promise<SendResult> {
   const when = formatDateTime(params.scheduledAt);
   const hrEmail = getReplyToEmail();
@@ -245,11 +251,18 @@ export async function sendStage2ScheduleEmail(params: {
     ? params.location.trim()
     : "To be confirmed";
 
-  const expectationsText = params.practicalExpectations
+  const practicalExpectations = [
+    "Arrive on time and dressed appropriately for the working environment.",
+    "Comply with all biosecurity, PPE, and safety instructions given on arrival.",
+    "Follow supervisor direction throughout — ask if anything is unclear before proceeding.",
+    "Bring valid ID and any documents HR has requested.",
+  ];
+
+  const expectationsText = practicalExpectations
     .map((item, i) => `${i + 1}. ${item}`)
     .join("\n");
 
-  const expectationsHtml = params.practicalExpectations
+  const expectationsHtml = practicalExpectations
     .map(
       (item) =>
         `<li style="margin:0 0 8px;font-size:14px;color:#374151;">${escapeHtml(item)}</li>`,
@@ -273,8 +286,6 @@ export async function sendStage2ScheduleEmail(params: {
     "",
     "What we expect from you on the day:",
     expectationsText,
-    "",
-    "This is an observed assessment — please focus on safe, disciplined work under supervision rather than trying to guess what we want to hear.",
     "",
     "If you need to reschedule, contact info@willsfarms.com quoting your reference number.",
     "",
@@ -302,10 +313,6 @@ export async function sendStage2ScheduleEmail(params: {
       </table>
       <p style="margin:0 0 12px;font-size:14px;font-weight:600;color:#374151;">What we expect from you on the day:</p>
       <ul style="margin:0 0 20px;padding-left:20px;">${expectationsHtml}</ul>
-      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
-        This is an observed assessment — please focus on safe, disciplined work under supervision
-        rather than trying to guess what we want to hear.
-      </p>
       <p style="margin:0;font-size:14px;color:#374151;">
         If you need to reschedule, contact
         <a href="mailto:info@willsfarms.com" style="color:#991b1b;">info@willsfarms.com</a>
@@ -324,7 +331,12 @@ export async function sendStage2ScheduleEmail(params: {
 }
 
 export async function sendAllPanelInvites(params: {
-  members: { name: string; email: string; access_token: string; stage: 1 | 2 }[];
+  members: {
+    name: string;
+    email: string;
+    access_token: string;
+    stage: 1 | 2;
+  }[];
   candidateName: string;
   roleTitle: string;
   referenceNumber: string;

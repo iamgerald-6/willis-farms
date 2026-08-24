@@ -1,8 +1,13 @@
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import { validateCvOrJdFile } from "@/lib/uploadConstraints";
 
 export async function uploadCvToCloudinary(
   file: File,
 ): Promise<{ secure_url: string; public_id: string }> {
+  const validationError = validateCvOrJdFile(file);
+  if (validationError) {
+    throw new Error(validationError);
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);

@@ -5,6 +5,7 @@ import { Loader2, Upload, X, CheckCircle2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import { ACCEPT_PDF_OR_WORD, validatePdfOrWordFile } from "@/lib/uploadConstraints";
 import { POLICY_DESCRIPTION_MAX_CHARS } from "@/lib/moduleRegistry";
 
 interface ManualVersion {
@@ -88,10 +89,11 @@ export default function EditManualModal({
   };
 
   const handleFile = (f: File) => {
-    if (f.type !== "application/pdf") {
+    const validationError = validatePdfOrWordFile(f);
+    if (validationError) {
       setVersionErrors((prev) => ({
         ...prev,
-        file: "Only PDF files are accepted",
+        file: validationError,
       }));
       return;
     }
@@ -384,7 +386,7 @@ export default function EditManualModal({
                     <input
                       id="manual-version-replace"
                       type="file"
-                      accept="application/pdf"
+                      accept={ACCEPT_PDF_OR_WORD}
                       className="hidden"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
