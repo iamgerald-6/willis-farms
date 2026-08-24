@@ -99,5 +99,11 @@ comment on column public.job_postings.status is
 comment on column public.job_applications.submission_status is
   'draft = saved but not submitted; submitted = visible in HR applications inbox.';
 
+alter table public.job_applications
+  add column if not exists application_form_fields_snapshot jsonb;
+
+comment on column public.job_applications.application_form_fields_snapshot is
+  'Frozen job application form definition when the applicant first saves. Later system definition changes do not affect this application.';
+
 -- Refresh PostgREST schema cache after adding columns
 notify pgrst, 'reload schema';

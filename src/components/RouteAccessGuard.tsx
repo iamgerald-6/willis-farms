@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { RouteGuardSkeleton } from "@/components/skeletons/PageSkeletons";
 import { isEmailVerified } from "@/lib/userAccountStatus";
 import { staffAuthBlockMessage } from "@/lib/staffAccount";
+import { performLogout } from "@/lib/auth/performLogout";
 
 export default function RouteAccessGuard({
   children,
@@ -69,19 +70,19 @@ export default function RouteAccessGuard({
 
     if (!profile) {
       toast.error(staffAuthBlockMessage("not_found"));
-      supabase.auth.signOut().then(() => router.replace("/login"));
+      void performLogout(router);
       return;
     }
 
     if (profile.is_disabled) {
       toast.error(staffAuthBlockMessage("disabled"));
-      supabase.auth.signOut().then(() => router.replace("/login"));
+      void performLogout(router);
       return;
     }
 
     if (!isEmailVerified(profile)) {
       toast.error(staffAuthBlockMessage("pending"));
-      supabase.auth.signOut().then(() => router.replace("/login"));
+      void performLogout(router);
       return;
     }
 

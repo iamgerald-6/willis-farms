@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import type {
+  ModuleActions,
   PagePermissionActions,
   PermissionAction,
 } from "@/lib/moduleRegistry/types";
@@ -16,6 +17,13 @@ type Props = {
   actions: PagePermissionActions;
   onChange: (actions: PagePermissionActions) => void;
   readOnly?: boolean;
+  /**
+   * Baseline to diff each row against — pass the resolved group permissions
+   * here while editing an individual override so admins can see, per module,
+   * which rows have actually been customized away from the group ("Custom"
+   * badge) and one-click revert just that row back to the group's value.
+   */
+  compareTo?: PagePermissionActions;
 };
 
 const ALL_ACTIONS: PermissionAction[] = [
@@ -26,10 +34,18 @@ const ALL_ACTIONS: PermissionAction[] = [
   "approve",
 ];
 
+function rowsEqual(
+  a: ModuleActions | undefined,
+  b: ModuleActions | undefined,
+): boolean {
+  return ALL_ACTIONS.every((action) => !!a?.[action] === !!b?.[action]);
+}
+
 export default function PermissionMatrix({
   actions,
   onChange,
   readOnly = false,
+  compareTo,
 }: Props) {
   const groups = getPermissionMatrixByGroup();
   const usedActions = new Set<PermissionAction>();
@@ -69,6 +85,18 @@ export default function PermissionMatrix({
     onChange(next);
   };
 
+  const resetRowToBaseline = (key: PagePermissionKey) => {
+    if (readOnly || !compareTo) return;
+    const next = { ...actions };
+    const baselineRow = compareTo[key];
+    if (baselineRow && Object.values(baselineRow).some(Boolean)) {
+      next[key] = { ...baselineRow };
+    } else {
+      delete next[key];
+    }
+    onChange(next);
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm min-w-[720px]">
@@ -99,24 +127,50 @@ export default function PermissionMatrix({
               {modules.map((mod, i) => {
                 const current = actions[mod.key] ?? {};
                 const hasAny = Object.values(current).some(Boolean);
+                const baselineRow = compareTo?.[mod.key];
+                const isCustom = compareTo
+                  ? !rowsEqual(current, baselineRow)
+                  : false;
 
                 return (
                   <tr
                     key={mod.key}
                     className={`border-b border-gray-100 ${
-                      i % 2 === 0 ? "bg-white" : "bg-gray-50/60"
+                      isCustom
+                        ? "bg-amber-50/70"
+                        : i % 2 === 0
+                          ? "bg-white"
+                          : "bg-gray-50/60"
                     }`}
                   >
                     <td className="px-4 py-3 text-gray-800">
                       <span className="font-medium">{mod.label}</span>
-                      {hasAny && !readOnly && (
-                        <button
-                          type="button"
-                          onClick={() => clearModule(mod.key)}
-                          className="block text-xs text-gray-400 hover:text-red-600 mt-1"
-                        >
-                          Remove all
-                        </button>
+                      {isCustom && (
+                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 align-middle">
+                          Custom
+                        </span>
+                      )}
+                      {!readOnly && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {hasAny && (
+                            <button
+                              type="button"
+                              onClick={() => clearModule(mod.key)}
+                              className="text-xs text-gray-400 hover:text-red-600"
+                            >
+                              Remove all
+                            </button>
+                          )}
+                          {isCustom && (
+                            <button
+                              type="button"
+                              onClick={() => resetRowToBaseline(mod.key)}
+                              className="text-xs text-blue-500 hover:text-blue-700"
+                            >
+                              Reset to group
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                     {headerActions.map((action) => {

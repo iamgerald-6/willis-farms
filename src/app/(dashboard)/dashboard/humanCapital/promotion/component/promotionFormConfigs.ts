@@ -1,5 +1,11 @@
 // Grade-specific promotion form configs — aligned to docs/Promotion Readiness *.docx
 
+import {
+  nextGradeInOrder,
+  resolveGradeOrder,
+  type GradeLevelsConfig,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
+
 export type PromotionStep =
   | "L1_L2"
   | "L2_L3"
@@ -64,7 +70,7 @@ export interface PromotionFormData {
   sign_offs?: Record<string, { name: string; date: string }>;
 }
 
-export const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"] as const;
+export const GRADE_ORDER = resolveGradeOrder();
 
 export const FINAL_DECISIONS = [
   { value: "promote", label: "Promote" },
@@ -125,11 +131,11 @@ export function getPromotionStep(
   return map[g] ?? null;
 }
 
-export function getProposedGrade(currentGrade: string): string | null {
-  const g = cleanGrade(currentGrade);
-  const idx = GRADE_ORDER.indexOf(g as (typeof GRADE_ORDER)[number]);
-  if (idx === -1 || idx >= GRADE_ORDER.length - 1) return null;
-  return GRADE_ORDER[idx + 1];
+export function getProposedGrade(
+  currentGrade: string,
+  config?: GradeLevelsConfig,
+): string | null {
+  return nextGradeInOrder(currentGrade, config);
 }
 
 export function computeReadinessSummary(

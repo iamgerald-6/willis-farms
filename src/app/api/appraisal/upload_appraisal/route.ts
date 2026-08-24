@@ -8,6 +8,9 @@ import {
   periodLabel,
 } from "@/lib/appraisal/deadlines";
 import { canRate, type Quarter } from "@/lib/appraisal/sections";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { fetchAppraisalScopeConfig } from "@/lib/grades/fetchAppraisalScopeConfig";
+import { isValidAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
 import { isSuperAdmin } from "@/lib/accessControl";
 import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import {
@@ -119,8 +122,11 @@ export async function POST(req: NextRequest) {
     // it's fully derived from the quarter.
     const cycle = review_quarter === "Q4" ? "annual" : "quarterly";
 
-    // Validate grade band
-    if (!["L1", "L2_L3", "L4", "L5_L6_L7"].includes(grade_band)) {
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+    const scopeConfig = await fetchAppraisalScopeConfig(supabaseAdmin);
+
+    // Validate form key (grouped band or individual grade)
+    if (!isValidAppraisalFormKey(grade_band, scopeConfig, gradeConfig)) {
       return NextResponse.json(
         { error: "Invalid grade band" },
         { status: 400 },
@@ -173,23 +179,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Confirm company_id exists in users table
-    const { data: userExists, error: userError } = await supabaseAdmin
+    // Confirm company_id exists and load assigned supervisor when present.
+    const { data: employeeUser, error: userError } = await supabaseAdmin
       .from("users")
-      .select("company_id")
+      .select("company_id, user_id, supervisor_id")
       .eq("company_id", company_id)
       .single();
 
-    if (userError || !userExists) {
+    if (userError || !employeeUser) {
       return NextResponse.json(
         { error: "Employee not found with that company ID" },
         { status: 404 },
       );
     }
 
-    // Try to resolve the supervisor's user record from the email they
-    // were given (there's no formal manager_id link in this schema), so
-    // penalties/full-name display can be attributed correctly later.
     let resolvedSupervisorId: string | null = null;
     if (supervisor_email) {
       const { data: supUser } = await supabaseAdmin
@@ -198,6 +201,9 @@ export async function POST(req: NextRequest) {
         .ilike("email", supervisor_email.trim())
         .maybeSingle();
       resolvedSupervisorId = supUser?.user_id ?? null;
+    }
+    if (!resolvedSupervisorId && employeeUser.supervisor_id) {
+      resolvedSupervisorId = employeeUser.supervisor_id;
     }
 
     // ── Upsert-by-natural-key: one appraisal row per employee per quarter ──

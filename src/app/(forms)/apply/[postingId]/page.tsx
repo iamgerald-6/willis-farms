@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import JobApplicationWizard from "./JobApplicationWizard";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { fetchApplicationFormFields } from "@/lib/careers/getApplicationFormFields";
+import { fetchApplicationFormContext } from "@/lib/careers/getApplicationFormFields";
+import { stepLabelFor } from "@/lib/systemDefinitions/applicationFormConfig";
 import { isPostingPublic, type JobPosting } from "@/lib/careers/jobPostings";
 
 type PageProps = { params: Promise<{ postingId: string }> };
@@ -29,9 +30,18 @@ export default async function ApplyPage({ params }: PageProps) {
     notFound();
   }
 
-  const fields = await fetchApplicationFormFields(supabaseAdmin);
+  const formContext = await fetchApplicationFormContext(supabaseAdmin);
+  const stepLabels = Object.fromEntries(
+    formContext.steps.map((stepId) => [stepId, stepLabelFor(stepId, formContext.config)]),
+  );
 
   return (
-    <JobApplicationWizard posting={posting as JobPosting} fields={fields} />
+    <JobApplicationWizard
+      posting={posting as JobPosting}
+      fields={formContext.fields}
+      steps={formContext.steps}
+      stepLabels={stepLabels}
+      formConfig={formContext.config}
+    />
   );
 }

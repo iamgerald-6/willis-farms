@@ -3,9 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  APPLICATION_STEP_LABELS,
-  APPLICATION_STEPS,
-  type ApplicationFieldStep,
   type ApplicationFormData,
   type ApplicationFormField,
   type EducationEntry,
@@ -15,6 +12,11 @@ import {
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
+import {
+  isRefereeFieldKey,
+  resolveRequiredRefereeCount,
+  type ApplicationFormConfig,
+} from "@/lib/systemDefinitions/applicationFormConfig";
 import type { JobPosting } from "@/lib/careers/jobPostings";
 import { formatPublicJobTitle } from "@/lib/careers/jobPostings";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
@@ -29,20 +31,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Plus,
   Trash2,
   Upload,
-  X,
 } from "lucide-react";
-import {
-  ADD_SECOND_REFEREE_KEY,
-  REFERENCE_2_FIELD_KEYS,
-  hasSecondRefereeData,
-} from "@/lib/systemDefinitions/recruitmentDefaults";
 
 type Props = {
   posting: JobPosting;
   fields: ApplicationFormField[];
+  steps: string[];
+  stepLabels: Record<string, string>;
+  formConfig?: ApplicationFormConfig;
   initialValues?: ApplicationFormData;
   draftToken?: string;
 };
@@ -73,18 +71,16 @@ function FieldBlock({
 export default function JobApplicationWizard({
   posting,
   fields,
+  steps,
+  stepLabels,
+  formConfig,
   initialValues = {},
   draftToken,
 }: Props) {
   const router = useRouter();
+  const requiredRefereeCount = resolveRequiredRefereeCount(formConfig);
   const [stepIndex, setStepIndex] = useState(0);
-  const [values, setValues] = useState<ApplicationFormData>(() => ({
-    ...initialValues,
-    [ADD_SECOND_REFEREE_KEY]:
-      initialValues[ADD_SECOND_REFEREE_KEY] === "Yes" || hasSecondRefereeData(initialValues)
-        ? "Yes"
-        : "",
-  }));
+  const [values, setValues] = useState<ApplicationFormData>(() => ({ ...initialValues }));
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,52 +89,30 @@ export default function JobApplicationWizard({
   const [extractingCv, setExtractingCv] = useState(false);
   const [cvFillNotice, setCvFillNotice] = useState<string | null>(null);
 
-  const step = APPLICATION_STEPS[stepIndex];
+  const step = steps[stepIndex] ?? steps[0];
   const stepFields = useMemo(
     () => visibleFieldsForStep(fields, step, values),
     [fields, step, values],
   );
-  const documentsFieldsBeforeReferees = useMemo(
-    () =>
-      step === "documents"
-        ? stepFields.filter((f) => !f.rules.fieldKey.startsWith("reference_"))
-        : [],
-    [step, stepFields],
+  const nonRefereeStepFields = useMemo(
+    () => stepFields.filter((f) => !isRefereeFieldKey(f.rules.fieldKey)),
+    [stepFields],
   );
   const refereeFields = useMemo(
-    () =>
-      step === "documents"
-        ? stepFields.filter((f) => f.rules.fieldKey.startsWith("reference_"))
-        : [],
-    [step, stepFields],
+    () => stepFields.filter((f) => isRefereeFieldKey(f.rules.fieldKey)),
+    [stepFields],
   );
-  const primaryRefereeFields = useMemo(
-    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_1_")),
-    [refereeFields],
-  );
-  const secondaryRefereeFields = useMemo(
-    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_2_")),
-    [refereeFields],
-  );
-  const showSecondReferee = values[ADD_SECOND_REFEREE_KEY] === "Yes";
+  const refereeGroups = useMemo(() => {
+    const groups: ApplicationFormField[][] = [];
+    for (let i = 1; i <= requiredRefereeCount; i++) {
+      const prefix = `reference_${i}_`;
+      const group = refereeFields.filter((f) => f.rules.fieldKey.startsWith(prefix));
+      if (group.length) groups.push(group);
+    }
+    return groups;
+  }, [refereeFields, requiredRefereeCount]);
 
-  const addSecondReferee = () => {
-    setValues((prev) => ({ ...prev, [ADD_SECOND_REFEREE_KEY]: "Yes" }));
-    setDraftSavedMessage(null);
-    setError(null);
-  };
-
-  const removeSecondReferee = () => {
-    setValues((prev) => {
-      const next: ApplicationFormData = { ...prev, [ADD_SECOND_REFEREE_KEY]: "" };
-      for (const key of REFERENCE_2_FIELD_KEYS) {
-        next[key] = "";
-      }
-      return next;
-    });
-    setDraftSavedMessage(null);
-    setError(null);
-  };
+  const refereeStepLabel = stepLabels.references ?? "Referees";
 
   const setFieldValue = (key: string, value: unknown) => {
     setValues((prev) => {
@@ -164,12 +138,12 @@ export default function JobApplicationWizard({
       return;
     }
     setError(null);
-    setStepIndex((i) => Math.min(i + 1, APPLICATION_STEPS.length - 1));
+    setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   };
 
   const saveApplication = async (finalize: boolean) => {
     if (finalize) {
-      for (const s of APPLICATION_STEPS) {
+      for (const s of steps) {
         const stepErrors = validateStep(fields, s, values);
         if (stepErrors.length > 0) {
           setError(stepErrors[0]);
@@ -394,7 +368,7 @@ export default function JobApplicationWizard({
               setFieldValue(fieldKey, next);
             }}
           />
-          {maxLen != null && (
+          {maxLen != null && remaining != null && (
             <p
               className={`text-xs mt-1 ${
                 remaining === 0
@@ -566,7 +540,7 @@ export default function JobApplicationWizard({
       subtitle={`${posting.location} · ${posting.employment_type}`}
     >
       <div className="flex gap-2 mb-6">
-        {APPLICATION_STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <div
             key={s}
             className={`flex-1 h-1.5 rounded-full ${i <= stepIndex ? "bg-red-600" : "bg-gray-200"}`}
@@ -574,10 +548,10 @@ export default function JobApplicationWizard({
         ))}
       </div>
       <p className="text-sm font-semibold text-gray-800 mb-1">
-        Step {stepIndex + 1} of {APPLICATION_STEPS.length}
+        Step {stepIndex + 1} of {steps.length}
       </p>
       <p className="text-xs text-gray-500 mb-6">
-        {APPLICATION_STEP_LABELS[step as ApplicationFieldStep]}
+        {stepLabels[step] ?? step}
       </p>
 
       {extractingCv && (
@@ -605,79 +579,9 @@ export default function JobApplicationWizard({
         </div>
       )}
 
-      {step === "documents" ? (
-        <>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {documentsFieldsBeforeReferees.map((field) => (
-              <div
-                key={field.id}
-                className={
-                  field.rules.fieldType === "textarea" ||
-                  field.rules.fieldType === "file" ||
-                  field.rules.fieldType === "work_history" ||
-                  field.rules.fieldType === "education_history"
-                    ? "sm:col-span-2"
-                    : ""
-                }
-              >
-                {renderField(field)}
-              </div>
-            ))}
-          </div>
-
-          {refereeFields.length > 0 && (
-            <>
-              <div className="mt-8 mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
-                <p className="font-semibold text-blue-950 mb-1">Referee</p>
-                <p>
-                  One referee is required. When you click{" "}
-                  <span className="font-medium">Submit application</span>, we will email each
-                  referee you list below a secure link to complete a short reference form on
-                  your behalf. Please double-check their email addresses before submitting.
-                </p>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                {primaryRefereeFields.map((field) => (
-                  <div key={field.id}>{renderField(field)}</div>
-                ))}
-              </div>
-
-              {!showSecondReferee ? (
-                <button
-                  type="button"
-                  onClick={addSecondReferee}
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add another referee (optional)
-                </button>
-              ) : (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-gray-900">Second referee (optional)</p>
-                    <button
-                      type="button"
-                      onClick={removeSecondReferee}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      Remove
-                    </button>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {secondaryRefereeFields.map((field) => (
-                      <div key={field.id}>{renderField(field)}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </>
-      ) : (
+      {nonRefereeStepFields.length > 0 && (
         <div className="grid sm:grid-cols-2 gap-3">
-          {stepFields.map((field) => (
+          {nonRefereeStepFields.map((field) => (
             <div
               key={field.id}
               className={
@@ -695,6 +599,45 @@ export default function JobApplicationWizard({
         </div>
       )}
 
+      {refereeFields.length > 0 && (
+        <>
+          <div className="mt-2 mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+            <p className="font-semibold text-blue-950 mb-1">{refereeStepLabel}</p>
+            <p>
+              {requiredRefereeCount === 1
+                ? "One referee is required."
+                : `${requiredRefereeCount} referees are required.`}{" "}
+              When you click <span className="font-medium">Submit application</span>, we will
+              email each referee you list below a secure link to complete a short reference form on
+              your behalf. Please double-check their email addresses before submitting.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            {refereeGroups.map((group, index) => (
+              <div key={`referee-${index + 1}`} className="space-y-3">
+                <p className="text-sm font-semibold text-gray-900">
+                  {requiredRefereeCount === 1
+                    ? "Referee"
+                    : index === 0
+                      ? "First referee"
+                      : index === 1
+                        ? "Second referee"
+                        : index === 2
+                          ? "Third referee"
+                          : `Referee ${index + 1}`}
+                </p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {group.map((field) => (
+                    <div key={field.id}>{renderField(field)}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-gray-100">
         {stepIndex > 0 && (
           <button
@@ -708,7 +651,7 @@ export default function JobApplicationWizard({
           </button>
         )}
 
-        {stepIndex < APPLICATION_STEPS.length - 1 ? (
+        {stepIndex < steps.length - 1 ? (
           <button
             type="button"
             disabled={saving || !!uploadingKey}

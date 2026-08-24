@@ -10,9 +10,11 @@ import {
   deriveCitizenshipFromApplication,
   flatToOnboardingForm,
   getDefaultOnboardingFormFieldsFallback,
+  mergeOnboardingFieldDefinitions,
   onboardingFormToFlat,
-  prefillQualificationsFromApplication,
+  validateOnboardingMedicalExtras,
   validateOnboardingStep,
+  ONBOARDING_STEPS,
 } from "@/lib/careers/onboardingFormSchema";
 import {
   fetchOnboardingFormFields,
@@ -23,7 +25,6 @@ import {
   validateOnboardingToken,
 } from "@/lib/careers/onboardingTokens";
 import { sendOnboardingSubmittedEmail } from "@/lib/careers/interviewEmails";
-import { fetchRefereeSubmissionsForApplication } from "@/lib/careers/sendRefereeReferenceInvites";
 
 type RouteParams = { params: Promise<{ token: string }> };
 
@@ -69,10 +70,18 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       data: {
-        application,
+        application: {
+          full_name: application.full_name,
+          email: application.email,
+          phone: application.phone,
+          role_title: application.role_title,
+          reference_number: application.reference_number,
+        },
         submitted: true,
         submitted_at: submission.submitted_at,
         expires_at: validation.expiresAt,
+        application_form_data: application.application_form_data,
+        form_data: mergeOnboardingForm(submission.form_data as OnboardingFormData),
       },
     });
   }
@@ -100,12 +109,6 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     application_form_data: application.application_form_data as Record<string, unknown> | null,
   });
 
-  const refereeSubmissions = await fetchRefereeSubmissionsForApplication(
-    supabaseAdmin,
-    validation.applicationId,
-  );
-  initialFlat.referee_submissions = refereeSubmissions;
-
   return NextResponse.json({
     success: true,
     data: {
@@ -117,13 +120,13 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         reference_number: application.reference_number,
       },
       submitted: false,
+      application_form_data: application.application_form_data,
       form_data: flatToOnboardingForm(initialFlat),
       initial_flat: initialFlat,
       fields,
       option_lists: optionLists,
       personal_completed_at: submission?.personal_completed_at ?? null,
       medical_completed_at: submission?.medical_completed_at ?? null,
-      referee_completed_at: submission?.referee_completed_at ?? null,
       expires_at: validation.expiresAt,
     },
   });
@@ -172,7 +175,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const { data: application } = await supabaseAdmin
     .from("job_applications")
-    .select("application_form_data")
+    .select("full_name, email, phone, application_form_data")
     .eq("id", validation.applicationId)
     .single();
 
@@ -181,18 +184,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   );
   if (citizenship) {
     merged.personal = { ...merged.personal, is_citizen: citizenship };
-  }
-
-  const appFormData = application?.application_form_data as Record<string, unknown> | null;
-  const fromApplication = prefillQualificationsFromApplication(appFormData);
-  if (Array.isArray(fromApplication.application_certificates)) {
-    merged.application_certificates = fromApplication.application_certificates;
-  }
-  if (Array.isArray(fromApplication.work_experience) && fromApplication.work_experience.length > 0) {
-    const hasSavedExperience = merged.work_experience?.some((e) => e?.employer?.trim());
-    if (!hasSavedExperience) {
-      merged.work_experience = fromApplication.work_experience;
-    }
   }
 
   let fields;
@@ -207,20 +198,45 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     optionLists = getGitOnboardingOptionLists();
   }
 
+  fields = mergeOnboardingFieldDefinitions(fields);
+
+  const applicationContext = {
+    application_form_data: application?.application_form_data as Record<string, unknown> | null,
+    full_name: application?.full_name,
+    email: application?.email,
+    phone: application?.phone,
+  };
+
   const flat = onboardingFormToFlat(merged);
   if (step) {
-    const errors = validateOnboardingStep(fields, step, flat, optionLists);
+    const errors = validateOnboardingStep(
+      fields,
+      step,
+      flat,
+      optionLists,
+      applicationContext,
+    );
     if (errors.length > 0) {
       return NextResponse.json({ error: errors[0] }, { status: 400 });
     }
   }
 
   if (finalize) {
-    for (const s of ["personal", "medical", "referee"] as OnboardingStep[]) {
-      const errors = validateOnboardingStep(fields, s, flat, optionLists);
+    for (const s of ONBOARDING_STEPS) {
+      const errors = validateOnboardingStep(
+        fields,
+        s,
+        flat,
+        optionLists,
+        applicationContext,
+      );
       if (errors.length > 0) {
         return NextResponse.json({ error: errors[0] }, { status: 400 });
       }
+    }
+    const medicalErrors = validateOnboardingMedicalExtras(merged);
+    if (medicalErrors.length > 0) {
+      return NextResponse.json({ error: medicalErrors[0] }, { status: 400 });
     }
   }
 
@@ -233,8 +249,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   if (step === "personal") updates.personal_completed_at = now;
   if (step === "medical") updates.medical_completed_at = now;
-  if (step === "referee" && finalize) {
-    updates.referee_completed_at = now;
+  if (step === "medical" && finalize) {
     updates.submitted_at = now;
   }
 

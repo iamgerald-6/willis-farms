@@ -10,6 +10,8 @@ import {
 } from "@/lib/email/resendClient";
 import { getAppBaseUrl } from "@/lib/appUrl";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
       company_id,
       job_position,
       grade_level,
+      supervisor_id,
     } = await req.json();
 
     if (!email || !role || !first_name || !last_name || !company_id) {
@@ -54,6 +57,42 @@ export async function POST(req: NextRequest) {
     const validRoles = ["admin", "manager", "employee"];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+    let resolvedSupervisorId: string | null = null;
+
+    if (supervisor_id) {
+      const { data: supervisor, error: supervisorError } = await supabaseAdmin
+        .from("users")
+        .select("user_id, role, grade_level")
+        .eq("user_id", String(supervisor_id).trim())
+        .maybeSingle();
+
+      if (supervisorError || !supervisor) {
+        return NextResponse.json(
+          { error: "Supervisor not found" },
+          { status: 404 },
+        );
+      }
+
+      const employeeStub = {
+        user_id: "pending",
+        role,
+        grade_level: grade_level ?? null,
+      };
+
+      if (!canAssignAsSupervisor(supervisor, employeeStub, gradeConfig)) {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid supervisor — must be L4 or above and strictly senior to the employee's grade.",
+          },
+          { status: 400 },
+        );
+      }
+
+      resolvedSupervisorId = supervisor.user_id;
     }
 
     const redirectTo = `${getAppBaseUrl()}/set-password`;
@@ -92,6 +131,7 @@ export async function POST(req: NextRequest) {
       company_id,
       grade_level,
       job_position: job_position ?? null,
+      supervisor_id: resolvedSupervisorId,
       created_at: new Date().toISOString(),
     };
 
@@ -106,6 +146,20 @@ export async function POST(req: NextRequest) {
       },
       { ...baseRow, email_verified: false, email_confirm: false },
       { ...baseRow },
+      {
+        ...baseRow,
+        supervisor_id: undefined,
+        created_by: caller.id,
+        email_verified: false,
+        email_confirm: false,
+      },
+      {
+        ...baseRow,
+        supervisor_id: undefined,
+        email_verified: false,
+        email_confirm: false,
+      },
+      { ...baseRow, supervisor_id: undefined },
     ];
 
     let tableUser = null;
@@ -130,6 +184,7 @@ export async function POST(req: NextRequest) {
         msg.includes("created_by") ||
         msg.includes("email_verified") ||
         msg.includes("email_confirm") ||
+        msg.includes("supervisor_id") ||
         msg.includes("schema cache");
 
       if (!missingOptionalColumn) break;

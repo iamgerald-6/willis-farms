@@ -115,7 +115,7 @@ export async function fetchRefereeSubmissionsForApplication(
 }
 
 export type RefereeHrContextRow = {
-  referee_index: 1 | 2;
+  referee_index: number;
   referee_name: string;
   referee_email: string;
   relationship: string;

@@ -3,13 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
-import { GRADE_LEVEL_OPTIONS } from "@/lib/careers/hrEmployeeDefaults";
 import {
   applyApplicationPrefill,
+  mergeInitialOnboardingHrData,
   mergeOnboardingForm,
   type OnboardingFormData,
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
+import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
+import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
+import { STATUS_LABELS, type ApplicationStatus } from "@/lib/careers/types";
 import { Loader2, Mail, RefreshCw, X, ExternalLink } from "lucide-react";
 import type { OnboardingHrReferenceContext } from "@/lib/careers/sendRefereeReferenceInvites";
 import { toast } from "sonner";
@@ -29,6 +32,8 @@ type SubmissionRow = {
     phone: string;
     role_title: string;
     status: string;
+    location?: string | null;
+    application_form_data?: Record<string, unknown> | null;
   };
 };
 
@@ -52,16 +57,6 @@ function formatDateTime(iso: string | null | undefined) {
   });
 }
 
-/** ISO date (YYYY-MM-DD) for date inputs — accepts stored date strings. */
-function toDateInputValue(value: string | undefined | null): string {
-  if (!value?.trim()) return "";
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
-}
-
 function OnboardingDetail({
   row,
   onClose,
@@ -78,7 +73,14 @@ function OnboardingDetail({
     phone: app.phone,
     role_title: app.role_title,
   });
-  const [hrData, setHrData] = useState<OnboardingHrData>(row.hr_data ?? {});
+  const [hrData, setHrData] = useState<OnboardingHrData>(() =>
+    mergeInitialOnboardingHrData({
+      hr_data: row.hr_data,
+      form_data: row.form_data,
+      role_title: app.role_title,
+      location: app.location,
+    }),
+  );
   const employeeIdTouched = useRef(Boolean(row.hr_data?.employee_id?.trim()));
   const companyEmailTouched = useRef(Boolean(row.hr_data?.company_email?.trim()));
 
@@ -173,36 +175,6 @@ function OnboardingDetail({
       toast.error(e?.response?.data?.error ?? "Resend failed.");
     },
   });
-
-  const hrDateField = (key: "medical_referral_issued" | "reference_forms_sent", label: string) => (
-    <label key={key} className="block">
-      <span className="text-xs text-gray-500">{label}</span>
-      <input
-        type="date"
-        className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-        value={toDateInputValue(hrData[key])}
-        onChange={(e) =>
-          setHrData((prev) => ({ ...prev, [key]: e.target.value || undefined }))
-        }
-      />
-    </label>
-  );
-
-  const hrField = (key: keyof OnboardingHrData, label: string, hint?: string) => (
-    <label key={key} className="block">
-      <span className="text-xs text-gray-500">{label}</span>
-      <input
-        className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-        value={hrData[key] ?? ""}
-        onChange={(e) => {
-          if (key === "employee_id") employeeIdTouched.current = true;
-          if (key === "company_email") companyEmailTouched.current = true;
-          setHrData((prev) => ({ ...prev, [key]: e.target.value }));
-        }}
-      />
-      {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
-    </label>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -366,15 +338,19 @@ function OnboardingDetail({
           )}
 
           <section>
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Candidate onboarding answers</h3>
-            <div className="grid sm:grid-cols-2 gap-3 text-sm bg-gray-50 rounded-xl p-4">
-              <div><span className="text-gray-400 text-xs block">Ghana Card</span>{form.personal?.ghana_card_no ?? "—"}</div>
-              <div><span className="text-gray-400 text-xs block">SSNIT</span>{form.personal?.ssnit_number ?? "—"}</div>
-              <div><span className="text-gray-400 text-xs block">Region</span>{form.personal?.region ?? "—"}</div>
-              <div><span className="text-gray-400 text-xs block">Department</span>{form.employment?.department ?? "—"}</div>
-              <div><span className="text-gray-400 text-xs block">Farm site</span>{form.employment?.farm_site ?? "—"}</div>
-              <div><span className="text-gray-400 text-xs block">Payment method</span>{form.payment?.method ?? "—"}</div>
-            </div>
+            <CandidateProfileReview
+              applicationFormData={app.application_form_data ?? null}
+              onboardingFormData={form}
+              showPrintButton={false}
+              header={{
+                fullName: app.full_name,
+                roleTitle: app.role_title,
+                referenceNumber: app.reference_number,
+                submittedAt: row.submitted_at,
+                email: app.email,
+                phone: app.phone,
+              }}
+            />
           </section>
 
           <section>
@@ -395,66 +371,28 @@ function OnboardingDetail({
               </button>
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              Employee ID auto-fills from grade level (WF7-001 = L7, WF1-001 = L1). Company email
-              uses first initial + middle initial + surname @willsfarms.com — edit either field if
-              needed.
+              Employee ID is a company-wide number (WF-00001, WF-00042 — no grade in the ID).
+              Company email uses first initial, dot, middle name if present, then full first name
+              @willsfarms.com — e.g. k.kwame@ or j.michaeljohn@. Edit either field if needed.
+              Employment placement is HR-only — candidates do not fill these on the form.
             </p>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block sm:col-span-2">
-                <span className="text-xs text-gray-500">Grade / level</span>
-                <select
-                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-                  value={hrData.grade_level ?? ""}
-                  onChange={(e) => {
-                    employeeIdTouched.current = false;
-                    setHrData((prev) => ({ ...prev, grade_level: e.target.value }));
-                  }}
-                >
-                  <option value="">Select grade level…</option>
-                  {GRADE_LEVEL_OPTIONS.map((g) => (
-                    <option key={g.value} value={g.value}>
-                      {g.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {hrField(
-                "employee_id",
-                "Employee ID assigned",
-                "Format WF{level}-{seq} — e.g. WF7-042 for L7, WF1-003 for L1",
-              )}
-              {hrField(
-                "company_email",
-                "Company email assigned",
-                "e.g. jmsmith@willsfarms.com (first + middle initial + surname)",
-              )}
-              {hrField("supervisor_name", "Supervisor name")}
-              {hrField("salary_ghs", "Salary / wage (GHS)")}
-              {hrField("pay_frequency", "Pay frequency")}
-              {hrField("fitness_determination", "Fitness determination")}
-              {hrDateField(
-                "medical_referral_issued",
-                "Medical referral issued on",
-              )}
-              {hrDateField(
-                "reference_forms_sent",
-                "Reference forms sent on",
-              )}
-              {hrField("approved_by", "Approved by")}
-            </div>
+            <OnboardingHrFieldsForm
+              hrData={hrData}
+              setHrData={setHrData}
+              onGradeChange={() => {
+                employeeIdTouched.current = false;
+              }}
+              onEmployeeIdChange={() => {
+                employeeIdTouched.current = true;
+              }}
+              onCompanyEmailChange={() => {
+                companyEmailTouched.current = true;
+              }}
+            />
             <p className="text-xs text-gray-500 mt-3">
               For issue dates, refer to the applicant information at the top — application
               submitted date, referee invite sent, and medical step completed.
             </p>
-            <label className="block mt-3">
-              <span className="text-xs text-gray-500">HR notes</span>
-              <textarea
-                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                rows={3}
-                value={hrData.hr_notes ?? ""}
-                onChange={(e) => setHrData((prev) => ({ ...prev, hr_notes: e.target.value }))}
-              />
-            </label>
             <button
               type="button"
               onClick={() => saveHr.mutate()}
@@ -518,7 +456,10 @@ export default function OnboardingTab() {
                     <p className="text-xs text-gray-400">{row.job_applications.email}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{row.job_applications.role_title}</td>
-                  <td className="px-4 py-3 capitalize text-gray-600">{row.job_applications.status}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {STATUS_LABELS[row.job_applications.status as ApplicationStatus] ??
+                      row.job_applications.status}
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{formatDate(row.submitted_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <button

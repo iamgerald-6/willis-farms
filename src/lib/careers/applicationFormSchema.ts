@@ -5,9 +5,17 @@ import {
   RECRUITMENT_MODULE_ID,
   getDefaultApplicationFormFields,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import {
+  BUILTIN_APPLICATION_FORM_STEPS,
+  generateRefereeFormFields,
+  isRefereeSystemOption,
+  resolveApplicationFormSteps,
+  resolveRequiredRefereeCount,
+  type ApplicationFormConfig,
+} from "@/lib/systemDefinitions/applicationFormConfig";
 import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
 
-export type ApplicationFieldStep = "personal" | "experience" | "documents";
+export type ApplicationFieldStep = string;
 
 export type ApplicationFieldType =
   | "text"
@@ -82,17 +90,13 @@ export interface ApplicationFormField {
   rules: ApplicationFieldRules;
 }
 
-export const APPLICATION_STEP_LABELS: Record<ApplicationFieldStep, string> = {
-  personal: "Personal information",
-  experience: "Experience & qualifications",
-  documents: "Documents & references",
-};
+export const APPLICATION_STEP_LABELS: Record<string, string> = Object.fromEntries(
+  BUILTIN_APPLICATION_FORM_STEPS.map((s) => [s.id, s.label]),
+);
 
-export const APPLICATION_STEPS: ApplicationFieldStep[] = [
-  "personal",
-  "experience",
-  "documents",
-];
+/** @deprecated use resolveApplicationFormSteps(config) for live forms */
+export const APPLICATION_STEPS: ApplicationFieldStep[] =
+  BUILTIN_APPLICATION_FORM_STEPS.map((s) => s.id);
 
 export type ApplicationFormData = Record<string, unknown>;
 
@@ -111,13 +115,13 @@ export function effectiveMaxLength(field: ApplicationFormField): number | undefi
 export function parseApplicationFieldRules(
   raw: Record<string, unknown> | null | undefined,
 ): ApplicationFieldRules {
-  const step = raw?.step as ApplicationFieldStep;
   const fieldKey = String(raw?.fieldKey ?? "");
   const fieldType = (raw?.fieldType as ApplicationFieldType) ?? "text";
   const showWhenRaw = raw?.showWhen as ApplicationFieldShowWhen | undefined;
+  const stepRaw = String(raw?.step ?? "personal").trim();
 
   return {
-    step: APPLICATION_STEPS.includes(step) ? step : "personal",
+    step: stepRaw || "personal",
     fieldKey,
     fieldType,
     required: raw?.required === true,
@@ -156,41 +160,52 @@ export function systemOptionToApplicationField(option: SystemOption): Applicatio
 
 export function normalizeApplicationFields(
   options: SystemOption[],
+  config?: ApplicationFormConfig,
 ): ApplicationFormField[] {
-  return applyOptionalSecondRefereeRules(
-    options
-      .filter((o) => o.is_active && o.rules && typeof o.rules === "object")
-      .map(systemOptionToApplicationField)
-      .filter((f) => f.rules.fieldKey)
-      .sort((a, b) => a.sort_order - b.sort_order),
-  );
+  const refereeCount = resolveRequiredRefereeCount(config);
+  const steps = resolveApplicationFormSteps(config);
+  const refereeStepId = steps.some((s) => s.id === "references")
+    ? "references"
+    : steps[steps.length - 1]?.id ?? "documents";
+
+  const baseFields = options
+    .filter((o) => o.is_active && o.rules && typeof o.rules === "object")
+    .filter((o) => !isRefereeSystemOption(o))
+    .map(systemOptionToApplicationField)
+    .filter((f) => f.rules.fieldKey)
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  const refereeFields = generateRefereeFormFields(refereeCount, refereeStepId);
+
+  return [...baseFields, ...refereeFields].sort((a, b) => a.sort_order - b.sort_order);
 }
 
-/** Second referee is optional — required only when the applicant chooses to add one. */
-export function applyOptionalSecondRefereeRules(
+export function resolveApplicationSteps(config?: ApplicationFormConfig): ApplicationFieldStep[] {
+  return resolveApplicationFormSteps(config).map((s) => s.id);
+}
+
+export function stepsForFields(
   fields: ApplicationFormField[],
-): ApplicationFormField[] {
-  return fields.map((field) => {
-    if (!field.rules.fieldKey.startsWith("reference_2_")) return field;
-    return {
-      ...field,
-      rules: {
-        ...field.rules,
-        required: true,
-        showWhen: { field: "add_second_referee", equals: "Yes" },
-      },
-    };
-  });
+  config?: ApplicationFormConfig,
+): ApplicationFieldStep[] {
+  const configured = resolveApplicationSteps(config);
+  const fieldSteps = new Set(fields.map((f) => f.rules.step));
+  const ordered = configured.filter((id) => fieldSteps.has(id));
+  for (const id of fieldSteps) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered;
 }
 
 export function getGitApplicationFormFields(): ApplicationFormField[] {
   return normalizeApplicationFields(
     getGitFallbackOptions(RECRUITMENT_MODULE_ID, RECRUITMENT_APPLICATION_FIELDS_LIST),
+    {},
   );
 }
 
 export function getDefaultApplicationFormFieldsFallback(): ApplicationFormField[] {
-  return normalizeApplicationFields(getDefaultApplicationFormFields());
+  return normalizeApplicationFields(getDefaultApplicationFormFields(), {});
 }
 
 export function fieldsForStep(

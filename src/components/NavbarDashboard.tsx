@@ -11,6 +11,7 @@ import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canOpenUserManagement } from "@/lib/permissionLevels";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { performLogout } from "@/lib/auth/performLogout";
 
 // ── Page title map ────────────────────────────────────────────────────────────
 // Ordered longest-path-first so nested routes (e.g. justifications/new,
@@ -142,6 +143,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const pageInfo = getPageInfo(pathname ?? "");
@@ -200,8 +202,10 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setOpen(false);
+    await performLogout(router);
   };
 
   return (
@@ -295,11 +299,12 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                   </button>
                 )}
                 <button
-                  className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition disabled:opacity-50"
                   onClick={handleLogout}
+                  disabled={loggingOut}
                 >
                   <LogOut className="w-4 h-4" />
-                  Logout
+                  {loggingOut ? "Logging out…" : "Logout"}
                 </button>
               </div>
             </div>

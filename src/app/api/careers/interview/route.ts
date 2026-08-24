@@ -5,11 +5,9 @@ import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
   sendStage2ScheduleEmail,
-  sendHireOnboardingEmail,
   sendRejectionEmail,
 } from "@/lib/careers/interviewEmails";
-import { onboardingMagicLinkUrl } from "@/lib/appUrl";
-import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
+import { sendOnboardingInvite } from "@/lib/careers/sendOnboardingInvite";
 import {
   validatePanelDecision,
   statusForDecision,
@@ -169,6 +167,8 @@ export async function POST(req: NextRequest) {
     });
 
     const emailWarnings: string[] = [];
+    let postUpdateHireInvite: { recommendedStartDate?: string } | null = null;
+    let postUpdateRejectEmail = false;
 
     if (action === "send_panel_invites") {
       const setup = merged.setup ?? {};
@@ -531,47 +531,11 @@ export async function POST(req: NextRequest) {
       updates.status = statusForDecision(decision);
 
       if (decision === "hire") {
-        const tokenRecord = await createOnboardingToken(
-          supabaseAdmin,
-          application_id,
-        );
-        const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
-
-        await supabaseAdmin.from("onboarding_submissions").upsert(
-          {
-            application_id,
-            token_id: tokenRecord.id,
-            form_data: {},
-            hr_data: {},
-          },
-          { onConflict: "application_id" },
-        );
-
-        const hireResult = await sendHireOnboardingEmail({
-          candidateName: application.full_name,
-          candidateEmail: application.email,
-          roleTitle: application.role_title,
-          referenceNumber: application.reference_number,
-          onboardingLink,
-          expiresAt: tokenRecord.expiresAt,
+        postUpdateHireInvite = {
           recommendedStartDate: merged.summary?.recommended_start_date,
-        });
-
-        if (!hireResult.sent) {
-          emailWarnings.push(
-            hireResult.error ?? "Hire / onboarding email not sent",
-          );
-        }
+        };
       } else if (decision === "do_not_hire") {
-        const rejectResult = await sendRejectionEmail({
-          candidateName: application.full_name,
-          candidateEmail: application.email,
-          roleTitle: application.role_title,
-          referenceNumber: application.reference_number,
-        });
-        if (!rejectResult.sent) {
-          emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
-        }
+        postUpdateRejectEmail = true;
       }
     } else if (
       (action === "send_panel_invites" || action === "send_stage2_invites") &&
@@ -589,6 +553,39 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (postUpdateHireInvite) {
+      try {
+        const inviteResult = await sendOnboardingInvite(supabaseAdmin, application, {
+          recommendedStartDate: postUpdateHireInvite.recommendedStartDate,
+          updateStatus: false,
+        });
+        if (!inviteResult.emailSent) {
+          emailWarnings.push(
+            inviteResult.emailError ?? "Hire / onboarding email not sent",
+          );
+        }
+      } catch (inviteErr) {
+        console.error("[POST /api/careers/interview] onboarding invite", inviteErr);
+        emailWarnings.push(
+          inviteErr instanceof Error
+            ? inviteErr.message
+            : "Onboarding link could not be created",
+        );
+      }
+    }
+
+    if (postUpdateRejectEmail) {
+      const rejectResult = await sendRejectionEmail({
+        candidateName: application.full_name,
+        candidateEmail: application.email,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+      });
+      if (!rejectResult.sent) {
+        emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
+      }
     }
 
     return NextResponse.json({

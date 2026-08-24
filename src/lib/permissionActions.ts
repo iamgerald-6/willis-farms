@@ -1,4 +1,5 @@
 import { gradeIndex, isSuperAdmin } from "@/lib/accessControl";
+import { gradeBandGroupForGrade, type GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { getModuleRegistrySync } from "@/lib/moduleRegistry";
 import type {
   ModuleActions,
@@ -477,10 +478,9 @@ export type UserListGroup =
 
 export function gradeBandGroup(
   grade: string | null | undefined,
+  config?: GradeLevelsConfig,
 ): "grade_l1_l3" | "grade_l4_l7" | null {
-  const idx = gradeIndex(grade);
-  if (idx < 0) return null;
-  return idx >= 3 ? "grade_l4_l7" : "grade_l1_l3";
+  return gradeBandGroupForGrade(grade, config);
 }
 
 export function roleGroup(

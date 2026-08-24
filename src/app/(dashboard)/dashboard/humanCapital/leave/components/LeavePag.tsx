@@ -91,9 +91,7 @@ const leaveFormSchema = z
 
 type LeaveFormValues = z.infer<typeof leaveFormSchema>;
 
-async function uploadLeaveDocument(
-  file: File,
-): Promise<string> {
+async function uploadLeaveDocument(file: File): Promise<string> {
   const validationError = validatePdfOrImageFile(file);
   if (validationError) {
     throw new Error(validationError);
@@ -179,19 +177,20 @@ function ApplyLeaveModal({
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
-  const { data: leaveTypeOptions = [], isLoading: optionsLoading } =
-    useQuery<SystemOption[]>({
-      queryKey: ["leave_type_options"],
-      queryFn: async () => {
-        const res = await api.get("/system-definitions/options", {
-          params: {
-            module_id: LEAVE_MODULE_ID,
-            option_list: LEAVE_TYPES_LIST,
-          },
-        });
-        return res.data.data as SystemOption[];
-      },
-    });
+  const { data: leaveTypeOptions = [], isLoading: optionsLoading } = useQuery<
+    SystemOption[]
+  >({
+    queryKey: ["leave_type_options"],
+    queryFn: async () => {
+      const res = await api.get("/system-definitions/options", {
+        params: {
+          module_id: LEAVE_MODULE_ID,
+          option_list: LEAVE_TYPES_LIST,
+        },
+      });
+      return res.data.data as SystemOption[];
+    },
+  });
 
   const {
     register,
@@ -229,7 +228,7 @@ function ApplyLeaveModal({
     },
     onError: (error: any) => {
       toast.error(
-        error?.response?.data?.error ?? "Server error. Please try again."
+        error?.response?.data?.error ?? "Server error. Please try again.",
       );
     },
   });
@@ -317,10 +316,7 @@ function ApplyLeaveModal({
                 {optionsLoading ? "Loading…" : "Select leave type"}
               </option>
               {leaveTypeOptions.map((t) => (
-                <option
-                  key={t.id}
-                  value={t.legacy_value ?? t.label}
-                >
+                <option key={t.id} value={t.legacy_value ?? t.label}>
                   {t.label}
                 </option>
               ))}
@@ -387,7 +383,9 @@ function ApplyLeaveModal({
               <label className="flex items-center gap-3 border border-dashed border-gray-300 rounded-lg px-3 py-3 cursor-pointer hover:border-red-300 hover:bg-red-50/30 transition">
                 <Upload className="w-4 h-4 text-gray-400 shrink-0" />
                 <span className="text-sm text-gray-600 truncate">
-                  {documentFile ? documentFile.name : "Choose PDF, Word, or image…"}
+                  {documentFile
+                    ? documentFile.name
+                    : "Choose PDF, Word, or image…"}
                 </span>
                 <input
                   type="file"
@@ -506,11 +504,9 @@ export default function LeavePage() {
   });
 
   const requests = data?.data ?? [];
-  const balance = data?.balance ?? { total: 30, used: 0, remaining: 30 };
+  const balance = data?.balance ?? { total: 0, used: 0, remaining: 0 };
   const balancePct =
-    balance.total > 0
-      ? Math.min((balance.used / balance.total) * 100, 100)
-      : 0;
+    balance.total > 0 ? Math.min((balance.used / balance.total) * 100, 100) : 0;
 
   return (
     <div className="p-6 min-h-screen bg-gray-50">
@@ -576,8 +572,8 @@ export default function LeavePage() {
               balancePct >= 90
                 ? "bg-red-600"
                 : balancePct >= 60
-                ? "bg-amber-500"
-                : "bg-green-500"
+                  ? "bg-amber-500"
+                  : "bg-green-500"
             }`}
             style={{ width: `${balancePct}%` }}
           />

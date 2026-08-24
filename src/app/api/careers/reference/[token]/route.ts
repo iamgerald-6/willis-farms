@@ -7,6 +7,11 @@ import {
 } from "@/lib/careers/refereeReferenceTypes";
 import { validateRefereeReferenceForm } from "@/lib/careers/refereeReferenceSchema";
 import { validateRefereeReferenceToken } from "@/lib/careers/refereeReferenceTokens";
+import {
+  fetchModuleBusinessLogic,
+  resolveRefereeAssessmentAttributes,
+} from "@/lib/systemDefinitions";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 type RouteParams = { params: Promise<{ token: string }> };
 
@@ -73,20 +78,26 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     index: validation.refereeIndex,
     name: validation.refereeName,
     email: validation.refereeEmail,
-    phone:
-      validation.refereeIndex === 1
-        ? String(appFormData?.reference_1_phone ?? "").trim()
-        : String(appFormData?.reference_2_phone ?? "").trim(),
-    relationship:
-      validation.refereeIndex === 1
-        ? String(appFormData?.reference_1_relationship ?? "").trim()
-        : String(appFormData?.reference_2_relationship ?? "").trim(),
+    phone: String(
+      appFormData?.[`reference_${validation.refereeIndex}_phone`] ?? "",
+    ).trim(),
+    relationship: String(
+      appFormData?.[`reference_${validation.refereeIndex}_relationship`] ?? "",
+    ).trim(),
   };
 
   const initialForm = mergeRefereeReferenceForm(
     (submission?.form_data as RefereeReferenceFormData | undefined) ??
       emptyRefereeReferenceForm(contact),
     contact,
+  );
+
+  const businessLogic = await fetchModuleBusinessLogic(
+    supabaseAdmin,
+    RECRUITMENT_MODULE_ID,
+  );
+  const assessmentAttributes = resolveRefereeAssessmentAttributes(
+    businessLogic.refereeReferenceConfig,
   );
 
   return NextResponse.json({
@@ -104,6 +115,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         index: validation.refereeIndex,
       },
       form_data: initialForm,
+      assessment_attributes: assessmentAttributes,
       expires_at: validation.expiresAt,
     },
   });
@@ -141,7 +153,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Form data is required." }, { status: 400 });
   }
 
-  const errors = validateRefereeReferenceForm(form_data);
+  const businessLogic = await fetchModuleBusinessLogic(
+    supabaseAdmin,
+    RECRUITMENT_MODULE_ID,
+  );
+  const assessmentAttributes = resolveRefereeAssessmentAttributes(
+    businessLogic.refereeReferenceConfig,
+  );
+
+  const errors = validateRefereeReferenceForm(form_data, assessmentAttributes);
   if (errors.length > 0) {
     return NextResponse.json({ error: errors[0] }, { status: 400 });
   }

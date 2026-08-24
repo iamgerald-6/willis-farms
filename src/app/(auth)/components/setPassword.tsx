@@ -15,6 +15,7 @@ import {
   type AuthLinkKind,
 } from "@/lib/auth/authLinkClient";
 import { staffAuthBlockMessage } from "@/lib/staffAccount";
+import { maskEmail } from "@/lib/utils";
 
 type StaffCheck =
   | { ok: true; alreadyVerified: boolean }
@@ -224,7 +225,7 @@ export default function SetPasswordPage() {
               Setting the password for
             </p>
             <p className="text-sm font-medium text-gray-900 break-all">
-              {accountEmail}
+              {maskEmail(accountEmail)}
             </p>
           </div>
         )}

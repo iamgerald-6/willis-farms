@@ -14,6 +14,7 @@ import { QueryObserverResult, useQuery, useQueryClient } from "@tanstack/react-q
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
 const userSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
@@ -23,7 +24,7 @@ const userSchema = z.object({
   role: z.enum(["admin", "manager", "employee"]),
   company_id: z.string().min(1, "Company ID is required"),
   job_position: z.string().optional(),
-  grade_level: z.enum(["L1", "L2", "L3", "L4", "L5", "L6", "L7"]),
+  grade_level: z.string().regex(/^L\d+$/, "Select a valid grade level"),
 });
 
 type UserForm = z.infer<typeof userSchema>;
@@ -40,6 +41,7 @@ type OnboardedCandidate = {
     job_position: string;
     grade_level?: string;
     company_id?: string;
+    supervisor_id?: string;
   };
   locked_fields: string[];
 };
@@ -50,16 +52,6 @@ interface Props {
   refetch: () => Promise<QueryObserverResult<User[], unknown>>;
 }
 
-const GRADE_LEVELS = [
-  { value: "L1", label: "L1 – Junior Swine Technician" },
-  { value: "L2", label: "L2 – Swine Technician" },
-  { value: "L3", label: "L3 – Senior Swine Technician" },
-  { value: "L4", label: "L4 – Herd Supervisor/Manager" },
-  { value: "L5", label: "L5 – Assistant Farm Manager – Breeding" },
-  { value: "L6", label: "L6 – Breeding Farm Manager" },
-  { value: "L7", label: "L7 – Operations/Production Manager" },
-];
-
 const inputClass =
   "w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500";
 
@@ -69,8 +61,12 @@ const lockedClass =
 export default function CreateUserModal({ open, setOpen, refetch }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const queryClient = useQueryClient();
+  const { gradeOptions: gradeLevels } = useGradeLevelsConfig();
   const [selectedOnboardingId, setSelectedOnboardingId] = useState("");
   const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
+  const [pendingSupervisorId, setPendingSupervisorId] = useState<string | null>(
+    null,
+  );
 
   const { data: onboardedCandidates = [], isLoading: loadingCandidates } =
     useQuery({
@@ -83,7 +79,10 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     });
 
   async function createUser(data: UserForm) {
-    const res = await api.post("/create_user", data);
+    const res = await api.post("/create_user", {
+      ...data,
+      supervisor_id: pendingSupervisorId ?? undefined,
+    });
     return res.data;
   }
 
@@ -100,6 +99,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
   const resetForm = () => {
     setSelectedOnboardingId("");
     setLockedFields(new Set());
+    setPendingSupervisorId(null);
     reset({ role: "employee" });
   };
 
@@ -112,6 +112,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
 
     if (!applicationId) {
       setLockedFields(new Set());
+      setPendingSupervisorId(null);
       reset({ role: "employee" });
       return;
     }
@@ -123,6 +124,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
 
     const { prefill, locked_fields } = candidate;
     setLockedFields(new Set(locked_fields));
+    setPendingSupervisorId(prefill.supervisor_id ?? null);
 
     reset({
       first_name: prefill.first_name,
@@ -322,7 +324,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
                 className={`${fieldClass("grade_level")} bg-white text-gray-700 disabled:cursor-not-allowed`}
               >
                 <option value="">Grade Level</option>
-                {GRADE_LEVELS.map((g) => (
+                {gradeLevels.map((g) => (
                   <option key={g.value} value={g.value}>
                     {g.label}
                   </option>

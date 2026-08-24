@@ -5,9 +5,13 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import {
+  diffFields,
   getGitFallbackOptionById,
+  writeSystemConfigAuditLog,
   type SystemOptionRules,
 } from "@/lib/systemDefinitions";
+
+const OPTION_AUDIT_KEYS = ["label", "legacy_value", "sort_order", "is_active", "rules"];
 
 function normalizeRules(raw: unknown): SystemOptionRules | undefined {
   if (raw === undefined) return undefined;
@@ -63,6 +67,12 @@ export async function PATCH(
       );
     }
 
+    const { data: before } = await supabase
+      .from("system_options")
+      .select("module_id, option_list, label, legacy_value, sort_order, is_active, rules")
+      .eq("id", id)
+      .maybeSingle();
+
     const { data: updated, error: updateError } = await supabase
       .from("system_options")
       .update(patch)
@@ -87,6 +97,31 @@ export async function PATCH(
     }
 
     if (updated) {
+      if (before) {
+        const diff = diffFields(before, updated, OPTION_AUDIT_KEYS);
+        if (diff.changedFields.length > 0) {
+          const wasActive = before.is_active !== false;
+          const isActive = updated.is_active !== false;
+          const action =
+            wasActive && !isActive
+              ? "deactivated"
+              : !wasActive && isActive
+                ? "reactivated"
+                : "updated";
+          await writeSystemConfigAuditLog(supabase, {
+            module_id: updated.module_id,
+            config_scope: "option",
+            entity_key: updated.id,
+            entity_label: `${before.option_list} — ${updated.label ?? before.label}`,
+            action,
+            changed_fields: diff.changedFields,
+            previous_values: diff.previousValues,
+            new_values: diff.newValues,
+            performed_by: caller.id,
+            performed_by_name: caller.name,
+          });
+        }
+      }
       return NextResponse.json({ data: updated });
     }
 
@@ -131,6 +166,30 @@ export async function PATCH(
         { status: 500 },
       );
     }
+
+    await writeSystemConfigAuditLog(supabase, {
+      module_id: inserted.module_id,
+      config_scope: "option",
+      entity_key: inserted.id,
+      entity_label: `${inserted.option_list} — ${inserted.label}`,
+      action: "created",
+      previous_values: {
+        label: gitOption.label,
+        legacy_value: gitOption.legacy_value,
+        sort_order: gitOption.sort_order,
+        is_active: gitOption.is_active,
+        rules: gitOption.rules,
+      },
+      new_values: {
+        label: inserted.label,
+        legacy_value: inserted.legacy_value,
+        sort_order: inserted.sort_order,
+        is_active: inserted.is_active,
+        rules: inserted.rules,
+      },
+      performed_by: caller.id,
+      performed_by_name: caller.name,
+    });
 
     return NextResponse.json({ data: inserted });
   } catch {

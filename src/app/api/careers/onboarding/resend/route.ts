@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
-import { onboardingMagicLinkUrl } from "@/lib/appUrl";
-import { sendHireOnboardingEmail } from "@/lib/careers/interviewEmails";
+import { sendOnboardingInvite } from "@/lib/careers/sendOnboardingInvite";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 
 export async function POST(req: NextRequest) {
@@ -42,34 +40,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tokenRecord = await createOnboardingToken(supabaseAdmin, application_id);
-    const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
-
-    await supabaseAdmin.from("onboarding_submissions").upsert(
-      {
-        application_id,
-        token_id: tokenRecord.id,
-      },
-      { onConflict: "application_id" },
-    );
-
-    const emailResult = await sendHireOnboardingEmail({
-      candidateName: application.full_name,
-      candidateEmail: application.email,
-      roleTitle: application.role_title,
-      referenceNumber: application.reference_number,
-      onboardingLink,
-      expiresAt: tokenRecord.expiresAt,
+    const inviteResult = await sendOnboardingInvite(supabaseAdmin, application, {
       recommendedStartDate: formData.summary?.recommended_start_date,
+      updateStatus: false,
     });
 
     return NextResponse.json({
       success: true,
       data: {
-        expires_at: tokenRecord.expiresAt,
-        email_sent: emailResult.sent,
+        expires_at: inviteResult.expiresAt,
+        email_sent: inviteResult.emailSent,
       },
-      email_warning: emailResult.sent ? undefined : emailResult.error,
+      email_warning: inviteResult.emailSent ? undefined : inviteResult.emailError,
     });
   } catch (err) {
     console.error("[POST /api/careers/onboarding/resend]", err);

@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import JobApplicationWizard from "@/app/(forms)/apply/[postingId]/JobApplicationWizard";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { fetchApplicationFormFields } from "@/lib/careers/getApplicationFormFields";
+import {
+  applicationFormContextFromSnapshot,
+  fetchApplicationFormContext,
+} from "@/lib/careers/getApplicationFormFields";
+import { stepLabelFor } from "@/lib/systemDefinitions/applicationFormConfig";
 import { isPostingPublic, type JobPosting } from "@/lib/careers/jobPostings";
 import type { ApplicationFormData } from "@/lib/careers/applicationFormSchema";
 
@@ -42,12 +46,20 @@ export default async function ApplyDraftPage({ params }: PageProps) {
     );
   }
 
-  const fields = await fetchApplicationFormFields(supabaseAdmin);
+  const liveContext = await fetchApplicationFormContext(supabaseAdmin);
+  const formContext =
+    applicationFormContextFromSnapshot(draft.application_form_fields_snapshot) ?? liveContext;
+  const stepLabels = Object.fromEntries(
+    formContext.steps.map((stepId) => [stepId, stepLabelFor(stepId, formContext.config)]),
+  );
 
   return (
     <JobApplicationWizard
       posting={posting}
-      fields={fields}
+      fields={formContext.fields}
+      steps={formContext.steps}
+      stepLabels={stepLabels}
+      formConfig={formContext.config}
       initialValues={(draft.application_form_data ?? {}) as ApplicationFormData}
       draftToken={token}
     />

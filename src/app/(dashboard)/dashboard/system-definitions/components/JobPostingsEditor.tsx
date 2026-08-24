@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
@@ -10,18 +10,13 @@ import {
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { resolveInterviewGuideKeys } from "@/lib/systemDefinitions/gradeLevelsConfig";
 
-const GUIDE_OPTIONS: { value: InterviewGuideKey; label: string }[] = [
-  { value: "L1", label: "L1" },
-  { value: "L2", label: "L2" },
-  { value: "L3", label: "L3" },
-  { value: "L4", label: "L4" },
-  { value: "L5", label: "L5" },
-  { value: "L6", label: "L6" },
-  { value: "L7", label: "L7" },
-  { value: "data_analyst", label: "Data Analyst" },
-  { value: "veterinarian", label: "Veterinarian" },
-];
+const SPECIALIST_LABELS: Record<string, string> = {
+  data_analyst: "Data Analyst",
+  veterinarian: "Veterinarian",
+};
 
 type JobPostingRow = {
   id: string;
@@ -52,6 +47,16 @@ export default function JobPostingsEditor({
 }: JobPostingsEditorProps) {
   const queryClient = useQueryClient();
   const queryKey = ["system_options", moduleId, RECRUITMENT_JOB_POSTINGS_LIST];
+
+  const { config: gradeConfig } = useGradeLevelsConfig();
+
+  const guideOptions = useMemo(() => {
+    const keys = resolveInterviewGuideKeys(gradeConfig);
+    return keys.map((value) => ({
+      value: value as InterviewGuideKey,
+      label: SPECIALIST_LABELS[value] ?? value,
+    }));
+  }, [gradeConfig]);
 
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -184,7 +189,7 @@ export default function JobPostingsEditor({
                 value={newGuide}
                 onChange={(e) => setNewGuide(e.target.value as InterviewGuideKey)}
               >
-                {GUIDE_OPTIONS.map((opt) => (
+                {guideOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -272,7 +277,7 @@ export default function JobPostingsEditor({
                               setEditGuide(e.target.value as InterviewGuideKey)
                             }
                           >
-                            {GUIDE_OPTIONS.map((opt) => (
+                            {guideOptions.map((opt) => (
                               <option key={opt.value} value={opt.value}>
                                 {opt.label}
                               </option>

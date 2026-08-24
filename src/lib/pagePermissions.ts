@@ -1,7 +1,7 @@
 import {
-  gradeIndex,
   isSuperAdmin,
 } from "@/lib/accessControl";
+import { isFullAppraisalRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
 
 /** Granular page keys — editable only via Access Control */
 export const PAGE_PERMISSION_KEYS = [
@@ -81,7 +81,7 @@ export function canManageAccessControl(
   grade: string | null | undefined,
 ): boolean {
   if (isSuperAdmin(role)) return true;
-  if (role === "manager" && gradeIndex(grade) >= 4) return true;
+  if (role === "manager" && isFullAppraisalRank(grade)) return true;
   return false;
 }
 

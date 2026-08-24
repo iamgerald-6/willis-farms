@@ -1,4 +1,24 @@
 import type { SectionDef } from "./scoring";
+import {
+  APPRAISAL_GRADE_BAND_IDS,
+  canRateGradeLevel,
+  gradeBandForGrade as gradeBandForGradeFromConfig,
+  gradeIndexInOrder,
+  isSupervisorRank,
+  resolveAppraisalGradeBandCovers,
+  resolveAppraisalGradeBandLabels,
+  resolveAppraisalGradeOptions,
+  resolveGradeOrder,
+  type AppraisalGradeBandId,
+  type GradeLevelsConfig,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
+import {
+  gitTemplateKeyForFormKey,
+  resolveAppraisalFormKeyCovers,
+  resolveAppraisalFormKeyLabels,
+  resolveAppraisalFormOptions,
+  type AppraisalScopeConfig,
+} from "@/lib/systemDefinitions/appraisalScopeConfig";
 
 /**
  * Centralised rating-section definitions, shared by the appraisal form,
@@ -13,69 +33,74 @@ import type { SectionDef } from "./scoring";
 export type Quarter = "Q1" | "Q2" | "Q3" | "Q4";
 export const QUARTERS: Quarter[] = ["Q1", "Q2", "Q3", "Q4"];
 
-export const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"];
+/** @deprecated Use resolveGradeOrder(config) */
+export const GRADE_ORDER = resolveGradeOrder();
 
-export function gradeIndex(g: string | null | undefined): number {
-  if (!g) return -1;
-  const clean = g.replace("_", "/").split("/")[0].trim();
-  return GRADE_ORDER.indexOf(clean);
+export function gradeIndex(
+  g: string | null | undefined,
+  config?: GradeLevelsConfig,
+): number {
+  return gradeIndexInOrder(g, config);
 }
 
 /**
- * Lowest grade allowed to rate anyone else's appraisal. L4 (index 3) —
- * an L3 may not appraise an L1, but an L4 may appraise L1 through L3.
+ * Lowest grade index that triggers L4+ weight rules (index 3 = L4 in default order).
  */
 export const MIN_SUPERVISOR_GRADE_INDEX = 3;
 
-/**
- * Can `raterGrade` fill the SUPERVISOR side for someone on `targetGrade`?
- * The rater must be L4+ and strictly above the person being appraised, so
- * every grade (including supervisors) is appraised by someone senior.
- */
 export function canRate(
   raterGrade: string | null | undefined,
   targetGrade: string | null | undefined,
+  config?: GradeLevelsConfig,
 ): boolean {
-  const rater = gradeIndex(raterGrade);
-  const target = gradeIndex(targetGrade);
-  if (rater < MIN_SUPERVISOR_GRADE_INDEX || target === -1) return false;
-  return rater > target;
+  return canRateGradeLevel(raterGrade, targetGrade, config);
 }
 
-/** Can this grade supervise anybody at all? Self-appraisal is always allowed. */
-export function canAppraiseOthers(grade: string | null | undefined): boolean {
-  return gradeIndex(grade) >= MIN_SUPERVISOR_GRADE_INDEX;
+export function canAppraiseOthers(
+  grade: string | null | undefined,
+  config?: GradeLevelsConfig,
+): boolean {
+  return isSupervisorRank(grade, config);
 }
 
-export const GRADE_OPTIONS = [
-  { value: "L1", label: "L1 — Junior Swine Technician" },
-  { value: "L2_L3", label: "L2 / L3 — Swine Technician / Senior Swine Technician" },
-  { value: "L4", label: "L4 — Herd Supervisor" },
-  { value: "L5_L6_L7", label: "L5 / L6 / L7 — Management" },
-];
+export const GRADE_OPTIONS = resolveAppraisalGradeOptions().map((o) => ({
+  value: o.value,
+  label: o.label,
+}));
 
-export const GRADE_BAND_COVERS: Record<string, string[]> = {
-  L1: ["L1"],
-  L2_L3: ["L2", "L3"],
-  L4: ["L4"],
-  L5_L6_L7: ["L5", "L6", "L7"],
-};
+export const GRADE_BAND_COVERS = resolveAppraisalGradeBandCovers();
 
-/** The rating-section band a given grade is appraised under. */
-export function gradeBandForGrade(grade: string | null | undefined): string {
-  const idx = gradeIndex(grade);
-  if (idx <= 0) return "L1";
-  if (idx <= 2) return "L2_L3";
-  if (idx === 3) return "L4";
-  return "L5_L6_L7";
+export function gradeBandForGrade(
+  grade: string | null | undefined,
+  config?: GradeLevelsConfig,
+): AppraisalGradeBandId {
+  return gradeBandForGradeFromConfig(grade, config);
 }
 
-/** Bands containing at least one grade this rater is allowed to appraise. */
-export function supervisableGradeBands(raterGrade: string | null | undefined) {
-  return GRADE_OPTIONS.filter((opt) => {
-    const grades = GRADE_BAND_COVERS[opt.value] ?? [];
-    return grades.some((g) => canRate(raterGrade, g));
+export function supervisableGradeBands(
+  raterGrade: string | null | undefined,
+  gradeConfig?: GradeLevelsConfig,
+  scopeConfig?: AppraisalScopeConfig,
+) {
+  const options = resolveAppraisalFormOptions(scopeConfig, gradeConfig);
+  const covers = resolveAppraisalFormKeyCovers(scopeConfig, gradeConfig);
+  return options.filter((opt) => {
+    const grades = covers[opt.value] ?? [];
+    return grades.some((g) => canRate(raterGrade, g, gradeConfig));
   });
+}
+
+export function getAppraisalFormKeyLabels(
+  scopeConfig?: AppraisalScopeConfig,
+  gradeConfig?: GradeLevelsConfig,
+): Record<string, string> {
+  return resolveAppraisalFormKeyLabels(scopeConfig, gradeConfig);
+}
+
+export function getAppraisalGradeBandLabels(
+  config?: GradeLevelsConfig,
+): Record<AppraisalGradeBandId, string> {
+  return resolveAppraisalGradeBandLabels(config);
 }
 
 /** "quarterly" set = Q1–Q3. "annual" set = Q4. */
@@ -651,26 +676,17 @@ export const SECTIONS_MAP: Record<string, Record<SectionSet, SectionDef[]>> = {
   },
 };
 
-export function sectionsFor(gradeBand: string, quarter: Quarter): SectionDef[] {
-  return SECTIONS_MAP[gradeBand]?.[sectionSetForQuarter(quarter)] ?? [];
+export function sectionsFor(formKey: string, quarter: Quarter): SectionDef[] {
+  const templateKey = gitTemplateKeyForFormKey(formKey);
+  return SECTIONS_MAP[templateKey]?.[sectionSetForQuarter(quarter)] ?? [];
 }
 
 /** Grade bands used in the appraisal rating grid (for System Definitions). */
-export const APPRAISAL_GRADE_BANDS = [
-  "L1",
-  "L2_L3",
-  "L4",
-  "L5_L6_L7",
-] as const;
+export const APPRAISAL_GRADE_BANDS = APPRAISAL_GRADE_BAND_IDS;
 
-export type AppraisalGradeBand = (typeof APPRAISAL_GRADE_BANDS)[number];
+export type AppraisalGradeBand = AppraisalGradeBandId;
 
-export const APPRAISAL_GRADE_BAND_LABELS: Record<AppraisalGradeBand, string> = {
-  L1: "L1 — Junior Swine Technician",
-  L2_L3: "L2 / L3 — Swine Technician",
-  L4: "L4 — Herd Supervisor",
-  L5_L6_L7: "L5 / L6 / L7 — Management",
-};
+export const APPRAISAL_GRADE_BAND_LABELS = resolveAppraisalGradeBandLabels();
 
 /** Snapshot of default section weights from Git (for System Definitions + merge). */
 export function getGitSectionWeightSnapshot(): Record<
@@ -695,21 +711,23 @@ export function getGitSectionWeightSnapshot(): Record<
 
 /** Full Git section definitions for System Definitions editors. */
 export function getSectionsForBandSet(
-  gradeBand: AppraisalGradeBand,
+  formKey: string,
   sectionSet: SectionSet,
 ): SectionDef[] {
-  return (SECTIONS_MAP[gradeBand]?.[sectionSet] ?? []).map((s) => ({
+  const templateKey = gitTemplateKeyForFormKey(formKey);
+  return (SECTIONS_MAP[templateKey]?.[sectionSet] ?? []).map((s) => ({
     ...s,
     items: [...s.items],
   }));
 }
 
-/** Section titles for a band + set (editor labels). */
+/** Section titles for a form key + set (editor labels). */
 export function getSectionMetaForBandSet(
-  gradeBand: AppraisalGradeBand,
+  formKey: string,
   sectionSet: SectionSet,
 ): { key: string; title: string; defaultWeight: number }[] {
-  return (SECTIONS_MAP[gradeBand]?.[sectionSet] ?? []).map((s) => ({
+  const templateKey = gitTemplateKeyForFormKey(formKey);
+  return (SECTIONS_MAP[templateKey]?.[sectionSet] ?? []).map((s) => ({
     key: s.key,
     title: s.title,
     defaultWeight: s.weight,

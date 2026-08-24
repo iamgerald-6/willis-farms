@@ -6,6 +6,22 @@ type Props = {
   formData: Record<string, unknown>;
 };
 
+function normalizeApplicationFormData(raw: Record<string, unknown>): Record<string, unknown> {
+  const data = { ...raw };
+
+  if (!data.work_history && Array.isArray(data.work_experience)) {
+    data.work_history = data.work_experience;
+  }
+  if (!data.education_history && Array.isArray(data.education)) {
+    data.education_history = data.education;
+  }
+  if (!data.ghana_card && data.ghana_card_no) {
+    data.ghana_card = data.ghana_card_no;
+  }
+
+  return data;
+}
+
 function formatValue(key: string, value: unknown): string | null {
   if (value === undefined || value === null || value === "") return null;
 
@@ -14,24 +30,48 @@ function formatValue(key: string, value: unknown): string | null {
     return file.original_name ?? file.secure_url ?? "Uploaded";
   }
 
+  if (key === "work_history" || key === "work_experience") {
+    const entries = Array.isArray(value) ? value : [];
+    if (entries.length === 0) return null;
+    return entries
+      .map((entry) => {
+        const e = entry as WorkHistoryEntry & {
+          employer?: string;
+          job_title?: string;
+          from?: string;
+          to?: string;
+        };
+        const end = e.current ? "Present" : e.end || e.to || "—";
+        const title = e.title || e.job_title || "Role";
+        const company = e.company || e.employer || "Company";
+        const start = e.start || e.from || "?";
+        return `${title} at ${company} (${start} – ${end})`;
+      })
+      .join("\n");
+  }
+
+  if (key === "education_history" || key === "education") {
+    const entries = Array.isArray(value) ? value : [];
+    if (entries.length === 0) return null;
+    return entries
+      .map((entry) => {
+        const e = entry as EducationEntry & {
+          institution?: string;
+          from?: string;
+          to?: string;
+        };
+        const degree = e.degree?.trim() ? ` — ${e.degree}` : "";
+        const institution = e.institutionName || e.institution || "—";
+        const type = e.institutionType ? `${e.institutionType}: ` : "";
+        const start = e.yearStarted || e.from || "?";
+        const end = e.yearCompleted || e.to || "?";
+        return `${type}${institution} (${start}–${end}${degree})`;
+      })
+      .join("\n");
+  }
+
   if (Array.isArray(value)) {
     if (value.length === 0) return null;
-    if (key === "work_history") {
-      return (value as WorkHistoryEntry[])
-        .map((entry) => {
-          const end = entry.current ? "Present" : entry.end || "—";
-          return `${entry.title || "Role"} at ${entry.company || "Company"} (${entry.start || "?"} – ${end})`;
-        })
-        .join("\n");
-    }
-    if (key === "education_history") {
-      return (value as EducationEntry[])
-        .map((entry) => {
-          const degree = entry.degree?.trim() ? ` — ${entry.degree}` : "";
-          return `${entry.institutionType || "Institution"}: ${entry.institutionName || "—"} (${entry.yearStarted || "?"}–${entry.yearCompleted || "?"}${degree})`;
-        })
-        .join("\n");
-    }
     if (value.every((item) => typeof item === "object" && item !== null && "secure_url" in item)) {
       return (value as UploadedFile[]).map((f) => f.original_name || "File").join(", ");
     }
@@ -51,6 +91,7 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
       { key: "email", label: "Email" },
       { key: "phone", label: "Phone" },
       { key: "date_of_birth", label: "Date of birth" },
+      { key: "gender", label: "Gender" },
       { key: "nationality", label: "Nationality" },
       { key: "is_citizen", label: "Ghana citizen" },
       { key: "ghana_card", label: "Ghana Card" },
@@ -70,6 +111,7 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
   {
     title: "Documents",
     fields: [
+      { key: "cv", label: "CV / résumé" },
       { key: "cover_letter", label: "Cover letter" },
       { key: "certificates", label: "Certificates" },
     ],
@@ -95,12 +137,13 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
 ];
 
 export default function ApplicationFormReview({ formData }: Props) {
+  const normalized = normalizeApplicationFormData(formData);
   const sections = FIELD_SECTIONS.map((section) => ({
     ...section,
     items: section.fields
       .map((field) => ({
         label: field.label,
-        value: formatValue(field.key, formData[field.key]),
+        value: formatValue(field.key, normalized[field.key]),
       }))
       .filter((item) => item.value),
   })).filter((section) => section.items.length > 0);

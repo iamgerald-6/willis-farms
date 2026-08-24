@@ -16,7 +16,7 @@ export function generateRefereeTokenValue(): string {
 export async function revokeRefereeTokensForSlot(
   supabase: SupabaseClient,
   applicationId: string,
-  refereeIndex: 1 | 2,
+  refereeIndex: number,
 ): Promise<void> {
   await supabase
     .from("referee_reference_tokens")
@@ -30,7 +30,7 @@ export async function createRefereeReferenceToken(
   supabase: SupabaseClient,
   params: {
     applicationId: string;
-    refereeIndex: 1 | 2;
+    refereeIndex: number;
     refereeName: string;
     refereeEmail: string;
   },
@@ -72,7 +72,7 @@ export type RefereeTokenValidation =
       applicationId: string;
       tokenId: string;
       expiresAt: string;
-      refereeIndex: 1 | 2;
+      refereeIndex: number;
       refereeName: string;
       refereeEmail: string;
     }
@@ -99,7 +99,7 @@ export async function validateRefereeReferenceToken(
     applicationId: data.application_id,
     tokenId: data.id,
     expiresAt: data.expires_at,
-    refereeIndex: data.referee_index as 1 | 2,
+    refereeIndex: Number(data.referee_index),
     refereeName: data.referee_name,
     refereeEmail: data.referee_email,
   };

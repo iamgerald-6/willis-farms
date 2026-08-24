@@ -6,10 +6,11 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
 import {
-  GROUP_PRESET_LABELS,
   getDefaultGroupPreset,
+  getGroupPresetLabels,
   type GroupPresetKey,
 } from "@/lib/groupPermissionPresets";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { permissionActionModuleCount } from "@/lib/permissionActions";
 import PermissionMatrix from "./PermissionMatrix";
 import { Loader2, Users } from "lucide-react";
@@ -40,8 +41,10 @@ export default function GroupPermissionPanel({
     setInitialized(false);
   }, [groupKey]);
 
+  const { config: gradeConfig } = useGradeLevelsConfig();
+  const presetLabels = getGroupPresetLabels(gradeConfig);
   const moduleCount = permissionActionModuleCount(actions);
-  const label = GROUP_PRESET_LABELS[groupKey];
+  const label = presetLabels[groupKey];
 
   const saveMutation = useMutation({
     mutationFn: async () => {

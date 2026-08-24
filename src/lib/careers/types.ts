@@ -48,6 +48,7 @@ export interface JobApplication {
   submission_status?: SubmissionStatus;
   job_posting_id?: string | null;
   application_form_data?: Record<string, unknown> | null;
+  application_form_fields_snapshot?: Record<string, unknown> | null;
   draft_token?: string | null;
   hr_notes: string | null;
   interview_form_data: InterviewFormData | null;

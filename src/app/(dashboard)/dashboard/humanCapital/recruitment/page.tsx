@@ -86,7 +86,7 @@ function ApplicationDetail({
 }: {
   application: JobApplication;
   onClose: () => void;
-  onUpdated: () => void;
+  onUpdated: (opts?: { hired?: boolean }) => void;
   onRefreshApplication: () => Promise<void>;
   adminId: string;
   openInterviewOnMount?: boolean;
@@ -145,12 +145,15 @@ function ApplicationDetail({
       }),
     onSuccess: (res) => {
       const warnings = res.data.email_warnings as string[] | undefined;
+      const hired = selectedDecision === "hire";
       if (warnings?.length) {
         toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
+      } else if (hired) {
+        toast.success("Hire confirmed — onboarding link sent. Candidate moved to Onboarding tab.");
       } else {
         toast.success("Outcome confirmed.");
       }
-      onUpdated();
+      onUpdated({ hired });
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Confirm failed.");
@@ -897,9 +900,22 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  // AI soft-rejects and HR-confirmed rejects live in the Rejects tab.
+  const { data: onboardingRows = [] } = useQuery({
+    queryKey: ["onboarding_submissions"],
+    queryFn: async () => {
+      const res = await api.get("/careers/onboarding");
+      return res.data.data as { id: string }[];
+    },
+    enabled: isHr,
+  });
+
+  // Active pipeline — onboarding and offer candidates live in the Onboarding tab.
   const mainApplications = useMemo(
-    () => (data ?? []).filter((a) => !isAiFlagged(a)),
+    () =>
+      (data ?? []).filter(
+        (a) =>
+          !isAiFlagged(a) && a.status !== "onboarding" && a.status !== "offer",
+      ),
     [data],
   );
   const aiRejectApplications = useMemo(
@@ -1042,6 +1058,11 @@ function RecruitmentPageContent() {
                 : tab === "careers"
                   ? "Careers"
                   : "Onboarding"}
+            {tab === "onboarding" && onboardingRows.length > 0 && (
+              <span className="bg-teal-100 text-teal-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {onboardingRows.length}
+              </span>
+            )}
             {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {aiRejectApplications.length}
@@ -1200,10 +1221,11 @@ function RecruitmentPageContent() {
             const fresh = apps.find((a) => a.id === selected.id);
             if (fresh) setSelected(fresh);
           }}
-          onUpdated={() => {
+          onUpdated={(opts) => {
             queryClient.invalidateQueries({ queryKey: ["job_applications"] });
             queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
             setSelected(null);
+            if (opts?.hired) setActiveTab("onboarding");
           }}
         />
       )}

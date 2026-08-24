@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
-  APPLICATION_STEPS,
   extractApplicantSummary,
   validateStep,
 } from "@/lib/careers/applicationFormSchema";
-import { fetchApplicationFormFields } from "@/lib/careers/getApplicationFormFields";
+import {
+  applicationFormContextFromSnapshot,
+  buildApplicationFormSnapshot,
+  fetchApplicationFormContext,
+} from "@/lib/careers/getApplicationFormFields";
 import { isPostingPublic } from "@/lib/careers/jobPostings";
 import { generateReferenceNumber } from "@/lib/careers/openings";
 import { sendApplicationConfirmationEmail } from "@/lib/careers/applicationConfirmationEmail";
@@ -89,44 +92,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Form data is required." }, { status: 400 });
     }
 
-    const fields = await fetchApplicationFormFields(supabaseAdmin);
+    const liveContext = await fetchApplicationFormContext(supabaseAdmin);
 
-    if (finalize) {
-      for (const step of APPLICATION_STEPS) {
-        const stepErrors = validateStep(fields, step, form_data);
-        if (stepErrors.length > 0) {
-          return NextResponse.json({ error: stepErrors[0] }, { status: 400 });
-        }
-      }
-    } else {
-      const lastStep = APPLICATION_STEPS[APPLICATION_STEPS.length - 1];
-      const stepErrors = validateStep(fields, lastStep, form_data);
-      if (stepErrors.length > 0) {
-        return NextResponse.json(
-          { error: "Complete all required fields before saving a draft." },
-          { status: 400 },
-        );
-      }
-    }
-
-    const summary = extractApplicantSummary(form_data);
-    if (finalize && (!summary.email || !summary.phone || !summary.full_name)) {
-      return NextResponse.json(
-        { error: "Name, email, and phone are required to submit." },
-        { status: 400 },
-      );
-    }
-
-    let posting:
-      | {
-          id: string;
-          slug: string;
-          title: string;
-          interview_guide_key: string;
-          closes_at: string;
-          is_active: boolean;
-        }
-      | null = null;
+    type PostingRow = {
+      id: string;
+      slug: string;
+      title: string;
+      interview_guide_key: string;
+      closes_at: string;
+      is_active: boolean;
+      job_title_key?: string;
+    };
 
     if (draft_token) {
       const { data: existingDraft, error: draftErr } = await supabaseAdmin
@@ -142,7 +118,39 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Draft not found." }, { status: 404 });
       }
 
-      posting = existingDraft.job_postings as typeof posting;
+      const snapshotContext =
+        applicationFormContextFromSnapshot(existingDraft.application_form_fields_snapshot) ??
+        liveContext;
+      const fields = snapshotContext.fields;
+      const steps = snapshotContext.steps;
+
+      if (finalize) {
+        for (const step of steps) {
+          const stepErrors = validateStep(fields, step, form_data);
+          if (stepErrors.length > 0) {
+            return NextResponse.json({ error: stepErrors[0] }, { status: 400 });
+          }
+        }
+      } else {
+        const lastStep = steps[steps.length - 1];
+        const stepErrors = validateStep(fields, lastStep, form_data);
+        if (stepErrors.length > 0) {
+          return NextResponse.json(
+            { error: "Complete all required fields before saving a draft." },
+            { status: 400 },
+          );
+        }
+      }
+
+      const summary = extractApplicantSummary(form_data);
+      if (finalize && (!summary.email || !summary.phone || !summary.full_name)) {
+        return NextResponse.json(
+          { error: "Name, email, and phone are required to submit." },
+          { status: 400 },
+        );
+      }
+
+      const posting = existingDraft.job_postings as PostingRow | null;
       if (!posting) {
         return NextResponse.json({ error: "Linked job posting not found." }, { status: 404 });
       }
@@ -156,6 +164,10 @@ export async function POST(req: NextRequest) {
         cv_url: summary.cv_url,
         cv_public_id: summary.cv_public_id,
       };
+
+      if (!existingDraft.application_form_fields_snapshot) {
+        updates.application_form_fields_snapshot = buildApplicationFormSnapshot(snapshotContext);
+      }
 
       if (finalize) {
         updates.submission_status = "submitted";
@@ -205,6 +217,35 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const fields = liveContext.fields;
+    const steps = liveContext.steps;
+
+    if (finalize) {
+      for (const step of steps) {
+        const stepErrors = validateStep(fields, step, form_data);
+        if (stepErrors.length > 0) {
+          return NextResponse.json({ error: stepErrors[0] }, { status: 400 });
+        }
+      }
+    } else {
+      const lastStep = steps[steps.length - 1];
+      const stepErrors = validateStep(fields, lastStep, form_data);
+      if (stepErrors.length > 0) {
+        return NextResponse.json(
+          { error: "Complete all required fields before saving a draft." },
+          { status: 400 },
+        );
+      }
+    }
+
+    const summary = extractApplicantSummary(form_data);
+    if (finalize && (!summary.email || !summary.phone || !summary.full_name)) {
+      return NextResponse.json(
+        { error: "Name, email, and phone are required to submit." },
+        { status: 400 },
+      );
+    }
+
     const { data: postingRow, error: postingErr } = await supabaseAdmin
       .from("job_postings")
       .select("*")
@@ -221,9 +262,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    posting = postingRow;
+    const posting = postingRow as PostingRow;
     const reference_number = generateReferenceNumber();
     const token = createDraftToken();
+    const formSnapshot = buildApplicationFormSnapshot(liveContext);
 
     const insertPayload: Record<string, unknown> = {
       reference_number,
@@ -237,6 +279,7 @@ export async function POST(req: NextRequest) {
       cv_public_id: summary.cv_public_id,
       job_posting_id: postingRow.id,
       application_form_data: form_data,
+      application_form_fields_snapshot: formSnapshot,
       submission_status: finalize ? "submitted" : "draft",
       draft_token: finalize ? null : token,
       status: finalize ? "applied" : "applied",
