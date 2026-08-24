@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { APPLICATION_STATUSES } from "@/lib/careers/types";
 import { validateHrStatusChange } from "@/lib/careers/applicationStatusRules";
+import { appendStatusHistory } from "@/lib/careers/statusHistory";
 
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin();
@@ -46,7 +47,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const { id, status, hr_notes } = await req.json();
+    const { id, status, hr_notes, changed_by } = await req.json();
 
     if (!id) {
       return NextResponse.json({ error: "Application id is required." }, { status: 400 });
@@ -72,7 +73,7 @@ export async function PATCH(req: NextRequest) {
     if (status !== undefined) {
       const { data: existing, error: existingErr } = await supabaseAdmin
         .from("job_applications")
-        .select("status, ai_screening")
+        .select("status, ai_screening, status_history")
         .eq("id", id)
         .single();
 
@@ -87,6 +88,8 @@ export async function PATCH(req: NextRequest) {
       if (validationError) {
         return NextResponse.json({ error: validationError }, { status: 400 });
       }
+
+      updates.status_history = appendStatusHistory(existing.status_history, status, changed_by);
     }
 
     const { data, error } = await supabaseAdmin

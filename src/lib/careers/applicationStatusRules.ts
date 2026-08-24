@@ -5,7 +5,12 @@ import {
 } from "@/lib/careers/types";
 
 /** Statuses only set by the system or AI — HR cannot pick these manually. */
-export const SYSTEM_ONLY_STATUSES: ApplicationStatus[] = ["applied", "under_review", "offer"];
+export const SYSTEM_ONLY_STATUSES: ApplicationStatus[] = [
+  "applied",
+  "under_review",
+  "evaluation",
+  "offer",
+];
 
 export function isAwaitingAiScreening(
   application: Pick<JobApplication, "status" | "ai_screening">,

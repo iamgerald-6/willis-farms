@@ -14,10 +14,12 @@ function clamp(n: number, min: number, max: number): number {
 export function IOSTimePicker({
   value,
   onChange,
+  disabled = false,
 }: {
   /** 24-hour "HH:mm", e.g. "14:30". Empty string defaults to 09:00. */
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const [hRaw, mRaw] = value ? value.split(":") : ["09", "00"];
   const initialH24 = Number(hRaw) || 0;
@@ -38,12 +40,15 @@ export function IOSTimePicker({
   }
 
   return (
-    <div className="inline-flex h-10 w-40 items-center gap-3 rounded-lg border border-gray-200 px-2.5 text-sm">
+    <div
+      className={`inline-flex h-10 w-40 items-center gap-3 rounded-lg border border-gray-200 px-2.5 text-sm ${disabled ? "opacity-60 bg-gray-50" : ""}`}
+    >
       <input
         type="text"
         inputMode="numeric"
         maxLength={2}
         value={hourText}
+        disabled={disabled}
         onChange={(e) => {
           const digits = e.target.value.replace(/\D/g, "").slice(0, 2);
           setHourText(digits);
@@ -54,7 +59,7 @@ export function IOSTimePicker({
           setHourText(padded);
           commit(padded, minuteText, period);
         }}
-        className="w-5 rounded bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-5 rounded bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed"
       />
       <span className="font-semibold text-gray-300">:</span>
       <input
@@ -62,6 +67,7 @@ export function IOSTimePicker({
         inputMode="numeric"
         maxLength={2}
         value={minuteText}
+        disabled={disabled}
         onChange={(e) => {
           const digits = e.target.value.replace(/\D/g, "").slice(0, 2);
           setMinuteText(digits);
@@ -72,17 +78,18 @@ export function IOSTimePicker({
           setMinuteText(padded);
           commit(hourText, padded, period);
         }}
-        className="w-5 rounded bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-5 rounded bg-transparent text-center text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed"
       />
 
       <select
         value={period}
+        disabled={disabled}
         onChange={(e) => {
           const p = e.target.value as "AM" | "PM";
           setPeriod(p);
           commit(hourText, minuteText, p);
         }}
-        className="h-6 rounded border border-gray-200 bg-white px-1 text-xs font-semibold leading-none text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="h-6 rounded border border-gray-200 bg-white px-1 text-xs font-semibold leading-none text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed"
       >
         <option value="AM">AM</option>
         <option value="PM">PM</option>

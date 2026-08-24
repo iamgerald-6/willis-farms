@@ -73,14 +73,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     index: validation.refereeIndex,
     name: validation.refereeName,
     email: validation.refereeEmail,
-    phone:
-      validation.refereeIndex === 1
-        ? String(appFormData?.reference_1_phone ?? "").trim()
-        : String(appFormData?.reference_2_phone ?? "").trim(),
-    relationship:
-      validation.refereeIndex === 1
-        ? String(appFormData?.reference_1_relationship ?? "").trim()
-        : String(appFormData?.reference_2_relationship ?? "").trim(),
+    phone: String(appFormData?.[`reference_${validation.refereeIndex}_phone`] ?? "").trim(),
+    relationship: String(
+      appFormData?.[`reference_${validation.refereeIndex}_relationship`] ?? "",
+    ).trim(),
   };
 
   const initialForm = mergeRefereeReferenceForm(

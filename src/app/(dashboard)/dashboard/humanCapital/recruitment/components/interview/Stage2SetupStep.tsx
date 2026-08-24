@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { Clock, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { stageMembers } from "@/lib/careers/panelInterview";
+import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { StageInfoBanner } from "./shared";
 
 type Props = {
@@ -15,14 +16,24 @@ type Props = {
   onSendStage2Invites: (scheduledAt: string) => void;
   isPending: boolean;
   readOnly?: boolean;
+  /** Persists edited member name/email while readOnly, without resending invites. */
+  onSaveMemberEdits?: () => void;
+  isSavingMemberEdits?: boolean;
 };
 
-function toLocalDatetime(iso?: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// Same date + IOSTimePicker split used when creating a job posting
+// (CareersTab.tsx) — Ghana has no DST and is always UTC+0, so the picker
+// values are stored as literal UTC ("...THH:mm:00Z") rather than run
+// through Date parsing, which would reinterpret them using whichever
+// timezone the admin's own computer happens to be set to.
+function isoDatePart(iso?: string) {
+  return iso ? iso.slice(0, 10) : "";
+}
+function isoTimePart(iso?: string) {
+  return iso ? iso.slice(11, 16) : "";
+}
+function combineDateTime(date: string, time: string): string {
+  return date && time ? `${date}T${time}:00Z` : "";
 }
 
 export default function Stage2SetupStep({
@@ -32,6 +43,8 @@ export default function Stage2SetupStep({
   onSendStage2Invites,
   isPending,
   readOnly = false,
+  onSaveMemberEdits,
+  isSavingMemberEdits = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -103,7 +116,8 @@ export default function Stage2SetupStep({
 
       {readOnly && (
         <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          Viewing Stage 2 panel setup — read-only.
+          Viewing Stage 2 panel setup. The practical date, time, location, and panel list are
+          locked — you can still fix a panel member&apos;s name or email below.
         </p>
       )}
 
@@ -116,15 +130,15 @@ export default function Stage2SetupStep({
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Stage 2 practical date & time *
+              Stage 2 practical date *
             </label>
             <input
-              type="datetime-local"
-              value={toLocalDatetime(scheduledAt)}
+              type="date"
+              value={isoDatePart(scheduledAt)}
               disabled={readOnly}
               onChange={(e) => {
-                const val = e.target.value;
-                const iso = val ? new Date(val).toISOString() : "";
+                const time = isoTimePart(scheduledAt) || "09:00";
+                const iso = combineDateTime(e.target.value, time);
                 onChange({
                   ...formData,
                   stage2_scheduled_at: iso,
@@ -136,6 +150,30 @@ export default function Stage2SetupStep({
                 });
               }}
               className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              Stage 2 practical time *
+            </label>
+            <IOSTimePicker
+              value={isoTimePart(scheduledAt)}
+              disabled={readOnly}
+              onChange={(time) => {
+                const date = isoDatePart(scheduledAt);
+                if (!date) return;
+                const iso = combineDateTime(date, time);
+                onChange({
+                  ...formData,
+                  stage2_scheduled_at: iso,
+                  setup: {
+                    ...setup,
+                    stage2_scheduled_at: iso,
+                    stage2_members: stage2Members,
+                  },
+                });
+              }}
             />
           </div>
           <div>
@@ -182,17 +220,15 @@ export default function Stage2SetupStep({
                 type="text"
                 placeholder="Full name *"
                 value={member.name}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               <input
                 type="email"
                 placeholder="Email *"
                 value={member.email}
-                disabled={readOnly}
                 onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
               {!readOnly && (
                 <button
@@ -213,6 +249,18 @@ export default function Stage2SetupStep({
           Stage 2 invites sent{" "}
           {new Date(setup.stage2_invites_sent_at).toLocaleString("en-GB")}
         </p>
+      )}
+
+      {readOnly && onSaveMemberEdits && (
+        <button
+          type="button"
+          onClick={onSaveMemberEdits}
+          disabled={isSavingMemberEdits}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isSavingMemberEdits ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Save name/email changes
+        </button>
       )}
 
       {!readOnly && (

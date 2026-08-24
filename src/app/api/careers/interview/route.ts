@@ -5,11 +5,8 @@ import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
   sendStage2ScheduleEmail,
-  sendHireOnboardingEmail,
   sendRejectionEmail,
 } from "@/lib/careers/interviewEmails";
-import { onboardingMagicLinkUrl } from "@/lib/appUrl";
-import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
 import {
   validatePanelDecision,
   statusForDecision,
@@ -25,6 +22,7 @@ import {
   scoreSubmission,
   stageAverage,
 } from "@/lib/careers/panelInterview";
+import { appendStatusHistory } from "@/lib/careers/statusHistory";
 
 const INTERVIEW_STATUSES = new Set([
   "shortlisted",
@@ -46,7 +44,14 @@ type InterviewAction =
   | "schedule_stage2"
   | "complete_stage2"
   | "finalize"
-  | "confirm_decision";
+  | "confirm_decision"
+  | "reconsider_decision";
+
+// confirm_decision runs while status is "evaluation" and reconsider_decision
+// runs while status is "hold" or "rejected" — neither is in INTERVIEW_STATUSES
+// (which gates opening/editing the interview guide itself), so both are
+// exempted from that guard below.
+const DECISION_ACTIONS = new Set<InterviewAction>(["confirm_decision", "reconsider_decision"]);
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -113,12 +118,15 @@ export async function POST(req: NextRequest) {
       submitted_by,
       action = "save_draft",
       stage2_scheduled_at,
+      reconsider_to,
     }: {
       application_id: string;
       interview_form_data: InterviewFormData;
       submitted_by?: string;
       action?: InterviewAction;
       stage2_scheduled_at?: string;
+      /** Only used with action "reconsider_decision". */
+      reconsider_to?: "evaluation" | "rejected";
     } = body;
 
     if (!application_id || !interview_form_data) {
@@ -141,7 +149,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!INTERVIEW_STATUSES.has(application.status)) {
+    if (!DECISION_ACTIONS.has(action) && !INTERVIEW_STATUSES.has(application.status)) {
       return NextResponse.json(
         {
           error:
@@ -484,14 +492,14 @@ export async function POST(req: NextRequest) {
 
     if (action === "stage1_review_reject") {
       updates.status = "rejected";
+      updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
     }
 
     if (action === "finalize") {
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
-      if (application.status === "shortlisted") {
-        updates.status = "interview";
-      }
+      updates.status = "evaluation";
+      updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
     } else if (action === "confirm_decision") {
       if (!application.interview_submitted_at) {
         return NextResponse.json(
@@ -529,40 +537,82 @@ export async function POST(req: NextRequest) {
       };
       updates.interview_form_data = merged;
       updates.status = statusForDecision(decision);
+      updates.status_history = appendStatusHistory(application.status_history, statusForDecision(decision), submitted_by);
 
-      if (decision === "hire") {
-        const tokenRecord = await createOnboardingToken(
-          supabaseAdmin,
-          application_id,
-        );
-        const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
-
-        await supabaseAdmin.from("onboarding_submissions").upsert(
-          {
-            application_id,
-            token_id: tokenRecord.id,
-            form_data: {},
-            hr_data: {},
-          },
-          { onConflict: "application_id" },
-        );
-
-        const hireResult = await sendHireOnboardingEmail({
+      if (decision === "do_not_hire") {
+        const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
           candidateEmail: application.email,
           roleTitle: application.role_title,
           referenceNumber: application.reference_number,
-          onboardingLink,
-          expiresAt: tokenRecord.expiresAt,
-          recommendedStartDate: merged.summary?.recommended_start_date,
         });
-
-        if (!hireResult.sent) {
-          emailWarnings.push(
-            hireResult.error ?? "Hire / onboarding email not sent",
-          );
+        if (!rejectResult.sent) {
+          emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
         }
-      } else if (decision === "do_not_hire") {
+      }
+    } else if (action === "reconsider_decision") {
+      // Second look at an applicant who already went through the full
+      // interview evaluation and was confirmed Hold/Reserve or Do not hire.
+      // Only reachable from those two states — a fresh "rejected" applicant
+      // who never went through evaluation (e.g. an early AI reject) is not
+      // eligible, since they never have a confirmed evaluation decision.
+      const priorSummary = normalizeInterviewFormData(application.interview_form_data).summary;
+      const eligible =
+        !!priorSummary?.decision_confirmed_at &&
+        ((application.status === "hold" && priorSummary.decision === "hold") ||
+          (application.status === "rejected" && priorSummary.decision === "do_not_hire"));
+
+      if (!eligible) {
+        return NextResponse.json(
+          { error: "This applicant is not eligible for reconsideration." },
+          { status: 400 },
+        );
+      }
+
+      if (reconsider_to !== "evaluation" && reconsider_to !== "rejected") {
+        return NextResponse.json(
+          { error: "Invalid reconsideration choice." },
+          { status: 400 },
+        );
+      }
+      if (reconsider_to === "rejected" && application.status !== "hold") {
+        return NextResponse.json(
+          { error: "Only a Hold/Reserve applicant can be reconsidered as Reject." },
+          { status: 400 },
+        );
+      }
+
+      if (reconsider_to === "evaluation") {
+        // Reopen: send them back to the evaluation stage exactly as if they
+        // hadn't been decided yet — clears the prior decision so "Confirm
+        // interview outcome" reappears, while the interview submission,
+        // scores, and generated report all stay untouched. No email.
+        merged = {
+          ...merged,
+          summary: {
+            ...merged.summary,
+            decision: "",
+            decision_confirmed_at: undefined,
+            decision_confirmed_by: undefined,
+          },
+        };
+        updates.interview_form_data = merged;
+        updates.status = "evaluation";
+        updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
+      } else {
+        merged = {
+          ...merged,
+          summary: {
+            ...merged.summary,
+            decision: "do_not_hire",
+            decision_confirmed_at: new Date().toISOString(),
+            decision_confirmed_by: submitted_by ?? undefined,
+          },
+        };
+        updates.interview_form_data = merged;
+        updates.status = "rejected";
+        updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
+
         const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
           candidateEmail: application.email,
@@ -578,6 +628,7 @@ export async function POST(req: NextRequest) {
       application.status === "shortlisted"
     ) {
       updates.status = "interview";
+      updates.status_history = appendStatusHistory(application.status_history, "interview", submitted_by);
     }
 
     const { data, error } = await supabaseAdmin

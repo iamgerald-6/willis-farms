@@ -22,8 +22,13 @@ export const EDITABLE_OPTION_LISTS: Partial<
     "skillLog.reviewPeriods",
   ],
   "mod:recruitment": [
-    "careers.applicationFields",
-    "careers.onboardingFields",
+    // NOTE: careers.applicationFields and careers.onboardingFields are
+    // intentionally NOT listed here — they have their own dedicated,
+    // schema-aware editors (ApplicationFormEditor / OnboardingFormEditor).
+    // Listing them here exposes the same rows through the generic
+    // OptionsEditor too, whose save wipes fieldKey/fieldType/step/required
+    // and replaces them with requires_document/requires_reason — silently
+    // breaking the public form. Do not re-add them.
     "careers.onboardingLocations",
     "careers.onboardingDepartmentsL1L6",
     "careers.onboardingDepartmentsL7",

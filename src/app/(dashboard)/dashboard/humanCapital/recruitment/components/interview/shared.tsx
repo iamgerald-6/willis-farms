@@ -103,6 +103,7 @@ export function StepIndicator<T extends string>({
   labels,
   maxIndex,
   onStepClick,
+  isStepDone,
 }: {
   steps: T[];
   current: T;
@@ -111,13 +112,18 @@ export function StepIndicator<T extends string>({
   maxIndex?: number;
   /** When provided, already-reached steps become clickable (to view them read-only). */
   onStepClick?: (step: T) => void;
+  /** Override the default "done" check (i < currentIdx) for a specific step —
+   * needed for the last step, which never has a later step to be "past" once
+   * it's actually complete. Return the default if you don't want to override. */
+  isStepDone?: (step: T, index: number, defaultDone: boolean) => boolean;
 }) {
   const currentIdx = steps.indexOf(current);
 
   return (
     <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto pb-1">
       {steps.map((step, i) => {
-        const done = i < currentIdx;
+        const defaultDone = i < currentIdx;
+        const done = isStepDone ? isStepDone(step, i, defaultDone) : defaultDone;
         const active = step === current;
         const reachable = maxIndex == null || i <= maxIndex;
         const clickable = !!onStepClick && reachable;

@@ -8,7 +8,7 @@ import {
 } from "@/lib/careers/refereeReferenceTypes";
 
 export type RefereeSubmissionDisplay = {
-  referee_index: 1 | 2;
+  referee_index: number;
   referee_name: string;
   referee_email: string;
   relationship: string;
@@ -96,7 +96,8 @@ export function RefereeSubmissionsView({ submissions }: Props) {
     <div className="space-y-3">
       <p className="text-xs text-gray-500 leading-relaxed">
         These are the referees you named when you applied. Each referee receives an email with a
-        link to complete their reference form — you do not need to fill this in yourself.
+        link to complete their reference form on your behalf — you do not need to fill this in
+        yourself.
       </p>
       <ul className="space-y-2">
         {submissions.map((row) => {
@@ -159,7 +160,7 @@ export function RefereeSubmissionsView({ submissions }: Props) {
               {!submitted && (
                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                   <ExternalLink className="w-3 h-3" />
-                  An email was sent to this referee when you submitted your application.
+                  An email was sent to this referee with a link to complete their reference form.
                 </p>
               )}
             </li>

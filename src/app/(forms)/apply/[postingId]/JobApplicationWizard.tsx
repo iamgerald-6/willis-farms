@@ -35,10 +35,22 @@ import {
   X,
 } from "lucide-react";
 import {
-  ADD_SECOND_REFEREE_KEY,
-  REFERENCE_2_FIELD_KEYS,
-  hasSecondRefereeData,
+  OPTIONAL_REFEREE_SLOTS,
+  refereeAddKey,
+  refereeFieldKeys,
+  hasRefereeSlotData,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+
+// Applicants must be at least 15 years old — the latest a birthdate can be
+// is exactly 15 years before today. Computed once at module load rather
+// than per render/keystroke.
+function minApplicantBirthdate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 15);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+const MIN_APPLICANT_BIRTHDATE = minApplicantBirthdate();
 
 type Props = {
   posting: JobPosting;
@@ -78,13 +90,15 @@ export default function JobApplicationWizard({
 }: Props) {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
-  const [values, setValues] = useState<ApplicationFormData>(() => ({
-    ...initialValues,
-    [ADD_SECOND_REFEREE_KEY]:
-      initialValues[ADD_SECOND_REFEREE_KEY] === "Yes" || hasSecondRefereeData(initialValues)
-        ? "Yes"
-        : "",
-  }));
+  const [values, setValues] = useState<ApplicationFormData>(() => {
+    const init: ApplicationFormData = { ...initialValues };
+    for (const slot of OPTIONAL_REFEREE_SLOTS) {
+      const key = refereeAddKey(slot);
+      init[key] =
+        initialValues[key] === "Yes" || hasRefereeSlotData(initialValues, slot) ? "Yes" : "";
+    }
+    return init;
+  });
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,26 +126,46 @@ export default function JobApplicationWizard({
         : [],
     [step, stepFields],
   );
-  const primaryRefereeFields = useMemo(
-    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_1_")),
-    [refereeFields],
+  // Referee fields are grouped by slot number (1-5) rather than by fixed
+  // "primary/secondary" names, so any number of optional slots can be added.
+  const refereeFieldsBySlot = useMemo(() => {
+    const map = new Map<number, ApplicationFormField[]>();
+    for (const f of refereeFields) {
+      const match = f.rules.fieldKey.match(/^reference_(\d+)_/);
+      if (!match) continue;
+      const slot = Number(match[1]);
+      const list = map.get(slot) ?? [];
+      list.push(f);
+      map.set(slot, list);
+    }
+    return map;
+  }, [refereeFields]);
+  const requiredRefereeSlots = useMemo(
+    () => [1, 2].filter((s) => refereeFieldsBySlot.has(s)),
+    [refereeFieldsBySlot],
   );
-  const secondaryRefereeFields = useMemo(
-    () => refereeFields.filter((f) => f.rules.fieldKey.startsWith("reference_2_")),
-    [refereeFields],
+  const visibleOptionalSlots = useMemo(
+    () =>
+      OPTIONAL_REFEREE_SLOTS.filter(
+        (s) => refereeFieldsBySlot.has(s) && values[refereeAddKey(s)] === "Yes",
+      ),
+    [refereeFieldsBySlot, values],
   );
-  const showSecondReferee = values[ADD_SECOND_REFEREE_KEY] === "Yes";
+  const nextOptionalSlot = OPTIONAL_REFEREE_SLOTS.find(
+    (s) => refereeFieldsBySlot.has(s) && values[refereeAddKey(s)] !== "Yes",
+  );
 
-  const addSecondReferee = () => {
-    setValues((prev) => ({ ...prev, [ADD_SECOND_REFEREE_KEY]: "Yes" }));
+  const addReferee = () => {
+    if (nextOptionalSlot === undefined) return;
+    setValues((prev) => ({ ...prev, [refereeAddKey(nextOptionalSlot)]: "Yes" }));
     setDraftSavedMessage(null);
     setError(null);
   };
 
-  const removeSecondReferee = () => {
+  const removeReferee = (slot: number) => {
     setValues((prev) => {
-      const next: ApplicationFormData = { ...prev, [ADD_SECOND_REFEREE_KEY]: "" };
-      for (const key of REFERENCE_2_FIELD_KEYS) {
+      const next: ApplicationFormData = { ...prev, [refereeAddKey(slot)]: "" };
+      for (const key of refereeFieldKeys(slot)) {
         next[key] = "";
       }
       return next;
@@ -546,12 +580,21 @@ export default function JobApplicationWizard({
           ? "date"
           : "text";
 
+    // Applicants must be at least 15 — the date_of_birth picker can't
+    // select a date more recent than 15 years ago, so nobody younger can
+    // even pick a valid birthdate.
+    const dateMax =
+      fieldType === "date" && fieldKey === "date_of_birth"
+        ? MIN_APPLICANT_BIRTHDATE
+        : undefined;
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
           className={inputClass}
           type={inputType}
           placeholder={placeholder}
+          max={dateMax}
           value={String(value ?? "")}
           onChange={(e) => setFieldValue(fieldKey, e.target.value)}
         />
@@ -564,6 +607,8 @@ export default function JobApplicationWizard({
       eyebrow="Wills Farms Ltd. — Job application"
       title={formatPublicJobTitle(posting.title)}
       subtitle={`${posting.location} · ${posting.employment_type}`}
+      backHref="/careers"
+      backLabel="Back to job postings"
     >
       <div className="flex gap-2 mb-6">
         {APPLICATION_STEPS.map((s, i) => (
@@ -628,37 +673,33 @@ export default function JobApplicationWizard({
           {refereeFields.length > 0 && (
             <>
               <div className="mt-8 mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
-                <p className="font-semibold text-blue-950 mb-1">Referee</p>
+                <p className="font-semibold text-blue-950 mb-1">Referees</p>
                 <p>
-                  One referee is required. When you click{" "}
-                  <span className="font-medium">Submit application</span>, we will email each
-                  referee you list below a secure link to complete a short reference form on
-                  your behalf. Please double-check their email addresses before submitting.
+                  At least two referees are required. If you are selected for the role, we will
+                  email each referee you list below a secure link to complete a short reference
+                  form on your behalf. Please double-check their email addresses before
+                  submitting.
                 </p>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                {primaryRefereeFields.map((field) => (
-                  <div key={field.id}>{renderField(field)}</div>
-                ))}
-              </div>
+              {requiredRefereeSlots.map((slot) => (
+                <div key={slot} className="mb-6">
+                  <p className="text-sm font-semibold text-gray-900 mb-3">Referee {slot}</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {(refereeFieldsBySlot.get(slot) ?? []).map((field) => (
+                      <div key={field.id}>{renderField(field)}</div>
+                    ))}
+                  </div>
+                </div>
+              ))}
 
-              {!showSecondReferee ? (
-                <button
-                  type="button"
-                  onClick={addSecondReferee}
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add another referee (optional)
-                </button>
-              ) : (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-gray-900">Second referee (optional)</p>
+              {visibleOptionalSlots.map((slot) => (
+                <div key={slot} className="mb-6">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-sm font-semibold text-gray-900">Referee {slot} (optional)</p>
                     <button
                       type="button"
-                      onClick={removeSecondReferee}
+                      onClick={() => removeReferee(slot)}
                       className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-600"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -666,11 +707,22 @@ export default function JobApplicationWizard({
                     </button>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3">
-                    {secondaryRefereeFields.map((field) => (
+                    {(refereeFieldsBySlot.get(slot) ?? []).map((field) => (
                       <div key={field.id}>{renderField(field)}</div>
                     ))}
                   </div>
                 </div>
+              ))}
+
+              {nextOptionalSlot !== undefined && (
+                <button
+                  type="button"
+                  onClick={addReferee}
+                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-red-700 hover:text-red-800"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add another referee (optional)
+                </button>
               )}
             </>
           )}

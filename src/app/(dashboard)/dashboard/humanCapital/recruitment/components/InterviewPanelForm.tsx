@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
+  combinedAreaScores,
   combinedInterviewAverage,
   interviewWorkflowStepV2,
   type WorkflowStep,
@@ -49,7 +50,7 @@ const STEP_LABELS: Record<WorkflowStep, string> = {
   stage1_review: "Review",
   stage2_setup: "Stage 2 setup",
   stage2: "Stage 2",
-  evaluation: "Evaluation",
+  evaluation: "Stage 3 Evaluation",
 };
 
 const STEP_ORDER: WorkflowStep[] = [
@@ -236,8 +237,12 @@ export default function InterviewPanelForm({
     },
   });
 
-  const dummyScores = {
-    areaScores: formData.summary?.area_scores ?? {},
+  // Per-area figures for the Evaluation step's Combined scores table — see
+  // combinedAreaScores() for how each area is averaged across every grader.
+  // formData.summary.area_scores is never populated by anything, so reading
+  // it directly (as this used to) always showed an empty column.
+  const evaluationScores = {
+    areaScores: guide ? combinedAreaScores(formData, guide) : {},
     total: combinedScore,
   };
 
@@ -274,6 +279,9 @@ export default function InterviewPanelForm({
               onStepClick={(step) =>
                 setManualStep(step === workflowStep ? null : step)
               }
+              isStepDone={(step, _i, defaultDone) =>
+                step === "evaluation" ? interviewSubmitted : defaultDone
+              }
             />
           )}
         </div>
@@ -309,6 +317,10 @@ export default function InterviewPanelForm({
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
+              onSaveMemberEdits={() =>
+                saveMutation.mutate({ action: "save_draft", data: formData })
+              }
+              isSavingMemberEdits={saveMutation.isPending}
             />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
@@ -377,6 +389,10 @@ export default function InterviewPanelForm({
               }
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
+              onSaveMemberEdits={() =>
+                saveMutation.mutate({ action: "save_draft", data: formData })
+              }
+              isSavingMemberEdits={saveMutation.isPending}
             />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
@@ -421,7 +437,7 @@ export default function InterviewPanelForm({
             <Stage3Evaluation
               guide={guide}
               formData={formData}
-              scores={dummyScores}
+              scores={evaluationScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
               onGenerateAnalysis={() => finalAnalysisMutation.mutate()}
@@ -451,7 +467,7 @@ export default function InterviewPanelForm({
               disabled={saveMutation.isPending || isLoading}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
             >
-              {saveMutation.isPending ? "Submitting…" : "Submit evaluation"}
+              {saveMutation.isPending ? "Submitting…" : "Finish"}
             </button>
           </div>
         )}

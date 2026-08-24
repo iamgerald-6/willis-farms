@@ -24,6 +24,7 @@ import {
 } from "@/lib/careers/onboardingTokens";
 import { sendOnboardingSubmittedEmail } from "@/lib/careers/interviewEmails";
 import { fetchRefereeSubmissionsForApplication } from "@/lib/careers/sendRefereeReferenceInvites";
+import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
 
 type RouteParams = { params: Promise<{ token: string }> };
 
@@ -249,9 +250,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   if (finalize) {
+    const statusHistory = await fetchAndAppendStatusHistory(
+      supabaseAdmin,
+      validation.applicationId,
+      "offer",
+      null,
+    );
     const { data: application } = await supabaseAdmin
       .from("job_applications")
-      .update({ status: "offer" })
+      .update({ status: "offer", status_history: statusHistory })
       .eq("id", validation.applicationId)
       .select("full_name, role_title, reference_number")
       .single();

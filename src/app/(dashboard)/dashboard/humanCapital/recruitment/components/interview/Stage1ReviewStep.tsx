@@ -1,15 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
-import type { InterviewFormData } from "@/lib/careers/types";
+import type { InterviewFormData, StageSubmissionData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
   gradersForStage,
+  getSubmission,
   stageAverage,
   stage1ReadyForReview,
+  type GraderResult,
 } from "@/lib/careers/panelInterview";
 import { scoreStanding, standingLabel } from "@/lib/careers/panelDecision";
 import { StageInfoBanner } from "./shared";
+import GraderSubmissionModal from "./GraderSubmissionModal";
 
 type Props = {
   guide: InterviewGuideConfig;
@@ -38,6 +42,10 @@ export default function Stage1ReviewStep({
   const ready = stage1ReadyForReview(formData);
   const reviewed = formData.stage1_review?.reviewed_at;
   const passed = formData.stage1_review?.passed;
+  const [selectedGrader, setSelectedGrader] = useState<GraderResult | null>(null);
+
+  const submissionForGrader = (g: GraderResult): StageSubmissionData | undefined =>
+    g.role === "hr" ? formData.hr_submission?.stage1 : getSubmission(formData, g.id, 1);
 
   return (
     <div className="space-y-6">
@@ -65,8 +73,21 @@ export default function Stage1ReviewStep({
           </thead>
           <tbody>
             {graders.map((g) => (
-              <tr key={g.id} className="border-b border-gray-100">
-                <td className="px-4 py-3 font-medium text-gray-900">{g.label}</td>
+              <tr
+                key={g.id}
+                onClick={() => g.submitted_at && setSelectedGrader(g)}
+                className={`border-b border-gray-100 ${
+                  g.submitted_at ? "cursor-pointer hover:bg-gray-50" : ""
+                }`}
+                title={g.submitted_at ? "View filled form" : undefined}
+              >
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  {g.submitted_at ? (
+                    <span className="text-red-700 hover:underline">{g.label}</span>
+                  ) : (
+                    g.label
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-600 capitalize">{g.role}</td>
                 <td className="px-4 py-3 text-center font-medium">
                   {g.total?.toFixed(2) ?? "—"}
@@ -191,6 +212,17 @@ export default function Stage1ReviewStep({
             Pass to Stage 2 setup
           </button>
         </div>
+      )}
+
+      {selectedGrader && (
+        <GraderSubmissionModal
+          guide={guide}
+          graderLabel={selectedGrader.label}
+          graderRole={selectedGrader.role}
+          stage={1}
+          submission={submissionForGrader(selectedGrader)}
+          onClose={() => setSelectedGrader(null)}
+        />
       )}
     </div>
   );

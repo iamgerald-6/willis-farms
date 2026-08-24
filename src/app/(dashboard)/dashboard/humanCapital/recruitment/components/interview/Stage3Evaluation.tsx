@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   computeWeightedScore,
   RATING_LABELS,
@@ -9,11 +10,19 @@ import {
   scoreStanding,
   standingLabel,
 } from "@/lib/careers/panelDecision";
-import type { InterviewFormData } from "@/lib/careers/types";
+import type { InterviewFormData, StageSubmissionData } from "@/lib/careers/types";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { gradersForStage, stageAverage } from "@/lib/careers/panelInterview";
+import {
+  gradersForStage,
+  getSubmission,
+  stageAverage,
+  type GraderResult,
+} from "@/lib/careers/panelInterview";
 import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 import { StageInfoBanner } from "./shared";
+import GraderSubmissionModal from "./GraderSubmissionModal";
+
+type SelectedGrader = { grader: GraderResult; stage: 1 | 2 };
 
 const RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -31,10 +40,12 @@ function GraderMatrix({
   formData,
   guide,
   stage,
+  onGraderClick,
 }: {
   formData: InterviewFormData;
   guide: InterviewGuideConfig;
   stage: 1 | 2;
+  onGraderClick: (grader: GraderResult, stage: 1 | 2) => void;
 }) {
   const graders = gradersForStage(formData, guide, stage);
   const avg = stageAverage(formData, guide, stage);
@@ -55,9 +66,20 @@ function GraderMatrix({
         </thead>
         <tbody>
           {graders.map((g) => (
-            <tr key={g.id} className="border-b border-gray-100">
+            <tr
+              key={g.id}
+              onClick={() => g.submitted_at && onGraderClick(g, stage)}
+              className={`border-b border-gray-100 ${
+                g.submitted_at ? "cursor-pointer hover:bg-gray-50" : ""
+              }`}
+              title={g.submitted_at ? "View filled form" : undefined}
+            >
               <td className="px-4 py-2 text-gray-900">
-                {g.label}
+                {g.submitted_at ? (
+                  <span className="text-red-700 hover:underline">{g.label}</span>
+                ) : (
+                  g.label
+                )}
                 <span className="text-xs text-gray-400 ml-1">({g.role})</span>
               </td>
               <td className="px-4 py-2 text-center font-medium">
@@ -132,6 +154,14 @@ export default function Stage3Evaluation({
   const standingClass = STANDING_CLASSES[standing];
   const observedDqs = observedDisqualifiers(formData, guide.disqualifiers);
 
+  const [selected, setSelected] = useState<SelectedGrader | null>(null);
+  const submissionForGrader = (g: GraderResult, stage: 1 | 2): StageSubmissionData | undefined => {
+    if (g.role === "hr") {
+      return stage === 1 ? formData.hr_submission?.stage1 : formData.hr_submission?.stage2;
+    }
+    return getSubmission(formData, g.id, stage);
+  };
+
   return (
     <div className="space-y-8">
       <StageInfoBanner
@@ -143,12 +173,22 @@ export default function Stage3Evaluation({
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 1 scores</h3>
-        <GraderMatrix formData={formData} guide={guide} stage={1} />
+        <GraderMatrix
+          formData={formData}
+          guide={guide}
+          stage={1}
+          onGraderClick={(grader, stage) => setSelected({ grader, stage })}
+        />
       </section>
 
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Stage 2 scores</h3>
-        <GraderMatrix formData={formData} guide={guide} stage={2} />
+        <GraderMatrix
+          formData={formData}
+          guide={guide}
+          stage={2}
+          onGraderClick={(grader, stage) => setSelected({ grader, stage })}
+        />
       </section>
 
       {observedDqs.length > 0 && (
@@ -173,41 +213,25 @@ export default function Stage3Evaluation({
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-3">Combined scores</h3>
         <div className="overflow-x-auto border border-gray-200 rounded-xl">
-          <table className="w-full text-sm min-w-[520px]">
+          <table className="w-full text-sm min-w-[360px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">
                   Assessment area
                 </th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-600 w-24">
-                  Weight
-                </th>
                 <th className="text-center px-4 py-3 font-semibold text-gray-600 w-28">
                   Avg score (1–5)
-                </th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-600 w-28">
-                  Weighted
                 </th>
               </tr>
             </thead>
             <tbody>
               {guide.weights.map((row) => {
                 const avg = scores.areaScores[row.area];
-                const weighted =
-                  avg != null
-                    ? Math.round(avg * (row.weight / 100) * 100) / 100
-                    : null;
                 return (
                   <tr key={row.area} className="border-b border-gray-100">
                     <td className="px-4 py-3 text-gray-800">{row.area}</td>
-                    <td className="px-4 py-3 text-center text-gray-600">
-                      {row.weight}%
-                    </td>
                     <td className="px-4 py-3 text-center font-medium">
                       {avg?.toFixed(2) ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center font-medium">
-                      {weighted?.toFixed(2) ?? "—"}
                     </td>
                   </tr>
                 );
@@ -215,11 +239,11 @@ export default function Stage3Evaluation({
             </tbody>
             <tfoot>
               <tr className="bg-gray-50 font-bold">
-                <td className="px-4 py-3" colSpan={2}>
+                <td className="px-4 py-3">
                   Total weighted score
-                </td>
-                <td className="px-4 py-3 text-center text-xs font-normal text-gray-500">
-                  (1 = Unsatisfactory … 5 = Excellent)
+                  <span className="block text-xs font-normal text-gray-500 mt-0.5">
+                    (1 = Unsatisfactory … 5 = Excellent)
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-center text-red-700 text-base">
                   {total?.toFixed(2) ?? "—"} / 5.00
@@ -346,6 +370,17 @@ export default function Stage3Evaluation({
           ))}
         </div>
       </section>
+
+      {selected && (
+        <GraderSubmissionModal
+          guide={guide}
+          graderLabel={selected.grader.label}
+          graderRole={selected.grader.role}
+          stage={selected.stage}
+          submission={submissionForGrader(selected.grader, selected.stage)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
