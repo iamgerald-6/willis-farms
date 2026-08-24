@@ -21,9 +21,7 @@ import {
   fetchOnboardingOptionLists,
   getGitOnboardingOptionLists,
 } from "@/lib/careers/getOnboardingFormFields";
-import {
-  validateOnboardingToken,
-} from "@/lib/careers/onboardingTokens";
+import { validateOnboardingToken } from "@/lib/careers/onboardingTokens";
 import { sendOnboardingSubmittedEmail } from "@/lib/careers/interviewEmails";
 
 type RouteParams = { params: Promise<{ token: string }> };
@@ -31,7 +29,10 @@ type RouteParams = { params: Promise<{ token: string }> };
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 },
+    );
   }
 
   const { token } = await params;
@@ -39,8 +40,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   if (!validation.ok) {
     const messages = {
       not_found: "This onboarding link is invalid.",
-      revoked: "This onboarding link has been replaced. Check your email for the latest link.",
-      expired: "This onboarding link has expired. Contact HR to request a new link.",
+      revoked:
+        "This onboarding link has been replaced. Check your email for the latest link.",
+      expired:
+        "This onboarding link has expired. Contact HR to request a new link.",
     };
     return NextResponse.json(
       { error: messages[validation.reason] },
@@ -57,7 +60,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .single();
 
   if (appError || !application) {
-    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Application not found." },
+      { status: 404 },
+    );
   }
 
   const { data: submission } = await supabaseAdmin
@@ -81,12 +87,16 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         submitted_at: submission.submitted_at,
         expires_at: validation.expiresAt,
         application_form_data: application.application_form_data,
-        form_data: mergeOnboardingForm(submission.form_data as OnboardingFormData),
+        form_data: mergeOnboardingForm(
+          submission.form_data as OnboardingFormData,
+        ),
       },
     });
   }
 
-  const formData = mergeOnboardingForm(submission?.form_data as OnboardingFormData);
+  const formData = mergeOnboardingForm(
+    submission?.form_data as OnboardingFormData,
+  );
 
   let fields;
   let optionLists;
@@ -106,7 +116,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     phone: application.phone ?? "",
     role_title: application.role_title,
     location: application.location,
-    application_form_data: application.application_form_data as Record<string, unknown> | null,
+    application_form_data: application.application_form_data as Record<
+      string,
+      unknown
+    > | null,
   });
 
   return NextResponse.json({
@@ -135,13 +148,19 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function POST(req: NextRequest, { params }: RouteParams) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 },
+    );
   }
 
   const { token } = await params;
   const validation = await validateOnboardingToken(supabaseAdmin, token);
   if (!validation.ok) {
-    return NextResponse.json({ error: "Invalid or expired link." }, { status: 410 });
+    return NextResponse.json(
+      { error: "Invalid or expired link." },
+      { status: 410 },
+    );
   }
 
   const body = await req.json();
@@ -201,7 +220,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   fields = mergeOnboardingFieldDefinitions(fields);
 
   const applicationContext = {
-    application_form_data: application?.application_form_data as Record<string, unknown> | null,
+    application_form_data: application?.application_form_data as Record<
+      string,
+      unknown
+    > | null,
     full_name: application?.full_name,
     email: application?.email,
     phone: application?.phone,
@@ -266,9 +288,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   if (finalize) {
     const { data: application } = await supabaseAdmin
       .from("job_applications")
-      .update({ status: "offer" })
-      .eq("id", validation.applicationId)
       .select("full_name, role_title, reference_number")
+      .eq("id", validation.applicationId)
       .single();
 
     if (application) {

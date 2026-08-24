@@ -10,27 +10,25 @@ export function registryRefToOptionList(ref: string): string {
 }
 
 /** Modules whose dropdown options are editable in System Definitions (pilot rollout). */
-export const EDITABLE_OPTION_LISTS: Partial<
-  Record<string, readonly string[]>
-> = {
-  "mod:leave": ["leave.types"],
-  "mod:appraisal": ["appraisal.sectionAuthorisations"],
-  "mod:skill-log": [
-    "skillLog.types",
-    "skillLog.sections",
-    "skillLog.tierAuthorisations",
-    "skillLog.reviewPeriods",
-  ],
-  "mod:recruitment": [
-    "careers.applicationFields",
-    "careers.onboardingFields",
-    "careers.onboardingHrFields",
-    "careers.onboardingLocations",
-    "careers.onboardingDepartmentsL1L6",
-    "careers.onboardingDepartmentsL7",
-    "careers.onboardingEmploymentTypes",
-  ],
-};
+export const EDITABLE_OPTION_LISTS: Partial<Record<string, readonly string[]>> =
+  {
+    "mod:leave": ["leave.types"],
+    "mod:appraisal": ["appraisal.sectionAuthorisations"],
+    "mod:skill-log": [
+      "skillLog.types",
+      "skillLog.sections",
+      "skillLog.tierAuthorisations",
+      "skillLog.reviewPeriods",
+    ],
+    "mod:recruitment": [
+      "careers.applicationFields",
+      "careers.onboardingFields",
+      "careers.onboardingLocations",
+      "careers.onboardingDepartmentsL1L6",
+      "careers.onboardingDepartmentsL7",
+      "careers.onboardingEmploymentTypes",
+    ],
+  };
 
 /** Modules whose job posting roles are editable in System Definitions. */
 export const EDITABLE_JOB_POSTING_MODULES = ["mod:recruitment"] as const;

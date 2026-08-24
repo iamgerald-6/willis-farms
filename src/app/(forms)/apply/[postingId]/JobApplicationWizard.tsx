@@ -35,6 +35,14 @@ import {
   Upload,
 } from "lucide-react";
 
+function minApplicantBirthdate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 15);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+const MIN_APPLICANT_BIRTHDATE = minApplicantBirthdate();
+
 type Props = {
   posting: JobPosting;
   fields: ApplicationFormField[];
@@ -520,12 +528,18 @@ export default function JobApplicationWizard({
           ? "date"
           : "text";
 
+    const dateMax =
+      fieldType === "date" && fieldKey === "date_of_birth"
+        ? MIN_APPLICANT_BIRTHDATE
+        : undefined;
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
           className={inputClass}
           type={inputType}
           placeholder={placeholder}
+          max={dateMax}
           value={String(value ?? "")}
           onChange={(e) => setFieldValue(fieldKey, e.target.value)}
         />
@@ -538,6 +552,8 @@ export default function JobApplicationWizard({
       eyebrow="Wills Farms Ltd. — Job application"
       title={formatPublicJobTitle(posting.title)}
       subtitle={`${posting.location} · ${posting.employment_type}`}
+      backHref="/careers"
+      backLabel="Back to job postings"
     >
       <div className="flex gap-2 mb-6">
         {steps.map((s, i) => (

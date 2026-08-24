@@ -3,6 +3,7 @@
 import { Printer } from "lucide-react";
 import { buildMergedCandidateProfile } from "@/lib/careers/buildMergedCandidateProfile";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import { formatDisplayDateTime } from "@/lib/formatDisplayDate";
 
 export type CandidateProfileHeader = {
   fullName: string;
@@ -20,17 +21,6 @@ type Props = {
   showPrintButton?: boolean;
 };
 
-function formatSubmittedAt(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export default function CandidateProfileReview({
   applicationFormData,
   onboardingFormData,
@@ -46,7 +36,7 @@ export default function CandidateProfileReview({
     return null;
   }
 
-  const submittedLabel = formatSubmittedAt(header?.submittedAt);
+  const submittedLabel = formatDisplayDateTime(header?.submittedAt);
 
   return (
     <div className="candidate-profile-document">

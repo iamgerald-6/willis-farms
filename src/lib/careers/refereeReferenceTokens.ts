@@ -30,12 +30,17 @@ export async function createRefereeReferenceToken(
   supabase: SupabaseClient,
   params: {
     applicationId: string;
+
     refereeIndex: number;
     refereeName: string;
     refereeEmail: string;
   },
 ): Promise<{ token: string; expiresAt: string; id: string }> {
-  await revokeRefereeTokensForSlot(supabase, params.applicationId, params.refereeIndex);
+  await revokeRefereeTokensForSlot(
+    supabase,
+    params.applicationId,
+    params.refereeIndex,
+  );
 
   const token = generateRefereeTokenValue();
   const expiresAt = refereeTokenExpiry().toISOString();
@@ -56,7 +61,9 @@ export async function createRefereeReferenceToken(
     .single();
 
   if (error || !data) {
-    throw new Error(error?.message ?? "Failed to create referee reference token");
+    throw new Error(
+      error?.message ?? "Failed to create referee reference token",
+    );
   }
 
   return {
@@ -84,7 +91,9 @@ export async function validateRefereeReferenceToken(
 ): Promise<RefereeTokenValidation> {
   const { data, error } = await supabase
     .from("referee_reference_tokens")
-    .select("id, application_id, expires_at, revoked_at, referee_index, referee_name, referee_email")
+    .select(
+      "id, application_id, expires_at, revoked_at, referee_index, referee_name, referee_email",
+    )
     .eq("token", token)
     .maybeSingle();
 

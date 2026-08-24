@@ -5,6 +5,7 @@ import type {
 } from "@/lib/careers/applicationFormSchema";
 import { deriveCitizenshipFromApplication } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import { formatDisplayDate } from "@/lib/formatDisplayDate";
 
 export type ProfileReviewItem = {
   label: string;
@@ -64,15 +65,7 @@ function str(value: unknown): string | null {
 
 function formatDateDisplay(value: string | null | undefined): string | null {
   if (!value?.trim()) return null;
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-  return value.trim();
+  return formatDisplayDate(value) ?? value.trim();
 }
 
 function item(

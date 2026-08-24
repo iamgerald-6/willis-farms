@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
+import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
 
 export const SHORTLIST_THRESHOLD = 60;
 
@@ -181,10 +182,13 @@ export async function screenApplication(
   const newStatus: "shortlisted" | "under_review" =
     score >= SHORTLIST_THRESHOLD ? "shortlisted" : "under_review";
 
+  const statusHistory = await fetchAndAppendStatusHistory(supabaseAdmin, application.id, newStatus, null);
+
   const { error: updateErr } = await supabaseAdmin
     .from("job_applications")
     .update({
       status: newStatus,
+      status_history: statusHistory,
       ai_screening: {
         score,
         summary: scoreSummary,

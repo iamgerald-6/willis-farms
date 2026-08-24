@@ -18,7 +18,10 @@ type RouteParams = { params: Promise<{ token: string }> };
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 },
+    );
   }
 
   const { token } = await params;
@@ -26,8 +29,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   if (!validation.ok) {
     const messages = {
       not_found: "This reference link is invalid.",
-      revoked: "This reference link has been replaced. Check your email for the latest link.",
-      expired: "This reference link has expired. Contact HR if you still need to submit.",
+      revoked:
+        "This reference link has been replaced. Check your email for the latest link.",
+      expired:
+        "This reference link has expired. Contact HR if you still need to submit.",
     };
     return NextResponse.json(
       { error: messages[validation.reason] },
@@ -37,12 +42,17 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
   const { data: application, error: appError } = await supabaseAdmin
     .from("job_applications")
-    .select("id, full_name, role_title, reference_number, application_form_data")
+    .select(
+      "id, full_name, role_title, reference_number, application_form_data",
+    )
     .eq("id", validation.applicationId)
     .single();
 
   if (appError || !application) {
-    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+    return NextResponse.json(
+      { error: "Application not found." },
+      { status: 404 },
+    );
   }
 
   const { data: submission } = await supabaseAdmin
@@ -73,7 +83,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     });
   }
 
-  const appFormData = application.application_form_data as Record<string, unknown> | null;
+  const appFormData = application.application_form_data as Record<
+    string,
+    unknown
+  > | null;
   const contact = {
     index: validation.refereeIndex,
     name: validation.refereeName,
@@ -124,13 +137,19 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function POST(req: NextRequest, { params }: RouteParams) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500 },
+    );
   }
 
   const { token } = await params;
   const validation = await validateRefereeReferenceToken(supabaseAdmin, token);
   if (!validation.ok) {
-    return NextResponse.json({ error: "Invalid or expired link." }, { status: 410 });
+    return NextResponse.json(
+      { error: "Invalid or expired link." },
+      { status: 410 },
+    );
   }
 
   const { data: existing } = await supabaseAdmin
@@ -150,7 +169,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const body = await req.json();
   const form_data = body.form_data as RefereeReferenceFormData;
   if (!form_data || typeof form_data !== "object") {
-    return NextResponse.json({ error: "Form data is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Form data is required." },
+      { status: 400 },
+    );
   }
 
   const businessLogic = await fetchModuleBusinessLogic(

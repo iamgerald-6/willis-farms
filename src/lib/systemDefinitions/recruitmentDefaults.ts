@@ -14,18 +14,32 @@ export const RECRUITMENT_JOB_POSTINGS_LIST = "careers.jobPostings";
 /** @deprecated use RECRUITMENT_JOB_POSTINGS_LIST */
 export const RECRUITMENT_JOB_TITLES_LIST = RECRUITMENT_JOB_POSTINGS_LIST;
 
-/** Form value toggled in JobApplicationWizard when the applicant adds a second referee. */
-export const ADD_SECOND_REFEREE_KEY = "add_second_referee";
+/** Referee 1 and 2 are always required. Referees 3+ are optional, added one
+ * at a time via "Add another referee" up to MAX_REFEREES. */
+export const MAX_REFEREES = 5;
+export const REQUIRED_REFEREE_COUNT = 2;
+export const OPTIONAL_REFEREE_SLOTS: number[] = Array.from(
+  { length: MAX_REFEREES - REQUIRED_REFEREE_COUNT },
+  (_, i) => i + REQUIRED_REFEREE_COUNT + 1,
+);
 
-export const REFERENCE_2_FIELD_KEYS = [
-  "reference_2_name",
-  "reference_2_phone",
-  "reference_2_email",
-  "reference_2_relationship",
-] as const;
+/** Form value toggled in JobApplicationWizard when the applicant adds
+ * referee slot N (N > REQUIRED_REFEREE_COUNT) — e.g. "add_referee_3". */
+export function refereeAddKey(slot: number): string {
+  return `add_referee_${slot}`;
+}
 
-export function hasSecondRefereeData(values: Record<string, unknown>): boolean {
-  return REFERENCE_2_FIELD_KEYS.some((key) => String(values[key] ?? "").trim() !== "");
+export function refereeFieldKeys(slot: number): string[] {
+  return [
+    `reference_${slot}_name`,
+    `reference_${slot}_phone`,
+    `reference_${slot}_email`,
+    `reference_${slot}_relationship`,
+  ];
+}
+
+export function hasRefereeSlotData(values: Record<string, unknown>, slot: number): boolean {
+  return refereeFieldKeys(slot).some((key) => String(values[key] ?? "").trim() !== "");
 }
 
 function field(
@@ -176,19 +190,19 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       required: true,
       maxLength: 1500,
     }),
-    field("opt:recruitment:field:ref1_name", "Referee — full name", "reference_1_name", 32, {
+    field("opt:recruitment:field:ref1_name", "Referee 1 — full name", "reference_1_name", 32, {
       step: "documents",
       fieldKey: "reference_1_name",
       fieldType: "text",
       required: true,
     }),
-    field("opt:recruitment:field:ref1_phone", "Referee — phone", "reference_1_phone", 33, {
+    field("opt:recruitment:field:ref1_phone", "Referee 1 — phone", "reference_1_phone", 33, {
       step: "documents",
       fieldKey: "reference_1_phone",
       fieldType: "phone",
       required: true,
     }),
-    field("opt:recruitment:field:ref1_email", "Referee — email", "reference_1_email", 34, {
+    field("opt:recruitment:field:ref1_email", "Referee 1 — email", "reference_1_email", 34, {
       step: "documents",
       fieldKey: "reference_1_email",
       fieldType: "email",
@@ -196,7 +210,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     }),
     field(
       "opt:recruitment:field:ref1_rel",
-      "Referee — relationship",
+      "Referee 1 — relationship",
       "reference_1_relationship",
       35,
       {
@@ -206,30 +220,28 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         required: true,
       },
     ),
-    field("opt:recruitment:field:ref2_name", "Second referee — full name", "reference_2_name", 36, {
+    // Referee 2 is required, same as referee 1 (no showWhen — always shown).
+    field("opt:recruitment:field:ref2_name", "Referee 2 — full name", "reference_2_name", 36, {
       step: "documents",
       fieldKey: "reference_2_name",
       fieldType: "text",
       required: true,
-      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
-    field("opt:recruitment:field:ref2_phone", "Second referee — phone", "reference_2_phone", 37, {
+    field("opt:recruitment:field:ref2_phone", "Referee 2 — phone", "reference_2_phone", 37, {
       step: "documents",
       fieldKey: "reference_2_phone",
       fieldType: "phone",
       required: true,
-      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
-    field("opt:recruitment:field:ref2_email", "Second referee — email", "reference_2_email", 38, {
+    field("opt:recruitment:field:ref2_email", "Referee 2 — email", "reference_2_email", 38, {
       step: "documents",
       fieldKey: "reference_2_email",
       fieldType: "email",
       required: true,
-      showWhen: { field: "add_second_referee", equals: "Yes" },
     }),
     field(
       "opt:recruitment:field:ref2_rel",
-      "Second referee — relationship",
+      "Referee 2 — relationship",
       "reference_2_relationship",
       39,
       {
@@ -237,8 +249,45 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
         fieldKey: "reference_2_relationship",
         fieldType: "text",
         required: true,
-        showWhen: { field: "add_second_referee", equals: "Yes" },
       },
     ),
+    // Referees 3–5 are optional — each shown only once the applicant clicks
+    // "Add another referee" for that slot (see refereeAddKey / OPTIONAL_REFEREE_SLOTS
+    // above and the wizard's referee section). Once shown, all 4 sub-fields
+    // of that slot are required, same as referees 1 and 2.
+    ...OPTIONAL_REFEREE_SLOTS.flatMap((slot, slotIdx) => {
+      const base = 40 + slotIdx * 4;
+      const showWhen = { field: refereeAddKey(slot), equals: "Yes" };
+      return [
+        field(
+          `opt:recruitment:field:ref${slot}_name`,
+          `Referee ${slot} — full name`,
+          `reference_${slot}_name`,
+          base,
+          { step: "documents", fieldKey: `reference_${slot}_name`, fieldType: "text", required: true, showWhen },
+        ),
+        field(
+          `opt:recruitment:field:ref${slot}_phone`,
+          `Referee ${slot} — phone`,
+          `reference_${slot}_phone`,
+          base + 1,
+          { step: "documents", fieldKey: `reference_${slot}_phone`, fieldType: "phone", required: true, showWhen },
+        ),
+        field(
+          `opt:recruitment:field:ref${slot}_email`,
+          `Referee ${slot} — email`,
+          `reference_${slot}_email`,
+          base + 2,
+          { step: "documents", fieldKey: `reference_${slot}_email`, fieldType: "email", required: true, showWhen },
+        ),
+        field(
+          `opt:recruitment:field:ref${slot}_rel`,
+          `Referee ${slot} — relationship`,
+          `reference_${slot}_relationship`,
+          base + 3,
+          { step: "documents", fieldKey: `reference_${slot}_relationship`, fieldType: "text", required: true, showWhen },
+        ),
+      ];
+    }),
   ];
 }

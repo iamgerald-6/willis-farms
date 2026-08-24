@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
         cv_url: cv_url || null,
         cv_public_id: cv_public_id || null,
         status: "applied",
+        status_history: [{ status: "applied", changed_at: new Date().toISOString(), changed_by: null }],
       })
       .select("id, reference_number, role_title, created_at")
       .single();
