@@ -31,7 +31,7 @@ export default function CareersPage() {
       <PageShell title={c.headline} subtitle={c.intro}>
         <section className="space-y-6">
           <SectionHeading
-            eyebrow="Openings"
+            eyebrow="Job Openings"
             title="Current opportunities"
             subtitle="If no role matches your profile, you may still apply to our talent pool."
           />
