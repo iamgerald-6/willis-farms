@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import {
-  getInterviewGuide,
-  buildCandidatePracticalExpectations,
-} from "@/lib/careers/interviewFormConfigs";
+import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
 import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
@@ -309,7 +306,6 @@ export async function POST(req: NextRequest) {
         scheduledAt: scheduled,
         location: setup.stage2_location ?? setup.location,
         stage2Duration: guide.stageDurations.stage2,
-        practicalExpectations: buildCandidatePracticalExpectations(guide),
       });
 
       if (!scheduleResult.sent) {
@@ -448,7 +444,6 @@ export async function POST(req: NextRequest) {
         scheduledAt: stage2_scheduled_at,
         location: merged.setup?.location,
         stage2Duration: guide.stageDurations.stage2,
-        practicalExpectations: buildCandidatePracticalExpectations(guide),
       });
 
       if (!scheduleResult.sent) {

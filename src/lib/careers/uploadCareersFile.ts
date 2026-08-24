@@ -1,9 +1,16 @@
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
+import { validateFileForAccept } from "@/lib/uploadConstraints";
 
 export async function uploadCareersFile(
   file: File,
   folder: string,
+  accept?: string,
+  fieldKey?: string,
 ): Promise<{ secure_url: string; public_id: string; original_name: string }> {
+  const validationError = validateFileForAccept(file, accept, fieldKey);
+  if (validationError) {
+    throw new Error(validationError);
+  }
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
