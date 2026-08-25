@@ -1229,7 +1229,7 @@ function ApplicationDetail({
                   Interview Report
                 </p>
                 <p className="text-xs text-gray-500">
-                  This applicant&apos;s outcome has already been confirmed, as a result,
+                  This applicant&apos;s outcome has already been confirmed, so
                   the report is shown as reference links rather than an editable
                   form.
                 </p>
