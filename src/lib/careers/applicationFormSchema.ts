@@ -5,9 +5,17 @@ import {
   RECRUITMENT_MODULE_ID,
   getDefaultApplicationFormFields,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import {
+  BUILTIN_APPLICATION_FORM_STEPS,
+  generateRefereeFormFields,
+  isRefereeSystemOption,
+  resolveApplicationFormSteps,
+  resolveRequiredRefereeCount,
+  type ApplicationFormConfig,
+} from "@/lib/systemDefinitions/applicationFormConfig";
 import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
 
-export type ApplicationFieldStep = "personal" | "experience" | "documents";
+export type ApplicationFieldStep = string;
 
 export type ApplicationFieldType =
   | "text"
@@ -82,23 +90,22 @@ export interface ApplicationFormField {
   rules: ApplicationFieldRules;
 }
 
-export const APPLICATION_STEP_LABELS: Record<ApplicationFieldStep, string> = {
-  personal: "Personal information",
-  experience: "Experience & qualifications",
-  documents: "Documents & references",
-};
+export const APPLICATION_STEP_LABELS: Record<string, string> =
+  Object.fromEntries(
+    BUILTIN_APPLICATION_FORM_STEPS.map((s) => [s.id, s.label]),
+  );
 
-export const APPLICATION_STEPS: ApplicationFieldStep[] = [
-  "personal",
-  "experience",
-  "documents",
-];
+/** @deprecated use resolveApplicationFormSteps(config) for live forms */
+export const APPLICATION_STEPS: ApplicationFieldStep[] =
+  BUILTIN_APPLICATION_FORM_STEPS.map((s) => s.id);
 
 export type ApplicationFormData = Record<string, unknown>;
 
 export const COVER_LETTER_MAX_CHARS = 1500;
 
-export function effectiveMaxLength(field: ApplicationFormField): number | undefined {
+export function effectiveMaxLength(
+  field: ApplicationFormField,
+): number | undefined {
   if (field.rules.maxLength != null && field.rules.maxLength > 0) {
     return field.rules.maxLength;
   }
@@ -111,25 +118,30 @@ export function effectiveMaxLength(field: ApplicationFormField): number | undefi
 export function parseApplicationFieldRules(
   raw: Record<string, unknown> | null | undefined,
 ): ApplicationFieldRules {
-  const step = raw?.step as ApplicationFieldStep;
   const fieldKey = String(raw?.fieldKey ?? "");
   const fieldType = (raw?.fieldType as ApplicationFieldType) ?? "text";
   const showWhenRaw = raw?.showWhen as ApplicationFieldShowWhen | undefined;
+  const stepRaw = String(raw?.step ?? "personal").trim();
 
   return {
-    step: APPLICATION_STEPS.includes(step) ? step : "personal",
+    step: stepRaw || "personal",
     fieldKey,
     fieldType,
     required: raw?.required === true,
-    placeholder: typeof raw?.placeholder === "string" ? raw.placeholder : undefined,
+    placeholder:
+      typeof raw?.placeholder === "string" ? raw.placeholder : undefined,
     options: Array.isArray(raw?.options)
       ? raw.options.map((o) => String(o))
       : undefined,
     showWhen:
-      showWhenRaw?.field && (showWhenRaw?.equals !== undefined || showWhenRaw?.notEquals !== undefined)
+      showWhenRaw?.field &&
+      (showWhenRaw?.equals !== undefined ||
+        showWhenRaw?.notEquals !== undefined)
         ? {
             field: String(showWhenRaw.field),
-            ...(showWhenRaw.equals !== undefined ? { equals: String(showWhenRaw.equals) } : {}),
+            ...(showWhenRaw.equals !== undefined
+              ? { equals: String(showWhenRaw.equals) }
+              : {}),
             ...(showWhenRaw.notEquals !== undefined
               ? { notEquals: String(showWhenRaw.notEquals) }
               : {}),
@@ -144,7 +156,9 @@ export function parseApplicationFieldRules(
   };
 }
 
-export function systemOptionToApplicationField(option: SystemOption): ApplicationFormField {
+export function systemOptionToApplicationField(
+  option: SystemOption,
+): ApplicationFormField {
   return {
     id: option.id,
     label: option.label,
@@ -156,22 +170,59 @@ export function systemOptionToApplicationField(option: SystemOption): Applicatio
 
 export function normalizeApplicationFields(
   options: SystemOption[],
+  config?: ApplicationFormConfig,
 ): ApplicationFormField[] {
-  return options
+  const refereeCount = resolveRequiredRefereeCount(config);
+  const steps = resolveApplicationFormSteps(config);
+  const refereeStepId = steps.some((s) => s.id === "references")
+    ? "references"
+    : (steps[steps.length - 1]?.id ?? "documents");
+
+  const baseFields = options
     .filter((o) => o.is_active && o.rules && typeof o.rules === "object")
+    .filter((o) => !isRefereeSystemOption(o))
     .map(systemOptionToApplicationField)
     .filter((f) => f.rules.fieldKey)
     .sort((a, b) => a.sort_order - b.sort_order);
+
+  const refereeFields = generateRefereeFormFields(refereeCount, refereeStepId);
+
+  return [...baseFields, ...refereeFields].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+}
+
+export function resolveApplicationSteps(
+  config?: ApplicationFormConfig,
+): ApplicationFieldStep[] {
+  return resolveApplicationFormSteps(config).map((s) => s.id);
+}
+
+export function stepsForFields(
+  fields: ApplicationFormField[],
+  config?: ApplicationFormConfig,
+): ApplicationFieldStep[] {
+  const configured = resolveApplicationSteps(config);
+  const fieldSteps = new Set(fields.map((f) => f.rules.step));
+  const ordered = configured.filter((id) => fieldSteps.has(id));
+  for (const id of fieldSteps) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered;
 }
 
 export function getGitApplicationFormFields(): ApplicationFormField[] {
   return normalizeApplicationFields(
-    getGitFallbackOptions(RECRUITMENT_MODULE_ID, RECRUITMENT_APPLICATION_FIELDS_LIST),
+    getGitFallbackOptions(
+      RECRUITMENT_MODULE_ID,
+      RECRUITMENT_APPLICATION_FIELDS_LIST,
+    ),
+    {},
   );
 }
 
 export function getDefaultApplicationFormFieldsFallback(): ApplicationFormField[] {
-  return normalizeApplicationFields(getDefaultApplicationFormFields());
+  return normalizeApplicationFields(getDefaultApplicationFormFields(), {});
 }
 
 export function fieldsForStep(
@@ -242,7 +293,9 @@ export function validateStep(
       }
       const hasIncompleteEntry = entries.some((entry) => {
         const missingCore =
-          !entry?.company?.trim() || !entry?.title?.trim() || !entry?.start?.trim();
+          !entry?.company?.trim() ||
+          !entry?.title?.trim() ||
+          !entry?.start?.trim();
         const missingEnd = !entry?.current && !entry?.end?.trim();
         return missingCore || missingEnd;
       });
@@ -295,12 +348,14 @@ export function validateStep(
       // Longest matching code wins (see PhoneNumberInput.tsx) — e.g.
       // "+1684..." must match American Samoa, not the shorter "+1"
       // (Canada/United States) that's also a valid prefix of it.
-      const matchedCode = COUNTRY_CODES.filter((c) => raw.startsWith(c.code)).sort(
-        (a, b) => b.code.length - a.code.length,
-      )[0];
+      const matchedCode = COUNTRY_CODES.filter((c) =>
+        raw.startsWith(c.code),
+      ).sort((a, b) => b.code.length - a.code.length)[0];
       const digits = matchedCode ? raw.slice(matchedCode.code.length) : "";
       if (!matchedCode || !/^\d{9}$/.test(digits)) {
-        errors.push(`${field.label} needs a country code and exactly 9 digits.`);
+        errors.push(
+          `${field.label} needs a country code and exactly 9 digits.`,
+        );
       }
     }
 
@@ -308,7 +363,9 @@ export function validateStep(
     // GhanaCardInput) — 9 digits, a dash, then the 1-digit check digit.
     if (field.rules.fieldType === "ghana_card" && !isEmpty) {
       if (!/^GHA-\d{9}-\d$/.test(String(value).trim())) {
-        errors.push(`${field.label} needs all 10 digits (9 digits + 1 check digit).`);
+        errors.push(
+          `${field.label} needs all 10 digits (9 digits + 1 check digit).`,
+        );
       }
     }
 
@@ -352,7 +409,9 @@ export function extractApplicantSummary(values: ApplicationFormData): {
     String(values.full_name ?? "").trim() ||
     "Applicant";
 
-  const email = String(values.email ?? "").trim().toLowerCase();
+  const email = String(values.email ?? "")
+    .trim()
+    .toLowerCase();
   const phone = String(values.phone ?? values.mobile ?? "").trim();
 
   const cover_note =
@@ -360,7 +419,9 @@ export function extractApplicantSummary(values: ApplicationFormData): {
       ? values.cover_letter.trim()
       : null;
 
-  const cv = values.cv as { secure_url?: string; public_id?: string } | undefined;
+  const cv = values.cv as
+    | { secure_url?: string; public_id?: string }
+    | undefined;
 
   return {
     full_name,

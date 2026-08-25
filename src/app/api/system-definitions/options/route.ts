@@ -6,7 +6,10 @@ import {
   requireAuth,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
-import { fetchSystemOptions } from "@/lib/systemDefinitions";
+import {
+  fetchSystemOptions,
+  writeSystemConfigAuditLog,
+} from "@/lib/systemDefinitions";
 import type { SystemOptionRules } from "@/lib/systemDefinitions";
 
 function slugify(value: string): string {
@@ -132,6 +135,23 @@ export async function POST(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await writeSystemConfigAuditLog(supabase, {
+      module_id: moduleId,
+      config_scope: "option",
+      entity_key: data.id,
+      entity_label: `${optionList} — ${data.label}`,
+      action: "created",
+      new_values: {
+        label: data.label,
+        legacy_value: data.legacy_value,
+        sort_order: data.sort_order,
+        is_active: data.is_active,
+        rules: data.rules,
+      },
+      performed_by: caller.id,
+      performed_by_name: caller.name,
+    });
 
     return NextResponse.json({ data }, { status: 201 });
   } catch {

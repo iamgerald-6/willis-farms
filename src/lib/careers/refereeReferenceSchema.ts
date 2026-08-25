@@ -2,10 +2,16 @@ import {
   REFEREE_ASSESSMENT_ATTRIBUTES,
   type RefereeReferenceFormData,
 } from "@/lib/careers/refereeReferenceTypes";
+import type { RefereeAssessmentAttributeDef } from "@/lib/systemDefinitions/refereeReferenceConfig";
 
 const VALID_RATINGS = new Set(["Excellent", "Good", "Fair", "Poor", "N/A"]);
 
-export function validateRefereeReferenceForm(form: RefereeReferenceFormData): string[] {
+export function validateRefereeReferenceForm(
+  form: RefereeReferenceFormData,
+  attributes: RefereeAssessmentAttributeDef[] = REFEREE_ASSESSMENT_ATTRIBUTES.map(
+    (a) => ({ key: a.key, label: a.label }),
+  ),
+): string[] {
   const errors: string[] = [];
 
   if (!form.referee?.full_name?.trim()) {
@@ -21,8 +27,8 @@ export function validateRefereeReferenceForm(form: RefereeReferenceFormData): st
     errors.push("Please state how long and in what capacity you have known the applicant.");
   }
 
-  for (const attr of REFEREE_ASSESSMENT_ATTRIBUTES) {
-    const rating = form.assessment?.[attr.key];
+  for (const attr of attributes) {
+    const rating = form.assessment?.[attr.key as keyof NonNullable<typeof form.assessment>];
     if (!rating || !VALID_RATINGS.has(rating)) {
       errors.push(`Please rate: ${attr.label}.`);
     }

@@ -57,6 +57,7 @@ interface UserProfile {
   first_name: string;
   last_name: string;
   grade_level: string;
+  supervisor_id?: string | null;
 }
 
 // NOTE: the skill taxonomy (log types, sections, and individual skills) used
@@ -358,20 +359,26 @@ function SkillLogFormPageContent() {
   const watchedLogType = watch("log_type");
   const watchedEmployeeId = watch("employee_id");
 
-  const assessableGrades = useMemo(
-    () =>
-      ALL_GRADES.filter(
-        (g) => parseSkillLogGradeLevel(g) < supervisorGradeLevel,
-      ),
-    [supervisorGradeLevel],
+  const directReports = useMemo(
+    () => allUsers.filter((u) => u.supervisor_id === supervisorId),
+    [allUsers, supervisorId],
   );
+
+  const assessableGrades = useMemo(() => {
+    const gradesWithReports = new Set(
+      directReports.map((u) => u.grade_level).filter(Boolean),
+    );
+    return ALL_GRADES.filter(
+      (g) =>
+        parseSkillLogGradeLevel(g) < supervisorGradeLevel &&
+        gradesWithReports.has(g),
+    );
+  }, [directReports, supervisorGradeLevel]);
 
   const employeesForGrade = useMemo(() => {
     if (!watchedGrade) return [];
-    return allUsers.filter(
-      (u) => u.grade_level === watchedGrade && u.user_id !== supervisorId,
-    );
-  }, [allUsers, watchedGrade, supervisorId]);
+    return directReports.filter((u) => u.grade_level === watchedGrade);
+  }, [directReports, watchedGrade]);
 
   const watchedReviewPeriod = watch("review_period");
 
@@ -549,7 +556,11 @@ function SkillLogFormPageContent() {
                   disabled={isEditMode}
                   {...field}
                 >
-                  <option value="">— Select grade —</option>
+                  <option value="">
+                    {assessableGrades.length === 0
+                      ? "No direct reports assigned to you"
+                      : "— Select grade —"}
+                  </option>
                   {assessableGrades.map((g) => (
                     <option key={g} value={g}>
                       {g}
@@ -573,9 +584,11 @@ function SkillLogFormPageContent() {
                   <option value="">
                     {watchedGrade
                       ? employeesForGrade.length === 0
-                        ? `No ${watchedGrade} employees found`
+                        ? `No direct reports at ${watchedGrade}`
                         : "— Select employee —"
-                      : "Select a grade first"}
+                      : assessableGrades.length === 0
+                        ? "No direct reports assigned to you"
+                        : "Select a grade first"}
                   </option>
                   {employeesForGrade.map((u) => (
                     <option key={u.user_id} value={u.user_id}>

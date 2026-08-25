@@ -2,7 +2,8 @@ export type Role = "admin" | "super_admin" | "manager" | "employee";
 
 export type AccessTier = "standard" | "delegated";
 
-export type GradeLevel = "L1" | "L2" | "L3" | "L4" | "L5" | "L6" | "L7";
+/** Configurable via System Definitions — any L{n} grade id. */
+export type GradeLevel = string;
 
 export interface User {
   id: string;
@@ -42,6 +43,8 @@ export interface User {
   created_at?: string;
   /** user_id of who added this account (via Add User) — null for pre-existing/seed rows */
   created_by?: string | null;
+  /** Assigned reporting supervisor (L4+ and strictly senior to this user's grade). */
+  supervisor_id?: string | null;
   // Task Manager: can this user see every task/project, or only their own?
   // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
   // false except super_admin, who always has it regardless of this value.

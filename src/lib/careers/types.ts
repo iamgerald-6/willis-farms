@@ -24,6 +24,18 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   rejected: "Rejected",
 };
 
+export const STATUS_STYLES: Record<ApplicationStatus, string> = {
+  applied: "bg-blue-50 text-blue-700 border border-blue-200",
+  under_review: "bg-amber-50 text-amber-700 border border-amber-200",
+  shortlisted: "bg-purple-50 text-purple-700 border border-purple-200",
+  interview: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  evaluation: "bg-cyan-50 text-cyan-700 border border-cyan-200",
+  hold: "bg-orange-50 text-orange-700 border border-orange-200",
+  onboarding: "bg-green-50 text-green-700 border border-green-200",
+  offer: "bg-green-50 text-green-700 border border-green-200",
+  rejected: "bg-red-50 text-red-700 border border-red-200",
+};
+
 export const PANEL_DECISIONS = [
   { value: "hire", label: "Hire" },
   { value: "hold", label: "Hold / Reserve" },
@@ -58,6 +70,7 @@ export interface JobApplication {
   submission_status?: SubmissionStatus;
   job_posting_id?: string | null;
   application_form_data?: Record<string, unknown> | null;
+  application_form_fields_snapshot?: Record<string, unknown> | null;
   draft_token?: string | null;
   hr_notes: string | null;
   interview_form_data: InterviewFormData | null;

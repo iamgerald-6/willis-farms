@@ -124,10 +124,9 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       section: "A. Personal information",
       fieldKey: "personal.is_citizen",
       fieldType: "select",
-      required: true,
+      required: false,
       options: ["Citizen", "Non-citizen"],
       colSpan: "half",
-      prefillLocked: true,
     }),
     field("opt:onboarding:field:ghana_card", "Ghana Card number", "personal.ghana_card_no", 7, {
       step: "personal",
@@ -251,46 +250,10 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       colSpan: "half",
     }),
 
-    // —— D & E. Employment & payment ——
-    field("opt:onboarding:field:position", "Position title", "employment.position_title", 30, {
-      step: "personal",
-      section: "D. Employment & E. Payment",
-      fieldKey: "employment.position_title",
-      fieldType: "text",
-      required: true,
-      prefillLocked: true,
-      colSpan: "half",
-    }),
-    field("opt:onboarding:field:department", "Department / division", "employment.department", 31, {
-      step: "personal",
-      section: "D. Employment & E. Payment",
-      fieldKey: "employment.department",
-      fieldType: "select",
-      required: true,
-      optionsRefDynamic: "department",
-      colSpan: "half",
-    }),
-    field("opt:onboarding:field:location", "Farm site / work location", "employment.farm_site", 32, {
-      step: "personal",
-      section: "D. Employment & E. Payment",
-      fieldKey: "employment.farm_site",
-      fieldType: "select",
-      required: true,
-      optionsRef: ONBOARDING_LOCATIONS_LIST,
-      colSpan: "half",
-    }),
-    field("opt:onboarding:field:emp_type", "Employment type", "employment.employment_type", 33, {
-      step: "personal",
-      section: "D. Employment & E. Payment",
-      fieldKey: "employment.employment_type",
-      fieldType: "select",
-      required: true,
-      options: ["Full-time", "Part-time", "Casual", "Seasonal", "Contract"],
-      colSpan: "half",
-    }),
+    // —— E. Payment ——
     field("opt:onboarding:field:pay_method", "Payment method", "payment.method", 34, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.method",
       fieldType: "select",
       required: true,
@@ -299,7 +262,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:bank_name", "Bank name", "payment.bank_name", 35, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.bank_name",
       fieldType: "text",
       required: true,
@@ -308,7 +271,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:account_name", "Account name", "payment.account_name", 36, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.account_name",
       fieldType: "text",
       required: true,
@@ -317,7 +280,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:account_no", "Account number", "payment.account_number", 37, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.account_number",
       fieldType: "bank_account",
       required: true,
@@ -326,7 +289,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:momo_network", "Mobile money network", "payment.momo_network", 38, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.momo_network",
       fieldType: "select",
       required: true,
@@ -336,7 +299,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:momo_name", "Mobile money registered name", "payment.momo_registered_name", 39, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.momo_registered_name",
       fieldType: "text",
       required: true,
@@ -345,7 +308,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
     field("opt:onboarding:field:momo_no", "Mobile money number", "payment.momo_number", 40, {
       step: "personal",
-      section: "D. Employment & E. Payment",
+      section: "E. Payment details",
       fieldKey: "payment.momo_number",
       fieldType: "phone",
       required: true,
@@ -354,34 +317,6 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
     }),
 
     // —— Medical step ——
-    field("opt:onboarding:field:quals", "Educational qualifications", "qualifications", 50, {
-      step: "medical",
-      section: "F. Educational qualifications",
-      fieldKey: "qualifications",
-      fieldType: "qualifications_list",
-      required: true,
-    }),
-    field("opt:onboarding:field:app_certs", "Certificates from your job application", "application_certificates", 51, {
-      step: "medical",
-      section: "G. Certifications",
-      fieldKey: "application_certificates",
-      fieldType: "application_certificates_view",
-      required: false,
-    }),
-    field("opt:onboarding:field:certs", "Additional certifications (optional)", "additional_certifications", 52, {
-      step: "medical",
-      section: "G. Certifications",
-      fieldKey: "additional_certifications",
-      fieldType: "certifications_list",
-      required: false,
-    }),
-    field("opt:onboarding:field:experience", "Experience", "work_experience", 53, {
-      step: "medical",
-      section: "H. Experience",
-      fieldKey: "work_experience",
-      fieldType: "work_experience_list",
-      required: false,
-    }),
     field("opt:onboarding:field:blood", "Blood group", "medical.blood_group", 55, {
       step: "medical",
       section: "I. Medical & safety self-declaration",
@@ -421,23 +356,15 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       },
     ),
 
-    // —— Declarations step (referee responses are view-only) ——
-    field("opt:onboarding:field:ref_view", "Referee references", "referee_submissions", 60, {
-      step: "referee",
-      section: "References",
-      fieldKey: "referee_submissions",
-      fieldType: "referee_submissions_view",
-      required: false,
-    }),
     field("opt:onboarding:field:bio_initials", "Biosecurity commitment initials", "biosecurity.commitment_initials", 68, {
-      step: "referee",
+      step: "medical",
       section: "Biosecurity",
       fieldKey: "biosecurity.commitment_initials",
       fieldType: "text",
       required: true,
     }),
     field("opt:onboarding:field:sig_name", "Typed full name (signature)", "declarations.signature_name", 69, {
-      step: "referee",
+      step: "medical",
       section: "Consent & signature",
       fieldKey: "declarations.signature_name",
       fieldType: "text",

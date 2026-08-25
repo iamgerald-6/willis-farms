@@ -10,6 +10,8 @@ import {
   hasFullAppraisalAccess,
 } from "@/lib/accessControl";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
+import { isUntouchedAppraisalSeed } from "@/lib/appraisal/supervisorDisplay";
+import { enrichAppraisalsWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -100,7 +102,26 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ data });
+    let rows = data ?? [];
+
+    // Hide cron-seeded placeholder rows from the employee themselves until they
+    // start. Supervisors still see untouched rows for their direct reports.
+    if (!fullAccess) {
+      rows = rows.filter((row) => {
+        if (!isUntouchedAppraisalSeed(row)) return true;
+        const isOwnRow =
+          (row.employee_user_id && row.employee_user_id === caller.id) ||
+          (caller.company_id &&
+            row.company_id === caller.company_id &&
+            !row.employee_user_id);
+        if (isOwnRow) return false;
+        return true;
+      });
+    }
+
+    rows = await enrichAppraisalsWithSupervisor(supabaseAdmin, rows);
+
+    return NextResponse.json({ data: rows });
   } catch (err) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

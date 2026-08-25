@@ -6,9 +6,10 @@ function normalizeRules(raw: unknown): SystemOptionRules {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
   return {
+    ...r,
     requires_document: r.requires_document === true,
     requires_reason: r.requires_reason === true,
-  };
+  } as SystemOptionRules;
 }
 
 function mapRow(row: Record<string, unknown>): SystemOption {
@@ -24,6 +25,50 @@ function mapRow(row: Record<string, unknown>): SystemOption {
     created_at: row.created_at != null ? String(row.created_at) : undefined,
     updated_at: row.updated_at != null ? String(row.updated_at) : undefined,
   };
+}
+
+function optionLegacyKey(option: SystemOption): string {
+  return option.legacy_value ?? option.label;
+}
+
+/** Keep built-in defaults when admins add custom DB rows — do not replace the whole list. */
+export function mergeSystemOptions(
+  gitOptions: SystemOption[],
+  dbOptions: SystemOption[],
+  includeInactive = false,
+): SystemOption[] {
+  const dbByLegacy = new Map<string, SystemOption>();
+  for (const row of dbOptions) {
+    dbByLegacy.set(optionLegacyKey(row), row);
+  }
+
+  const gitLegacyKeys = new Set<string>();
+  const merged: SystemOption[] = [];
+
+  for (const git of gitOptions) {
+    const key = optionLegacyKey(git);
+    gitLegacyKeys.add(key);
+    const db = dbByLegacy.get(key);
+    merged.push(
+      db
+        ? {
+            ...git,
+            ...db,
+            rules: { ...git.rules, ...db.rules },
+          }
+        : git,
+    );
+  }
+
+  for (const db of dbOptions) {
+    const key = optionLegacyKey(db);
+    if (!gitLegacyKeys.has(key)) {
+      merged.push(db);
+    }
+  }
+
+  const filtered = includeInactive ? merged : merged.filter((o) => o.is_active);
+  return filtered.sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export async function fetchSystemOptions(
@@ -57,7 +102,16 @@ export async function fetchSystemOptions(
     return getGitFallbackOptions(moduleId, optionList);
   }
 
-  return data.map((row) => mapRow(row as Record<string, unknown>));
+  const gitOptions = getGitFallbackOptions(moduleId, optionList);
+  if (gitOptions.length === 0) {
+    return data.map((row) => mapRow(row as Record<string, unknown>));
+  }
+
+  return mergeSystemOptions(
+    gitOptions,
+    data.map((row) => mapRow(row as Record<string, unknown>)),
+    options?.includeInactive,
+  );
 }
 
 export async function fetchSystemOptionByLegacyValue(

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  History,
   Layers,
   ListChecks,
   Rows3,
@@ -35,6 +36,7 @@ import {
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
   isEditableRatingSectionModule,
+  isEditableRefereeReferenceModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
@@ -42,16 +44,22 @@ import OptionsEditor from "./components/OptionsEditor";
 import BusinessLogicEditor from "./components/BusinessLogicEditor";
 import SectionWeightsEditor from "./components/SectionWeightsEditor";
 import RatingSectionsEditor from "./components/RatingSectionsEditor";
+import AppraisalScopeEditor from "./components/AppraisalScopeEditor";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
+import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
+import GradeLevelsEditor from "./components/GradeLevelsEditor";
 import JobPostingsEditor from "./components/JobPostingsEditor";
+import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
+import AuditLogPanel from "./components/AuditLogPanel";
 import {
   ONBOARDING_DEPARTMENTS_L1L6_LIST,
   ONBOARDING_DEPARTMENTS_L7_LIST,
   ONBOARDING_LOCATIONS_LIST,
 } from "@/lib/systemDefinitions/onboardingDefaults";
+import { ONBOARDING_EMPLOYMENT_TYPES_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
   view: "Can view",
@@ -307,10 +315,25 @@ function ModuleDetail({
         <SectionCard
           icon={Rows3}
           title="Job application form"
-          description="Fields shown on the public multi-step job application. Add, edit, or remove fields and steps."
+          description="Fields shown on the public multi-step job application — including referee contact fields. Add, edit, or remove fields and steps."
         >
           <ApplicationFormEditor
             moduleId={m.id}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      )}
+
+      {isEditableRefereeReferenceModule(m.id) && (
+        <SectionCard
+          icon={Rows3}
+          title="Referee reference form"
+          description="Rating lines on the public link referees receive after an application is submitted."
+        >
+          <RefereeReferenceEditor
+            moduleId={m.id}
+            readOnly={!canEdit}
             canAdd={canAdd}
             canEdit={canEdit}
           />
@@ -322,7 +345,7 @@ function ModuleDetail({
           <SectionCard
             icon={Rows3}
             title="Employee onboarding form"
-            description="Fields on the post-hire onboarding link. Add inputs, set type (text, select, phone, date, etc.), and conditional visibility."
+            description="Fields on the post-hire onboarding link sent to candidates. Add inputs, set type (text, select, phone, date, etc.), and conditional visibility."
           >
             <OnboardingFormEditor
               moduleId={m.id}
@@ -332,9 +355,21 @@ function ModuleDetail({
           </SectionCard>
 
           <SectionCard
+            icon={Rows3}
+            title="HR onboarding — Section O"
+            description="HR-only fields on the recruitment onboarding tab (not shown to candidates). Configure placement, employee ID, grade, and notes."
+          >
+            <OnboardingHrFieldsEditor
+              moduleId={m.id}
+              canAdd={canAdd}
+              canEdit={canEdit}
+            />
+          </SectionCard>
+
+          <SectionCard
             icon={Tag}
-            title="Onboarding dropdown lists"
-            description="Work locations and department options (L1–L6 vs L7 use different department lists)."
+            title="HR onboarding dropdown lists"
+            description="Work locations, departments, and employment types used in HR Section O."
           >
             <div className="space-y-4">
               <OptionsEditor
@@ -347,18 +382,33 @@ function ModuleDetail({
               <OptionsEditor
                 moduleId={m.id}
                 optionList={ONBOARDING_DEPARTMENTS_L1L6_LIST}
-                title="Departments (L1–L6)"
+                title="Departments (L1–L6 and junior grades)"
                 canAdd={canAdd}
                 canEdit={canEdit}
               />
               <OptionsEditor
                 moduleId={m.id}
                 optionList={ONBOARDING_DEPARTMENTS_L7_LIST}
-                title="Departments (L7)"
+                title="Departments (L7+ senior grades)"
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
+              <OptionsEditor
+                moduleId={m.id}
+                optionList={ONBOARDING_EMPLOYMENT_TYPES_LIST}
+                title="Employment types"
                 canAdd={canAdd}
                 canEdit={canEdit}
               />
             </div>
+          </SectionCard>
+
+          <SectionCard
+            icon={Settings2}
+            title="Grade levels & linked roles"
+            description="L1–L7 are built in. Add L8 or higher with a job posting role (e.g. L1 → Junior Swine Technician)."
+          >
+            <GradeLevelsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
           </SectionCard>
         </>
       )}
@@ -367,9 +417,24 @@ function ModuleDetail({
         <SectionCard
           icon={Rows3}
           title="Competency sections"
-          description="Section titles and skill lines for each skills log type."
+          description="Section titles and skill lines for each skills log type. Pick the type first — sections you add belong to that type only."
         >
-          <CompetencySectionsEditor moduleId={m.id} readOnly={!canEdit} />
+          <CompetencySectionsEditor
+            moduleId={m.id}
+            readOnly={!canEdit}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      )}
+
+      {isEditableRatingSectionModule(m.id) && (
+        <SectionCard
+          icon={Settings2}
+          title="Appraisal scope"
+          description="Use shared grade bands or a separate appraisal form for each grade level."
+        >
+          <AppraisalScopeEditor moduleId={m.id} readOnly={!canEdit} />
         </SectionCard>
       )}
 
@@ -379,7 +444,12 @@ function ModuleDetail({
           title="Rating sections"
           description="Section titles and rating line items for each grade band — Quarterly or Annual."
         >
-          <RatingSectionsEditor moduleId={m.id} readOnly={!canEdit} />
+          <RatingSectionsEditor
+            moduleId={m.id}
+            readOnly={!canEdit}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
         </SectionCard>
       )}
 
@@ -426,6 +496,8 @@ function ModuleDetail({
     </div>
   );
 }
+
+const AUDIT_LOG_ID = "__audit_log__";
 
 export default function SystemDefinitionsPage() {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -492,10 +564,13 @@ export default function SystemDefinitionsPage() {
       .filter((g) => g.modules.length > 0);
   }, [modules]);
 
+  const showAuditLog = selectedModuleId === AUDIT_LOG_ID;
+
   const selectedModule = useMemo(() => {
-    if (selectedModuleId) {
+    if (selectedModuleId && selectedModuleId !== AUDIT_LOG_ID) {
       return modules.find((m) => m.id === selectedModuleId) ?? null;
     }
+    if (selectedModuleId === AUDIT_LOG_ID) return null;
     return groupedModules[0]?.modules[0] ?? null;
   }, [modules, groupedModules, selectedModuleId]);
 
@@ -549,6 +624,27 @@ export default function SystemDefinitionsPage() {
         {/* Module list */}
         <div className="w-full md:w-64 shrink-0 bg-white rounded-xl border border-gray-200 overflow-hidden md:sticky md:top-24">
           <nav className="max-h-[70vh] overflow-y-auto p-2 space-y-3">
+            <div>
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedModuleId(AUDIT_LOG_ID)}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
+                    showAuditLog
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <History
+                    className={`w-4 h-4 shrink-0 ${
+                      showAuditLog ? "text-white" : "text-gray-400"
+                    }`}
+                  />
+                  <span className="truncate">Audit log</span>
+                </button>
+              </div>
+              <div className="border-t border-gray-100 my-2" />
+            </div>
             {groupedModules.map(({ group, modules: groupModules }) => (
               <div key={group.id}>
                 <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
@@ -586,7 +682,9 @@ export default function SystemDefinitionsPage() {
 
         {/* Detail panel */}
         <div className="flex-1 min-w-0 w-full">
-          {selectedModule ? (
+          {showAuditLog ? (
+            <AuditLogPanel />
+          ) : selectedModule ? (
             <ModuleDetail
               module={selectedModule}
               canAdd={!!canAdd}

@@ -46,13 +46,10 @@ function detailHref(a: Appraisal) {
   return `/dashboard/humanCapital/appraisal/${a.id}`;
 }
 
-/** Supervisor score once agreed, otherwise the locked-in quarter score. */
+/** Final quarter score only — shown after the final review meeting. */
 function headlineScore(a: Appraisal): number | null {
   if (a.status === "final_reviewed" && a.final_quarter_score != null) {
     return a.final_quarter_score;
-  }
-  if (a.submitted_by === "both" && a.supervisor_weighted_score != null) {
-    return a.supervisor_weighted_score;
   }
   return null;
 }

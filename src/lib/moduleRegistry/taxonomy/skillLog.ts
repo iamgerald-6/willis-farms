@@ -56,7 +56,7 @@ export const SKILL_LOG_GRADES = [
 
 export const SKILL_LOG_PAGE_COPY = {
   title: "Skills Logs",
-  subtitleCanAct: "Your team's competency records",
+  subtitleCanAct: "Skill logs for your assigned direct reports",
   subtitleSeeAll: "All competency records (view only)",
   subtitleSelf: "Your competency records",
   fillButton: "Fill Skills Log",
@@ -64,7 +64,7 @@ export const SKILL_LOG_PAGE_COPY = {
   searchPlaceholder: "Search by employee or log type…",
   emptyTitle: "No skills logs found",
   emptyCanAct:
-    "Fill a skills log for one of your team members to get started.",
+    "Fill a skills log for one of your assigned direct reports to get started.",
   emptySelf: "Your supervisor hasn't filled a skills log for you yet.",
   fillFirstLog: "Fill First Log",
   signOffTitle: "Sign Off Skills Log",
@@ -77,7 +77,7 @@ export const SKILL_LOG_PAGE_COPY = {
 export const SKILL_LOG_FORM_COPY = {
   createTitle: "Fill Skills Log",
   editTitle: "Edit Skills Log",
-  fillingAsPrefix: "Filling as ",
+  fillingAsPrefix: "Filling as supervisor for your direct reports — ",
   editingPrefix: "Editing draft — ",
   submitHint: "Higher-manager sign-off happens after submission",
   saveDraft: "Save Draft",

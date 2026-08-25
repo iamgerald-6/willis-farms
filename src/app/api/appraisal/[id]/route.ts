@@ -11,6 +11,7 @@ import {
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
+import { enrichAppraisalWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
 
 export async function GET(
   req: NextRequest,
@@ -67,7 +68,9 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ data });
+  const enriched = await enrichAppraisalWithSupervisor(supabaseAdmin, data);
+
+  return NextResponse.json({ data: enriched });
 }
 
 export async function PATCH(
@@ -257,6 +260,8 @@ export async function PATCH(
           employee_weighted_score: body.employee_weighted_score ?? null,
           employee_email: body.employee_email ?? undefined,
           supervisor_email: body.supervisor_email ?? undefined,
+          immediate_supervisor: body.immediate_supervisor ?? undefined,
+          supervisor_id: body.supervisor_id ?? undefined,
           ...(existing.review_quarter === "Q4" && body.promotion_readiness
             ? { promotion_readiness: body.promotion_readiness }
             : {}),

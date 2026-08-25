@@ -24,16 +24,14 @@ import {
   SECOND_EMPLOYEE_PENALTY,
   SECOND_SUPERVISOR_PENALTY,
 } from "@/lib/appraisal/deadlines";
-
-const GRADE_BAND_FOR_LEVEL: Record<string, string> = {
-  L1: "L1",
-  L2: "L2_L3",
-  L3: "L2_L3",
-  L4: "L4",
-  L5: "L5_L6_L7",
-  L6: "L5_L6_L7",
-  L7: "L5_L6_L7",
-};
+import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
+import {
+  PLACEHOLDER_SUPERVISOR_LABEL,
+  formatSupervisorName,
+  resolveSupervisorUser,
+} from "@/lib/appraisal/supervisorDisplay";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { fetchAppraisalScopeConfig } from "@/lib/grades/fetchAppraisalScopeConfig";
 
 function pendingAudience(
   submittedBy: string | null | undefined,
@@ -84,6 +82,9 @@ export async function GET(req: NextRequest) {
   };
 
   try {
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+    const scopeConfig = await fetchAppraisalScopeConfig(supabaseAdmin);
+
     // ── 1. Seed rows for the single active period ───────────────────────
     // Uses the grace-aware active period so Q2 is not seeded on 1 Apr while
     // Q1's completion window is still open (locks ~10 Apr).
@@ -102,11 +103,21 @@ export async function GET(req: NextRequest) {
         (existingRows ?? []).map((r) => r.company_id),
       );
       const deadlineAt = computeDeadline(quarter, year).toISOString();
+      const usersList = allUsers ?? [];
 
-      for (const user of allUsers ?? []) {
+      for (const user of usersList) {
         if (!user.company_id || existingCompanyIds.has(user.company_id)) continue;
 
-        const gradeBand = GRADE_BAND_FOR_LEVEL[user.grade_level ?? ""] ?? "L1";
+        const gradeBand = resolveAppraisalFormKey(
+          user.grade_level,
+          gradeConfig,
+          scopeConfig,
+        );
+
+        const assignedSupervisor = resolveSupervisorUser(
+          user.supervisor_id,
+          usersList,
+        );
         const seedRow: Record<string, unknown> = {
             company_id: user.company_id,
             employee_name:
@@ -117,7 +128,11 @@ export async function GET(req: NextRequest) {
             cycle: quarter === "Q4" ? "annual" : "quarterly",
             review_quarter: quarter,
             review_year: year,
-            immediate_supervisor: "Not yet specified",
+            immediate_supervisor: assignedSupervisor
+              ? formatSupervisorName(assignedSupervisor)
+              : PLACEHOLDER_SUPERVISOR_LABEL,
+            supervisor_email: assignedSupervisor?.email ?? null,
+            supervisor_id: assignedSupervisor?.user_id ?? null,
             status: "open",
             deadline_at: deadlineAt,
             employee_user_id: user.user_id,

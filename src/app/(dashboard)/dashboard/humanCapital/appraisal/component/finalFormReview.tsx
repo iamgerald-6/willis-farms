@@ -23,6 +23,13 @@ import {
   ITEM_RATING_MAX,
 } from "@/lib/appraisal/scoring";
 import { Quarter, sectionsFor } from "@/lib/appraisal/sections";
+import {
+  APPRAISAL_MODULE_ID_CONST,
+  applySectionBaseWeights,
+  applySectionContentOverrides,
+  applySectionWeightRules,
+  type ModuleBusinessLogic,
+} from "@/lib/systemDefinitions";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
@@ -173,7 +180,39 @@ export default function FinalReviewForm({
     setFinalRatings(JSON.parse(JSON.stringify(appraisal.supervisor_ratings ?? {})));
   }
 
-  const sections = sectionsFor(appraisal?.grade_band ?? "L1", appraisal?.review_quarter ?? "Q1");
+  const { data: moduleConfig } = useQuery({
+    queryKey: ["appraisal_module_config"],
+    queryFn: async () => {
+      const res = await api.get(
+        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
+      );
+      return (res.data.data?.businessLogic ?? {}) as ModuleBusinessLogic;
+    },
+  });
+
+  const sections = useMemo(() => {
+    const formKey = appraisal?.grade_band ?? "L1";
+    const quarter = appraisal?.review_quarter ?? "Q1";
+    const base = sectionsFor(formKey, quarter);
+    const withContent = applySectionContentOverrides(
+      base,
+      formKey,
+      quarter,
+      moduleConfig?.sectionContentOverrides,
+    );
+    const withBaseWeights = applySectionBaseWeights(
+      withContent,
+      formKey,
+      quarter,
+      moduleConfig?.globalSectionWeights,
+      moduleConfig?.sectionBaseWeights,
+    );
+    return applySectionWeightRules(
+      withBaseWeights,
+      appraisal?.current_grade,
+      moduleConfig?.sectionWeightRules,
+    );
+  }, [appraisal, moduleConfig]);
 
   const liveScore = useMemo(() => {
     if (!finalRatings) return null;

@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   User as UserIcon,
   AlertCircle,
-  TrendingUp,
   Info,
   Award,
   Lock,
@@ -25,21 +24,20 @@ import {
   Ratings,
   SectionRatings,
   computeWeightedScore,
-  bandFor,
-  itemRatingMeta,
   ITEM_RATING_MIN,
   ITEM_RATING_MAX,
 } from "@/lib/appraisal/scoring";
 import {
   Quarter,
-  GRADE_OPTIONS,
-  GRADE_BAND_COVERS,
   canRate,
   canAppraiseOthers,
-  gradeBandForGrade,
   supervisableGradeBands,
   sectionsFor,
 } from "@/lib/appraisal/sections";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
+import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
+import { resolveAppraisalSupervisorFields } from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
 import {
@@ -75,6 +73,7 @@ interface ExistingAppraisal {
   review_year: number;
   immediate_supervisor: string;
   supervisor_email?: string | null;
+  supervisor_id?: string | null;
   employee_email?: string | null;
   reviewing_manager?: string | null;
   period_covered?: string | null;
@@ -89,35 +88,19 @@ interface ExistingAppraisal {
   locked_reason?: "employee_incomplete" | "supervisor_incomplete" | "reopen_incomplete" | null;
 }
 
-// ─── Live Score Banner ────────────────────────────────────────────────────────
-function WeightedScoreBanner({
-  weightedScore,
-  completionPct,
-}: {
-  weightedScore: number | null;
-  completionPct: number;
-}) {
-  const band = bandFor(weightedScore);
+// ─── Completion progress (no score — avoids influencing ratings) ─────────────
+function CompletionBanner({ completionPct }: { completionPct: number }) {
   return (
     <div className="sticky top-4 z-10 bg-[#1e3a5f] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-lg">
       <div className="flex items-center gap-3">
-        <TrendingUp className="w-4 h-4 text-white/60" />
+        <ClipboardList className="w-4 h-4 text-white/60" />
         <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">
-          Live Weighted Score
+          Form progress
         </span>
       </div>
-      <div className="flex items-center gap-5">
-        <div className="text-right">
-          <span className="text-2xl font-black text-white">
-            {weightedScore !== null ? weightedScore.toFixed(1) : "—"}
-          </span>
-          <span className="text-white/40 text-xs ml-1">%</span>
-        </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-xs text-white/50">{band?.label ?? "—"}</p>
-          <p className="text-xs text-white/30">{completionPct}% complete</p>
-        </div>
-        <div className="w-20 h-1.5 bg-white/20 rounded-full overflow-hidden hidden sm:block">
+      <div className="flex items-center gap-4">
+        <p className="text-xs text-white/50">{completionPct}% complete</p>
+        <div className="w-24 h-1.5 bg-white/20 rounded-full overflow-hidden">
           <div
             className="h-full bg-white/70 rounded-full transition-all"
             style={{ width: `${completionPct}%` }}
@@ -181,36 +164,29 @@ function RatingSelector({
   value: number | null;
   onChange: (v: number) => void;
 }) {
-  const meta = itemRatingMeta(value);
   return (
-    <div className="flex flex-col gap-1 w-full sm:w-auto">
-      <div className="flex items-center gap-1">
-        {Array.from(
-          { length: ITEM_RATING_MAX - ITEM_RATING_MIN + 1 },
-          (_, i) => ITEM_RATING_MIN + i,
-        ).map((n) => {
-          const selected = value === n;
-          const m = itemRatingMeta(n);
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onChange(n)}
-              title={m?.label}
-              className={`w-7 h-7 rounded-lg text-xs font-bold border transition-colors ${
-                selected
-                  ? `${m?.color} text-white border-transparent`
-                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              {n}
-            </button>
-          );
-        })}
-      </div>
-      {value !== null && meta && (
-        <span className={`text-[10px] font-semibold ${meta.text}`}>{meta.label}</span>
-      )}
+    <div className="flex items-center gap-1 w-full sm:w-auto">
+      {Array.from(
+        { length: ITEM_RATING_MAX - ITEM_RATING_MIN + 1 },
+        (_, i) => ITEM_RATING_MIN + i,
+      ).map((n) => {
+        const selected = value === n;
+        return (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            aria-label={`Rate ${n} out of 5`}
+            className={`w-7 h-7 rounded-lg text-xs font-bold border transition-colors ${
+              selected
+                ? "bg-[#1e3a5f] text-white border-transparent"
+                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+            }`}
+          >
+            {n}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -218,13 +194,11 @@ function RatingSelector({
 // ─── Section Block ────────────────────────────────────────────────────────────
 function SectionBlock({
   section,
-  sectionAvg,
   ratings,
   onRatingChange,
   onCommentChange,
 }: {
   section: { key: string; title: string; weight: number; items: string[] };
-  sectionAvg: number | null;
   ratings: SectionRatings;
   onRatingChange: (item: string, rating: number) => void;
   onCommentChange: (item: string, comment: string) => void;
@@ -246,11 +220,6 @@ function SectionBlock({
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {sectionAvg !== null && (
-            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-              Avg: {sectionAvg.toFixed(1)}%
-            </span>
-          )}
           <ChevronDown
             className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`}
           />
@@ -322,6 +291,12 @@ export default function AppraisalForm({
   const activePeriod = getActiveAppraisalPeriod();
   const lockedQuarter = defaultQuarter ?? activePeriod.quarter;
   const lockedYear = defaultYear ?? activePeriod.year;
+  const { config: gradeConfig } = useGradeLevelsConfig();
+  const {
+    scopeConfig,
+    formOptions: appraisalFormOptions,
+    formKeyCovers: appraisalFormKeyCovers,
+  } = useAppraisalScopeConfig();
   // ── Auth ──
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -478,6 +453,13 @@ export default function AppraisalForm({
   const canSelectForOthers =
     !isFillingSecond && (canAppraiseOthers(currentUserGrade) || isSuperAdmin);
 
+  const watchedSupervisorName = watch("immediate_supervisor");
+  const watchedSupervisorEmail = watch("supervisor_email");
+
+  const displaySupervisorName =
+    watchedSupervisorName || existingAppraisal?.immediate_supervisor;
+  const displaySupervisorEmail =
+    watchedSupervisorEmail || existingAppraisal?.supervisor_email;
   const watchedReviewYear = watch("review_year");
   const effectiveReviewYear =
     existingAppraisal?.review_year ?? Number(watchedReviewYear) ?? new Date().getFullYear();
@@ -497,25 +479,45 @@ export default function AppraisalForm({
 
   const allowedGradeBands = useMemo(
     () =>
-      isSuperAdmin ? GRADE_OPTIONS : supervisableGradeBands(currentUserGrade),
-    [currentUserGrade, isSuperAdmin],
+      isSuperAdmin
+        ? appraisalFormOptions
+        : supervisableGradeBands(currentUserGrade, gradeConfig, scopeConfig),
+    [
+      currentUserGrade,
+      gradeConfig,
+      scopeConfig,
+      appraisalFormOptions,
+      isSuperAdmin,
+    ],
   );
 
-  const ownGradeBand = gradeBandForGrade(currentUserGrade);
+  const ownGradeBand = resolveAppraisalFormKey(
+    currentUserGrade,
+    gradeConfig,
+    scopeConfig,
+  );
   const fillingForSelf = !isFillingSecond && fillTarget === "self";
 
-  // ── Pre-fill from existing appraisal when filling second ──
+  // ── Pre-fill from existing appraisal when continuing a record ──
   useEffect(() => {
     if (!existingAppraisal) return;
 
     setGradeBand(existingAppraisal.grade_band);
     setQuarter(existingAppraisal.review_quarter);
 
-    setValue(
-      "immediate_supervisor",
-      existingAppraisal.immediate_supervisor ?? "",
+    const emp =
+      allUsers.find((u) => u.user_id === existingAppraisal.employee_user_id) ??
+      allUsers.find((u) => u.company_id === existingAppraisal.company_id);
+    if (emp) setSelectedEmployee(emp);
+
+    const resolved = resolveAppraisalSupervisorFields(
+      existingAppraisal,
+      emp,
+      allUsers,
     );
-    setValue("supervisor_email", existingAppraisal.supervisor_email ?? "");
+
+    setValue("immediate_supervisor", resolved.immediate_supervisor);
+    setValue("supervisor_email", resolved.supervisor_email);
     setValue("employee_email", existingAppraisal.employee_email ?? "");
     setValue(
       "section_authorisations_held",
@@ -525,18 +527,12 @@ export default function AppraisalForm({
     setValue("reviewing_manager", existingAppraisal.reviewing_manager ?? "");
     setValue("period_covered", existingAppraisal.period_covered ?? "");
 
-    const emp = allUsers.find(
-      (u) => u.company_id === existingAppraisal.company_id,
-    );
-    if (emp) setSelectedEmployee(emp);
-
-    // Re-select the matching entry in the supervisor dropdown too, so
-    // reopening a draft shows who's already picked rather than a blank
-    // dropdown — matched by email since that's the one value we know is
-    // unique per account (a name alone could collide or have since changed).
-    if (existingAppraisal.supervisor_email) {
+    if (resolved.supervisor_user_id) {
+      setSelectedSupervisorId(resolved.supervisor_user_id);
+    } else if (resolved.supervisor_email) {
       const sup = allUsers.find(
-        (u) => u.email === existingAppraisal.supervisor_email,
+        (u) =>
+          u.email?.toLowerCase() === resolved.supervisor_email.toLowerCase(),
       );
       if (sup) setSelectedSupervisorId(sup.user_id);
     }
@@ -570,6 +566,14 @@ export default function AppraisalForm({
     selectedEmployee,
   ]);
 
+  const assignedSupervisor = useMemo(() => {
+    const id = currentUserProfile?.supervisor_id;
+    if (!id) return null;
+    return allUsers.find((u) => u.user_id === id) ?? null;
+  }, [allUsers, currentUserProfile?.supervisor_id]);
+
+  const hasAssignedSupervisor = !!assignedSupervisor;
+
   const handleSupervisorSelect = (supervisorUserId: string) => {
     setSelectedSupervisorId(supervisorUserId);
     const sup = eligibleSupervisors.find((u) => u.user_id === supervisorUserId);
@@ -580,12 +584,8 @@ export default function AppraisalForm({
     setValue("supervisor_email", sup?.email ?? "");
   };
 
-  // Filling for someone I supervise — I AM their supervisor for this
-  // appraisal by definition, so lock the field to my own name+email
-  // instead of offering a choice (see the locked, read-only branch in the
-  // JSX below). Filling for myself instead: clear back to blank so a stale
-  // pick from a previous employee/mode doesn't silently carry over — e.g.
-  // it may not even be in the new eligible list anymore.
+  // Filling for someone I supervise — lock to my own name+email.
+  // Self-appraisal: use assigned supervisor from User Management when set.
   useEffect(() => {
     if (isFillingSecond) return;
     if (!fillingForSelf && currentUserProfile) {
@@ -597,6 +597,15 @@ export default function AppraisalForm({
       setValue("supervisor_email", currentUserProfile.email ?? "");
       return;
     }
+    if (assignedSupervisor) {
+      setSelectedSupervisorId(assignedSupervisor.user_id);
+      setValue(
+        "immediate_supervisor",
+        `${assignedSupervisor.first_name} ${assignedSupervisor.last_name}`,
+      );
+      setValue("supervisor_email", assignedSupervisor.email ?? "");
+      return;
+    }
     setSelectedSupervisorId("");
     setValue("immediate_supervisor", "");
     setValue("supervisor_email", "");
@@ -605,15 +614,16 @@ export default function AppraisalForm({
     selectedEmployee?.user_id,
     isFillingSecond,
     currentUserProfile,
+    assignedSupervisor,
     setValue,
   ]);
 
   // ── Filter employees for a fresh supervisor fill ──
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
-    const gradeBandGrades = GRADE_BAND_COVERS[gradeBand] ?? [];
+    const formKeyGrades = appraisalFormKeyCovers[gradeBand] ?? [];
     return allUsers.filter((u) => {
-      if (!u.grade_level || !gradeBandGrades.includes(u.grade_level))
+      if (!u.grade_level || !formKeyGrades.includes(u.grade_level))
         return false;
       if (u.user_id === userId) return false;
       return isSuperAdmin || canRate(currentUserGrade, u.grade_level);
@@ -621,6 +631,7 @@ export default function AppraisalForm({
   }, [
     allUsers,
     gradeBand,
+    appraisalFormKeyCovers,
     userId,
     currentUserGrade,
     isSuperAdmin,
@@ -753,7 +764,7 @@ export default function AppraisalForm({
   }, [gradeBand, quarter, fillTarget]);
 
   // ── Live score ──
-  const { weightedScore, sectionAverages, completionPct } = useMemo(
+  const { weightedScore, completionPct } = useMemo(
     () => computeWeightedScore(ratings, sections),
     [ratings, sections],
   );
@@ -883,6 +894,7 @@ export default function AppraisalForm({
       section_authorisations_held: formData.section_authorisations_held || null,
       immediate_supervisor: formData.immediate_supervisor,
       supervisor_email: formData.supervisor_email || null,
+      supervisor_id: selectedSupervisorId || null,
       employee_email: formData.employee_email || null,
       grade_band: gradeBand,
       review_quarter: quarter,
@@ -1049,11 +1061,8 @@ export default function AppraisalForm({
         </div>
       )}
 
-      {/* ── Live Score Banner ── */}
-      <WeightedScoreBanner
-        weightedScore={weightedScore}
-        completionPct={completionPct}
-      />
+      {/* ── Form progress ── */}
+      <CompletionBanner completionPct={completionPct} />
 
       {/* ── Employee Details ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1186,7 +1195,7 @@ export default function AppraisalForm({
             {isFillingSecond ? (
               <ReadOnlyField
                 label="Supervisor's Name"
-                value={existingAppraisal?.immediate_supervisor}
+                value={displaySupervisorName}
               />
             ) : !fillingForSelf ? (
               // Filling for someone I supervise — I AM their supervisor for
@@ -1203,6 +1212,21 @@ export default function AppraisalForm({
                       ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}`
                       : null
                   }
+                />
+                <input
+                  type="hidden"
+                  {...register("immediate_supervisor", { required: true })}
+                />
+                <input
+                  type="hidden"
+                  {...register("supervisor_email", { required: true })}
+                />
+              </div>
+            ) : hasAssignedSupervisor ? (
+              <div>
+                <ReadOnlyField
+                  label="Supervisor's Name"
+                  value={`${assignedSupervisor!.first_name} ${assignedSupervisor!.last_name}`}
                 />
                 <input
                   type="hidden"
@@ -1232,10 +1256,6 @@ export default function AppraisalForm({
                     </option>
                   ))}
                 </select>
-                {/* Hidden — keeps react-hook-form's required validation on
-                    immediate_supervisor/supervisor_email working the same
-                    as before, even though the visible control above is the
-                    plain <select> driving both via setValue. */}
                 <input
                   type="hidden"
                   {...register("immediate_supervisor", { required: true })}
@@ -1353,34 +1373,14 @@ export default function AppraisalForm({
 
       {/* ── Ratings ── */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-red-500" />
-            Performance Ratings
-          </h3>
-          <div className="flex items-center gap-2 text-[11px] text-gray-400 flex-wrap">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-sm bg-emerald-500" /> 90–100% Outstanding
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-sm bg-green-500" /> 80–89% Exceeds
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-sm bg-amber-400" /> 70–79% Meets
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-sm bg-orange-400" /> 60–69% Needs Improvement
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-sm bg-red-500" /> &lt;60% Unsatisfactory
-            </span>
-          </div>
-        </div>
+        <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-red-500" />
+          Performance Ratings
+        </h3>
 
-        <p className="text-[11px] text-gray-400 -mt-1">
-          Rate each item 1–5. Your weighted score above is computed
-          automatically from these ratings using each section's weight,
-          scaled to a 0–100% final score.
+        <p className="text-[11px] text-gray-400">
+          Rate each item 1–5 based on performance. Scores are calculated after
+          both parties submit and are reviewed together at the final meeting.
         </p>
 
         {formErrors.ratings && (
@@ -1400,7 +1400,6 @@ export default function AppraisalForm({
           <SectionBlock
             key={section.key}
             section={section}
-            sectionAvg={sectionAverages[section.key] ?? null}
             ratings={ratings[section.key] ?? {}}
             onRatingChange={(item, rating) =>
               handleRatingChange(section.key, item, rating)

@@ -1,79 +1,93 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpeningBySlug } from "@/lib/careers/openings";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
+import {
+  DEFAULT_GRADE_LEVELS,
+  gradeLevelToRank as gradeLevelToRankFromConfig,
+  resolveGradeLevelOptions,
+  resolveGradeLevels,
+  type GradeLevelsConfig,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
 
-export const GRADE_LEVELS = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"] as const;
-export type GradeLevel = (typeof GRADE_LEVELS)[number];
+export const GRADE_LEVELS = DEFAULT_GRADE_LEVELS.map((l) => l.id) as readonly string[];
+export type GradeLevel = string;
 
-const GRADE_LEVEL_SET = new Set<string>(GRADE_LEVELS);
+/** @deprecated Prefer resolveGradeLevelOptions(config) when config is available. */
+export const GRADE_LEVEL_OPTIONS = resolveGradeLevelOptions();
 
-export const GRADE_LEVEL_OPTIONS: { value: GradeLevel; label: string }[] = [
-  { value: "L1", label: "L1 – Junior (1)" },
-  { value: "L2", label: "L2 – Technician (2)" },
-  { value: "L3", label: "L3 – Senior (3)" },
-  { value: "L4", label: "L4 – Supervisor (4)" },
-  { value: "L5", label: "L5 – Asst. Manager (5)" },
-  { value: "L6", label: "L6 – Farm Manager (6)" },
-  { value: "L7", label: "L7 – Operations (7)" },
-];
-
-export function gradeLevelToRank(gradeLevel: string | null | undefined): number | null {
-  const normalized = gradeLevel?.trim().toUpperCase();
-  if (!normalized) return null;
-  const match = normalized.match(/^L?([1-7])$/);
-  return match ? Number(match[1]) : null;
+export function gradeLevelToRank(
+  gradeLevel: string | null | undefined,
+  config?: GradeLevelsConfig,
+): number | null {
+  return gradeLevelToRankFromConfig(gradeLevel, config);
 }
 
 export function inferGradeLevel(
   roleSlug: string,
   hrData: OnboardingHrData | null | undefined,
-): GradeLevel | undefined {
+  config?: GradeLevelsConfig,
+): string | undefined {
+  const levels = resolveGradeLevels(config);
+  const levelSet = new Set(levels.map((l) => l.id));
+
   const fromHr = hrData?.grade_level?.trim().toUpperCase();
-  if (fromHr && GRADE_LEVEL_SET.has(fromHr)) return fromHr as GradeLevel;
+  if (fromHr && levelSet.has(fromHr)) return fromHr;
 
   const opening = getOpeningBySlug(roleSlug);
   const key = opening?.interviewGuideKey?.toUpperCase();
-  if (key && GRADE_LEVEL_SET.has(key)) return key as GradeLevel;
+  if (key && levelSet.has(key)) return key;
 
   return undefined;
 }
 
-/** Parse WF employee IDs — supports WF7-042, WF-7-042, WF7042 */
+/** Global numeric value for an employee ID (new WF-00042 or legacy WF7-042). */
+export function employeeIdNumericValue(id: string): number | null {
+  const trimmed = id.trim().toUpperCase();
+
+  const global = trimmed.match(/^WF-(\d{1,6})$/);
+  if (global) return Number(global[1]);
+
+  const legacyDashed = trimmed.match(/^WF-?(\d+)-(\d{1,4})$/);
+  if (legacyDashed) {
+    return Number(legacyDashed[1]) * 10_000 + Number(legacyDashed[2]);
+  }
+
+  const legacyCompact = trimmed.match(/^WF(\d+)(\d{2,4})$/);
+  if (legacyCompact) {
+    return Number(legacyCompact[1]) * 10_000 + Number(legacyCompact[2]);
+  }
+
+  return null;
+}
+
+/** @deprecated Legacy parser — prefer employeeIdNumericValue for sequencing. */
 export function parseEmployeeId(id: string): { rank: number; sequence: number } | null {
   const trimmed = id.trim().toUpperCase();
-  const dashed = trimmed.match(/^WF-?([1-7])-(\d{1,4})$/);
+  const dashed = trimmed.match(/^WF-?(\d+)-(\d{1,4})$/);
   if (dashed) {
     return { rank: Number(dashed[1]), sequence: Number(dashed[2]) };
   }
-  const compact = trimmed.match(/^WF([1-7])(\d{2,4})$/);
+  const compact = trimmed.match(/^WF(\d+)(\d{2,4})$/);
   if (compact) {
     return { rank: Number(compact[1]), sequence: Number(compact[2]) };
   }
   return null;
 }
 
-export function formatEmployeeId(rank: number, sequence: number): string {
-  const safeRank = Math.min(7, Math.max(1, rank));
-  const safeSeq = Math.max(1, sequence);
-  return `WF${safeRank}-${String(safeSeq).padStart(3, "0")}`;
+/** Company-wide employee ID: WF-##### (no grade level encoded). */
+export function formatEmployeeId(sequence: number): string {
+  const safeSeq = Math.max(1, Math.floor(sequence));
+  return `WF-${String(safeSeq).padStart(5, "0")}`;
 }
 
-/** Next unique WF ID for a grade rank (1 = L1 junior … 7 = L7 senior). */
-export function suggestEmployeeId(
-  gradeLevel: string | null | undefined,
-  existingIds: string[],
-): string | null {
-  const rank = gradeLevelToRank(gradeLevel);
-  if (!rank) return null;
+/** Next unique WF ID across the whole company (grade-independent). */
+export function suggestEmployeeId(existingIds: string[]): string {
+  const values = existingIds
+    .map(employeeIdNumericValue)
+    .filter((value): value is number => value !== null);
 
-  const sequences = existingIds
-    .map(parseEmployeeId)
-    .filter((parsed): parsed is { rank: number; sequence: number } => parsed !== null)
-    .filter((parsed) => parsed.rank === rank)
-    .map((parsed) => parsed.sequence);
-
-  const nextSequence = sequences.length > 0 ? Math.max(...sequences) + 1 : 1;
-  return formatEmployeeId(rank, nextSequence);
+  const nextSequence = values.length > 0 ? Math.max(...values) + 1 : 1;
+  return formatEmployeeId(nextSequence);
 }
 
 function sanitizeEmailPart(value: string): string {
@@ -86,8 +100,9 @@ function sanitizeEmailPart(value: string): string {
 }
 
 /**
- * Company email: first initial + middle initial + full surname @willsfarms.com
- * e.g. John Michael Smith → jmsmith@willsfarms.com
+ * Company email: {firstInitial}.{middleName?}{firstName}@willsfarms.com
+ * e.g. Kwame → k.kwame@willsfarms.com
+ * e.g. John Michael → j.michaeljohn@willsfarms.com
  */
 export function suggestCompanyEmail(params: {
   firstName: string;
@@ -96,12 +111,12 @@ export function suggestCompanyEmail(params: {
   existingEmails?: string[];
 }): string | null {
   const first = sanitizeEmailPart(params.firstName);
-  const last = sanitizeEmailPart(params.lastName);
-  if (!first || !last) return null;
+  if (!first) return null;
 
-  const middleInitial = params.middleNames?.trim().split(/\s+/)[0]?.[0] ?? "";
-  const middle = middleInitial ? sanitizeEmailPart(middleInitial) : "";
-  const localBase = middle ? `${first}${middle}${last}` : `${first}${last}`;
+  const firstInitial = first[0];
+  const middleWord = params.middleNames?.trim().split(/\s+/)[0];
+  const middle = middleWord ? sanitizeEmailPart(middleWord) : "";
+  const localBase = middle ? `${firstInitial}.${middle}${first}` : `${firstInitial}.${first}`;
 
   const taken = new Set(
     (params.existingEmails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean),

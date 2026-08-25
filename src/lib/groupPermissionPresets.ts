@@ -10,6 +10,10 @@ import {
   sanitizePermissionActions,
   type UserListGroup,
 } from "@/lib/permissionActions";
+import {
+  resolveGroupPresetLabels,
+  type GradeLevelsConfig,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
 import type { AccessProfile } from "@/lib/pagePermissions";
 
 /** Groups that have a shared permission preset (excludes "all" list filter). */
@@ -30,6 +34,20 @@ export const GROUP_PRESET_LABELS: Record<GroupPresetKey, string> = {
   grade_l1_l3: "All L1–L3",
   grade_l4_l7: "All L4–L7",
 };
+
+/** Dynamic labels reflecting configured grade range (e.g. All L4–L8). */
+export function getGroupPresetLabels(
+  config?: GradeLevelsConfig,
+): Record<GroupPresetKey, string> {
+  const dynamic = resolveGroupPresetLabels(config);
+  return {
+    employees: GROUP_PRESET_LABELS.employees,
+    managers: GROUP_PRESET_LABELS.managers,
+    admins: GROUP_PRESET_LABELS.admins,
+    grade_l1_l3: dynamic.grade_l1_l3,
+    grade_l4_l7: dynamic.grade_l4_l7,
+  };
+}
 
 export type GroupPresetsMap = Partial<Record<GroupPresetKey, PagePermissionActions>>;
 

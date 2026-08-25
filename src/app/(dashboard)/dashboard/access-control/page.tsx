@@ -30,6 +30,7 @@ import {
 } from "@/lib/groupPermissionPresets";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import GroupPermissionPanel from "./components/GroupPermissionPanel";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-50 text-red-700 border border-red-200",
@@ -97,6 +98,7 @@ export default function UserManagementPage() {
   const canManageAccounts = canManageUserAccounts(actorProfile, sessionRole);
 
   const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
+  const { accessControlBandLabels } = useGradeLevelsConfig();
   const activeGroupKey = groupPresetKeyFromListGroup(listGroup);
   const activeGroupActions =
     activeGroupKey && groupPresetData?.presets
@@ -165,14 +167,17 @@ export default function UserManagementPage() {
     });
   }, [users, search, listGroup]);
 
-  const groupTabs: { id: UserListGroup; label: string }[] = [
-    { id: "all", label: "All users" },
-    { id: "employees", label: "Employees" },
-    { id: "managers", label: "Managers" },
-    { id: "admins", label: "Admins" },
-    { id: "grade_l4_l7", label: "L4–L7" },
-    { id: "grade_l1_l3", label: "L1–L3" },
-  ];
+  const groupTabs: { id: UserListGroup; label: string }[] = useMemo(
+    () => [
+      { id: "all", label: "All users" },
+      { id: "employees", label: "Employees" },
+      { id: "managers", label: "Managers" },
+      { id: "admins", label: "Admins" },
+      { id: "grade_l4_l7", label: accessControlBandLabels.grade_l4_l7 },
+      { id: "grade_l1_l3", label: accessControlBandLabels.grade_l1_l3 },
+    ],
+    [accessControlBandLabels],
+  );
 
   if (!canOpen) {
     return (
@@ -283,6 +288,11 @@ export default function UserManagementPage() {
                       {u.grade_level ? ` · ${u.grade_level}` : ""}
                       {u.company_id ? ` · ${u.company_id}` : ""}
                     </p>
+                    {hasIndividualPermissionOverride(u) && (
+                      <p className="text-[10px] text-amber-600 mt-1 font-medium">
+                        Individual permissions
+                      </p>
+                    )}
                     <p className="text-xs text-gray-400 mt-1">
                       Added {formatAddedOn(u.created_at)}
                       {canManageAccounts && u.created_by && (

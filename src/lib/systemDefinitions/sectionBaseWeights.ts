@@ -1,19 +1,15 @@
 import type { SectionDef } from "@/lib/appraisal/scoring";
 import {
-  APPRAISAL_GRADE_BANDS,
-  type AppraisalGradeBand,
   getGitSectionWeightSnapshot,
   sectionSetForQuarter,
   type Quarter,
   type SectionSet,
 } from "@/lib/appraisal/sections";
+import { isAppraisalFormKeyShape } from "@/lib/systemDefinitions/appraisalScopeConfig";
 
-/** Per-band overrides stored in system_modules.business_logic.sectionBaseWeights */
+/** Per-form-key overrides stored in system_modules.business_logic.sectionBaseWeights */
 export type SectionBaseWeights = Partial<
-  Record<
-    AppraisalGradeBand,
-    Partial<Record<SectionSet, Partial<Record<string, number>>>>
-  >
+  Record<string, Partial<Record<SectionSet, Partial<Record<string, number>>>>>
 >;
 
 /** Weights applied to every grade band (e.g. Section A = 15% for all L1–L7). */
@@ -47,18 +43,22 @@ function rebalanceSectionWeights(
 export function normalizeSectionBaseWeights(raw: unknown): SectionBaseWeights {
   if (!raw || typeof raw !== "object") return {};
   const out: SectionBaseWeights = {};
-  for (const band of APPRAISAL_GRADE_BANDS) {
-    const bandRaw = (raw as Record<string, unknown>)[band];
-    if (!bandRaw || typeof bandRaw !== "object") continue;
+
+  for (const [formKey, bandRaw] of Object.entries(
+    raw as Record<string, unknown>,
+  )) {
+    if (!isAppraisalFormKeyShape(formKey) || !bandRaw || typeof bandRaw !== "object") {
+      continue;
+    }
     for (const set of ["quarterly", "annual"] as SectionSet[]) {
       const setRaw = (bandRaw as Record<string, unknown>)[set];
       if (!setRaw || typeof setRaw !== "object") continue;
       for (const [key, val] of Object.entries(setRaw)) {
         const n = Number(val);
         if (!Number.isFinite(n) || n <= 0 || n > 1) continue;
-        if (!out[band]) out[band] = {};
-        if (!out[band]![set]) out[band]![set] = {};
-        out[band]![set]![key] = n;
+        if (!out[formKey]) out[formKey] = {};
+        if (!out[formKey]![set]) out[formKey]![set] = {};
+        out[formKey]![set]![key] = n;
       }
     }
   }
@@ -85,16 +85,15 @@ export function normalizeGlobalSectionWeights(
 
 /** Resolve effective weight for one section (Git → global → band override). */
 export function resolveSectionWeight(
-  gradeBand: string,
+  formKey: string,
   sectionSet: SectionSet,
   sectionKey: string,
   gitWeight: number,
   globalWeights?: GlobalSectionWeights,
   baseWeights?: SectionBaseWeights,
 ): number {
-  const band = gradeBand as AppraisalGradeBand;
   return (
-    baseWeights?.[band]?.[sectionSet]?.[sectionKey] ??
+    baseWeights?.[formKey]?.[sectionSet]?.[sectionKey] ??
     globalWeights?.[sectionSet]?.[sectionKey] ??
     gitWeight
   );
@@ -103,7 +102,7 @@ export function resolveSectionWeight(
 /** Apply stored base + global weights onto Git section definitions. */
 export function applySectionBaseWeights(
   sections: SectionDef[],
-  gradeBand: string,
+  formKey: string,
   quarter: Quarter,
   globalWeights?: GlobalSectionWeights,
   baseWeights?: SectionBaseWeights,
@@ -113,7 +112,7 @@ export function applySectionBaseWeights(
     ...s,
     items: [...s.items],
     weight: resolveSectionWeight(
-      gradeBand,
+      formKey,
       sectionSet,
       s.key,
       s.weight,
@@ -124,7 +123,7 @@ export function applySectionBaseWeights(
 
   for (const s of sections) {
     const resolved = resolveSectionWeight(
-      gradeBand,
+      formKey,
       sectionSet,
       s.key,
       s.weight,

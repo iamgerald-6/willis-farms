@@ -5,7 +5,7 @@ import {
   jsonUnauthorized,
   requireSkillLogAccess,
 } from "@/lib/apiRequestAuth";
-import { canFillSkillLog } from "@/lib/skillLogAccess";
+import { canFillSkillLog, canFillSkillLogForEmployee } from "@/lib/skillLogAccess";
 import { SKILL_LOG_MIN_FILLER_GRADE } from "@/lib/moduleRegistry";
 
 export async function POST(req: NextRequest) {
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     const { data: employeeProfile } = await supabaseAdmin
       .from("users")
-      .select("user_id, grade_level")
+      .select("user_id, grade_level, supervisor_id")
       .eq("user_id", employee_id)
       .maybeSingle();
 
@@ -88,6 +88,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, message: "Employee not found" },
         { status: 404 },
+      );
+    }
+
+    if (!canFillSkillLogForEmployee(supervisor_id, employeeProfile)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "You can only fill skill logs for employees assigned to you as their supervisor in User Management.",
+        },
+        { status: 403 },
       );
     }
 

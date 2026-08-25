@@ -167,6 +167,8 @@ export interface OnboardingHrData {
   employee_id?: string;
   company_email?: string;
   supervisor_name?: string;
+  /** user_id of assigned reporting supervisor (Section O picker). */
+  supervisor_id?: string;
   supervisor_contact?: string;
   salary_ghs?: string;
   pay_frequency?: string;
@@ -187,7 +189,39 @@ export interface OnboardingHrData {
   equipment_issued?: string;
   approved_by?: string;
   hr_notes?: string;
+  /** Signed offer letter PDF — required before sending onboarding link. */
+  offer_letter?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  };
+  offer_letter_uploaded_at?: string;
+  /** Set when HR sends the WillsOne platform invite (User Management). */
+  platform_invited_at?: string;
+  /** probation | active | fired | quit | deceased */
+  employment_status?: string;
+  probation_completed_at?: string;
+  exit_reason?: string;
+  exit_at?: string;
+  /** Section O — employment placement (HR only; not on candidate form). */
+  position_title?: string;
+  department?: string;
+  employment_type?: string;
+  work_location?: string;
+  /** Additional admin-configured HR fields stored in hr_data JSON. */
+  [key: string]:
+    | string
+    | undefined
+    | { secure_url?: string; public_id?: string; original_name?: string };
 }
+
+export const ONBOARDING_EMPLOYMENT_TYPES = [
+  "Full-time",
+  "Part-time",
+  "Casual",
+  "Seasonal",
+  "Contract",
+] as const;
 
 export interface OnboardingSubmission {
   id: string;
@@ -204,7 +238,7 @@ export interface OnboardingSubmission {
 
 export const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
   personal: "Personal information",
-  medical: "Medical & qualifications",
+  medical: "Medical & declarations",
   referee: "References & declarations",
 };
 
@@ -283,37 +317,6 @@ export function parseApplicantName(fullName: string): {
   };
 }
 
-/** Merge application data into form — always wins over candidate edits for locked fields */
-export function applyApplicationPrefill(
-  form: OnboardingFormData,
-  application: ApplicationPrefillSource,
-): OnboardingFormData {
-  const merged = mergeOnboardingForm(form);
-  const name = parseApplicantName(application.full_name);
-
-  return {
-    ...merged,
-    personal: {
-      ...merged.personal,
-      first_name: name.first_name,
-      surname: name.surname,
-      middle_names: name.has_middle_from_application
-        ? name.middle_names
-        : merged.personal?.middle_names,
-      mobile: application.phone.trim(),
-      personal_email: application.email.trim().toLowerCase(),
-    },
-    employment: {
-      ...merged.employment,
-      position_title: application.role_title,
-    },
-    declarations: {
-      ...merged.declarations,
-      signature_name: application.full_name.trim(),
-    },
-  };
-}
-
 export function mergeOnboardingForm(
   raw: OnboardingFormData | null | undefined,
 ): OnboardingFormData {
@@ -345,5 +348,73 @@ export function mergeOnboardingForm(
       : base.additional_certifications,
     work_experience: raw.work_experience?.length ? raw.work_experience : base.work_experience,
     referees: raw.referees?.length ? raw.referees : base.referees,
+  };
+}
+
+/** True when the candidate genuinely finished — not just submitted_at set in DB. */
+export function isCandidateOnboardingComplete(
+  formData: OnboardingFormData | null | undefined,
+  submittedAt: string | null | undefined,
+): boolean {
+  if (!submittedAt) return false;
+  const form = mergeOnboardingForm(formData);
+  return (
+    form.declarations?.data_consent === true &&
+    Boolean(form.declarations?.signature_name?.trim()) &&
+    Boolean(form.emergency?.full_name?.trim())
+  );
+}
+
+/** Merge application data into form — always wins over candidate edits for locked fields */
+export function applyApplicationPrefill(
+  form: OnboardingFormData,
+  application: ApplicationPrefillSource,
+): OnboardingFormData {
+  const merged = mergeOnboardingForm(form);
+  const name = parseApplicantName(application.full_name);
+
+  return {
+    ...merged,
+    personal: {
+      ...merged.personal,
+      first_name: name.first_name,
+      surname: name.surname,
+      middle_names: name.has_middle_from_application
+        ? name.middle_names
+        : merged.personal?.middle_names,
+      mobile: application.phone.trim(),
+      personal_email: application.email.trim().toLowerCase(),
+    },
+    declarations: {
+      ...merged.declarations,
+      signature_name: application.full_name.trim(),
+    },
+  };
+}
+
+/** Seed Section O placement fields from saved HR data, legacy form answers, or application. */
+export function mergeInitialOnboardingHrData(input: {
+  hr_data?: OnboardingHrData | null;
+  form_data?: OnboardingFormData | null;
+  role_title?: string;
+  location?: string | null;
+}): OnboardingHrData {
+  const existing = input.hr_data ?? {};
+  const emp = input.form_data?.employment ?? {};
+  return {
+    ...existing,
+    position_title:
+      existing.position_title?.trim() ||
+      emp.position_title?.trim() ||
+      input.role_title?.trim() ||
+      undefined,
+    department: existing.department?.trim() || emp.department?.trim() || undefined,
+    employment_type:
+      existing.employment_type?.trim() || emp.employment_type?.trim() || undefined,
+    work_location:
+      existing.work_location?.trim() ||
+      emp.farm_site?.trim() ||
+      input.location?.trim() ||
+      undefined,
   };
 }

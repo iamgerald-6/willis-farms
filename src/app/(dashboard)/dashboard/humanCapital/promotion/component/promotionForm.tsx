@@ -29,6 +29,8 @@ import {
   type PromotionFormConfig,
   type SkillSignoffStage,
 } from "./promotionFormConfigs";
+import { isSupervisorRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
 interface Appraisal {
   id: number;
@@ -78,12 +80,6 @@ const SKILL_STAGES: { value: SkillSignoffStage; label: string }[] = [
   { value: "supervised", label: "Under Supervision" },
   { value: "consistent", label: "Consistent to Standard" },
 ];
-
-function gradeIndex(g: string | null | undefined) {
-  if (!g) return -1;
-  const clean = g.replace("_", "/").split("/")[0].trim();
-  return GRADE_ORDER.indexOf(clean as (typeof GRADE_ORDER)[number]);
-}
 
 function inputCls(hasError?: boolean) {
   return [
@@ -259,6 +255,7 @@ function resetFormState(config: PromotionFormConfig | null) {
 }
 
 export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
+  const { config: gradeConfig } = useGradeLevelsConfig();
   const [selectedAppraisal, setSelectedAppraisal] = useState<Appraisal | null>(
     null,
   );
@@ -339,7 +336,7 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     [allUsers, userId],
   );
   const currentUserGrade = currentUserProfile?.grade_level ?? null;
-  const canFillPromotion = gradeIndex(currentUserGrade) >= gradeIndex("L4");
+  const canFillPromotion = isSupervisorRank(currentUserGrade, gradeConfig);
 
   const { data: promotionAppraisals = [], isLoading } = useQuery<Appraisal[]>({
     queryKey: ["promotion_appraisals"],
@@ -470,7 +467,7 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
       current_grade: selectedAppraisal.current_grade,
       current_job_title: selectedAppraisal.job_title,
       proposed_job_title: formData.proposed_job_title,
-      proposed_grade: formData.proposed_grade || getProposedGrade(selectedAppraisal.current_grade),
+      proposed_grade: formData.proposed_grade || getProposedGrade(selectedAppraisal.current_grade, gradeConfig),
       immediate_supervisor: selectedAppraisal.immediate_supervisor,
       reviewing_manager: formData.reviewing_manager,
       tier_authorisation: formData.tier_authorisation,

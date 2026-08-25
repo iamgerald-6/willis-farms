@@ -11,6 +11,8 @@ import { OperatingDiagram } from "@/components/OperatingDiagram";
 import { LeadForm } from "@/components/Forms/LeadForm";
 import { toWhatsAppHref } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
+import { hasLocalSupabaseSession } from "@/lib/auth/hasLocalSupabaseSession";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -23,11 +25,27 @@ export default function HomePage() {
     "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork)."
   );
 
+  // "checking": might already be signed in (e.g. staff hitting Back into the
+  // marketing site), hold off rendering the landing page. "guest": confirmed
+  // no session — render immediately, which is the case for ~all visitors.
+  const [screen, setScreen] = useState<"checking" | "guest">(() =>
+    hasLocalSupabaseSession() ? "checking" : "guest",
+  );
+
   // Redirect staff who are already logged in straight to their dashboard
   useEffect(() => {
+    let active = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace("/dashboard");
+      if (!active) return;
+      if (session) {
+        void ignoreNavigationAbort(router.replace("/dashboard"));
+      } else {
+        setScreen("guest");
+      }
     });
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -44,6 +62,10 @@ export default function HomePage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  if (screen === "checking") {
+    return <div className="min-h-screen bg-white" />;
+  }
 
   return (
     <>

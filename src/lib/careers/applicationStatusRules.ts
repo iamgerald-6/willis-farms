@@ -37,7 +37,7 @@ export function getAllowedHrStatusOptions(
   }
 
   if (status === "interview") {
-    return ["interview", "hold", "rejected", "onboarding"];
+    return ["interview", "hold", "rejected"];
   }
 
   if (status === "hold") {

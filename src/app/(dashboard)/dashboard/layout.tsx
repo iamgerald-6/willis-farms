@@ -11,6 +11,7 @@ import RouteAccessGuard from "@/components/RouteAccessGuard";
 import { AuthLayoutSkeleton } from "@/components/skeletons/PageSkeletons";
 import { Toaster } from "sonner";
 import { AppNavigationProvider } from "@/lib/navigation/appNavigation";
+import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -19,13 +20,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    let active = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
       if (!session) {
-        router.replace(`/login?redirect=${encodeURIComponent(pathname ?? "")}`);
+        void ignoreNavigationAbort(
+          router.replace(`/login?redirect=${encodeURIComponent(pathname ?? "")}`),
+        );
       } else {
         setAuthChecked(true);
       }
     });
+    return () => {
+      active = false;
+    };
   }, [pathname, router]);
 
   return (

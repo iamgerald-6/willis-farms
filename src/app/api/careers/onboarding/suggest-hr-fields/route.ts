@@ -12,6 +12,8 @@ import {
   type OnboardingFormData,
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
+import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -67,10 +69,13 @@ export async function GET(req: NextRequest) {
     const middleNames = form.personal?.middle_names?.trim() || parsed.middle_names;
     const lastName = form.personal?.surname?.trim() || parsed.surname;
 
+    const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
+    const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+
     const gradeLevel =
       gradeOverride?.trim().toUpperCase() ||
       hr.grade_level?.trim().toUpperCase() ||
-      inferGradeLevel(app.role_slug, hr);
+      inferGradeLevel(app.role_slug, hr, gradeConfig);
 
     const { companyIds, companyEmails } = await collectExistingEmployeeIds(supabaseAdmin);
 
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
     const idsForSuggestion = companyIds.filter((id) => id !== excludeCurrentId);
     const emailsForSuggestion = companyEmails.filter((e) => e !== excludeCurrentEmail);
 
-    const employee_id = suggestEmployeeId(gradeLevel, idsForSuggestion);
+    const employee_id = suggestEmployeeId(idsForSuggestion);
     const company_email = suggestCompanyEmail({
       firstName,
       middleNames,

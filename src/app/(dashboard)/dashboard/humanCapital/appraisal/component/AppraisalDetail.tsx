@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Award,
+  Info,
   CircleDot,
   Check,
   Archive,
@@ -55,7 +56,15 @@ function sectionAvg(sectionRatings: SectionRatings): number | null {
   return (avgRaw / ITEM_RATING_MAX) * 100;
 }
 
-function RatingCell({ rating, hidden }: { rating: number | null; hidden: boolean }) {
+function RatingCell({
+  rating,
+  hidden,
+  showLabels,
+}: {
+  rating: number | null;
+  hidden: boolean;
+  showLabels: boolean;
+}) {
   if (hidden) {
     return (
       <span className="inline-flex items-center gap-1 text-gray-300 text-xs font-mono select-none">
@@ -64,6 +73,13 @@ function RatingCell({ rating, hidden }: { rating: number | null; hidden: boolean
     );
   }
   if (rating == null) return <span className="text-gray-300 text-xs">—</span>;
+  if (!showLabels) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+        {rating}/5
+      </span>
+    );
+  }
   const meta = itemRatingMeta(rating);
   return (
     <span
@@ -234,6 +250,7 @@ export default function AppraisalDetail({
 
   const hideEmployeeRatings = !bothSubmitted && !viewerIsEmployee;
   const hideSupervisorRatings = !bothSubmitted && !viewerIsSupervisor;
+  const showScoreDetails = appraisal.status === "final_reviewed";
 
   const employeeRatings = appraisal.employee_ratings ?? {};
   const supervisorRatings = appraisal.supervisor_ratings ?? {};
@@ -394,17 +411,16 @@ export default function AppraisalDetail({
           <div className="flex gap-2 sm:gap-4 bg-white/10 rounded-xl p-3 sm:p-4 justify-between sm:justify-start w-full lg:w-auto">
             <ScoreDisplay
               score={appraisal.employee_weighted_score ?? null}
-              hidden={hideEmployeeRatings}
+              hidden={!showScoreDetails}
               label="Employee Score"
             />
             <div className="w-px bg-white/10" />
             <ScoreDisplay
               score={appraisal.supervisor_weighted_score ?? null}
-              hidden={hideSupervisorRatings}
+              hidden={!showScoreDetails}
               label="Supervisor Score"
             />
-            {appraisal.status === "final_reviewed" &&
-              appraisal.final_quarter_score != null && (
+            {showScoreDetails && appraisal.final_quarter_score != null && (
                 <>
                   <div className="w-px bg-white/10" />
                   <ScoreDisplay
@@ -827,6 +843,17 @@ export default function AppraisalDetail({
         )}
       </div>
 
+      {!showScoreDetails && bothSubmitted && appraisal.status !== "locked" && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-[11px] sm:text-xs text-blue-800">
+          <Info className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="leading-snug">
+            Percentage scores and performance bands are hidden until the final
+            review meeting. Individual 1–5 ratings are shown below for
+            discussion.
+          </span>
+        </div>
+      )}
+
       {/* ── Hidden notice ── */}
       {!bothSubmitted && appraisal.status !== "locked" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-[11px] sm:text-xs text-gray-500">
@@ -852,8 +879,14 @@ export default function AppraisalDetail({
             const items = getSectionItems(sectionKey);
             const empSecRatings = employeeRatings[sectionKey] ?? {};
             const supSecRatings = supervisorRatings[sectionKey] ?? {};
-            const empAvg = !hideEmployeeRatings ? sectionAvg(empSecRatings) : null;
-            const supAvg = !hideSupervisorRatings ? sectionAvg(supSecRatings) : null;
+            const empAvg =
+              showScoreDetails && !hideEmployeeRatings
+                ? sectionAvg(empSecRatings)
+                : null;
+            const supAvg =
+              showScoreDetails && !hideSupervisorRatings
+                ? sectionAvg(supSecRatings)
+                : null;
 
             return (
               <div
@@ -924,6 +957,7 @@ export default function AppraisalDetail({
                           <RatingCell
                             rating={empItem.rating}
                             hidden={hideEmployeeRatings}
+                            showLabels={showScoreDetails}
                           />
                           <div className="mt-1">
                             <CommentCell
@@ -939,6 +973,7 @@ export default function AppraisalDetail({
                           <RatingCell
                             rating={supItem.rating}
                             hidden={hideSupervisorRatings}
+                            showLabels={showScoreDetails}
                           />
                           <div className="mt-1">
                             <CommentCell
