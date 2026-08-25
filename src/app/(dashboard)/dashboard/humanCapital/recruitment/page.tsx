@@ -2734,12 +2734,98 @@ function OfferTab({
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
 }) {
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+
+  // Cross-filtering, same pattern as the other tabs: each field's option
+  // list is scoped by the other active filter.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? applications.filter((a) => roleFilters.includes(a.role_title))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? applications.filter((a) => nameFilters.includes(a.full_name))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applications.filter(
+        (a) =>
+          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+      ),
+    [applications, nameFilters, roleFilters],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
         Applicants confirmed Hire land here with an outstanding offer. Open an
         applicant to send the congratulations email with the onboarding link
         (moves them to the Onboarding tab), or to rescind the offer.
+      </div>
+
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -2769,17 +2855,19 @@ function OfferTab({
                   </td>
                 </tr>
               ))
-            ) : applications.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <tr>
                 <td
                   colSpan={6}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No applicants with an outstanding offer right now.
+                  {applications.length === 0
+                    ? "No applicants with an outstanding offer right now."
+                    : "No applicants match the selected filters."}
                 </td>
               </tr>
             ) : (
-              applications.map((a) => (
+              filtered.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
