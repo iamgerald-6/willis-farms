@@ -5,6 +5,12 @@ import { fetchApplicationFormContext } from "@/lib/careers/getApplicationFormFie
 import { stepLabelFor } from "@/lib/systemDefinitions/applicationFormConfig";
 import { isPostingPublic, type JobPosting } from "@/lib/careers/jobPostings";
 
+// Always fetch the posting and form fields fresh — this page has no
+// generateStaticParams, so Next would otherwise cache the first render of
+// each posting indefinitely and keep serving it after job postings or
+// application-form settings (e.g. referee fields) change in the database.
+export const dynamic = "force-dynamic";
+
 type PageProps = { params: Promise<{ postingId: string }> };
 
 export default async function ApplyPage({ params }: PageProps) {
