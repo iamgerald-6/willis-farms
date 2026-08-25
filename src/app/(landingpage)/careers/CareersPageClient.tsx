@@ -84,7 +84,7 @@ export default function CareersPageClient({
       <PageShell title={c.headline} subtitle={c.intro}>
         <section className="space-y-6">
           <SectionHeading
-            eyebrow="Openings"
+            eyebrow="Job openings"
             title="Current opportunities"
             subtitle="Browse our open roles and apply online. Shortlisted candidates will be invited to interview."
           />

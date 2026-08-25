@@ -189,6 +189,20 @@ export interface OnboardingHrData {
   equipment_issued?: string;
   approved_by?: string;
   hr_notes?: string;
+  /** Signed offer letter PDF — required before sending onboarding link. */
+  offer_letter?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  };
+  offer_letter_uploaded_at?: string;
+  /** Set when HR sends the WillsOne platform invite (User Management). */
+  platform_invited_at?: string;
+  /** probation | active | fired | quit | deceased */
+  employment_status?: string;
+  probation_completed_at?: string;
+  exit_reason?: string;
+  exit_at?: string;
   /** Section O — employment placement (HR only; not on candidate form). */
   position_title?: string;
   department?: string;
@@ -332,6 +346,20 @@ export function mergeOnboardingForm(
     work_experience: raw.work_experience?.length ? raw.work_experience : base.work_experience,
     referees: raw.referees?.length ? raw.referees : base.referees,
   };
+}
+
+/** True when the candidate genuinely finished — not just submitted_at set in DB. */
+export function isCandidateOnboardingComplete(
+  formData: OnboardingFormData | null | undefined,
+  submittedAt: string | null | undefined,
+): boolean {
+  if (!submittedAt) return false;
+  const form = mergeOnboardingForm(formData);
+  return (
+    form.declarations?.data_consent === true &&
+    Boolean(form.declarations?.signature_name?.trim()) &&
+    Boolean(form.emergency?.full_name?.trim())
+  );
 }
 
 /** Merge application data into form — always wins over candidate edits for locked fields */

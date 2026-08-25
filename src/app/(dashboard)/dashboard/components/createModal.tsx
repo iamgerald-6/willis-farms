@@ -82,6 +82,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     const res = await api.post("/create_user", {
       ...data,
       supervisor_id: pendingSupervisorId ?? undefined,
+      application_id: selectedOnboardingId || undefined,
     });
     return res.data;
   }
@@ -170,6 +171,9 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
       refetch();
       queryClient.invalidateQueries({
         queryKey: ["onboarded-invite-candidates"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["recruitment-employees"],
       });
       toast.success(
         `Invite sent to ${variables.email}! They'll receive an email to set their password.`,

@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       job_position,
       grade_level,
       supervisor_id,
+      application_id,
     } = await req.json();
 
     if (!email || !role || !first_name || !last_name || !company_id) {
@@ -121,6 +122,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const invitedAt = new Date().toISOString();
+
     const baseRow = {
       user_id: authUser.id,
       email,
@@ -132,7 +135,10 @@ export async function POST(req: NextRequest) {
       grade_level,
       job_position: job_position ?? null,
       supervisor_id: resolvedSupervisorId,
-      created_at: new Date().toISOString(),
+      created_at: invitedAt,
+      application_id: application_id ?? null,
+      employment_status: role === "employee" ? "probation" : null,
+      platform_invited_at: role === "employee" ? invitedAt : null,
     };
 
     // Try full row first (audit + setup flags). Fall back if optional
@@ -160,6 +166,12 @@ export async function POST(req: NextRequest) {
         email_confirm: false,
       },
       { ...baseRow, supervisor_id: undefined },
+      {
+        ...baseRow,
+        application_id: undefined,
+        employment_status: undefined,
+        platform_invited_at: undefined,
+      },
     ];
 
     let tableUser = null;
@@ -185,6 +197,9 @@ export async function POST(req: NextRequest) {
         msg.includes("email_verified") ||
         msg.includes("email_confirm") ||
         msg.includes("supervisor_id") ||
+        msg.includes("application_id") ||
+        msg.includes("employment_status") ||
+        msg.includes("platform_invited_at") ||
         msg.includes("schema cache");
 
       if (!missingOptionalColumn) break;
@@ -199,6 +214,28 @@ export async function POST(req: NextRequest) {
         { error: (tableError?.message ?? "Could not create user.") + hint },
         { status: 400 },
       );
+    }
+
+    if (application_id && role === "employee") {
+      const { data: onboardingRow } = await supabaseAdmin
+        .from("onboarding_submissions")
+        .select("hr_data")
+        .eq("application_id", application_id)
+        .maybeSingle();
+
+      if (onboardingRow) {
+        const hr = (onboardingRow.hr_data ?? {}) as Record<string, unknown>;
+        await supabaseAdmin
+          .from("onboarding_submissions")
+          .update({
+            hr_data: {
+              ...hr,
+              platform_invited_at: invitedAt,
+              employment_status: "probation",
+            },
+          })
+          .eq("application_id", application_id);
+      }
     }
 
     const mail = buildInviteEmail(actionLink, first_name);

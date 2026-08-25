@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { onboardingMagicLinkUrl } from "@/lib/appUrl";
 import { sendHireOnboardingEmail } from "@/lib/careers/interviewEmails";
 import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
+import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 export type OnboardingApplicationRef = {
   id: string;
@@ -34,12 +35,21 @@ export async function sendOnboardingInvite(
   const tokenRecord = await createOnboardingToken(supabase, application.id);
   const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
 
+  const { data: existingSubmission } = await supabase
+    .from("onboarding_submissions")
+    .select("form_data, hr_data")
+    .eq("application_id", application.id)
+    .maybeSingle();
+
+  const hr = (existingSubmission?.hr_data ?? {}) as OnboardingHrData;
+  const formData = existingSubmission?.form_data ?? {};
+
   const { error: submissionError } = await supabase.from("onboarding_submissions").upsert(
     {
       application_id: application.id,
       token_id: tokenRecord.id,
-      form_data: {},
-      hr_data: {},
+      form_data: formData,
+      hr_data: hr,
     },
     { onConflict: "application_id" },
   );
@@ -67,6 +77,12 @@ export async function sendOnboardingInvite(
     onboardingLink,
     expiresAt: tokenRecord.expiresAt,
     recommendedStartDate: options?.recommendedStartDate,
+    offerLetter: hr.offer_letter?.secure_url
+      ? {
+          secure_url: hr.offer_letter.secure_url,
+          original_name: hr.offer_letter.original_name,
+        }
+      : undefined,
   });
 
   return {

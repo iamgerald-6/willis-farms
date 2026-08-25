@@ -83,7 +83,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldKey: "employee_id",
         fieldType: "text",
         group: "hr",
-        hint: "Company-wide sequential ID — e.g. WF-00042 (no grade level in the number)",
+        hint: "Company-wide sequential ID — e.g. WF-00042",
       },
     ),
     hrField(

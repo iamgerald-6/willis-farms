@@ -31,12 +31,29 @@ function formatDateTime(iso: string): string {
   });
 }
 
+type EmailAttachment = { filename: string; content: string };
+
+async function fetchUrlAsBase64Attachment(
+  url: string,
+  filename: string,
+): Promise<EmailAttachment | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return { filename, content: buffer.toString("base64") };
+  } catch {
+    return null;
+  }
+}
+
 async function sendViaResend(params: {
   to: string | string[];
   subject: string;
   html: string;
   text: string;
   cc?: string[];
+  attachments?: EmailAttachment[];
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -55,6 +72,7 @@ async function sendViaResend(params: {
     html: params.html,
     text: params.text,
     replyTo: getReplyToEmail(),
+    attachments: params.attachments,
   });
 
   if (error) return { sent: false, error: error.message };
@@ -375,6 +393,10 @@ export async function sendHireOnboardingEmail(params: {
   onboardingLink: string;
   expiresAt: string;
   recommendedStartDate?: string;
+  offerLetter?: {
+    secure_url: string;
+    original_name?: string;
+  };
 }): Promise<SendResult> {
   const hrEmail = getReplyToEmail();
   const firstName =
@@ -382,6 +404,22 @@ export async function sendHireOnboardingEmail(params: {
   const expiry = formatDateTime(params.expiresAt);
   const startLine = params.recommendedStartDate
     ? `<p style="margin:0 0 8px;"><strong>Proposed start date:</strong> ${escapeHtml(params.recommendedStartDate)}</p>`
+    : "";
+
+  const offerLetterFilename =
+    params.offerLetter?.original_name?.trim() || "offer-letter.pdf";
+  const attachment = params.offerLetter?.secure_url
+    ? await fetchUrlAsBase64Attachment(
+        params.offerLetter.secure_url,
+        offerLetterFilename,
+      )
+    : null;
+
+  const offerLetterText = attachment
+    ? "Your signed offer letter is attached to this email."
+    : "";
+  const offerLetterHtml = attachment
+    ? `<p style="margin:0 0 16px;font-size:15px;color:#374151;">Your signed offer letter is attached to this email.</p>`
     : "";
 
   const subject = `Congratulations — ${params.roleTitle} (${params.referenceNumber})`;
@@ -396,6 +434,8 @@ export async function sendHireOnboardingEmail(params: {
     params.recommendedStartDate
       ? `Proposed start date: ${params.recommendedStartDate}`
       : "",
+    "",
+    offerLetterText,
     "",
     "Please complete your employee onboarding using the secure link below. This link is valid for 7 days:",
     params.onboardingLink,
@@ -428,6 +468,7 @@ export async function sendHireOnboardingEmail(params: {
           ${startLine}
         </td></tr>
       </table>
+      ${offerLetterHtml}
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
         Please complete your employee onboarding using the secure link below.
         The link is valid for <strong>7 days</strong> (expires ${escapeHtml(expiry)}).
@@ -439,13 +480,23 @@ export async function sendHireOnboardingEmail(params: {
     `,
   );
 
-  return sendViaResend({
+  const result = await sendViaResend({
     to: params.candidateEmail,
     cc: [hrEmail],
     subject,
     html,
     text,
+    attachments: attachment ? [attachment] : undefined,
   });
+
+  if (result.sent && params.offerLetter?.secure_url && !attachment) {
+    return {
+      sent: true,
+      error: "Email sent, but the offer letter could not be attached.",
+    };
+  }
+
+  return result;
 }
 
 /** Professional rejection after panel decision */

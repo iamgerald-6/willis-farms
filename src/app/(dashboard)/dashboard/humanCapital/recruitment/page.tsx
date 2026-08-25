@@ -29,6 +29,7 @@ import {
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
+import EmployeesTab from "./components/EmployeesTab";
 import CareersTab from "./components/CareersTab";
 import GraderSubmissionModal from "./components/interview/GraderSubmissionModal";
 import {
@@ -46,6 +47,7 @@ import {
   Mail,
   RefreshCw,
   Search,
+  Upload,
   UserPlus,
   X,
 } from "lucide-react";
@@ -55,6 +57,8 @@ import {
   ListRowsSkeleton,
 } from "@/components/skeletons/PageSkeletons";
 import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
 
 const AI_RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -345,6 +349,50 @@ function ApplicationDetail({
       toast.error(error?.response?.data?.error ?? "Failed to rescind offer.");
     },
   });
+
+  const offerLetterInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: offerLetterData, refetch: refetchOfferLetter } = useQuery({
+    queryKey: ["offer-letter", application.id],
+    queryFn: async () => {
+      const res = await api.get(
+        `/careers/onboarding/offer-letter?application_id=${application.id}`,
+      );
+      return res.data.data as {
+        offer_letter: {
+          secure_url: string;
+          original_name: string;
+        } | null;
+      };
+    },
+    enabled: application.status === "offer",
+  });
+
+  const uploadOfferLetter = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await uploadCareersFile(
+        file,
+        "careers/offer-letters",
+        ACCEPT_PDF_OR_WORD,
+        "offer_letter",
+      );
+      await api.patch("/careers/onboarding/offer-letter", {
+        application_id: application.id,
+        offer_letter: uploaded,
+      });
+      return uploaded;
+    },
+    onSuccess: () => {
+      toast.success("Offer letter uploaded.");
+      void refetchOfferLetter();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Upload failed.");
+    },
+  });
+
+  const offerLetter = offerLetterData?.offer_letter ?? null;
+  const hasOfferLetter = !!offerLetter?.secure_url;
 
   const generateReportMutation = useMutation({
     mutationFn: () =>
@@ -1469,34 +1517,104 @@ function ApplicationDetail({
             )}
 
             {application.status === "offer" && decision === "hire" && (
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => startOnboarding.mutate()}
-                  disabled={startOnboarding.isPending || rescindOffer.isPending}
-                  className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
-                >
-                  {startOnboarding.isPending
-                    ? "Sending…"
-                    : "Send congratulations & onboarding link"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
-                      )
-                    ) {
-                      return;
+              <div className="space-y-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      Offer letter
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload the signed offer letter before sending the
+                      onboarding link.
+                    </p>
+                  </div>
+                  {hasOfferLetter ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <a
+                        href={offerLetter!.secure_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+                      >
+                        <FileText className="w-4 h-4" />
+                        {offerLetter!.original_name || "View offer letter"}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => offerLetterInputRef.current?.click()}
+                        disabled={uploadOfferLetter.isPending}
+                        className="text-xs font-medium text-gray-600 hover:text-red-600 disabled:opacity-60"
+                      >
+                        Replace file
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => offerLetterInputRef.current?.click()}
+                      disabled={uploadOfferLetter.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 disabled:opacity-60"
+                    >
+                      {uploadOfferLetter.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                      Upload offer letter
+                    </button>
+                  )}
+                  <input
+                    ref={offerLetterInputRef}
+                    type="file"
+                    accept={ACCEPT_PDF_OR_WORD}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadOfferLetter.mutate(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startOnboarding.mutate()}
+                    disabled={
+                      !hasOfferLetter ||
+                      startOnboarding.isPending ||
+                      rescindOffer.isPending
                     }
-                    rescindOffer.mutate();
-                  }}
-                  disabled={rescindOffer.isPending || startOnboarding.isPending}
-                  className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
-                >
-                  {rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
-                </button>
+                    className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
+                    title={
+                      hasOfferLetter
+                        ? undefined
+                        : "Upload the offer letter first"
+                    }
+                  >
+                    {startOnboarding.isPending
+                      ? "Sending…"
+                      : "Send congratulations & onboarding link"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
+                        )
+                      ) {
+                        return;
+                      }
+                      rescindOffer.mutate();
+                    }}
+                    disabled={rescindOffer.isPending || startOnboarding.isPending}
+                    className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                  >
+                    {rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -3271,6 +3389,7 @@ function RecruitmentPageContent() {
     | "applications"
     | "offer"
     | "onboarding"
+    | "employees"
     | "careers"
     | "ai_rejects"
     | "approvals"
@@ -3279,9 +3398,11 @@ function RecruitmentPageContent() {
       ? "offer"
       : tabParam === "onboarding"
         ? "onboarding"
-        : tabParam === "careers"
-          ? "careers"
-          : tabParam === "ai_rejects" || tabParam === "rejects"
+        : tabParam === "employees"
+          ? "employees"
+          : tabParam === "careers"
+            ? "careers"
+            : tabParam === "ai_rejects" || tabParam === "rejects"
             ? "ai_rejects"
             : tabParam === "approvals"
               ? "approvals"
@@ -3452,6 +3573,7 @@ function RecruitmentPageContent() {
   useEffect(() => {
     if (tabParam === "offer") setActiveTab("offer");
     else if (tabParam === "onboarding") setActiveTab("onboarding");
+    else if (tabParam === "employees") setActiveTab("employees");
     else if (tabParam === "careers") setActiveTab("careers");
     else if (tabParam === "ai_rejects" || tabParam === "rejects")
       setActiveTab("ai_rejects");
@@ -3516,6 +3638,7 @@ function RecruitmentPageContent() {
             "offer",
             "careers",
             "onboarding",
+            "employees",
           ] as const
         ).map((tab) => (
           <button
@@ -3538,7 +3661,9 @@ function RecruitmentPageContent() {
                     ? "Offer"
                     : tab === "careers"
                       ? "Careers"
-                      : "Onboarding"}
+                      : tab === "employees"
+                        ? "Employees"
+                        : "Onboarding"}
             {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {aiRejectApplications.length}
@@ -3586,6 +3711,8 @@ function RecruitmentPageContent() {
         />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
+      ) : activeTab === "employees" ? (
+        <EmployeesTab />
       ) : (
         <>
           <div className="mb-5">

@@ -87,7 +87,7 @@ function AuditEntryRow({ entry }: { entry: SystemConfigAuditEntry }) {
       {entry.changed_fields && entry.changed_fields.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {entry.changed_fields.map((field) => (
-            <p key={field} className="text-xs text-gray-600">
+            <div key={field} className="text-xs text-gray-600">
               <span className="font-medium">{fieldLabel(field)}:</span>{" "}
               <span className="line-through text-gray-400">
                 <ValueDisplay value={entry.previous_values?.[field]} />
@@ -96,7 +96,7 @@ function AuditEntryRow({ entry }: { entry: SystemConfigAuditEntry }) {
               <span className="text-gray-800">
                 <ValueDisplay value={entry.new_values?.[field]} />
               </span>
-            </p>
+            </div>
           ))}
         </div>
       )}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   mergeOnboardingForm,
+  isCandidateOnboardingComplete,
   type OnboardingFormData,
   type OnboardingStep,
 } from "@/lib/careers/onboardingTypes";
@@ -72,7 +73,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     .eq("application_id", validation.applicationId)
     .maybeSingle();
 
-  if (submission?.submitted_at) {
+  if (
+    isCandidateOnboardingComplete(
+      submission?.form_data as OnboardingFormData,
+      submission?.submitted_at,
+    )
+  ) {
     return NextResponse.json({
       success: true,
       data: {
@@ -180,7 +186,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .eq("application_id", validation.applicationId)
     .maybeSingle();
 
-  if (existing?.submitted_at) {
+  if (
+    existing?.submitted_at &&
+    isCandidateOnboardingComplete(
+      existing.form_data as OnboardingFormData,
+      existing.submitted_at,
+    )
+  ) {
     return NextResponse.json(
       { error: "Onboarding has already been submitted." },
       { status: 400 },
@@ -268,6 +280,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     token_id: validation.tokenId,
     form_data: merged,
   };
+
+  // Clear a stale submitted_at when reopening an incomplete submission.
+  if (
+    existing?.submitted_at &&
+    !isCandidateOnboardingComplete(
+      existing.form_data as OnboardingFormData,
+      existing.submitted_at,
+    )
+  ) {
+    updates.submitted_at = null;
+    updates.personal_completed_at = null;
+    updates.medical_completed_at = null;
+    updates.referee_completed_at = null;
+  }
 
   if (step === "personal") updates.personal_completed_at = now;
   if (step === "medical") updates.medical_completed_at = now;

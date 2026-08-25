@@ -4,17 +4,30 @@ import CandidateProfileReview from "@/components/onboarding/CandidateProfileRevi
 import type { OnboardingFlatValues } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormField } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import { headers } from "next/headers";
 
 type PageProps = { params: Promise<{ token: string }> };
 
-export default async function OnboardingPage({ params }: PageProps) {
-  const { token } = await params;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+async function loadOnboarding(token: string) {
+  const headersList = await headers();
+  const host = headersList.get("host");
+  const protocol = host?.includes("localhost") ? "http" : "https";
+  const baseUrl =
+    host != null
+      ? `${protocol}://${host}`
+      : (process.env.NEXT_PUBLIC_APP_URL ??
+        (process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000"));
 
-  const res = await fetch(`${baseUrl}/api/careers/onboarding/${token}`, {
+  return fetch(`${baseUrl}/api/careers/onboarding/${token}`, {
     cache: "no-store",
   });
+}
+
+export default async function OnboardingPage({ params }: PageProps) {
+  const { token } = await params;
+  const res = await loadOnboarding(token);
 
   if (!res.ok) {
     const json = await res.json().catch(() => ({}));

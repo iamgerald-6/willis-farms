@@ -47,7 +47,7 @@ export default async function JobPostingDetailsPage({ params }: PageProps) {
           href="/careers"
           className="inline-flex items-center gap-1.5 text-sm text-brand-gray hover:text-brand-red"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to openings
+          <ArrowLeft className="h-4 w-4" /> Back to job openings
         </Link>
 
         <h1 className="mt-6 text-2xl font-extrabold text-brand-dark sm:text-3xl">
