@@ -2496,6 +2496,8 @@ function ApprovalsTab({
   adminId: string;
 }) {
   const [showRoleReport, setShowRoleReport] = useState(false);
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
 
   const roles = useMemo(() => {
     const map = new Map<string, string>();
@@ -2536,9 +2538,63 @@ function ApprovalsTab({
     return rows;
   }, [applications]);
 
+  // Cross-filtering, same pattern as the Applications/Rejects tabs: each
+  // field's option list is scoped by the OTHER active filter. Filtering
+  // happens on the already-ranked rows, so rank numbers stay computed from
+  // the full role cohort and don't shift just because the view is filtered.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? ranked.filter((r) => roleFilters.includes(r.application.role_title))
+      : ranked;
+    return Array.from(new Set(scoped.map((r) => r.application.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [ranked, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? ranked.filter((r) => nameFilters.includes(r.application.full_name))
+      : ranked;
+    return Array.from(new Set(scoped.map((r) => r.application.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [ranked, nameFilters]);
+
+  const filteredRanked = useMemo(
+    () =>
+      ranked.filter(
+        (r) =>
+          (nameFilters.length === 0 ||
+            nameFilters.includes(r.application.full_name)) &&
+          (roleFilters.length === 0 ||
+            roleFilters.includes(r.application.role_title)),
+      ),
+    [ranked, nameFilters, roleFilters],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
         <button
           type="button"
           onClick={() => setShowRoleReport(true)}
@@ -2548,6 +2604,32 @@ function ApprovalsTab({
           Generate role report
         </button>
       </div>
+
+      {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {nameFilters.map((n) => (
+            <FilterChip
+              key={`name-${n}`}
+              label={n}
+              onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
+            />
+          ))}
+          {roleFilters.map((r) => (
+            <FilterChip
+              key={`role-${r}`}
+              label={r}
+              onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {showRoleReport && (
         <RoleReportModal
@@ -2583,17 +2665,19 @@ function ApprovalsTab({
                   </td>
                 </tr>
               ))
-            ) : ranked.length === 0 ? (
+            ) : filteredRanked.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No applications awaiting approval.
+                  {ranked.length === 0
+                    ? "No applications awaiting approval."
+                    : "No applications match the selected filters."}
                 </td>
               </tr>
             ) : (
-              ranked.map(({ application: a, rank }) => (
+              filteredRanked.map(({ application: a, rank }) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
