@@ -236,8 +236,16 @@ function ApplicationDetail({
     !!decisionConfirmed && application.status !== "evaluation";
 
   const confirmMutation = useMutation({
-    mutationFn: () =>
-      api.post("/careers/interview", {
+    mutationFn: async () => {
+      // HR notes are required before an outcome can be confirmed here, so
+      // persist them alongside the decision rather than relying on the
+      // general application-notes save (that field no longer exists once an
+      // applicant reaches this step).
+      await api.patch("/careers/applications", {
+        id: application.id,
+        hr_notes: hrNotes,
+      });
+      return api.post("/careers/interview", {
         application_id: application.id,
         interview_form_data: {
           ...application.interview_form_data,
@@ -248,7 +256,8 @@ function ApplicationDetail({
         },
         submitted_by: adminId,
         action: "confirm_decision",
-      }),
+      });
+    },
     onSuccess: (res) => {
       const warnings = res.data.email_warnings as string[] | undefined;
       const hired = selectedDecision === "hire";
@@ -1285,19 +1294,6 @@ function ApplicationDetail({
               </div>
             )}
 
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                HR notes (internal)
-              </label>
-              <textarea
-                value={hrNotes}
-                onChange={(e) => setHrNotes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                placeholder="Screening notes, interview scheduling, etc."
-              />
-            </div>
-
             {application.status === "evaluation" && canConfirmOutcome && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
                 <p className="text-sm font-semibold text-amber-900">
@@ -1317,13 +1313,31 @@ function ApplicationDetail({
                     </>
                   )}
                 </p>
+                <div>
+                  <label className="text-xs font-semibold text-amber-900 uppercase tracking-wide block mb-1">
+                    HR notes *
+                  </label>
+                  <textarea
+                    value={hrNotes}
+                    onChange={(e) => setHrNotes(e.target.value)}
+                    rows={3}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white"
+                    placeholder="Record your team's reasoning before choosing an outcome — required."
+                  />
+                  {!hrNotes.trim() && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      Add HR notes before you can choose an outcome.
+                    </p>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {PANEL_DECISIONS.map((d) => (
                     <button
                       key={d.value}
                       type="button"
                       onClick={() => setSelectedDecision(d.value)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                      disabled={!hrNotes.trim()}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border disabled:opacity-40 disabled:cursor-not-allowed ${
                         selectedDecision === d.value
                           ? "bg-amber-800 text-white border-amber-800"
                           : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
@@ -1345,7 +1359,11 @@ function ApplicationDetail({
                 <button
                   type="button"
                   onClick={() => confirmMutation.mutate()}
-                  disabled={confirmMutation.isPending || !selectedDecision}
+                  disabled={
+                    confirmMutation.isPending ||
+                    !selectedDecision ||
+                    !hrNotes.trim()
+                  }
                   className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
                 >
                   {confirmMutation.isPending
