@@ -248,13 +248,6 @@ export interface RoleInterviewReport {
     reached_stage1_only: number;
     /** Completed both interview stages in full. */
     completed_full_interview: number;
-    /** Breakdown of the completed_full_interview group by current outcome. */
-    completed_breakdown: {
-      still_deciding: number;
-      hold: number;
-      rejected: number;
-      hired: number;
-    };
   };
 
   // 3. Candidate ranking — Evaluation status only (who's actually still in the running).

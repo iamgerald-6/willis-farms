@@ -1229,7 +1229,7 @@ function ApplicationDetail({
                   Interview Report
                 </p>
                 <p className="text-xs text-gray-500">
-                  This applicant&apos;s outcome has already been confirmed, so
+                  This applicant&apos;s outcome has already been confirmed, as a result,
                   the report is shown as reference links rather than an editable
                   form.
                 </p>
@@ -2946,7 +2946,7 @@ function RoleReportModal({
                 </button>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Executive summary
                 </label>
@@ -2963,7 +2963,7 @@ function RoleReportModal({
                 />
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Applicant funnel
                 </label>
@@ -2987,16 +2987,6 @@ function RoleReportModal({
                       "Completed full interview",
                       reportDraft.funnel.completed_full_interview,
                     ],
-                    [
-                      "Still deciding",
-                      reportDraft.funnel.completed_breakdown.still_deciding,
-                    ],
-                    ["On hold", reportDraft.funnel.completed_breakdown.hold],
-                    [
-                      "Rejected",
-                      reportDraft.funnel.completed_breakdown.rejected,
-                    ],
-                    ["Hired", reportDraft.funnel.completed_breakdown.hired],
                   ].map(([label, value]) => (
                     <div
                       key={label as string}
@@ -3013,7 +3003,7 @@ function RoleReportModal({
                 </div>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Constraints noted
                 </label>
@@ -3063,13 +3053,12 @@ function RoleReportModal({
                 </div>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Candidate ranking
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  Candidates still awaiting a decision only — Hold, Rejected,
-                  and Hired candidates already have one.
+                  Below are the rankings of the candidates.
                 </p>
                 {reportDraft.candidate_rankings.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
@@ -3100,7 +3089,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   All applicants
                 </label>
@@ -3179,7 +3168,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Core competencies
                 </label>
@@ -3240,7 +3229,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Key observations
                 </label>
@@ -3313,7 +3302,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Final recommendation
                 </label>
@@ -3338,7 +3327,7 @@ function RoleReportModal({
                 />
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Appendix — panel forms &amp; individual reports
                 </label>
