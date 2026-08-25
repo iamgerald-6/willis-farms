@@ -137,19 +137,23 @@ export interface InterviewSetup {
   location?: string;
   meeting_link?: string;
   stage2_scheduled_at?: string;
+  /** Stage 2 — onsite (address in `stage2_location`) or online (link in `stage2_meeting_link`). Missing = legacy onsite records. */
+  stage2_location_type?: InterviewLocationType;
   stage2_location?: string;
+  stage2_meeting_link?: string;
   /** @deprecated use stage1_invites_sent_at */
   invites_sent_at?: string;
   stage1_invites_sent_at?: string;
   stage2_invites_sent_at?: string;
   candidate_invite_sent_at?: string;
   /**
-   * HR manually opens the Stage 1 panel forms once the interview actually
-   * begins (times can slip, so this is a deliberate click, not derived from
-   * interview_start_at). Panel members' links show a "not open yet" message
-   * until this is set.
+   * HR manually opens the Stage 1 / Stage 2 panel forms once the interview
+   * actually begins (times can slip, so this is a deliberate click, not
+   * derived from interview_start_at / stage2_scheduled_at). Panel members'
+   * links show a "not open yet" message until the relevant one is set.
    */
   stage1_forms_opened_at?: string;
+  stage2_forms_opened_at?: string;
 }
 
 export interface Stage1Review {

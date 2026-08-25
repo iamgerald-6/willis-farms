@@ -142,10 +142,7 @@ export async function sendPanelInviteEmail(params: {
   const link = panelInterviewUrl(params.accessToken);
   const when = formatDateTime(params.interviewStartAt);
   const loc = locationLines(params);
-  const openNote =
-    params.stage === 1
-      ? "Your Stage 1 evaluation form will open once HR starts the interview — the link above will show a short message until then."
-      : "";
+  const openNote = `Your Stage ${params.stage} evaluation form will open once HR starts the interview — the link above will show a short message until then.`;
 
   const subject = `Interview panel invite (Stage ${params.stage}) — ${params.roleTitle} (${params.referenceNumber})`;
 
@@ -293,23 +290,34 @@ export async function sendStage2ScheduleEmail(params: {
   roleTitle: string;
   referenceNumber: string;
   scheduledAt: string;
+  locationType?: "onsite" | "online";
   location?: string;
+  meetingLink?: string;
   stage2Duration: string;
 }): Promise<SendResult> {
   const when = formatDateTime(params.scheduledAt);
   const hrEmail = getReplyToEmail();
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
-  const locationLine = params.location?.trim()
-    ? params.location.trim()
-    : "To be confirmed";
+  const loc = locationLines(params);
+  const locationLine = loc.text || "Location: To be confirmed";
+  const locationHtmlLine =
+    loc.html ||
+    `<p style="margin:0 0 8px;"><strong>Location:</strong> To be confirmed</p>`;
+  const isOnline = params.locationType === "online";
 
-  const practicalExpectations = [
-    "Arrive on time and dressed appropriately for the working environment.",
-    "Comply with all biosecurity, PPE, and safety instructions given on arrival.",
-    "Follow supervisor direction throughout — ask if anything is unclear before proceeding.",
-    "Bring valid ID and any documents HR has requested.",
-  ];
+  const practicalExpectations = isOnline
+    ? [
+        "Join on time using the meeting link above, from a quiet location with a stable connection.",
+        "Have valid ID ready to show on camera if asked.",
+        "Follow the panel's direction throughout — ask if anything is unclear before proceeding.",
+      ]
+    : [
+        "Arrive on time and dressed appropriately for the working environment.",
+        "Comply with all biosecurity, PPE, and safety instructions given on arrival.",
+        "Follow supervisor direction throughout — ask if anything is unclear before proceeding.",
+        "Bring valid ID and any documents HR has requested.",
+      ];
 
   const expectationsText = practicalExpectations
     .map((item, i) => `${i + 1}. ${item}`)
@@ -334,7 +342,7 @@ export async function sendStage2ScheduleEmail(params: {
     "",
     "Your practical assessment has been scheduled:",
     when,
-    `Location: ${locationLine}`,
+    locationLine,
     `Expected duration: ${params.stage2Duration}`,
     "",
     "What we expect from you on the day:",
@@ -360,7 +368,7 @@ export async function sendStage2ScheduleEmail(params: {
           <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
           <p style="margin:0 0 8px;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
           <p style="margin:0 0 8px;"><strong>Practical date & time:</strong> ${escapeHtml(when)}</p>
-          <p style="margin:0 0 8px;"><strong>Location:</strong> ${escapeHtml(locationLine)}</p>
+          ${locationHtmlLine}
           <p style="margin:0;"><strong>Duration:</strong> ${escapeHtml(params.stage2Duration)}</p>
         </td></tr>
       </table>

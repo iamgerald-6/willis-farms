@@ -56,13 +56,15 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Invalid or expired interview link." }, { status: 404 });
     }
 
-    // Stage 1 panel forms stay locked until HR deliberately opens them once
-    // the interview actually starts (the scheduled time can slip, so this
-    // isn't derived from interview_start_at).
-    if (
-      match.member.stage === 1 &&
-      !match.application.interview_form_data.setup?.stage1_forms_opened_at
-    ) {
+    // Stage 1 and Stage 2 panel forms stay locked until HR deliberately
+    // opens them once the interview/practical actually starts (the
+    // scheduled time can slip, so this isn't derived from
+    // interview_start_at / stage2_scheduled_at).
+    const formsOpenedAt =
+      match.member.stage === 1
+        ? match.application.interview_form_data.setup?.stage1_forms_opened_at
+        : match.application.interview_form_data.setup?.stage2_forms_opened_at;
+    if (!formsOpenedAt) {
       return NextResponse.json({
         success: true,
         data: {

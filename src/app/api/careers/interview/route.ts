@@ -37,6 +37,7 @@ type InterviewAction =
   | "send_panel_invites"
   | "open_panel_forms"
   | "send_stage2_invites"
+  | "open_stage2_panel_forms"
   | "submit_hr_stage1"
   | "submit_hr_stage2"
   | "stage1_review_pass"
@@ -309,6 +310,24 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      if (
+        setup.stage2_location_type === "online" &&
+        !setup.stage2_meeting_link?.trim()
+      ) {
+        return NextResponse.json(
+          { error: "Add the online meeting link before sending invites." },
+          { status: 400 },
+        );
+      }
+      if (
+        setup.stage2_location_type === "onsite" &&
+        !setup.stage2_location?.trim()
+      ) {
+        return NextResponse.json(
+          { error: "Add the practical assessment location before sending invites." },
+          { status: 400 },
+        );
+      }
 
       const stage2Members = ensureMemberTokens(setup.stage2_members ?? []);
       const validMembers = stage2Members.filter(
@@ -332,7 +351,9 @@ export async function POST(req: NextRequest) {
         roleTitle: application.role_title,
         referenceNumber: application.reference_number,
         interviewStartAt: scheduled,
-        location: setup.stage2_location ?? setup.location,
+        locationType: setup.stage2_location_type,
+        location: setup.stage2_location,
+        meetingLink: setup.stage2_meeting_link,
       });
 
       if (inviteResult.failed.length) {
@@ -345,7 +366,9 @@ export async function POST(req: NextRequest) {
         roleTitle: application.role_title,
         referenceNumber: application.reference_number,
         scheduledAt: scheduled,
-        location: setup.stage2_location ?? setup.location,
+        locationType: setup.stage2_location_type,
+        location: setup.stage2_location,
+        meetingLink: setup.stage2_meeting_link,
         stage2Duration: guide.stageDurations.stage2,
       });
 
@@ -368,6 +391,17 @@ export async function POST(req: NextRequest) {
           ? new Date().toISOString()
           : merged.stage2_schedule_sent_at,
         current_stage: 2,
+      };
+    }
+
+    if (action === "open_stage2_panel_forms") {
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage2_forms_opened_at: new Date().toISOString(),
+        },
       };
     }
 
