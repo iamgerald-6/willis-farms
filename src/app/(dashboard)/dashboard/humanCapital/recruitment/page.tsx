@@ -2249,9 +2249,84 @@ function RejectsTab({
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
 }) {
-  const pending = applications.filter((a) => a.status === "under_review");
-  const confirmed = applications.filter((a) => a.status === "rejected");
-  const held = applications.filter((a) => a.status === "hold");
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+
+  // Same cross-filtering pattern as the Applications tab: each field's
+  // option list is scoped by the OTHER active filters (never by itself).
+  const applyFilters = (
+    list: JobApplication[],
+    opts: { name?: string[]; role?: string[]; status?: string[] },
+  ) =>
+    list.filter((a) => {
+      if (opts.name && opts.name.length > 0 && !opts.name.includes(a.full_name))
+        return false;
+      if (
+        opts.role &&
+        opts.role.length > 0 &&
+        !opts.role.includes(a.role_title)
+      )
+        return false;
+      if (
+        opts.status &&
+        opts.status.length > 0 &&
+        !opts.status.includes(a.status)
+      )
+        return false;
+      return true;
+    });
+
+  const nameOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      role: roleFilters,
+      status: statusFilters,
+    });
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters, statusFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      name: nameFilters,
+      status: statusFilters,
+    });
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters, statusFilters]);
+
+  const statusOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      name: nameFilters,
+      role: roleFilters,
+    });
+    const present = new Set(scoped.map((a) => a.status));
+    return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
+      value: s,
+      label: STATUS_LABELS[s],
+    }));
+  }, [applications, nameFilters, roleFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applyFilters(applications, {
+        name: nameFilters,
+        role: roleFilters,
+        status: statusFilters,
+      }),
+    [applications, nameFilters, roleFilters, statusFilters],
+  );
+
+  const hasActiveFilters =
+    nameFilters.length + roleFilters.length + statusFilters.length > 0;
+
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+    setStatusFilters([]);
+  };
 
   const renderRow = (a: JobApplication) => (
     <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
@@ -2292,45 +2367,6 @@ function RejectsTab({
     </tr>
   );
 
-  const renderTable = (rows: JobApplication[], emptyLabel: string) => (
-    <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
-      <table className="w-full text-left text-sm min-w-[800px]">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">
-              AI screening
-            </th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-            <th className="px-4 py-3 font-semibold text-gray-600 text-right">
-              Action
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            Array.from({ length: 3 }).map((_, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td colSpan={5} className="px-4 py-3">
-                  <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
-                </td>
-              </tr>
-            ))
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                {emptyLabel}
-              </td>
-            </tr>
-          ) : (
-            rows.map(renderRow)
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
@@ -2342,24 +2378,102 @@ function RejectsTab({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Awaiting your review ({pending.length})
-        </h3>
-        {renderTable(pending, "Nothing waiting on your review.")}
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={statusOptions}
+            selected={statusFilters}
+            onChange={setStatusFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            {statusFilters.map((s) => (
+              <FilterChip
+                key={`status-${s}`}
+                label={STATUS_LABELS[s as ApplicationStatus]}
+                onRemove={() =>
+                  setStatusFilters(statusFilters.filter((v) => v !== s))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Hold / Reserve ({held.length})
-        </h3>
-        {renderTable(held, "No applicants on hold.")}
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Confirmed rejects ({confirmed.length})
-        </h3>
-        {renderTable(confirmed, "No confirmed rejects yet.")}
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                AI screening
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={5} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
+                  No applications found.
+                </td>
+              </tr>
+            ) : (
+              filtered.map(renderRow)
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
