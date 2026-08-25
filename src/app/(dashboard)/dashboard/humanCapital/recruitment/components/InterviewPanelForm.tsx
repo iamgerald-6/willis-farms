@@ -8,6 +8,7 @@ import {
   combinedAreaScores,
   combinedInterviewAverage,
   interviewWorkflowStepV2,
+  stage1ReadyForReview,
   type WorkflowStep,
 } from "@/lib/careers/panelInterview";
 import {
@@ -101,7 +102,14 @@ export default function InterviewPanelForm({
   const currentIdx = STEP_ORDER.indexOf(workflowStep);
   const activeIdx = STEP_ORDER.indexOf(activeStep);
   /** Viewing an earlier, already-completed step rather than the live one. */
-  const isPastStep = activeIdx < currentIdx;
+  const rawIsPastStep = activeIdx < currentIdx;
+  // The Stage 1 panel setup stays fully editable — even while viewing it
+  // "in the past" from a later step — until Stage 1 is actually done (HR's
+  // form plus every panel member's submission). Every other step keeps the
+  // normal past-step rule.
+  const stage1PanelLocked = stage1ReadyForReview(formData);
+  const isPastStep =
+    activeStep === "panel" ? stage1PanelLocked && rawIsPastStep : rawIsPastStep;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;
@@ -317,10 +325,6 @@ export default function InterviewPanelForm({
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
-              onSaveMemberEdits={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
-              }
-              isSavingMemberEdits={saveMutation.isPending}
             />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
