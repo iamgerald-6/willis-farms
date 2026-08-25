@@ -17,7 +17,7 @@ import {
   type InterviewFormData,
   type StageSubmissionData,
 } from "@/lib/careers/types";
-import { Loader2, Save, X } from "lucide-react";
+import { Clock3, Loader2, Save, X } from "lucide-react";
 import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 import { toast } from "sonner";
 import PanelSetupStep from "./interview/PanelSetupStep";
@@ -347,6 +347,10 @@ export default function InterviewPanelForm({
               }
               isOpeningPanelForms={saveMutation.isPending}
             />
+          ) : activeStep === "stage1" &&
+            !formData.setup?.stage1_forms_opened_at &&
+            !hrStage1.submitted_at ? (
+            <FormsNotOpenNotice stage={1} onGoToSetup={() => setManualStep("panel")} />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
               guide={guide}
@@ -422,6 +426,10 @@ export default function InterviewPanelForm({
               }
               isOpeningPanelForms={saveMutation.isPending}
             />
+          ) : activeStep === "stage2" &&
+            !formData.setup?.stage2_forms_opened_at &&
+            !hrStage2.submitted_at ? (
+            <FormsNotOpenNotice stage={2} onGoToSetup={() => setManualStep("stage2_setup")} />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
               guide={guide}
@@ -508,6 +516,40 @@ export default function InterviewPanelForm({
             </p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Same "not open yet" gate as the panel members' own links — HR's own
+// scoring form is blocked too, so nobody (including HR) can fill anything
+// in before the interview actually starts.
+function FormsNotOpenNotice({
+  stage,
+  onGoToSetup,
+}: {
+  stage: 1 | 2;
+  onGoToSetup: () => void;
+}) {
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 flex gap-3">
+      <Clock3 className="w-6 h-6 text-amber-600 shrink-0" />
+      <div>
+        <p className="font-semibold text-amber-900">
+          Stage {stage} forms are not open yet.
+        </p>
+        <p className="text-sm text-amber-800 mt-1">
+          Nobody — including HR — can fill in Stage {stage} scores until you
+          open the forms from Panel setup, once the interview actually
+          starts.
+        </p>
+        <button
+          type="button"
+          onClick={onGoToSetup}
+          className="mt-3 text-sm font-medium text-amber-900 underline underline-offset-2"
+        >
+          Go to Stage {stage} panel setup
+        </button>
       </div>
     </div>
   );
