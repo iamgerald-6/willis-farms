@@ -854,37 +854,41 @@ function ApplicationDetail({
                       <p className="text-[11px] text-gray-400 mb-2">
                         Pulled from the system — not editable here.
                       </p>
-                      <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-                        <p>
-                          <span className="text-gray-400">Candidate: </span>
-                          {reportDraft.applicant_details.name}
-                        </p>
-                        <p>
-                          <span className="text-gray-400">Role: </span>
-                          {reportDraft.applicant_details.role}
-                        </p>
-                        <p className="sm:col-span-2">
-                          <span className="text-gray-400">Panel: </span>
-                          {reportDraft.applicant_details.panel_names.length
-                            ? reportDraft.applicant_details.panel_names.join(", ")
-                            : "—"}
-                        </p>
-                        <p>
-                          <span className="text-gray-400">Date: </span>
-                          {reportDraft.applicant_details.interview_date
-                            ? formatDate(reportDraft.applicant_details.interview_date)
-                            : "—"}
-                        </p>
-                        <p>
-                          <span className="text-gray-400">Location: </span>
-                          {reportDraft.applicant_details.location ?? "—"}
-                        </p>
-                        <p>
-                          <span className="text-gray-400">Overall rating: </span>
-                          {reportDraft.applicant_details.overall_rating != null
-                            ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
-                            : "—"}
-                        </p>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
+                        <div className="space-y-1.5">
+                          <p>
+                            <span className="text-gray-400">Candidate: </span>
+                            {reportDraft.applicant_details.name}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Role: </span>
+                            {reportDraft.applicant_details.role}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Panel: </span>
+                            {reportDraft.applicant_details.panel_names.length
+                              ? reportDraft.applicant_details.panel_names.join(", ")
+                              : "—"}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <p>
+                            <span className="text-gray-400">Date: </span>
+                            {reportDraft.applicant_details.interview_date
+                              ? formatDate(reportDraft.applicant_details.interview_date)
+                              : "—"}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Location: </span>
+                            {reportDraft.applicant_details.location ?? "—"}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Overall rating: </span>
+                            {reportDraft.applicant_details.overall_rating != null
+                              ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
+                              : "—"}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
