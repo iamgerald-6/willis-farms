@@ -182,8 +182,14 @@ export interface InterviewReport {
     role: string;
     reference_number: string;
     panel_names: string[];
-    interview_date: string | null;
-    location: string | null;
+    stage1_interview_date: string | null;
+    /** Only set when Stage 1 was onsite — no location to show for an online stage. */
+    stage1_location: string | null;
+    stage1_location_type?: InterviewLocationType | null;
+    stage2_interview_date: string | null;
+    /** Only set when Stage 2 was onsite — no location to show for an online stage. */
+    stage2_location: string | null;
+    stage2_location_type?: InterviewLocationType | null;
     overall_rating: number | null;
   };
   core_competencies: { area: string; score: number | null; assessment: string }[];

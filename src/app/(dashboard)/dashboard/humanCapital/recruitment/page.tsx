@@ -35,6 +35,7 @@ import GraderSubmissionModal from "./components/interview/GraderSubmissionModal"
 import {
   gradersForStage,
   getSubmission,
+  stageDateLabel,
   type GraderResult,
 } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -873,15 +874,35 @@ function ApplicationDetail({
                         </div>
                         <div className="space-y-1.5">
                           <p>
-                            <span className="text-gray-400">Date: </span>
-                            {reportDraft.applicant_details.interview_date
-                              ? formatDate(reportDraft.applicant_details.interview_date)
+                            <span className="text-gray-400">
+                              {stageDateLabel(reportDraft.applicant_details.stage1_location_type)}
+                              {" (Stage 1): "}
+                            </span>
+                            {reportDraft.applicant_details.stage1_interview_date
+                              ? formatDate(reportDraft.applicant_details.stage1_interview_date)
                               : "—"}
                           </p>
+                          {reportDraft.applicant_details.stage1_location && (
+                            <p>
+                              <span className="text-gray-400">Stage 1 location: </span>
+                              {reportDraft.applicant_details.stage1_location}
+                            </p>
+                          )}
                           <p>
-                            <span className="text-gray-400">Location: </span>
-                            {reportDraft.applicant_details.location ?? "—"}
+                            <span className="text-gray-400">
+                              {stageDateLabel(reportDraft.applicant_details.stage2_location_type)}
+                              {" (Stage 2): "}
+                            </span>
+                            {reportDraft.applicant_details.stage2_interview_date
+                              ? formatDate(reportDraft.applicant_details.stage2_interview_date)
+                              : "—"}
                           </p>
+                          {reportDraft.applicant_details.stage2_location && (
+                            <p>
+                              <span className="text-gray-400">Stage 2 location: </span>
+                              {reportDraft.applicant_details.stage2_location}
+                            </p>
+                          )}
                           <p>
                             <span className="text-gray-400">Overall rating: </span>
                             {reportDraft.applicant_details.overall_rating != null
@@ -1907,37 +1928,61 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
           Applicant &amp; interview details
         </p>
-        <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-gray-700">
-          <p>
-            <span className="text-gray-400">Candidate: </span>
-            {report.applicant_details.name}
-          </p>
-          <p>
-            <span className="text-gray-400">Role: </span>
-            {report.applicant_details.role}
-          </p>
-          <p className="sm:col-span-2">
-            <span className="text-gray-400">Panel: </span>
-            {report.applicant_details.panel_names.length
-              ? report.applicant_details.panel_names.join(", ")
-              : "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Date: </span>
-            {report.applicant_details.interview_date
-              ? formatDate(report.applicant_details.interview_date)
-              : "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Location: </span>
-            {report.applicant_details.location ?? "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Overall rating: </span>
-            {report.applicant_details.overall_rating != null
-              ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
-              : "—"}
-          </p>
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700">
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-gray-400">Candidate: </span>
+              {report.applicant_details.name}
+            </p>
+            <p>
+              <span className="text-gray-400">Role: </span>
+              {report.applicant_details.role}
+            </p>
+            <p>
+              <span className="text-gray-400">Panel: </span>
+              {report.applicant_details.panel_names.length
+                ? report.applicant_details.panel_names.join(", ")
+                : "—"}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-gray-400">
+                {stageDateLabel(report.applicant_details.stage1_location_type)}
+                {" (Stage 1): "}
+              </span>
+              {report.applicant_details.stage1_interview_date
+                ? formatDate(report.applicant_details.stage1_interview_date)
+                : "—"}
+            </p>
+            {report.applicant_details.stage1_location && (
+              <p>
+                <span className="text-gray-400">Stage 1 location: </span>
+                {report.applicant_details.stage1_location}
+              </p>
+            )}
+            <p>
+              <span className="text-gray-400">
+                {stageDateLabel(report.applicant_details.stage2_location_type)}
+                {" (Stage 2): "}
+              </span>
+              {report.applicant_details.stage2_interview_date
+                ? formatDate(report.applicant_details.stage2_interview_date)
+                : "—"}
+            </p>
+            {report.applicant_details.stage2_location && (
+              <p>
+                <span className="text-gray-400">Stage 2 location: </span>
+                {report.applicant_details.stage2_location}
+              </p>
+            )}
+            <p>
+              <span className="text-gray-400">Overall rating: </span>
+              {report.applicant_details.overall_rating != null
+                ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
+                : "—"}
+            </p>
+          </div>
         </div>
       </div>
 

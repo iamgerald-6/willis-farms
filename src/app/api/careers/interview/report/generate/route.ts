@@ -237,9 +237,19 @@ export async function POST(req: NextRequest) {
         role: application.role_title,
         reference_number: application.reference_number,
         panel_names: panelNames,
-        interview_date:
-          formData.setup?.stage2_scheduled_at ?? formData.setup?.interview_start_at ?? null,
-        location: formData.setup?.stage2_location ?? formData.setup?.location ?? null,
+        stage1_interview_date: formData.setup?.interview_start_at ?? null,
+        stage1_location:
+          formData.setup?.location_type === "onsite"
+            ? formData.setup?.location ?? null
+            : null,
+        stage1_location_type: formData.setup?.location_type ?? null,
+        stage2_interview_date:
+          formData.setup?.stage2_scheduled_at ?? formData.stage2_scheduled_at ?? null,
+        stage2_location:
+          formData.setup?.stage2_location_type === "onsite"
+            ? formData.setup?.stage2_location ?? null
+            : null,
+        stage2_location_type: formData.setup?.stage2_location_type ?? null,
         overall_rating: combined,
       },
       core_competencies: guide.weights.map((w) => ({
