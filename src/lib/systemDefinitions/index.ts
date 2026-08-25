@@ -23,6 +23,7 @@ export {
   EDITABLE_ONBOARDING_FORM_MODULES,
   EDITABLE_OPTION_LISTS,
   EDITABLE_RATING_SECTION_MODULES,
+  EDITABLE_REFEREE_REFERENCE_MODULES,
   isEditableJobPostingModule,
   isEditableApplicationFormModule,
   isEditableOnboardingFormModule,
@@ -30,6 +31,7 @@ export {
   isEditableLeavePolicyModule,
   isEditableOptionList,
   isEditableRatingSectionModule,
+  isEditableRefereeReferenceModule,
   registryRefToOptionList,
 } from "./optionListKeys";
 
@@ -106,6 +108,57 @@ export {
   type CompetencySectionPatch,
 } from "./competencyContentOverrides";
 
+export {
+  defaultRefereeAssessmentAttributes,
+  normalizeRefereeReferenceConfig,
+  resolveRefereeAssessmentAttributes,
+  type RefereeAssessmentAttributeDef,
+  type RefereeReferenceConfig,
+} from "./refereeReferenceConfig";
+
+export {
+  DEFAULT_APPRAISAL_SCOPE,
+  gitTemplateKeyForFormKey,
+  isAppraisalFormKeyShape,
+  isIndividualAppraisalScope,
+  isValidAppraisalFormKey,
+  normalizeAppraisalScopeConfig,
+  resolveAppraisalFormKey,
+  resolveAppraisalFormKeyCovers,
+  resolveAppraisalFormKeyLabels,
+  resolveAppraisalFormKeys,
+  resolveAppraisalFormOptions,
+  type AppraisalScopeConfig,
+  type AppraisalScopeMode,
+} from "./appraisalScopeConfig";
+
+export {
+  APPRAISAL_GRADE_BAND_IDS,
+  DEFAULT_GRADE_LEVELS,
+  MIN_FULL_APPRAISAL_RANK,
+  MIN_SUPERVISOR_RANK,
+  canRateGradeLevel,
+  gradeBandForGrade,
+  gradeBandGroupForGrade,
+  gradeIndexInOrder,
+  gradeLevelToRank,
+  maxGradeRank,
+  nextGradeInOrder,
+  normalizeGradeLevelsConfig,
+  resolveAccessControlBandLabels,
+  resolveAppraisalGradeBandCovers,
+  resolveAppraisalGradeBandLabels,
+  resolveAppraisalGradeOptions,
+  resolveGradeLevelOptions,
+  resolveGradeLevels,
+  resolveGradeOrder,
+  resolveGroupPresetLabels,
+  resolveInterviewGuideKeys,
+  type AppraisalGradeBandId,
+  type GradeLevelDef,
+  type GradeLevelsConfig,
+} from "./gradeLevelsConfig";
+
 export function isEditableBusinessLogicModule(moduleId: string): boolean {
   return EDITABLE_BUSINESS_LOGIC_MODULES.includes(
     moduleId as (typeof EDITABLE_BUSINESS_LOGIC_MODULES)[number],
@@ -118,3 +171,11 @@ export {
   mergeFormDefinition,
   normalizeFormDefinition,
 } from "./formDefinitionMerge";
+
+export {
+  diffFields,
+  writeSystemConfigAuditLog,
+  type SystemConfigAuditAction,
+  type SystemConfigAuditEntry,
+  type SystemConfigAuditScope,
+} from "./systemConfigAuditLog";

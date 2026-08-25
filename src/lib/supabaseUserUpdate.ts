@@ -13,6 +13,11 @@ const OPTIONAL_USER_COLUMNS = [
   "is_disabled",
   "email_verified",
   "email_confirm",
+  "supervisor_id",
+  "application_id",
+  "employment_status",
+  "platform_invited_at",
+  "probation_completed_at",
 ] as const;
 
 export function isMissingColumnError(message: string): boolean {

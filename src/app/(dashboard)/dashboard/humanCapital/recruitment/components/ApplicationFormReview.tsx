@@ -1,26 +1,61 @@
 "use client";
 
 import { FileText, ExternalLink } from "lucide-react";
-import type { EducationEntry, UploadedFile, WorkHistoryEntry } from "@/lib/careers/applicationFormSchema";
+import type {
+  EducationEntry,
+  UploadedFile,
+  WorkHistoryEntry,
+} from "@/lib/careers/applicationFormSchema";
 
 type Props = {
   formData: Record<string, unknown>;
 };
+
+function normalizeApplicationFormData(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const data = { ...raw };
+
+  if (!data.work_history && Array.isArray(data.work_experience)) {
+    data.work_history = data.work_experience;
+  }
+  if (!data.education_history && Array.isArray(data.education)) {
+    data.education_history = data.education;
+  }
+  if (!data.ghana_card && data.ghana_card_no) {
+    data.ghana_card = data.ghana_card_no;
+  }
+
+  return data;
+}
 
 type ReviewItem =
   | { kind: "text"; label: string; text: string }
   | { kind: "list"; label: string; lines: string[] }
   | { kind: "files"; label: string; files: { name: string; url: string }[] };
 
-function buildItem(key: string, label: string, value: unknown): ReviewItem | null {
+function buildItem(
+  key: string,
+  label: string,
+  value: unknown,
+): ReviewItem | null {
   if (value === undefined || value === null || value === "") return null;
 
   // Any single-file upload field (cv, passport_bio_page, ...) is an object
   // with secure_url — not just "cv" specifically.
-  if (typeof value === "object" && value !== null && !Array.isArray(value) && "secure_url" in value) {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "secure_url" in value
+  ) {
     const file = value as { original_name?: string; secure_url?: string };
     if (!file.secure_url) return null;
-    return { kind: "files", label, files: [{ name: file.original_name || "File", url: file.secure_url }] };
+    return {
+      kind: "files",
+      label,
+      files: [{ name: file.original_name || "File", url: file.secure_url }],
+    };
   }
 
   if (Array.isArray(value)) {
@@ -44,7 +79,12 @@ function buildItem(key: string, label: string, value: unknown): ReviewItem | nul
       return { kind: "list", label, lines };
     }
 
-    if (value.every((item) => typeof item === "object" && item !== null && "secure_url" in item)) {
+    if (
+      value.every(
+        (item) =>
+          typeof item === "object" && item !== null && "secure_url" in item,
+      )
+    ) {
       const files = (value as UploadedFile[])
         .filter((f) => f.secure_url)
         .map((f) => ({ name: f.original_name || "File", url: f.secure_url }));
@@ -63,7 +103,10 @@ function buildItem(key: string, label: string, value: unknown): ReviewItem | nul
 // src/lib/systemDefinitions/recruitmentDefaults.ts — this is meant to show
 // everything an applicant filled in, so a stale/mismatched key here just
 // silently hides that field from HR.
-const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] }[] = [
+const FIELD_SECTIONS: {
+  title: string;
+  fields: { key: string; label: string }[];
+}[] = [
   {
     title: "Personal",
     fields: [
@@ -107,6 +150,7 @@ const FIELD_SECTIONS: { title: string; fields: { key: string; label: string }[] 
 ];
 
 export default function ApplicationFormReview({ formData }: Props) {
+  const normalized = normalizeApplicationFormData(formData);
   const sections = FIELD_SECTIONS.map((section) => ({
     ...section,
     items: section.fields
@@ -138,9 +182,14 @@ export default function ApplicationFormReview({ formData }: Props) {
           <div className="grid sm:grid-cols-2 gap-3 text-sm">
             {section.items.map((item) => {
               const fullWidth =
-                item.kind === "list" || item.kind === "files" || item.label === "Cover letter";
+                item.kind === "list" ||
+                item.kind === "files" ||
+                item.label === "Cover letter";
               return (
-                <div key={item.label} className={fullWidth ? "sm:col-span-2" : ""}>
+                <div
+                  key={item.label}
+                  className={fullWidth ? "sm:col-span-2" : ""}
+                >
                   <p className="text-xs text-gray-400">{item.label}</p>
 
                   {item.kind === "text" && (

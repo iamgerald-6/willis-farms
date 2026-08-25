@@ -10,30 +10,25 @@ export function registryRefToOptionList(ref: string): string {
 }
 
 /** Modules whose dropdown options are editable in System Definitions (pilot rollout). */
-export const EDITABLE_OPTION_LISTS: Partial<
-  Record<string, readonly string[]>
-> = {
-  "mod:leave": ["leave.types"],
-  "mod:appraisal": ["appraisal.sectionAuthorisations"],
-  "mod:skill-log": [
-    "skillLog.types",
-    "skillLog.sections",
-    "skillLog.tierAuthorisations",
-    "skillLog.reviewPeriods",
-  ],
-  "mod:recruitment": [
-    // NOTE: careers.applicationFields and careers.onboardingFields are
-    // intentionally NOT listed here — they have their own dedicated,
-    // schema-aware editors (ApplicationFormEditor / OnboardingFormEditor).
-    // Listing them here exposes the same rows through the generic
-    // OptionsEditor too, whose save wipes fieldKey/fieldType/step/required
-    // and replaces them with requires_document/requires_reason — silently
-    // breaking the public form. Do not re-add them.
-    "careers.onboardingLocations",
-    "careers.onboardingDepartmentsL1L6",
-    "careers.onboardingDepartmentsL7",
-  ],
-};
+export const EDITABLE_OPTION_LISTS: Partial<Record<string, readonly string[]>> =
+  {
+    "mod:leave": ["leave.types"],
+    "mod:appraisal": ["appraisal.sectionAuthorisations"],
+    "mod:skill-log": [
+      "skillLog.types",
+      "skillLog.sections",
+      "skillLog.tierAuthorisations",
+      "skillLog.reviewPeriods",
+    ],
+    "mod:recruitment": [
+      "careers.applicationFields",
+      "careers.onboardingFields",
+      "careers.onboardingLocations",
+      "careers.onboardingDepartmentsL1L6",
+      "careers.onboardingDepartmentsL7",
+      "careers.onboardingEmploymentTypes",
+    ],
+  };
 
 /** Modules whose job posting roles are editable in System Definitions. */
 export const EDITABLE_JOB_POSTING_MODULES = ["mod:recruitment"] as const;
@@ -95,6 +90,15 @@ export const EDITABLE_RATING_SECTION_MODULES = ["mod:appraisal"] as const;
 export function isEditableRatingSectionModule(moduleId: string): boolean {
   return EDITABLE_RATING_SECTION_MODULES.includes(
     moduleId as (typeof EDITABLE_RATING_SECTION_MODULES)[number],
+  );
+}
+
+/** Modules whose public referee reference form can be edited in System Definitions. */
+export const EDITABLE_REFEREE_REFERENCE_MODULES = ["mod:recruitment"] as const;
+
+export function isEditableRefereeReferenceModule(moduleId: string): boolean {
+  return EDITABLE_REFEREE_REFERENCE_MODULES.includes(
+    moduleId as (typeof EDITABLE_REFEREE_REFERENCE_MODULES)[number],
   );
 }
 

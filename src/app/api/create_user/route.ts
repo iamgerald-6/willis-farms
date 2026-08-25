@@ -10,6 +10,8 @@ import {
 } from "@/lib/email/resendClient";
 import { getAppBaseUrl } from "@/lib/appUrl";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -38,6 +40,8 @@ export async function POST(req: NextRequest) {
       company_id,
       job_position,
       grade_level,
+      supervisor_id,
+      application_id,
     } = await req.json();
 
     if (!email || !role || !first_name || !last_name || !company_id) {
@@ -54,6 +58,42 @@ export async function POST(req: NextRequest) {
     const validRoles = ["admin", "manager", "employee"];
     if (!validRoles.includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+    let resolvedSupervisorId: string | null = null;
+
+    if (supervisor_id) {
+      const { data: supervisor, error: supervisorError } = await supabaseAdmin
+        .from("users")
+        .select("user_id, role, grade_level")
+        .eq("user_id", String(supervisor_id).trim())
+        .maybeSingle();
+
+      if (supervisorError || !supervisor) {
+        return NextResponse.json(
+          { error: "Supervisor not found" },
+          { status: 404 },
+        );
+      }
+
+      const employeeStub = {
+        user_id: "pending",
+        role,
+        grade_level: grade_level ?? null,
+      };
+
+      if (!canAssignAsSupervisor(supervisor, employeeStub, gradeConfig)) {
+        return NextResponse.json(
+          {
+            error:
+              "Invalid supervisor — must be L4 or above and strictly senior to the employee's grade.",
+          },
+          { status: 400 },
+        );
+      }
+
+      resolvedSupervisorId = supervisor.user_id;
     }
 
     const redirectTo = `${getAppBaseUrl()}/set-password`;
@@ -82,6 +122,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const invitedAt = new Date().toISOString();
+
     const baseRow = {
       user_id: authUser.id,
       email,
@@ -92,7 +134,11 @@ export async function POST(req: NextRequest) {
       company_id,
       grade_level,
       job_position: job_position ?? null,
-      created_at: new Date().toISOString(),
+      supervisor_id: resolvedSupervisorId,
+      created_at: invitedAt,
+      application_id: application_id ?? null,
+      employment_status: role === "employee" ? "probation" : null,
+      platform_invited_at: role === "employee" ? invitedAt : null,
     };
 
     // Try full row first (audit + setup flags). Fall back if optional
@@ -106,6 +152,26 @@ export async function POST(req: NextRequest) {
       },
       { ...baseRow, email_verified: false, email_confirm: false },
       { ...baseRow },
+      {
+        ...baseRow,
+        supervisor_id: undefined,
+        created_by: caller.id,
+        email_verified: false,
+        email_confirm: false,
+      },
+      {
+        ...baseRow,
+        supervisor_id: undefined,
+        email_verified: false,
+        email_confirm: false,
+      },
+      { ...baseRow, supervisor_id: undefined },
+      {
+        ...baseRow,
+        application_id: undefined,
+        employment_status: undefined,
+        platform_invited_at: undefined,
+      },
     ];
 
     let tableUser = null;
@@ -130,6 +196,10 @@ export async function POST(req: NextRequest) {
         msg.includes("created_by") ||
         msg.includes("email_verified") ||
         msg.includes("email_confirm") ||
+        msg.includes("supervisor_id") ||
+        msg.includes("application_id") ||
+        msg.includes("employment_status") ||
+        msg.includes("platform_invited_at") ||
         msg.includes("schema cache");
 
       if (!missingOptionalColumn) break;
@@ -144,6 +214,28 @@ export async function POST(req: NextRequest) {
         { error: (tableError?.message ?? "Could not create user.") + hint },
         { status: 400 },
       );
+    }
+
+    if (application_id && role === "employee") {
+      const { data: onboardingRow } = await supabaseAdmin
+        .from("onboarding_submissions")
+        .select("hr_data")
+        .eq("application_id", application_id)
+        .maybeSingle();
+
+      if (onboardingRow) {
+        const hr = (onboardingRow.hr_data ?? {}) as Record<string, unknown>;
+        await supabaseAdmin
+          .from("onboarding_submissions")
+          .update({
+            hr_data: {
+              ...hr,
+              platform_invited_at: invitedAt,
+              employment_status: "probation",
+            },
+          })
+          .eq("application_id", application_id);
+      }
     }
 
     const mail = buildInviteEmail(actionLink, first_name);

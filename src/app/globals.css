@@ -35,3 +35,31 @@ a {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .candidate-profile-document {
+    width: 100%;
+  }
+
+  .candidate-profile-document a[href]::after {
+    content: none;
+  }
+}

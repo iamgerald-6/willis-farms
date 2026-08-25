@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  STATUS_STYLES,
   PANEL_DECISIONS,
   isAiFlagged,
   normalizeRoleInterviewReport,
@@ -28,9 +29,14 @@ import {
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
+import EmployeesTab from "./components/EmployeesTab";
 import CareersTab from "./components/CareersTab";
 import GraderSubmissionModal from "./components/interview/GraderSubmissionModal";
-import { gradersForStage, getSubmission, type GraderResult } from "@/lib/careers/panelInterview";
+import {
+  gradersForStage,
+  getSubmission,
+  type GraderResult,
+} from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import {
   ChevronDown,
@@ -41,23 +47,18 @@ import {
   Mail,
   RefreshCw,
   Search,
+  Upload,
   UserPlus,
   X,
 } from "lucide-react";
-import { PageShell, PageHeaderSkeleton, ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
+import {
+  PageShell,
+  PageHeaderSkeleton,
+  ListRowsSkeleton,
+} from "@/components/skeletons/PageSkeletons";
 import { isFullRoleAccess } from "@/lib/pagePermissions";
-
-const STATUS_STYLES: Record<ApplicationStatus, string> = {
-  applied: "bg-blue-50 text-blue-700 border border-blue-200",
-  under_review: "bg-amber-50 text-amber-700 border border-amber-200",
-  shortlisted: "bg-purple-50 text-purple-700 border border-purple-200",
-  interview: "bg-indigo-50 text-indigo-700 border border-indigo-200",
-  evaluation: "bg-cyan-50 text-cyan-700 border border-cyan-200",
-  hold: "bg-orange-50 text-orange-700 border border-orange-200",
-  onboarding: "bg-teal-50 text-teal-700 border border-teal-200",
-  offer: "bg-green-50 text-green-700 border border-green-200",
-  rejected: "bg-red-50 text-red-700 border border-red-200",
-};
+import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
 
 const AI_RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -98,7 +99,7 @@ function ApplicationDetail({
 }: {
   application: JobApplication;
   onClose: () => void;
-  onUpdated: () => void;
+  onUpdated: (opts?: { hired?: boolean }) => void;
   onRefreshApplication: () => Promise<void>;
   adminId: string;
   openInterviewOnMount?: boolean;
@@ -112,14 +113,17 @@ function ApplicationDetail({
   const [selectedReconsiderDecision, setSelectedReconsiderDecision] = useState<
     "evaluation" | "rejected" | ""
   >("");
-  const [showApplicationFormModal, setShowApplicationFormModal] = useState(false);
+  const [showApplicationFormModal, setShowApplicationFormModal] =
+    useState(false);
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showEditedReportModal, setShowEditedReportModal] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
-  const [showEvaluationResultsModal, setShowEvaluationResultsModal] = useState(false);
-  const [selectedGraderView, setSelectedGraderView] = useState<
-    { grader: GraderResult; stage: 1 | 2 } | null
-  >(null);
+  const [showEvaluationResultsModal, setShowEvaluationResultsModal] =
+    useState(false);
+  const [selectedGraderView, setSelectedGraderView] = useState<{
+    grader: GraderResult;
+    stage: 1 | 2;
+  } | null>(null);
   const [showInterview, setShowInterview] = useState(
     openInterviewOnMount ?? false,
   );
@@ -127,7 +131,9 @@ function ApplicationDetail({
     application.interview_form_data?.summary?.interview_report_edit ??
     application.interview_form_data?.summary?.interview_report ??
     null;
-  const [reportDraft, setReportDraft] = useState<InterviewReport | null>(existingReport);
+  const [reportDraft, setReportDraft] = useState<InterviewReport | null>(
+    existingReport,
+  );
   const [reportEmailTo, setReportEmailTo] = useState("info@willsfarms.com");
 
   useEffect(() => {
@@ -140,7 +146,9 @@ function ApplicationDetail({
   useEffect(() => {
     setStatus(application.status);
     setHrNotes(application.hr_notes ?? "");
-    setSelectedDecision(application.interview_form_data?.summary?.decision ?? "");
+    setSelectedDecision(
+      application.interview_form_data?.summary?.decision ?? "",
+    );
     setSelectedReconsiderDecision("");
     setReportDraft(existingReport);
     // existingReport is derived fresh from `application` every render — depending on
@@ -153,14 +161,20 @@ function ApplicationDetail({
   // the interview guide itself uses, so the raw stage 1 + stage 2 submissions
   // and their guide config (question text, "look for" hints, etc.) come from
   // one source of truth rather than being duplicated here.
-  const { data: panelResponsesData, isLoading: panelResponsesLoading } = useQuery({
-    queryKey: ["interview_panel_responses", application.id],
-    queryFn: async () => {
-      const res = await api.get(`/careers/interview?application_id=${application.id}`);
-      return res.data.data as { application: JobApplication; guide: InterviewGuideConfig | null };
-    },
-    enabled: showPanelResponses,
-  });
+  const { data: panelResponsesData, isLoading: panelResponsesLoading } =
+    useQuery({
+      queryKey: ["interview_panel_responses", application.id],
+      queryFn: async () => {
+        const res = await api.get(
+          `/careers/interview?application_id=${application.id}`,
+        );
+        return res.data.data as {
+          application: JobApplication;
+          guide: InterviewGuideConfig | null;
+        };
+      },
+      enabled: showPanelResponses,
+    });
 
   // The consolidated hiring summary for this applicant's role (generated
   // from the Approvals tab) — surfaced here so HR reviewing a single
@@ -184,16 +198,24 @@ function ApplicationDetail({
   );
   const awaitingAiScreening = isAwaitingAiScreening(application);
   const statusEditable = canHrChangeStatus(application);
-  const canOpenInterviewGuide = INTERVIEW_GUIDE_STATUSES.includes(application.status);
+  const canOpenInterviewGuide = INTERVIEW_GUIDE_STATUSES.includes(
+    application.status,
+  );
 
   const decision = application.interview_form_data?.summary?.decision;
-  const decisionLabel = PANEL_DECISIONS.find((d) => d.value === decision)?.label;
-  const decisionConfirmed = application.interview_form_data?.summary?.decision_confirmed_at;
+  const decisionLabel = PANEL_DECISIONS.find(
+    (d) => d.value === decision,
+  )?.label;
+  const decisionConfirmed =
+    application.interview_form_data?.summary?.decision_confirmed_at;
   const canConfirmOutcome =
     !!application.interview_submitted_at && !decisionConfirmed;
-  const hasGeneratedReport = !!application.interview_form_data?.summary?.interview_report;
-  const hasEditedReport = !!application.interview_form_data?.summary?.interview_report_edit;
-  const reportEditLog = application.interview_form_data?.summary?.interview_report_edit_log ?? [];
+  const hasGeneratedReport =
+    !!application.interview_form_data?.summary?.interview_report;
+  const hasEditedReport =
+    !!application.interview_form_data?.summary?.interview_report_edit;
+  const reportEditLog =
+    application.interview_form_data?.summary?.interview_report_edit_log ?? [];
   // True only for applicants who already went through the full interview
   // evaluation and were confirmed Hold/Reserve or Do not hire — not for a
   // plain "hold"/"rejected" reached some other way (e.g. directly from
@@ -209,7 +231,8 @@ function ApplicationDetail({
   // Onboarding alike. Only "evaluation" still gets the live editable form.
   // Rendered even without a generated report so HR gets an explicit "none
   // generated" note instead of the section silently disappearing.
-  const showReportSection = !!decisionConfirmed && application.status !== "evaluation";
+  const showReportSection =
+    !!decisionConfirmed && application.status !== "evaluation";
 
   const confirmMutation = useMutation({
     mutationFn: () =>
@@ -227,6 +250,7 @@ function ApplicationDetail({
       }),
     onSuccess: (res) => {
       const warnings = res.data.email_warnings as string[] | undefined;
+      const hired = selectedDecision === "hire";
       if (warnings?.length) {
         toast.warning(`Confirmed, but: ${warnings.join("; ")}`);
       } else {
@@ -247,7 +271,8 @@ function ApplicationDetail({
           ...application.interview_form_data,
           summary: {
             ...application.interview_form_data?.summary,
-            decision: selectedReconsiderDecision === "rejected" ? "do_not_hire" : "",
+            decision:
+              selectedReconsiderDecision === "rejected" ? "do_not_hire" : "",
           },
         },
         submitted_by: adminId,
@@ -270,7 +295,9 @@ function ApplicationDetail({
 
   const resendOnboarding = useMutation({
     mutationFn: () =>
-      api.post("/careers/onboarding/resend", { application_id: application.id }),
+      api.post("/careers/onboarding/resend", {
+        application_id: application.id,
+      }),
     onSuccess: (res) => {
       if (res.data.email_warning) {
         toast.warning(res.data.email_warning);
@@ -298,7 +325,9 @@ function ApplicationDetail({
       onUpdated();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Failed to start onboarding.");
+      toast.error(
+        error?.response?.data?.error ?? "Failed to start onboarding.",
+      );
     },
   });
 
@@ -321,9 +350,55 @@ function ApplicationDetail({
     },
   });
 
+  const offerLetterInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: offerLetterData, refetch: refetchOfferLetter } = useQuery({
+    queryKey: ["offer-letter", application.id],
+    queryFn: async () => {
+      const res = await api.get(
+        `/careers/onboarding/offer-letter?application_id=${application.id}`,
+      );
+      return res.data.data as {
+        offer_letter: {
+          secure_url: string;
+          original_name: string;
+        } | null;
+      };
+    },
+    enabled: application.status === "offer",
+  });
+
+  const uploadOfferLetter = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await uploadCareersFile(
+        file,
+        "careers/offer-letters",
+        ACCEPT_PDF_OR_WORD,
+        "offer_letter",
+      );
+      await api.patch("/careers/onboarding/offer-letter", {
+        application_id: application.id,
+        offer_letter: uploaded,
+      });
+      return uploaded;
+    },
+    onSuccess: () => {
+      toast.success("Offer letter uploaded.");
+      void refetchOfferLetter();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Upload failed.");
+    },
+  });
+
+  const offerLetter = offerLetterData?.offer_letter ?? null;
+  const hasOfferLetter = !!offerLetter?.secure_url;
+
   const generateReportMutation = useMutation({
     mutationFn: () =>
-      api.post("/careers/interview/report/generate", { application_id: application.id }),
+      api.post("/careers/interview/report/generate", {
+        application_id: application.id,
+      }),
     onSuccess: async () => {
       toast.success("Interview report generated.");
       await onRefreshApplication();
@@ -381,7 +456,9 @@ function ApplicationDetail({
 
   const screenMutation = useMutation({
     mutationFn: () =>
-      api.post("/careers/applications/screen", { application_id: application.id }),
+      api.post("/careers/applications/screen", {
+        application_id: application.id,
+      }),
     onSuccess: (res) => {
       const screening = res.data.screening as { status: string; score: number };
       toast.success(
@@ -474,13 +551,17 @@ function ApplicationDetail({
           <div className="p-6 space-y-5">
             <div className="grid sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Role</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">
+                  Role
+                </p>
                 <p className="font-medium text-gray-900 mt-1">
                   {application.role_title}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Status</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">
+                  Status
+                </p>
                 <span
                   className={`inline-flex mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[application.status]}`}
                 >
@@ -488,7 +569,9 @@ function ApplicationDetail({
                 </span>
               </div>
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Email</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">
+                  Email
+                </p>
                 <a
                   href={`mailto:${application.email}`}
                   className="font-medium text-red-600 hover:underline mt-1 block"
@@ -497,8 +580,12 @@ function ApplicationDetail({
                 </a>
               </div>
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Phone</p>
-                <p className="font-medium text-gray-900 mt-1">{application.phone}</p>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">
+                  Phone
+                </p>
+                <p className="font-medium text-gray-900 mt-1">
+                  {application.phone}
+                </p>
               </div>
               {application.location && (
                 <div>
@@ -514,7 +601,8 @@ function ApplicationDetail({
 
             {(application.cv_url ||
               (application.application_form_data &&
-                (application.status === "evaluation" || application.status === "offer"))) && (
+                (application.status === "evaluation" ||
+                  application.status === "offer"))) && (
               <div className="flex flex-col items-start gap-2">
                 {application.cv_url && (
                   <a
@@ -529,7 +617,8 @@ function ApplicationDetail({
                   </a>
                 )}
                 {application.application_form_data &&
-                  (application.status === "evaluation" || application.status === "offer") && (
+                  (application.status === "evaluation" ||
+                    application.status === "offer") && (
                     <button
                       type="button"
                       onClick={() => setShowApplicationFormModal(true)}
@@ -545,28 +634,32 @@ function ApplicationDetail({
             {application.application_form_data &&
               application.status !== "evaluation" &&
               application.status !== "offer" && (
-                <ApplicationFormReview formData={application.application_form_data} />
+                <ApplicationFormReview
+                  formData={application.application_form_data}
+                />
               )}
 
             {application.ai_screening &&
               application.status !== "evaluation" &&
               application.status !== "offer" && (
-              <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
-                <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                  AI screening — {application.ai_screening.score}% match
-                </p>
-                <p className="text-sm text-purple-900">{application.ai_screening.summary}</p>
-                <p className="text-xs text-purple-500 mt-2">
-                  Screened {formatDate(application.ai_screening.screened_at)}
-                </p>
-              </div>
-            )}
+                <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                  <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                    AI screening — {application.ai_screening.score}% match
+                  </p>
+                  <p className="text-sm text-purple-900">
+                    {application.ai_screening.summary}
+                  </p>
+                  <p className="text-xs text-purple-500 mt-2">
+                    Screened {formatDate(application.ai_screening.screened_at)}
+                  </p>
+                </div>
+              )}
 
             {awaitingAiScreening && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-3">
                 <p className="text-sm text-blue-900">
-                  This application is waiting for AI shortlisting. Run it now to review the
-                  candidate, or wait for the daily batch.
+                  This application is waiting for AI shortlisting. Run it now to
+                  review the candidate, or wait for the daily batch.
                 </p>
                 <button
                   type="button"
@@ -589,91 +682,100 @@ function ApplicationDetail({
             {application.status !== "evaluation" &&
               application.status !== "offer" &&
               !canReconsider && (
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  Update status
-                </label>
-                {awaitingAiScreening ? (
-                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                    {STATUS_LABELS.applied} — status unlocks after AI shortlisting.
-                  </p>
-                ) : !statusEditable ? (
-                  <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                    {STATUS_LABELS[application.status]}
-                  </p>
-                ) : application.status === "shortlisted" ? (
-                  <div className="flex gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                    Update status
+                  </label>
+                  {awaitingAiScreening ? (
+                    <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      {STATUS_LABELS.applied} — status unlocks after AI
+                      shortlisting.
+                    </p>
+                  ) : !statusEditable ? (
+                    <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      {STATUS_LABELS[application.status]}
+                    </p>
+                  ) : application.status === "shortlisted" ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => applyQuickStatus("rejected")}
+                        disabled={quickStatusMutation.isPending}
+                        className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickStatus("interview")}
+                        disabled={quickStatusMutation.isPending}
+                        className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+                      >
+                        Interview
+                      </button>
+                    </div>
+                  ) : application.status === "interview" ? (
                     <button
                       type="button"
                       onClick={() => applyQuickStatus("rejected")}
                       disabled={quickStatusMutation.isPending}
-                      className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                      className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                     >
                       Reject
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => applyQuickStatus("interview")}
-                      disabled={quickStatusMutation.isPending}
-                      className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+                  ) : (
+                    <select
+                      value={status}
+                      onChange={(e) =>
+                        setStatus(e.target.value as ApplicationStatus)
+                      }
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                     >
-                      Interview
-                    </button>
-                  </div>
-                ) : application.status === "interview" ? (
-                  <button
-                    type="button"
-                    onClick={() => applyQuickStatus("rejected")}
-                    disabled={quickStatusMutation.isPending}
-                    className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
-                  >
-                    Reject
-                  </button>
-                ) : (
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  >
-                    {allowedStatusOptions.map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {application.status === "shortlisted" && statusEditable && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Reject to send this application to the Rejects tab, or move to Interview to
-                    open the interview guide.
-                  </p>
-                )}
-                {application.status === "under_review" && application.ai_screening && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Shortlist to override the AI recommendation, or confirm Rejected.
-                  </p>
-                )}
-              </div>
-            )}
+                      {allowedStatusOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {application.status === "shortlisted" && statusEditable && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Reject to send this application to the Rejects tab, or
+                      move to Interview to open the interview guide.
+                    </p>
+                  )}
+                  {application.status === "under_review" &&
+                    application.ai_screening && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Shortlist to override the AI recommendation, or confirm
+                        Rejected.
+                      </p>
+                    )}
+                </div>
+              )}
 
-            {application.interview_submitted_at && application.interview_form_data && (
-              <button
-                type="button"
-                onClick={() => setShowEvaluationResultsModal(true)}
-                className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
-              >
-                <FileText className="w-4 h-4" />
-                View evaluation results
-              </button>
-            )}
+            {application.interview_submitted_at &&
+              application.interview_form_data && (
+                <button
+                  type="button"
+                  onClick={() => setShowEvaluationResultsModal(true)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+                >
+                  <FileText className="w-4 h-4" />
+                  View evaluation results
+                </button>
+              )}
 
             {application.status === "evaluation" && (
               <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">Interview Report</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    Interview Report
+                  </p>
                   {reportDraft && (
                     <div className="flex items-center gap-3">
-                      {application.interview_form_data?.summary?.interview_report && (
+                      {application.interview_form_data?.summary
+                        ?.interview_report && (
                         <button
                           type="button"
                           onClick={() => setShowOriginalReportModal(true)}
@@ -705,10 +807,10 @@ function ApplicationDetail({
                 {!hasGeneratedReport ? (
                   <div className="space-y-2">
                     <p className="text-xs text-gray-500">
-                      Generates a comprehensive report — executive summary, applicant &amp;
-                      interview details, core competencies, key observations, and a final
-                      recommendation. This can only be generated once; after that you can edit
-                      it freely.
+                      Generates a comprehensive report — executive summary,
+                      applicant &amp; interview details, core competencies, key
+                      observations, and a final recommendation. This can only be
+                      generated once; after that you can edit it freely.
                     </p>
                     <button
                       type="button"
@@ -735,7 +837,10 @@ function ApplicationDetail({
                       <textarea
                         value={reportDraft.executive_summary}
                         onChange={(e) =>
-                          setReportDraft({ ...reportDraft, executive_summary: e.target.value })
+                          setReportDraft({
+                            ...reportDraft,
+                            executive_summary: e.target.value,
+                          })
                         }
                         rows={6}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
@@ -756,7 +861,10 @@ function ApplicationDetail({
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
-                                applicant_details: { ...reportDraft.applicant_details, name: e.target.value },
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  name: e.target.value,
+                                },
                               })
                             }
                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
@@ -771,7 +879,10 @@ function ApplicationDetail({
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
-                                applicant_details: { ...reportDraft.applicant_details, role: e.target.value },
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  role: e.target.value,
+                                },
                               })
                             }
                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
@@ -782,7 +893,9 @@ function ApplicationDetail({
                             Interview panel (comma-separated)
                           </label>
                           <input
-                            value={reportDraft.applicant_details.panel_names.join(", ")}
+                            value={reportDraft.applicant_details.panel_names.join(
+                              ", ",
+                            )}
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
@@ -804,13 +917,20 @@ function ApplicationDetail({
                           </label>
                           <input
                             type="date"
-                            value={reportDraft.applicant_details.interview_date?.slice(0, 10) ?? ""}
+                            value={
+                              reportDraft.applicant_details.interview_date?.slice(
+                                0,
+                                10,
+                              ) ?? ""
+                            }
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
                                 applicant_details: {
                                   ...reportDraft.applicant_details,
-                                  interview_date: e.target.value ? `${e.target.value}T00:00:00Z` : null,
+                                  interview_date: e.target.value
+                                    ? `${e.target.value}T00:00:00Z`
+                                    : null,
                                 },
                               })
                             }
@@ -826,7 +946,10 @@ function ApplicationDetail({
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
-                                applicant_details: { ...reportDraft.applicant_details, location: e.target.value },
+                                applicant_details: {
+                                  ...reportDraft.applicant_details,
+                                  location: e.target.value,
+                                },
                               })
                             }
                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
@@ -841,13 +964,18 @@ function ApplicationDetail({
                             step="0.01"
                             min="0"
                             max="5"
-                            value={reportDraft.applicant_details.overall_rating ?? ""}
+                            value={
+                              reportDraft.applicant_details.overall_rating ?? ""
+                            }
                             onChange={(e) =>
                               setReportDraft({
                                 ...reportDraft,
                                 applicant_details: {
                                   ...reportDraft.applicant_details,
-                                  overall_rating: e.target.value === "" ? null : Number(e.target.value),
+                                  overall_rating:
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value),
                                 },
                               })
                             }
@@ -863,19 +991,32 @@ function ApplicationDetail({
                       </label>
                       <div className="space-y-2">
                         {reportDraft.core_competencies.map((c, i) => (
-                          <div key={i} className="border border-gray-200 rounded-lg p-3">
+                          <div
+                            key={i}
+                            className="border border-gray-200 rounded-lg p-3"
+                          >
                             <div className="flex items-center justify-between mb-1.5">
-                              <p className="text-xs font-semibold text-gray-800">{c.area}</p>
+                              <p className="text-xs font-semibold text-gray-800">
+                                {c.area}
+                              </p>
                               <p className="text-xs text-gray-500">
-                                {c.score != null ? `${c.score.toFixed(2)}/5` : "—"}
+                                {c.score != null
+                                  ? `${c.score.toFixed(2)}/5`
+                                  : "—"}
                               </p>
                             </div>
                             <textarea
                               value={c.assessment}
                               onChange={(e) => {
                                 const next = [...reportDraft.core_competencies];
-                                next[i] = { ...next[i], assessment: e.target.value };
-                                setReportDraft({ ...reportDraft, core_competencies: next });
+                                next[i] = {
+                                  ...next[i],
+                                  assessment: e.target.value,
+                                };
+                                setReportDraft({
+                                  ...reportDraft,
+                                  core_competencies: next,
+                                });
                               }}
                               rows={4}
                               className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
@@ -891,38 +1032,53 @@ function ApplicationDetail({
                           Strengths
                         </label>
                         <div className="space-y-1.5">
-                          {reportDraft.key_observations.strengths.map((s, i) => (
-                            <div key={i} className="flex items-start gap-1.5">
-                              <span className="text-gray-400 text-xs mt-2">—</span>
-                              <textarea
-                                value={s}
-                                onChange={(e) => {
-                                  const next = [...reportDraft.key_observations.strengths];
-                                  next[i] = e.target.value;
-                                  setReportDraft({
-                                    ...reportDraft,
-                                    key_observations: { ...reportDraft.key_observations, strengths: next },
-                                  });
-                                }}
-                                rows={2}
-                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const next = reportDraft.key_observations.strengths.filter((_, idx) => idx !== i);
-                                  setReportDraft({
-                                    ...reportDraft,
-                                    key_observations: { ...reportDraft.key_observations, strengths: next },
-                                  });
-                                }}
-                                className="text-gray-300 hover:text-red-500 mt-2"
-                                title="Remove"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                          {reportDraft.key_observations.strengths.map(
+                            (s, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <span className="text-gray-400 text-xs mt-2">
+                                  —
+                                </span>
+                                <textarea
+                                  value={s}
+                                  onChange={(e) => {
+                                    const next = [
+                                      ...reportDraft.key_observations.strengths,
+                                    ];
+                                    next[i] = e.target.value;
+                                    setReportDraft({
+                                      ...reportDraft,
+                                      key_observations: {
+                                        ...reportDraft.key_observations,
+                                        strengths: next,
+                                      },
+                                    });
+                                  }}
+                                  rows={2}
+                                  className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next =
+                                      reportDraft.key_observations.strengths.filter(
+                                        (_, idx) => idx !== i,
+                                      );
+                                    setReportDraft({
+                                      ...reportDraft,
+                                      key_observations: {
+                                        ...reportDraft.key_observations,
+                                        strengths: next,
+                                      },
+                                    });
+                                  }}
+                                  className="text-gray-300 hover:text-red-500 mt-2"
+                                  title="Remove"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ),
+                          )}
                           <button
                             type="button"
                             onClick={() =>
@@ -930,7 +1086,10 @@ function ApplicationDetail({
                                 ...reportDraft,
                                 key_observations: {
                                   ...reportDraft.key_observations,
-                                  strengths: [...reportDraft.key_observations.strengths, ""],
+                                  strengths: [
+                                    ...reportDraft.key_observations.strengths,
+                                    "",
+                                  ],
                                 },
                               })
                             }
@@ -945,38 +1104,54 @@ function ApplicationDetail({
                           Weaknesses
                         </label>
                         <div className="space-y-1.5">
-                          {reportDraft.key_observations.weaknesses.map((s, i) => (
-                            <div key={i} className="flex items-start gap-1.5">
-                              <span className="text-gray-400 text-xs mt-2">—</span>
-                              <textarea
-                                value={s}
-                                onChange={(e) => {
-                                  const next = [...reportDraft.key_observations.weaknesses];
-                                  next[i] = e.target.value;
-                                  setReportDraft({
-                                    ...reportDraft,
-                                    key_observations: { ...reportDraft.key_observations, weaknesses: next },
-                                  });
-                                }}
-                                rows={2}
-                                className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const next = reportDraft.key_observations.weaknesses.filter((_, idx) => idx !== i);
-                                  setReportDraft({
-                                    ...reportDraft,
-                                    key_observations: { ...reportDraft.key_observations, weaknesses: next },
-                                  });
-                                }}
-                                className="text-gray-300 hover:text-red-500 mt-2"
-                                title="Remove"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                          {reportDraft.key_observations.weaknesses.map(
+                            (s, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <span className="text-gray-400 text-xs mt-2">
+                                  —
+                                </span>
+                                <textarea
+                                  value={s}
+                                  onChange={(e) => {
+                                    const next = [
+                                      ...reportDraft.key_observations
+                                        .weaknesses,
+                                    ];
+                                    next[i] = e.target.value;
+                                    setReportDraft({
+                                      ...reportDraft,
+                                      key_observations: {
+                                        ...reportDraft.key_observations,
+                                        weaknesses: next,
+                                      },
+                                    });
+                                  }}
+                                  rows={2}
+                                  className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-justify"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next =
+                                      reportDraft.key_observations.weaknesses.filter(
+                                        (_, idx) => idx !== i,
+                                      );
+                                    setReportDraft({
+                                      ...reportDraft,
+                                      key_observations: {
+                                        ...reportDraft.key_observations,
+                                        weaknesses: next,
+                                      },
+                                    });
+                                  }}
+                                  className="text-gray-300 hover:text-red-500 mt-2"
+                                  title="Remove"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ),
+                          )}
                           <button
                             type="button"
                             onClick={() =>
@@ -984,7 +1159,10 @@ function ApplicationDetail({
                                 ...reportDraft,
                                 key_observations: {
                                   ...reportDraft.key_observations,
-                                  weaknesses: [...reportDraft.key_observations.weaknesses, ""],
+                                  weaknesses: [
+                                    ...reportDraft.key_observations.weaknesses,
+                                    "",
+                                  ],
                                 },
                               })
                             }
@@ -1005,7 +1183,10 @@ function ApplicationDetail({
                         onChange={(e) =>
                           setReportDraft({
                             ...reportDraft,
-                            key_observations: { ...reportDraft.key_observations, summary: e.target.value },
+                            key_observations: {
+                              ...reportDraft.key_observations,
+                              summary: e.target.value,
+                            },
                           })
                         }
                         rows={6}
@@ -1032,7 +1213,8 @@ function ApplicationDetail({
                               })
                             }
                             className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                              reportDraft.final_recommendation.decision === d.value
+                              reportDraft.final_recommendation.decision ===
+                              d.value
                                 ? "bg-gray-900 text-white border-gray-900"
                                 : "bg-white text-gray-700 border-gray-200 hover:border-gray-400"
                             }`}
@@ -1065,7 +1247,9 @@ function ApplicationDetail({
                         disabled={saveReportMutation.isPending}
                         className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
                       >
-                        {saveReportMutation.isPending ? "Saving…" : "Save changes"}
+                        {saveReportMutation.isPending
+                          ? "Saving…"
+                          : "Save changes"}
                       </button>
                       <input
                         value={reportEmailTo}
@@ -1076,18 +1260,25 @@ function ApplicationDetail({
                       <button
                         type="button"
                         onClick={() => emailReportMutation.mutate()}
-                        disabled={emailReportMutation.isPending || !reportEmailTo}
+                        disabled={
+                          emailReportMutation.isPending || !reportEmailTo
+                        }
                         className="inline-flex items-center gap-1.5 px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
                       >
                         <Mail className="w-3.5 h-3.5" />
-                        {emailReportMutation.isPending ? "Sending…" : "Email report"}
+                        {emailReportMutation.isPending
+                          ? "Sending…"
+                          : "Email report"}
                       </button>
                     </div>
 
                     {reportEditLog.length > 0 && (
                       <p className="text-xs text-gray-400">
-                        Edited {reportEditLog.length} time{reportEditLog.length === 1 ? "" : "s"} —
-                        last saved {formatDate(reportEditLog[reportEditLog.length - 1].edited_at)}
+                        Edited {reportEditLog.length} time
+                        {reportEditLog.length === 1 ? "" : "s"} — last saved{" "}
+                        {formatDate(
+                          reportEditLog[reportEditLog.length - 1].edited_at,
+                        )}
                       </p>
                     )}
                   </div>
@@ -1097,10 +1288,13 @@ function ApplicationDetail({
 
             {showReportSection && (
               <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
-                <p className="text-sm font-semibold text-gray-900">Interview Report</p>
+                <p className="text-sm font-semibold text-gray-900">
+                  Interview Report
+                </p>
                 <p className="text-xs text-gray-500">
-                  This applicant&apos;s outcome has already been confirmed, so the report is
-                  shown as reference links rather than an editable form.
+                  This applicant&apos;s outcome has already been confirmed, so
+                  the report is shown as reference links rather than an editable
+                  form.
                 </p>
                 {hasGeneratedReport ? (
                   <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -1139,7 +1333,8 @@ function ApplicationDetail({
                   </div>
                 ) : (
                   <p className="text-xs text-gray-400 italic pt-1">
-                    No individual comprehensive report was generated for this candidate.
+                    No individual comprehensive report was generated for this
+                    candidate.
                   </p>
                 )}
                 {roleReportRow && (
@@ -1154,7 +1349,8 @@ function ApplicationDetail({
                       Download role hiring summary ({application.role_title})
                     </a>
                     <p className="text-xs text-gray-400 mt-1">
-                      The consolidated report covering every applicant for this role.
+                      The consolidated report covering every applicant for this
+                      role.
                     </p>
                   </div>
                 )}
@@ -1180,12 +1376,16 @@ function ApplicationDetail({
                   Confirm interview outcome
                 </p>
                 <p className="text-xs text-amber-800">
-                  Interview evaluation is complete. Choose an outcome after your team discussion.
-                  {application.interview_form_data?.summary?.total_weighted != null && (
+                  Interview evaluation is complete. Choose an outcome after your
+                  team discussion.
+                  {application.interview_form_data?.summary?.total_weighted !=
+                    null && (
                     <>
                       {" "}
                       Combined score:{" "}
-                      {application.interview_form_data.summary.total_weighted.toFixed(2)}
+                      {application.interview_form_data.summary.total_weighted.toFixed(
+                        2,
+                      )}
                     </>
                   )}
                 </p>
@@ -1235,8 +1435,12 @@ function ApplicationDetail({
                   Reconsider outcome
                 </p>
                 <p className="text-xs text-indigo-800">
-                  This applicant already completed the full interview process and was confirmed{" "}
-                  {application.status === "hold" ? "Hold / Reserve" : "Do not hire"}.{" "}
+                  This applicant already completed the full interview process
+                  and was confirmed{" "}
+                  {application.status === "hold"
+                    ? "Hold / Reserve"
+                    : "Do not hire"}
+                  .{" "}
                   {application.status === "hold"
                     ? "Reopen for evaluation to reconsider them fresh, or Reject to confirm rejection."
                     : "Reopen for evaluation to reconsider them fresh."}
@@ -1277,7 +1481,9 @@ function ApplicationDetail({
                 <button
                   type="button"
                   onClick={() => reconsiderMutation.mutate()}
-                  disabled={reconsiderMutation.isPending || !selectedReconsiderDecision}
+                  disabled={
+                    reconsiderMutation.isPending || !selectedReconsiderDecision
+                  }
                   className="w-full py-2.5 bg-indigo-700 text-white text-sm font-medium rounded-lg hover:bg-indigo-800 disabled:opacity-60"
                 >
                   {reconsiderMutation.isPending
@@ -1292,10 +1498,13 @@ function ApplicationDetail({
             )}
 
             {application.interview_form_data?.stage1_review?.reviewed_at &&
-              application.interview_form_data.stage1_review.passed === false && (
+              application.interview_form_data.stage1_review.passed ===
+                false && (
                 <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                   Rejected at Stage 1 review (
-                  {application.interview_form_data.stage1_review.average_score?.toFixed(2) ?? "—"}{" "}
+                  {application.interview_form_data.stage1_review.average_score?.toFixed(
+                    2,
+                  ) ?? "—"}{" "}
                   average)
                 </p>
               )}
@@ -1308,32 +1517,104 @@ function ApplicationDetail({
             )}
 
             {application.status === "offer" && decision === "hire" && (
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => startOnboarding.mutate()}
-                  disabled={startOnboarding.isPending || rescindOffer.isPending}
-                  className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
-                >
-                  {startOnboarding.isPending ? "Sending…" : "Send congratulations & onboarding link"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
-                      )
-                    ) {
-                      return;
+              <div className="space-y-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      Offer letter
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload the signed offer letter before sending the
+                      onboarding link.
+                    </p>
+                  </div>
+                  {hasOfferLetter ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <a
+                        href={offerLetter!.secure_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
+                      >
+                        <FileText className="w-4 h-4" />
+                        {offerLetter!.original_name || "View offer letter"}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => offerLetterInputRef.current?.click()}
+                        disabled={uploadOfferLetter.isPending}
+                        className="text-xs font-medium text-gray-600 hover:text-red-600 disabled:opacity-60"
+                      >
+                        Replace file
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => offerLetterInputRef.current?.click()}
+                      disabled={uploadOfferLetter.isPending}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 disabled:opacity-60"
+                    >
+                      {uploadOfferLetter.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                      Upload offer letter
+                    </button>
+                  )}
+                  <input
+                    ref={offerLetterInputRef}
+                    type="file"
+                    accept={ACCEPT_PDF_OR_WORD}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadOfferLetter.mutate(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => startOnboarding.mutate()}
+                    disabled={
+                      !hasOfferLetter ||
+                      startOnboarding.isPending ||
+                      rescindOffer.isPending
                     }
-                    rescindOffer.mutate();
-                  }}
-                  disabled={rescindOffer.isPending || startOnboarding.isPending}
-                  className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
-                >
-                  {rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
-                </button>
+                    className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
+                    title={
+                      hasOfferLetter
+                        ? undefined
+                        : "Upload the offer letter first"
+                    }
+                  >
+                    {startOnboarding.isPending
+                      ? "Sending…"
+                      : "Send congratulations & onboarding link"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        !confirm(
+                          "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
+                        )
+                      ) {
+                        return;
+                      }
+                      rescindOffer.mutate();
+                    }}
+                    disabled={rescindOffer.isPending || startOnboarding.isPending}
+                    className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
+                  >
+                    {rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1344,7 +1625,9 @@ function ApplicationDetail({
                 disabled={resendOnboarding.isPending}
                 className="w-full py-2 border border-teal-200 bg-teal-50 text-teal-800 text-sm font-medium rounded-lg hover:bg-teal-100 disabled:opacity-60"
               >
-                {resendOnboarding.isPending ? "Sending…" : "Resend onboarding link"}
+                {resendOnboarding.isPending
+                  ? "Sending…"
+                  : "Resend onboarding link"}
               </button>
             )}
 
@@ -1421,7 +1704,9 @@ function ApplicationDetail({
               </button>
             </div>
             <div className="p-5 overflow-y-auto min-h-0">
-              <ApplicationFormReview formData={application.application_form_data} />
+              <ApplicationFormReview
+                formData={application.application_form_data}
+              />
             </div>
           </div>
         </div>
@@ -1437,7 +1722,9 @@ function ApplicationDetail({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">Interview evaluation results</h2>
+              <h2 className="text-base font-bold text-gray-900">
+                Interview evaluation results
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowEvaluationResultsModal(false)}
@@ -1447,22 +1734,37 @@ function ApplicationDetail({
               </button>
             </div>
             <div className="p-5 overflow-y-auto min-h-0 space-y-2">
-              {application.interview_form_data.summary?.stage1_average != null && (
+              {application.interview_form_data.summary?.stage1_average !=
+                null && (
                 <p className="text-sm text-gray-700">
                   Stage 1 average:{" "}
-                  <strong>{application.interview_form_data.summary.stage1_average.toFixed(2)}</strong>
+                  <strong>
+                    {application.interview_form_data.summary.stage1_average.toFixed(
+                      2,
+                    )}
+                  </strong>
                 </p>
               )}
-              {application.interview_form_data.summary?.stage2_average != null && (
+              {application.interview_form_data.summary?.stage2_average !=
+                null && (
                 <p className="text-sm text-gray-700">
                   Stage 2 average:{" "}
-                  <strong>{application.interview_form_data.summary.stage2_average.toFixed(2)}</strong>
+                  <strong>
+                    {application.interview_form_data.summary.stage2_average.toFixed(
+                      2,
+                    )}
+                  </strong>
                 </p>
               )}
-              {application.interview_form_data.summary?.total_weighted != null && (
+              {application.interview_form_data.summary?.total_weighted !=
+                null && (
                 <p className="text-sm text-gray-700">
                   Combined score:{" "}
-                  <strong>{application.interview_form_data.summary.total_weighted.toFixed(2)}</strong>
+                  <strong>
+                    {application.interview_form_data.summary.total_weighted.toFixed(
+                      2,
+                    )}
+                  </strong>
                 </p>
               )}
               {application.interview_form_data.summary?.ai_analysis && (
@@ -1473,18 +1775,21 @@ function ApplicationDetail({
                   <p className="text-sm text-gray-800 leading-relaxed">
                     {application.interview_form_data.summary.ai_analysis}
                   </p>
-                  {application.interview_form_data.summary.ai_recommendation && (
+                  {application.interview_form_data.summary
+                    .ai_recommendation && (
                     <span
                       className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
                         AI_RECOMMENDATION_CLASSES[
-                          application.interview_form_data.summary.ai_recommendation
+                          application.interview_form_data.summary
+                            .ai_recommendation
                         ]
                       }`}
                     >
                       AI recommends:{" "}
                       {
                         AI_RECOMMENDATION_LABELS[
-                          application.interview_form_data.summary.ai_recommendation
+                          application.interview_form_data.summary
+                            .ai_recommendation
                         ]
                       }
                     </span>
@@ -1496,63 +1801,79 @@ function ApplicationDetail({
         </div>
       )}
 
-      {showOriginalReportModal && application.interview_form_data?.summary?.interview_report && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowOriginalReportModal(false)}
-        >
+      {showOriginalReportModal &&
+        application.interview_form_data?.summary?.interview_report && (
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setShowOriginalReportModal(false)}
           >
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">Original AI report</h2>
-              <button
-                type="button"
-                onClick={() => setShowOriginalReportModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 overflow-y-auto min-h-0">
-              <p className="text-xs text-gray-400 mb-4">
-                This is the report exactly as AI generated it — unaffected by any edits made below.
-              </p>
-              <InterviewReportReadOnly report={application.interview_form_data.summary.interview_report} />
+            <div
+              className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+                <h2 className="text-base font-bold text-gray-900">
+                  Original AI report
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowOriginalReportModal(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto min-h-0">
+                <p className="text-xs text-gray-400 mb-4">
+                  This is the report exactly as AI generated it — unaffected by
+                  any edits made below.
+                </p>
+                <InterviewReportReadOnly
+                  report={
+                    application.interview_form_data.summary.interview_report
+                  }
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showEditedReportModal && application.interview_form_data?.summary?.interview_report_edit && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowEditedReportModal(false)}
-        >
+      {showEditedReportModal &&
+        application.interview_form_data?.summary?.interview_report_edit && (
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setShowEditedReportModal(false)}
           >
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">HR-edited report</h2>
-              <button
-                type="button"
-                onClick={() => setShowEditedReportModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 overflow-y-auto min-h-0">
-              <p className="text-xs text-gray-400 mb-4">
-                This is HR&apos;s most recently saved edit of the report.
-              </p>
-              <InterviewReportReadOnly report={application.interview_form_data.summary.interview_report_edit} />
+            <div
+              className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+                <h2 className="text-base font-bold text-gray-900">
+                  HR-edited report
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowEditedReportModal(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto min-h-0">
+                <p className="text-xs text-gray-400 mb-4">
+                  This is HR&apos;s most recently saved edit of the report.
+                </p>
+                <InterviewReportReadOnly
+                  report={
+                    application.interview_form_data.summary
+                      .interview_report_edit
+                  }
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       {showPanelResponses && (
         <div
@@ -1564,7 +1885,9 @@ function ApplicationDetail({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">All panel responses</h2>
+              <h2 className="text-base font-bold text-gray-900">
+                All panel responses
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowPanelResponses(false)}
@@ -1576,7 +1899,9 @@ function ApplicationDetail({
             <div className="p-2 overflow-y-auto min-h-0">
               {panelResponsesLoading || !panelResponsesData?.guide ? (
                 <p className="text-sm text-gray-400 px-3 py-6 text-center">
-                  {panelResponsesLoading ? "Loading…" : "No interview guide found for this role."}
+                  {panelResponsesLoading
+                    ? "Loading…"
+                    : "No interview guide found for this role."}
                 </p>
               ) : (
                 ([1, 2] as const).map((stage) => {
@@ -1595,12 +1920,17 @@ function ApplicationDetail({
                         <button
                           key={`${stage}-${g.id}`}
                           type="button"
-                          onClick={() => g.submitted_at && setSelectedGraderView({ grader: g, stage })}
+                          onClick={() =>
+                            g.submitted_at &&
+                            setSelectedGraderView({ grader: g, stage })
+                          }
                           disabled={!g.submitted_at}
                           className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50 text-left disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{g.label}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {g.label}
+                            </p>
                             <p className="text-xs text-gray-400">
                               {g.role === "hr" ? "HR" : "Panel member"}
                               {!g.submitted_at && " · Not submitted"}
@@ -1620,26 +1950,30 @@ function ApplicationDetail({
         </div>
       )}
 
-      {selectedGraderView && panelResponsesData?.guide && panelResponsesData.application.interview_form_data && (
-        <GraderSubmissionModal
-          guide={panelResponsesData.guide}
-          graderLabel={selectedGraderView.grader.label}
-          graderRole={selectedGraderView.grader.role}
-          stage={selectedGraderView.stage}
-          submission={
-            selectedGraderView.grader.role === "hr"
-              ? selectedGraderView.stage === 1
-                ? panelResponsesData.application.interview_form_data.hr_submission?.stage1
-                : panelResponsesData.application.interview_form_data.hr_submission?.stage2
-              : getSubmission(
-                  panelResponsesData.application.interview_form_data,
-                  selectedGraderView.grader.id,
-                  selectedGraderView.stage,
-                )
-          }
-          onClose={() => setSelectedGraderView(null)}
-        />
-      )}
+      {selectedGraderView &&
+        panelResponsesData?.guide &&
+        panelResponsesData.application.interview_form_data && (
+          <GraderSubmissionModal
+            guide={panelResponsesData.guide}
+            graderLabel={selectedGraderView.grader.label}
+            graderRole={selectedGraderView.grader.role}
+            stage={selectedGraderView.stage}
+            submission={
+              selectedGraderView.grader.role === "hr"
+                ? selectedGraderView.stage === 1
+                  ? panelResponsesData.application.interview_form_data
+                      .hr_submission?.stage1
+                  : panelResponsesData.application.interview_form_data
+                      .hr_submission?.stage2
+                : getSubmission(
+                    panelResponsesData.application.interview_form_data,
+                    selectedGraderView.grader.id,
+                    selectedGraderView.stage,
+                  )
+            }
+            onClose={() => setSelectedGraderView(null)}
+          />
+        )}
     </>
   );
 }
@@ -1647,13 +1981,19 @@ function ApplicationDetail({
 // Read-only rendering of an interview report — used for the "View original
 // AI report" comparison modal.
 function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
-  const decisionLabel = PANEL_DECISIONS.find((d) => d.value === report.final_recommendation.decision)?.label;
+  const decisionLabel = PANEL_DECISIONS.find(
+    (d) => d.value === report.final_recommendation.decision,
+  )?.label;
 
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Executive summary</p>
-        <p className="text-sm text-gray-800 text-justify leading-relaxed">{report.executive_summary}</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Executive summary
+        </p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">
+          {report.executive_summary}
+        </p>
       </div>
 
       <div>
@@ -1661,17 +2001,30 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
           Applicant &amp; interview details
         </p>
         <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-gray-700">
-          <p><span className="text-gray-400">Candidate: </span>{report.applicant_details.name}</p>
-          <p><span className="text-gray-400">Role: </span>{report.applicant_details.role}</p>
+          <p>
+            <span className="text-gray-400">Candidate: </span>
+            {report.applicant_details.name}
+          </p>
+          <p>
+            <span className="text-gray-400">Role: </span>
+            {report.applicant_details.role}
+          </p>
           <p className="sm:col-span-2">
             <span className="text-gray-400">Panel: </span>
-            {report.applicant_details.panel_names.length ? report.applicant_details.panel_names.join(", ") : "—"}
+            {report.applicant_details.panel_names.length
+              ? report.applicant_details.panel_names.join(", ")
+              : "—"}
           </p>
           <p>
             <span className="text-gray-400">Date: </span>
-            {report.applicant_details.interview_date ? formatDate(report.applicant_details.interview_date) : "—"}
+            {report.applicant_details.interview_date
+              ? formatDate(report.applicant_details.interview_date)
+              : "—"}
           </p>
-          <p><span className="text-gray-400">Location: </span>{report.applicant_details.location ?? "—"}</p>
+          <p>
+            <span className="text-gray-400">Location: </span>
+            {report.applicant_details.location ?? "—"}
+          </p>
           <p>
             <span className="text-gray-400">Overall rating: </span>
             {report.applicant_details.overall_rating != null
@@ -1682,15 +2035,21 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Core competencies</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Core competencies
+        </p>
         <div className="space-y-2">
           {report.core_competencies.map((c, i) => (
             <div key={i} className="border border-gray-100 rounded-lg p-2.5">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-semibold text-gray-800">{c.area}</p>
-                <p className="text-xs text-gray-500">{c.score != null ? `${c.score.toFixed(2)}/5` : "—"}</p>
+                <p className="text-xs text-gray-500">
+                  {c.score != null ? `${c.score.toFixed(2)}/5` : "—"}
+                </p>
               </div>
-              <p className="text-xs text-gray-600 text-justify leading-relaxed">{c.assessment}</p>
+              <p className="text-xs text-gray-600 text-justify leading-relaxed">
+                {c.assessment}
+              </p>
             </div>
           ))}
         </div>
@@ -1698,7 +2057,9 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
 
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Strengths</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Strengths
+          </p>
           <ul className="space-y-1">
             {report.key_observations.strengths.map((s, i) => (
               <li key={i} className="flex gap-1.5 text-xs text-gray-700">
@@ -1709,7 +2070,9 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
           </ul>
         </div>
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Weaknesses</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Weaknesses
+          </p>
           <ul className="space-y-1">
             {report.key_observations.weaknesses.map((s, i) => (
               <li key={i} className="flex gap-1.5 text-xs text-gray-700">
@@ -1722,12 +2085,18 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Key observations summary</p>
-        <p className="text-sm text-gray-800 text-justify leading-relaxed">{report.key_observations.summary}</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Key observations summary
+        </p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">
+          {report.key_observations.summary}
+        </p>
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Final recommendation</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Final recommendation
+        </p>
         <p className="text-sm font-semibold text-gray-900">{decisionLabel}</p>
         <p className="text-sm text-gray-800 text-justify leading-relaxed mt-1">
           {report.final_recommendation.rationale}
@@ -1758,7 +2127,10 @@ function MultiSelectFilter({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -1864,7 +2236,13 @@ function MultiSelectFilter({
   );
 }
 
-function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+function FilterChip({
+  label,
+  onRemove,
+}: {
+  label: string;
+  onRemove: () => void;
+}) {
   return (
     <span className="flex items-center gap-1 bg-red-50 text-red-700 text-xs font-medium pl-2.5 pr-1.5 py-1 rounded-full">
       {label}
@@ -1936,9 +2314,13 @@ function RejectsTab({
           <tr className="bg-gray-50 border-b border-gray-200">
             <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
             <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">AI screening</th>
+            <th className="px-4 py-3 font-semibold text-gray-600">
+              AI screening
+            </th>
             <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-            <th className="px-4 py-3 font-semibold text-gray-600 text-right">Action</th>
+            <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+              Action
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -1967,10 +2349,11 @@ function RejectsTab({
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
-        Applications the AI scored below the shortlist threshold land here for HR review, along
-        with applicants confirmed Hold/Reserve or Do not hire after their full interview
-        evaluation. Nothing here is deleted — open one to review it, or reconsider a Hold/Reserve
-        or Do-not-hire outcome now that the process is complete.
+        Applications the AI scored below the shortlist threshold land here for
+        HR review, along with applicants confirmed Hold/Reserve or Do not hire
+        after their full interview evaluation. Nothing here is deleted — open
+        one to review it, or reconsider a Hold/Reserve or Do-not-hire outcome
+        now that the process is complete.
       </div>
 
       <div>
@@ -2043,7 +2426,9 @@ function ApprovalsTab({
     };
 
     const rows: { application: JobApplication; rank: number }[] = [];
-    for (const role of Array.from(byRole.keys()).sort((a, b) => a.localeCompare(b))) {
+    for (const role of Array.from(byRole.keys()).sort((a, b) =>
+      a.localeCompare(b),
+    )) {
       byRole
         .get(role)!
         .sort(byScoreDesc)
@@ -2066,78 +2451,89 @@ function ApprovalsTab({
       </div>
 
       {showRoleReport && (
-        <RoleReportModal roles={roles} adminId={adminId} onClose={() => setShowRoleReport(false)} />
+        <RoleReportModal
+          roles={roles}
+          adminId={adminId}
+          onClose={() => setShowRoleReport(false)}
+        />
       )}
 
-    <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
-      <table className="w-full text-left text-sm min-w-[800px]">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="px-4 py-3 font-semibold text-gray-600">Rank</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Applied</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-            <th className="px-4 py-3 font-semibold text-gray-600 text-right">
-              Action
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td colSpan={7} className="px-4 py-3">
-                  <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
-                </td>
-              </tr>
-            ))
-          ) : ranked.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
-                No applications awaiting approval.
-              </td>
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Rank</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Candidate
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Applied</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
             </tr>
-          ) : (
-            ranked.map(({ application: a, rank }) => (
-              <tr
-                key={a.id}
-                className="border-b border-gray-100 hover:bg-gray-50/80"
-              >
-                <td className="px-4 py-3 font-medium text-gray-900">{rank}</td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{a.full_name}</p>
-                  <p className="text-xs text-gray-400">{a.email}</p>
-                </td>
-                <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                  {a.reference_number}
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {formatDate(a.created_at)}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
-                  >
-                    {STATUS_LABELS[a.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => onSelect(a)}
-                    className="text-xs font-medium text-red-600 hover:underline"
-                  >
-                    View
-                  </button>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={7} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : ranked.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-12 text-center text-gray-400"
+                >
+                  No applications awaiting approval.
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+            ) : (
+              ranked.map(({ application: a, rank }) => (
+                <tr
+                  key={a.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/80"
+                >
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {rank}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{a.full_name}</p>
+                    <p className="text-xs text-gray-400">{a.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    {a.reference_number}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {formatDate(a.created_at)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                    >
+                      {STATUS_LABELS[a.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => onSelect(a)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2158,21 +2554,27 @@ function OfferTab({
   return (
     <div className="space-y-4">
       <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
-        Applicants confirmed Hire land here with an outstanding offer. Open an applicant to send
-        the congratulations email with the onboarding link (moves them to the Onboarding tab), or
-        to rescind the offer.
+        Applicants confirmed Hire land here with an outstanding offer. Open an
+        applicant to send the congratulations email with the onboarding link
+        (moves them to the Onboarding tab), or to rescind the offer.
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
         <table className="w-full text-left text-sm min-w-[800px]">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Candidate
+              </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
-              <th className="px-4 py-3 font-semibold text-gray-600">Offer confirmed</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Offer confirmed
+              </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-              <th className="px-4 py-3 font-semibold text-gray-600 text-right">Action</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -2186,13 +2588,19 @@ function OfferTab({
               ))
             ) : applications.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                <td
+                  colSpan={6}
+                  className="px-4 py-12 text-center text-gray-400"
+                >
                   No applicants with an outstanding offer right now.
                 </td>
               </tr>
             ) : (
               applications.map((a) => (
-                <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                <tr
+                  key={a.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/80"
+                >
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{a.full_name}</p>
                     <p className="text-xs text-gray-400">{a.email}</p>
@@ -2203,7 +2611,9 @@ function OfferTab({
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {a.interview_form_data?.summary?.decision_confirmed_at
-                      ? formatDate(a.interview_form_data.summary.decision_confirmed_at)
+                      ? formatDate(
+                          a.interview_form_data.summary.decision_confirmed_at,
+                        )
                       : "—"}
                   </td>
                   <td className="px-4 py-3">
@@ -2245,7 +2655,9 @@ function RoleReportModal({
   onClose: () => void;
 }) {
   const [selectedSlug, setSelectedSlug] = useState(roles[0]?.slug ?? "");
-  const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(null);
+  const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(
+    null,
+  );
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
 
@@ -2258,7 +2670,9 @@ function RoleReportModal({
   } = useQuery({
     queryKey: ["role_interview_report", selectedSlug],
     queryFn: async () => {
-      const res = await api.get(`/careers/interview/role-report?role_slug=${selectedSlug}`);
+      const res = await api.get(
+        `/careers/interview/role-report?role_slug=${selectedSlug}`,
+      );
       return res.data.data as RoleInterviewReportRow | null;
     },
     enabled: !!selectedSlug,
@@ -2266,12 +2680,19 @@ function RoleReportModal({
 
   useEffect(() => {
     setReportDraft(
-      reportRow ? normalizeRoleInterviewReport(reportRow.report_edit ?? reportRow.report) : null,
+      reportRow
+        ? normalizeRoleInterviewReport(
+            reportRow.report_edit ?? reportRow.report,
+          )
+        : null,
     );
   }, [reportRow]);
 
   const generateMutation = useMutation({
-    mutationFn: () => api.post("/careers/interview/role-report/generate", { role_slug: selectedSlug }),
+    mutationFn: () =>
+      api.post("/careers/interview/role-report/generate", {
+        role_slug: selectedSlug,
+      }),
     onSuccess: async () => {
       toast.success("Role report generated.");
       await refetch();
@@ -2299,7 +2720,10 @@ function RoleReportModal({
 
   const emailMutation = useMutation({
     mutationFn: () =>
-      api.post("/careers/interview/role-report/email", { role_slug: selectedSlug, to: emailTo }),
+      api.post("/careers/interview/role-report/email", {
+        role_slug: selectedSlug,
+        to: emailTo,
+      }),
     onSuccess: () => {
       toast.success(`Report emailed to ${emailTo}.`);
     },
@@ -2320,7 +2744,9 @@ function RoleReportModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-          <h2 className="text-base font-bold text-gray-900">Role hiring summary</h2>
+          <h2 className="text-base font-bold text-gray-900">
+            Role hiring summary
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -2353,10 +2779,12 @@ function RoleReportModal({
           ) : !reportRow ? (
             <div className="space-y-2">
               <p className="text-xs text-gray-500">
-                Generates a consolidated report for {selectedRole?.title ?? "this role"} — applicant
-                funnel numbers, constraints flagged in HR/panel notes, and a final hire recommendation
-                based on the current ranking. You can edit it freely afterward, and regenerate it again
-                any time the applicant pool changes.
+                Generates a consolidated report for{" "}
+                {selectedRole?.title ?? "this role"} — applicant funnel numbers,
+                constraints flagged in HR/panel notes, and a final hire
+                recommendation based on the current ranking. You can edit it
+                freely afterward, and regenerate it again any time the applicant
+                pool changes.
               </p>
               <button
                 type="button"
@@ -2410,8 +2838,12 @@ function RoleReportModal({
                   disabled={generateMutation.isPending}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:underline disabled:opacity-60"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${generateMutation.isPending ? "animate-spin" : ""}`} />
-                  {generateMutation.isPending ? "Regenerating…" : "Regenerate report"}
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${generateMutation.isPending ? "animate-spin" : ""}`}
+                  />
+                  {generateMutation.isPending
+                    ? "Regenerating…"
+                    : "Regenerate report"}
                 </button>
               </div>
 
@@ -2421,7 +2853,12 @@ function RoleReportModal({
                 </label>
                 <textarea
                   value={reportDraft.executive_summary}
-                  onChange={(e) => setReportDraft({ ...reportDraft, executive_summary: e.target.value })}
+                  onChange={(e) =>
+                    setReportDraft({
+                      ...reportDraft,
+                      executive_summary: e.target.value,
+                    })
+                  }
                   rows={5}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
                 />
@@ -2435,18 +2872,43 @@ function RoleReportModal({
                   {[
                     ["Total applicants", reportDraft.funnel.total_applicants],
                     ["Never shortlisted", reportDraft.funnel.never_shortlisted],
-                    ["Shortlisted (total)", reportDraft.funnel.shortlisted_total],
-                    ["Never started interview", reportDraft.funnel.never_started_interview],
-                    ["Reached Stage 1 only", reportDraft.funnel.reached_stage1_only],
-                    ["Completed full interview", reportDraft.funnel.completed_full_interview],
-                    ["Still deciding", reportDraft.funnel.completed_breakdown.still_deciding],
+                    [
+                      "Shortlisted (total)",
+                      reportDraft.funnel.shortlisted_total,
+                    ],
+                    [
+                      "Never started interview",
+                      reportDraft.funnel.never_started_interview,
+                    ],
+                    [
+                      "Reached Stage 1 only",
+                      reportDraft.funnel.reached_stage1_only,
+                    ],
+                    [
+                      "Completed full interview",
+                      reportDraft.funnel.completed_full_interview,
+                    ],
+                    [
+                      "Still deciding",
+                      reportDraft.funnel.completed_breakdown.still_deciding,
+                    ],
                     ["On hold", reportDraft.funnel.completed_breakdown.hold],
-                    ["Rejected", reportDraft.funnel.completed_breakdown.rejected],
+                    [
+                      "Rejected",
+                      reportDraft.funnel.completed_breakdown.rejected,
+                    ],
                     ["Hired", reportDraft.funnel.completed_breakdown.hired],
                   ].map(([label, value]) => (
-                    <div key={label as string} className="bg-gray-50 border border-gray-100 rounded-lg p-3">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
-                      <p className="text-lg font-bold text-gray-900 mt-0.5">{value}</p>
+                    <div
+                      key={label as string}
+                      className="bg-gray-50 border border-gray-100 rounded-lg p-3"
+                    >
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">
+                        {label}
+                      </p>
+                      <p className="text-lg font-bold text-gray-900 mt-0.5">
+                        {value}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -2473,7 +2935,9 @@ function RoleReportModal({
                       <button
                         type="button"
                         onClick={() => {
-                          const next = reportDraft.constraints.filter((_, idx) => idx !== i);
+                          const next = reportDraft.constraints.filter(
+                            (_, idx) => idx !== i,
+                          );
                           setReportDraft({ ...reportDraft, constraints: next });
                         }}
                         className="p-1.5 text-gray-400 hover:text-red-600"
@@ -2485,7 +2949,10 @@ function RoleReportModal({
                   <button
                     type="button"
                     onClick={() =>
-                      setReportDraft({ ...reportDraft, constraints: [...reportDraft.constraints, ""] })
+                      setReportDraft({
+                        ...reportDraft,
+                        constraints: [...reportDraft.constraints, ""],
+                      })
                     }
                     className="text-xs font-medium text-red-600 hover:underline"
                   >
@@ -2502,8 +2969,8 @@ function RoleReportModal({
                   Candidate ranking
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  Candidates still awaiting a decision only — Hold, Rejected, and Hired candidates
-                  already have one.
+                  Candidates still awaiting a decision only — Hold, Rejected,
+                  and Hired candidates already have one.
                 </p>
                 {reportDraft.candidate_rankings.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
@@ -2516,11 +2983,17 @@ function RoleReportModal({
                         key={c.application_id}
                         className="flex items-center gap-3 px-3 py-2 text-sm border-b border-gray-100 last:border-b-0"
                       >
-                        <span className="font-bold text-red-600 w-5">{c.rank}</span>
+                        <span className="font-bold text-red-600 w-5">
+                          {c.rank}
+                        </span>
                         <span className="flex-1 text-gray-900">{c.name}</span>
-                        <span className="text-xs text-gray-400 w-28">{c.reference_number}</span>
+                        <span className="text-xs text-gray-400 w-28">
+                          {c.reference_number}
+                        </span>
                         <span className="font-semibold text-gray-900 w-16 text-right">
-                          {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
+                          {c.combined_score != null
+                            ? c.combined_score.toFixed(2)
+                            : "—"}
                         </span>
                       </div>
                     ))}
@@ -2533,38 +3006,71 @@ function RoleReportModal({
                   All applicants
                 </label>
                 {reportDraft.applicant_roster.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No applicants for this role.</p>
+                  <p className="text-xs text-gray-400 italic">
+                    No applicants for this role.
+                  </p>
                 ) : (
                   <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
                     <table className="w-full text-xs min-w-[640px]">
                       <thead>
                         <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
-                          <th className="text-left font-semibold px-3 py-2">Name</th>
-                          <th className="text-left font-semibold px-3 py-2">Stage reached</th>
-                          <th className="text-left font-semibold px-3 py-2">Panel</th>
-                          <th className="text-left font-semibold px-3 py-2">Date</th>
-                          <th className="text-left font-semibold px-3 py-2">Location</th>
-                          <th className="text-right font-semibold px-3 py-2">S1</th>
-                          <th className="text-right font-semibold px-3 py-2">S2</th>
+                          <th className="text-left font-semibold px-3 py-2">
+                            Name
+                          </th>
+                          <th className="text-left font-semibold px-3 py-2">
+                            Stage reached
+                          </th>
+                          <th className="text-left font-semibold px-3 py-2">
+                            Panel
+                          </th>
+                          <th className="text-left font-semibold px-3 py-2">
+                            Date
+                          </th>
+                          <th className="text-left font-semibold px-3 py-2">
+                            Location
+                          </th>
+                          <th className="text-right font-semibold px-3 py-2">
+                            S1
+                          </th>
+                          <th className="text-right font-semibold px-3 py-2">
+                            S2
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {reportDraft.applicant_roster.map((a) => (
-                          <tr key={a.application_id} className="border-t border-gray-100">
-                            <td className="px-3 py-2 text-gray-900">{a.name}</td>
-                            <td className="px-3 py-2 text-gray-700">{a.stage_reached}</td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.panel_names.length ? a.panel_names.join(", ") : "—"}
+                          <tr
+                            key={a.application_id}
+                            className="border-t border-gray-100"
+                          >
+                            <td className="px-3 py-2 text-gray-900">
+                              {a.name}
                             </td>
                             <td className="px-3 py-2 text-gray-700">
-                              {a.interview_date ? formatDate(a.interview_date) : "—"}
+                              {a.stage_reached}
                             </td>
-                            <td className="px-3 py-2 text-gray-700">{a.location ?? "—"}</td>
-                            <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}
+                            <td className="px-3 py-2 text-gray-700">
+                              {a.panel_names.length
+                                ? a.panel_names.join(", ")
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {a.interview_date
+                                ? formatDate(a.interview_date)
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">
+                              {a.location ?? "—"}
                             </td>
                             <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage2_rating != null ? a.stage2_rating.toFixed(2) : "—"}
+                              {a.stage1_rating != null
+                                ? a.stage1_rating.toFixed(2)
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 text-right">
+                              {a.stage2_rating != null
+                                ? a.stage2_rating.toFixed(2)
+                                : "—"}
                             </td>
                           </tr>
                         ))}
@@ -2581,7 +3087,10 @@ function RoleReportModal({
                 <textarea
                   value={reportDraft.core_competencies_summary}
                   onChange={(e) =>
-                    setReportDraft({ ...reportDraft, core_competencies_summary: e.target.value })
+                    setReportDraft({
+                      ...reportDraft,
+                      core_competencies_summary: e.target.value,
+                    })
                   }
                   rows={4}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify mb-3"
@@ -2593,21 +3102,35 @@ function RoleReportModal({
                 ) : (
                   <div className="space-y-3">
                     {reportDraft.core_competencies_table.map((c) => (
-                      <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
-                        <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                      <div
+                        key={c.application_id}
+                        className="border border-gray-100 rounded-lg p-3"
+                      >
+                        <p className="text-sm font-semibold text-gray-900 mb-2">
+                          {c.name}
+                        </p>
                         {c.competencies.length === 0 ? (
-                          <p className="text-xs text-gray-400 italic">No competency data available.</p>
+                          <p className="text-xs text-gray-400 italic">
+                            No competency data available.
+                          </p>
                         ) : (
                           <div className="space-y-1.5">
                             {c.competencies.map((comp, i) => (
-                              <div key={i} className="flex items-start gap-2 text-xs">
+                              <div
+                                key={i}
+                                className="flex items-start gap-2 text-xs"
+                              >
                                 <span className="font-semibold text-gray-900 w-32 flex-shrink-0">
                                   {comp.area}
                                 </span>
                                 <span className="font-semibold text-red-600 w-14 flex-shrink-0">
-                                  {comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}
+                                  {comp.score != null
+                                    ? `${comp.score.toFixed(2)} / 5`
+                                    : "—"}
                                 </span>
-                                <span className="text-gray-600">{comp.assessment || "—"}</span>
+                                <span className="text-gray-600">
+                                  {comp.assessment || "—"}
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -2625,7 +3148,10 @@ function RoleReportModal({
                 <textarea
                   value={reportDraft.key_observations_summary}
                   onChange={(e) =>
-                    setReportDraft({ ...reportDraft, key_observations_summary: e.target.value })
+                    setReportDraft({
+                      ...reportDraft,
+                      key_observations_summary: e.target.value,
+                    })
                   }
                   rows={4}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify mb-3"
@@ -2637,8 +3163,13 @@ function RoleReportModal({
                 ) : (
                   <div className="space-y-3">
                     {reportDraft.key_observations_table.map((c) => (
-                      <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
-                        <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                      <div
+                        key={c.application_id}
+                        className="border border-gray-100 rounded-lg p-3"
+                      >
+                        <p className="text-sm font-semibold text-gray-900 mb-2">
+                          {c.name}
+                        </p>
                         <div className="grid grid-cols-2 gap-4 text-xs">
                           <div>
                             <p className="font-semibold text-green-700 uppercase tracking-wide mb-1">
@@ -2653,7 +3184,9 @@ function RoleReportModal({
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-gray-400 italic">None noted.</p>
+                              <p className="text-gray-400 italic">
+                                None noted.
+                              </p>
                             )}
                           </div>
                           <div>
@@ -2669,7 +3202,9 @@ function RoleReportModal({
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-gray-400 italic">None noted.</p>
+                              <p className="text-gray-400 italic">
+                                None noted.
+                              </p>
                             )}
                           </div>
                         </div>
@@ -2693,7 +3228,10 @@ function RoleReportModal({
                   onChange={(e) =>
                     setReportDraft({
                       ...reportDraft,
-                      final_recommendation: { ...reportDraft.final_recommendation, rationale: e.target.value },
+                      final_recommendation: {
+                        ...reportDraft.final_recommendation,
+                        rationale: e.target.value,
+                      },
                     })
                   }
                   rows={5}
@@ -2716,8 +3254,12 @@ function RoleReportModal({
                         key={c.application_id}
                         className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs border-b border-gray-100 last:border-b-0"
                       >
-                        <span className="font-semibold text-gray-900">{c.name}</span>
-                        <span className="text-gray-400">{c.reference_number}</span>
+                        <span className="font-semibold text-gray-900">
+                          {c.name}
+                        </span>
+                        <span className="text-gray-400">
+                          {c.reference_number}
+                        </span>
                         <a
                           href={c.panel_forms_url}
                           target="_blank"
@@ -2736,7 +3278,9 @@ function RoleReportModal({
                             Individual report
                           </a>
                         ) : (
-                          <span className="text-gray-400 italic">No individual report generated.</span>
+                          <span className="text-gray-400 italic">
+                            No individual report generated.
+                          </span>
                         )}
                       </div>
                     ))}
@@ -2773,7 +3317,8 @@ function RoleReportModal({
 
               {editLog.length > 0 && (
                 <p className="text-xs text-gray-400">
-                  Edited {editLog.length} time{editLog.length === 1 ? "" : "s"} — last saved{" "}
+                  Edited {editLog.length} time{editLog.length === 1 ? "" : "s"}{" "}
+                  — last saved{" "}
                   {formatDate(editLog[editLog.length - 1].edited_at)}
                 </p>
               )}
@@ -2792,7 +3337,9 @@ function RoleReportModal({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">Original AI report</h2>
+              <h2 className="text-base font-bold text-gray-900">
+                Original AI report
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowOriginal(false)}
@@ -2803,9 +3350,12 @@ function RoleReportModal({
             </div>
             <div className="p-5 overflow-y-auto min-h-0 space-y-3 text-sm text-gray-800">
               <p className="text-xs text-gray-400 mb-2">
-                This is the report exactly as AI generated it — unaffected by any edits made above.
+                This is the report exactly as AI generated it — unaffected by
+                any edits made above.
               </p>
-              <p className="whitespace-pre-wrap text-justify">{reportRow.report.executive_summary}</p>
+              <p className="whitespace-pre-wrap text-justify">
+                {reportRow.report.executive_summary}
+              </p>
               <p className="whitespace-pre-wrap text-justify">
                 {reportRow.report.final_recommendation.rationale}
               </p>
@@ -2836,15 +3386,23 @@ function RecruitmentPageContent() {
   const interviewParam = searchParams?.get("interview");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
-    "applications" | "offer" | "onboarding" | "careers" | "ai_rejects" | "approvals"
+    | "applications"
+    | "offer"
+    | "onboarding"
+    | "employees"
+    | "careers"
+    | "ai_rejects"
+    | "approvals"
   >(
     tabParam === "offer"
       ? "offer"
       : tabParam === "onboarding"
         ? "onboarding"
-        : tabParam === "careers"
-          ? "careers"
-          : tabParam === "ai_rejects" || tabParam === "rejects"
+        : tabParam === "employees"
+          ? "employees"
+          : tabParam === "careers"
+            ? "careers"
+            : tabParam === "ai_rejects" || tabParam === "rejects"
             ? "ai_rejects"
             : tabParam === "approvals"
               ? "approvals"
@@ -2855,9 +3413,9 @@ function RecruitmentPageContent() {
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [selected, setSelected] = useState<JobApplication | null>(null);
-  const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<
-    string | null
-  >(null);
+  const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
 
   const { data: session } = useQuery({
@@ -2896,7 +3454,8 @@ function RecruitmentPageContent() {
   // AI soft-rejects, HR-confirmed rejects, and evaluation Hold/Reserve or
   // Do-not-hire outcomes all live in the Rejects tab.
   const nonAiApplications = useMemo(
-    () => (data ?? []).filter((a) => !isAiFlagged(a) && !isEvaluationOutcome(a)),
+    () =>
+      (data ?? []).filter((a) => !isAiFlagged(a) && !isEvaluationOutcome(a)),
     [data],
   );
   const aiRejectApplications = useMemo(
@@ -2914,12 +3473,20 @@ function RecruitmentPageContent() {
     () => nonAiApplications.filter((a) => a.status === "offer"),
     [nonAiApplications],
   );
-  // Once an applicant's evaluation is finalized they move to the Approvals
-  // tab, a confirmed hire moves to the Offer tab, and a Hold/Reserve or
-  // Do-not-hire outcome moves to the Rejects tab — none of these should
-  // clutter the Applications tab.
+  const onboardingApplications = useMemo(
+    () => nonAiApplications.filter((a) => a.status === "onboarding"),
+    [nonAiApplications],
+  );
+  // Evaluation → Approvals; confirmed hire → Offer; onboarding link sent →
+  // Onboarding — none of these belong in the Applications tab.
   const mainApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status !== "evaluation" && a.status !== "offer"),
+    () =>
+      nonAiApplications.filter(
+        (a) =>
+          a.status !== "evaluation" &&
+          a.status !== "offer" &&
+          a.status !== "onboarding",
+      ),
     [nonAiApplications],
   );
 
@@ -2933,29 +3500,46 @@ function RecruitmentPageContent() {
     list.filter((a) => {
       if (opts.name && opts.name.length > 0 && !opts.name.includes(a.full_name))
         return false;
-      if (opts.role && opts.role.length > 0 && !opts.role.includes(a.role_title))
+      if (
+        opts.role &&
+        opts.role.length > 0 &&
+        !opts.role.includes(a.role_title)
+      )
         return false;
-      if (opts.status && opts.status.length > 0 && !opts.status.includes(a.status))
+      if (
+        opts.status &&
+        opts.status.length > 0 &&
+        !opts.status.includes(a.status)
+      )
         return false;
       return true;
     });
 
   const nameOptions = useMemo(() => {
-    const scoped = applyFilters(mainApplications, { role: roleFilters, status: statusFilters });
+    const scoped = applyFilters(mainApplications, {
+      role: roleFilters,
+      status: statusFilters,
+    });
     return Array.from(new Set(scoped.map((a) => a.full_name)))
       .sort((a, b) => a.localeCompare(b))
       .map((n) => ({ value: n, label: n }));
   }, [mainApplications, roleFilters, statusFilters]);
 
   const roleOptions = useMemo(() => {
-    const scoped = applyFilters(mainApplications, { name: nameFilters, status: statusFilters });
+    const scoped = applyFilters(mainApplications, {
+      name: nameFilters,
+      status: statusFilters,
+    });
     return Array.from(new Set(scoped.map((a) => a.role_title)))
       .sort((a, b) => a.localeCompare(b))
       .map((r) => ({ value: r, label: r }));
   }, [mainApplications, nameFilters, statusFilters]);
 
   const statusOptions = useMemo(() => {
-    const scoped = applyFilters(mainApplications, { name: nameFilters, role: roleFilters });
+    const scoped = applyFilters(mainApplications, {
+      name: nameFilters,
+      role: roleFilters,
+    });
     const present = new Set(scoped.map((a) => a.status));
     return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
       value: s,
@@ -2982,13 +3566,17 @@ function RecruitmentPageContent() {
     setStatusFilters([]);
   };
 
-  const awaitingScreeningCount = (data ?? []).filter(isAwaitingAiScreening).length;
+  const awaitingScreeningCount = (data ?? []).filter(
+    isAwaitingAiScreening,
+  ).length;
 
   useEffect(() => {
     if (tabParam === "offer") setActiveTab("offer");
     else if (tabParam === "onboarding") setActiveTab("onboarding");
+    else if (tabParam === "employees") setActiveTab("employees");
     else if (tabParam === "careers") setActiveTab("careers");
-    else if (tabParam === "ai_rejects" || tabParam === "rejects") setActiveTab("ai_rejects");
+    else if (tabParam === "ai_rejects" || tabParam === "rejects")
+      setActiveTab("ai_rejects");
     else if (tabParam === "approvals") setActiveTab("approvals");
   }, [tabParam]);
 
@@ -3042,7 +3630,17 @@ function RecruitmentPageContent() {
       </div>
 
       <div className="flex gap-1 mb-5 border-b border-gray-200">
-        {(["applications", "ai_rejects", "approvals", "offer", "careers", "onboarding"] as const).map((tab) => (
+        {(
+          [
+            "applications",
+            "ai_rejects",
+            "approvals",
+            "offer",
+            "careers",
+            "onboarding",
+            "employees",
+          ] as const
+        ).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -3063,7 +3661,9 @@ function RecruitmentPageContent() {
                     ? "Offer"
                     : tab === "careers"
                       ? "Careers"
-                      : "Onboarding"}
+                      : tab === "employees"
+                        ? "Employees"
+                        : "Onboarding"}
             {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {aiRejectApplications.length}
@@ -3079,6 +3679,11 @@ function RecruitmentPageContent() {
                 {offerApplications.length}
               </span>
             )}
+            {tab === "onboarding" && onboardingApplications.length > 0 && (
+              <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {onboardingApplications.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -3086,7 +3691,11 @@ function RecruitmentPageContent() {
       {activeTab === "careers" ? (
         <CareersTab />
       ) : activeTab === "ai_rejects" ? (
-        <RejectsTab applications={aiRejectApplications} isLoading={isLoading} onSelect={setSelected} />
+        <RejectsTab
+          applications={aiRejectApplications}
+          isLoading={isLoading}
+          onSelect={setSelected}
+        />
       ) : activeTab === "approvals" ? (
         <ApprovalsTab
           applications={approvalApplications}
@@ -3102,156 +3711,187 @@ function RecruitmentPageContent() {
         />
       ) : activeTab === "onboarding" ? (
         <OnboardingTab />
+      ) : activeTab === "employees" ? (
+        <EmployeesTab />
       ) : (
         <>
-      <div className="mb-5">
-        <div className="flex flex-wrap gap-2">
-          <MultiSelectFilter
-            label="Name"
-            options={nameOptions}
-            selected={nameFilters}
-            onChange={setNameFilters}
-          />
-          <MultiSelectFilter
-            label="Role"
-            options={roleOptions}
-            selected={roleFilters}
-            onChange={setRoleFilters}
-          />
-          <MultiSelectFilter
-            label="Status"
-            options={statusOptions}
-            selected={statusFilters}
-            onChange={setStatusFilters}
-          />
-        </div>
+          <div className="mb-5">
+            <div className="flex flex-wrap gap-2">
+              <MultiSelectFilter
+                label="Name"
+                options={nameOptions}
+                selected={nameFilters}
+                onChange={setNameFilters}
+              />
+              <MultiSelectFilter
+                label="Role"
+                options={roleOptions}
+                selected={roleFilters}
+                onChange={setRoleFilters}
+              />
+              <MultiSelectFilter
+                label="Status"
+                options={statusOptions}
+                selected={statusFilters}
+                onChange={setStatusFilters}
+              />
+            </div>
 
-        {hasActiveFilters && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-3">
-            {nameFilters.map((n) => (
-              <FilterChip
-                key={`name-${n}`}
-                label={n}
-                onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
-              />
-            ))}
-            {roleFilters.map((r) => (
-              <FilterChip
-                key={`role-${r}`}
-                label={r}
-                onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
-              />
-            ))}
-            {statusFilters.map((s) => (
-              <FilterChip
-                key={`status-${s}`}
-                label={STATUS_LABELS[s as ApplicationStatus]}
-                onRemove={() => setStatusFilters(statusFilters.filter((v) => v !== s))}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={clearAllFilters}
-              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
-            >
-              Clear all
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
-        <table className="w-full text-left text-sm min-w-[800px]">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
-              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
-              <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
-              <th className="px-4 py-3 font-semibold text-gray-600">Applied</th>
-              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
-                Action
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-gray-100">
-                  <td colSpan={6} className="px-4 py-3">
-                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
-                  </td>
-                </tr>
-              ))
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
-                  No applications found.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((a) => (
-                <tr
-                  key={a.id}
-                  className="border-b border-gray-100 hover:bg-gray-50/80"
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                {nameFilters.map((n) => (
+                  <FilterChip
+                    key={`name-${n}`}
+                    label={n}
+                    onRemove={() =>
+                      setNameFilters(nameFilters.filter((v) => v !== n))
+                    }
+                  />
+                ))}
+                {roleFilters.map((r) => (
+                  <FilterChip
+                    key={`role-${r}`}
+                    label={r}
+                    onRemove={() =>
+                      setRoleFilters(roleFilters.filter((v) => v !== r))
+                    }
+                  />
+                ))}
+                {statusFilters.map((s) => (
+                  <FilterChip
+                    key={`status-${s}`}
+                    label={STATUS_LABELS[s as ApplicationStatus]}
+                    onRemove={() =>
+                      setStatusFilters(statusFilters.filter((v) => v !== s))
+                    }
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
                 >
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{a.full_name}</p>
-                    <p className="text-xs text-gray-400">{a.email}</p>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                    {a.reference_number}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {formatDate(a.created_at)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
-                    >
-                      {STATUS_LABELS[a.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setSelected(a)}
-                      className="text-xs font-medium text-red-600 hover:underline"
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))
+                  Clear all
+                </button>
+              </div>
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+
+          <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+            <table className="w-full text-left text-sm min-w-[800px]">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Candidate
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Role
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Applied
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td colSpan={6} className="px-4 py-3">
+                        <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                      </td>
+                    </tr>
+                  ))
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-12 text-center text-gray-400"
+                    >
+                      No applications found.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((a) => (
+                    <tr
+                      key={a.id}
+                      className="border-b border-gray-100 hover:bg-gray-50/80"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">
+                          {a.full_name}
+                        </p>
+                        <p className="text-xs text-gray-400">{a.email}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {a.role_title}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                        {a.reference_number}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {formatDate(a.created_at)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                        >
+                          {STATUS_LABELS[a.status]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => setSelected(a)}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
-      {selected && (activeTab === "applications" || activeTab === "ai_rejects" || activeTab === "approvals" || activeTab === "offer") && (
-        <ApplicationDetail
-          application={selected}
-          onClose={() => setSelected(null)}
-          adminId={session.user!.id}
-          openInterviewOnMount={autoOpenInterviewId === selected.id}
-          onInterviewOpened={() => setAutoOpenInterviewId(null)}
-          onRefreshApplication={async () => {
-            await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
-            const res = await api.get("/careers/applications");
-            const apps = res.data.data as JobApplication[];
-            queryClient.setQueryData(["job_applications"], apps);
-            const fresh = apps.find((a) => a.id === selected.id);
-            if (fresh) setSelected(fresh);
-          }}
-          onUpdated={() => {
-            queryClient.invalidateQueries({ queryKey: ["job_applications"] });
-            queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
-            setSelected(null);
-          }}
-        />
-      )}
+      {selected &&
+        (activeTab === "applications" ||
+          activeTab === "ai_rejects" ||
+          activeTab === "approvals" ||
+          activeTab === "offer") && (
+          <ApplicationDetail
+            application={selected}
+            onClose={() => setSelected(null)}
+            adminId={session.user!.id}
+            openInterviewOnMount={autoOpenInterviewId === selected.id}
+            onInterviewOpened={() => setAutoOpenInterviewId(null)}
+            onRefreshApplication={async () => {
+              await queryClient.invalidateQueries({
+                queryKey: ["job_applications"],
+              });
+              const res = await api.get("/careers/applications");
+              const apps = res.data.data as JobApplication[];
+              queryClient.setQueryData(["job_applications"], apps);
+              const fresh = apps.find((a) => a.id === selected.id);
+              if (fresh) setSelected(fresh);
+            }}
+            onUpdated={() => {
+              queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+              queryClient.invalidateQueries({
+                queryKey: ["onboarding_submissions"],
+              });
+              setSelected(null);
+            }}
+          />
+        )}
     </div>
   );
 }

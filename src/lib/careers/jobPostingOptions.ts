@@ -5,6 +5,10 @@ import {
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import {
+  resolveInterviewGuideKeys,
+  type GradeLevelsConfig,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
 import type { SystemOption } from "@/lib/systemDefinitions";
 
 export interface JobPostingOption {
@@ -19,25 +23,15 @@ export interface JobPostingOption {
 /** @deprecated use JobPostingOption */
 export type JobTitleOption = JobPostingOption;
 
-const GUIDE_KEYS: InterviewGuideKey[] = [
-  "L1",
-  "L2",
-  "L3",
-  "L4",
-  "L5",
-  "L6",
-  "L7",
-  "data_analyst",
-  "veterinarian",
-];
-
 export function parseJobPostingRules(
   raw: Record<string, unknown> | null | undefined,
+  gradeConfig?: GradeLevelsConfig,
 ): InterviewGuideKey {
   const key = String(raw?.interviewGuideKey ?? "L1");
-  return GUIDE_KEYS.includes(key as InterviewGuideKey)
-    ? (key as InterviewGuideKey)
-    : "L1";
+  const allowed = resolveInterviewGuideKeys(gradeConfig);
+  if (allowed.includes(key)) return key as InterviewGuideKey;
+  if (/^L\d+$/.test(key)) return key as InterviewGuideKey;
+  return "L1";
 }
 
 /** @deprecated use parseJobPostingRules */
@@ -131,7 +125,7 @@ export async function resolveInterviewGuideKey(
 /** Strip internal grade codes like "(L1)" from titles shown on the public careers page. */
 export function formatPublicJobTitle(title: string): string {
   return title
-    .replace(/\s*\(L[1-7]\)\s*$/i, "")
-    .replace(/\s*—\s*L[1-7]\s*$/i, "")
+    .replace(/\s*\(L\d+\)\s*$/i, "")
+    .replace(/\s*—\s*L\d+\s*$/i, "")
     .trim();
 }

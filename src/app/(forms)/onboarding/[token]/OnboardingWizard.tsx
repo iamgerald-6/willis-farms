@@ -4,13 +4,15 @@ import { useMemo, useState } from "react";
 import {
   ONBOARDING_STEPS,
   ONBOARDING_STEP_LABELS,
+  buildApplicationBackedOnboardingFlat,
   flatToOnboardingForm,
   mergeOnboardingFieldDefinitions,
   onboardingFormToFlat,
   resolveFieldOptions,
+  validateOnboardingMedicalExtras,
   validateOnboardingStep,
   visibleOnboardingFieldsForStep,
-  type OnboardingFieldStep,
+  type OnboardingApplicationContext,
   type OnboardingFlatValues,
   type OnboardingFormField,
 } from "@/lib/careers/onboardingFormSchema";
@@ -24,14 +26,7 @@ import { uploadHintForField } from "@/lib/uploadConstraints";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
-import { ApplicationCertificatesView, normalizeApplicationCertificates } from "@/components/onboarding/ApplicationCertificatesView";
-import { OnboardingQualificationsInput } from "@/components/onboarding/OnboardingQualificationsInput";
-import { OnboardingCertificationsInput } from "@/components/onboarding/OnboardingCertificationsInput";
-import { OnboardingWorkExperienceInput } from "@/components/onboarding/OnboardingWorkExperienceInput";
-import {
-  RefereeSubmissionsView,
-  type RefereeSubmissionDisplay,
-} from "@/components/onboarding/RefereeSubmissionsView";
+import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 import {
   CheckCircle2,
@@ -53,6 +48,7 @@ type ApplicationInfo = {
 type Props = {
   token: string;
   application: ApplicationInfo;
+  applicationFormData?: Record<string, unknown> | null;
   initialFlat: OnboardingFlatValues;
   fields: OnboardingFormField[];
   optionLists: Record<string, string[]>;
@@ -62,53 +58,33 @@ type Props = {
 const inputClass =
   "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400";
 
+const lockedClass =
+  "w-full border border-gray-100 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700";
+
 function displaySectionTitle(title: string): string {
   if (title === "K. Biosecurity declaration") return "Biosecurity";
   if (title === "L & N. Declarations") return "Consent & signature";
-  if (title === "J. References (two required)") return "References";
-  if (title.startsWith("J. References")) return "References";
   return title.replace(/^[A-Z](?:\s*&\s*[A-Z])?\.\s*/, "");
 }
 
-function buildInitialValues(flat: OnboardingFlatValues): OnboardingFlatValues {
-  const form = flatToOnboardingForm(flat);
-  const next = onboardingFormToFlat(form) as OnboardingFlatValues;
-  if (form.qualifications?.length) next.qualifications = form.qualifications;
-  if (form.application_certificates?.length) {
-    next.application_certificates = form.application_certificates;
-  }
-  if (form.additional_certifications?.length) {
-    next.additional_certifications = form.additional_certifications;
-  }
-  if (form.work_experience?.length) {
-    next.work_experience = form.work_experience;
-  }
-  if (flat.referee_submissions) {
-    next.referee_submissions = flat.referee_submissions;
-  }
-  // Legacy saves used `certifications` for mixed data — treat as additional only
-  if (!form.additional_certifications?.length && form.certifications?.length) {
-    const legacy = form.certifications.filter(
-      (c) => c?.name?.trim() || c?.file?.secure_url,
-    );
-    if (legacy.length > 0) next.additional_certifications = legacy;
-  }
-  if (!next.qualifications) {
-    next.qualifications = [{ qualification: "", institution: "", field: "", year: "" }];
-  }
-  if (!next.additional_certifications) {
-    next.additional_certifications = [];
-  }
-  if (!next.work_experience) {
-    next.work_experience = [
-      { employer: "", job_title: "", from: "", to: "", reason_leaving: "" },
-    ];
+function buildInitialValues(
+  flat: OnboardingFlatValues,
+  applicationContext?: OnboardingApplicationContext,
+): OnboardingFlatValues {
+  const next = onboardingFormToFlat(flatToOnboardingForm(flat)) as OnboardingFlatValues;
+  if (applicationContext) {
+    const fromApp = buildApplicationBackedOnboardingFlat(applicationContext);
+    for (const [key, val] of Object.entries(fromApp)) {
+      if (
+        key.startsWith("personal.") &&
+        (next[key] === undefined || next[key] === null || String(next[key]).trim() === "")
+      ) {
+        next[key] = val;
+      }
+    }
   }
   return next;
 }
-
-const lockedClass =
-  "w-full border border-gray-100 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700";
 
 function FieldBlock({
   label,
@@ -135,22 +111,46 @@ function FieldBlock({
 export default function OnboardingWizard({
   token,
   application,
+  applicationFormData,
   initialFlat,
   fields,
   optionLists,
   expiresAt,
 }: Props) {
+  const applicationContext = useMemo<OnboardingApplicationContext>(
+    () => ({
+      application_form_data: applicationFormData,
+      full_name: application.full_name,
+      email: application.email,
+      phone: application.phone,
+    }),
+    [applicationFormData, application.full_name, application.email, application.phone],
+  );
+
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<OnboardingFlatValues>(() =>
-    buildInitialValues(initialFlat),
+    buildInitialValues(initialFlat, {
+      application_form_data: applicationFormData,
+      full_name: application.full_name,
+      email: application.email,
+      phone: application.phone,
+    }),
   );
   const [formExtras, setFormExtras] = useState<OnboardingFormData>(() =>
-    mergeOnboardingForm(flatToOnboardingForm(buildInitialValues(initialFlat))),
+    mergeOnboardingForm(
+      flatToOnboardingForm(
+        buildInitialValues(initialFlat, {
+          application_form_data: applicationFormData,
+          full_name: application.full_name,
+          email: application.email,
+          phone: application.phone,
+        }),
+      ),
+    ),
   );
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
-  const [certUploadingIndex, setCertUploadingIndex] = useState<number | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submittedForm, setSubmittedForm] = useState<OnboardingFormData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const step = ONBOARDING_STEPS[stepIndex];
@@ -161,8 +161,8 @@ export default function OnboardingWizard({
   );
 
   const stepFields = useMemo(
-    () => visibleOnboardingFieldsForStep(mergedFields, step, values),
-    [mergedFields, step, values],
+    () => visibleOnboardingFieldsForStep(mergedFields, step, values, applicationContext),
+    [mergedFields, step, values, applicationContext],
   );
 
   const sections = useMemo(() => {
@@ -176,8 +176,6 @@ export default function OnboardingWizard({
   }, [stepFields]);
 
   const setFieldValue = (key: string, value: unknown) => {
-    if (key === "personal.is_citizen") return;
-
     setValues((prev) => {
       const next = { ...prev, [key]: value };
 
@@ -222,7 +220,16 @@ export default function OnboardingWizard({
   };
 
   const saveStep = async (opts: { finalize?: boolean }) => {
-    const stepErrors = validateOnboardingStep(mergedFields, step, values, optionLists);
+    const payload = buildFormPayload();
+    const flatForValidation = onboardingFormToFlat(payload);
+
+    const stepErrors = validateOnboardingStep(
+      mergedFields,
+      step,
+      flatForValidation,
+      optionLists,
+      applicationContext,
+    );
     if (stepErrors.length > 0) {
       setError(stepErrors[0]);
       return;
@@ -230,18 +237,21 @@ export default function OnboardingWizard({
 
     if (opts.finalize) {
       for (const s of ONBOARDING_STEPS) {
-        const allErrors = validateOnboardingStep(mergedFields, s, values, optionLists);
+        const allErrors = validateOnboardingStep(
+          mergedFields,
+          s,
+          flatForValidation,
+          optionLists,
+          applicationContext,
+        );
         if (allErrors.length > 0) {
           setError(allErrors[0]);
           return;
         }
       }
-      if (!formExtras.medical?.acknowledge_referral) {
-        setError("Please confirm your medical report declaration.");
-        return;
-      }
-      if (!formExtras.declarations?.data_consent) {
-        setError("Please consent to data processing before submitting.");
+      const medicalErrors = validateOnboardingMedicalExtras(payload);
+      if (medicalErrors.length > 0) {
+        setError(medicalErrors[0]);
         return;
       }
     }
@@ -254,14 +264,14 @@ export default function OnboardingWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           step,
-          form_data: buildFormPayload(),
+          form_data: payload,
           finalize: opts.finalize ?? false,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       if (opts.finalize) {
-        setSubmitted(true);
+        setSubmittedForm(payload);
       } else if (stepIndex < ONBOARDING_STEPS.length - 1) {
         setStepIndex((i) => i + 1);
       }
@@ -465,59 +475,6 @@ export default function OnboardingWizard({
       );
     }
 
-    if (fieldType === "qualifications_list") {
-      return (
-        <FieldBlock key={field.id} label={field.label} required={required}>
-          <OnboardingQualificationsInput
-            value={value}
-            onChange={(next) => setFieldValue(fieldKey, next)}
-          />
-        </FieldBlock>
-      );
-    }
-
-    if (fieldType === "application_certificates_view") {
-      const certs = Array.isArray(value) ? value : values.application_certificates;
-      return (
-        <FieldBlock key={field.id} label={field.label} required={false}>
-          <ApplicationCertificatesView certificates={normalizeApplicationCertificates(certs)} />
-        </FieldBlock>
-      );
-    }
-
-    if (fieldType === "certifications_list") {
-      return (
-        <FieldBlock key={field.id} label={field.label} required={required}>
-          <OnboardingCertificationsInput
-            value={value}
-            onChange={(next) => setFieldValue(fieldKey, next)}
-            uploadingIndex={certUploadingIndex}
-            onUploadingChange={setCertUploadingIndex}
-          />
-        </FieldBlock>
-      );
-    }
-
-    if (fieldType === "work_experience_list") {
-      return (
-        <FieldBlock key={field.id} label={field.label} required={required}>
-          <OnboardingWorkExperienceInput
-            value={value}
-            onChange={(next) => setFieldValue(fieldKey, next)}
-          />
-        </FieldBlock>
-      );
-    }
-
-    if (fieldType === "referee_submissions_view") {
-      const rows = (value ?? values.referee_submissions) as RefereeSubmissionDisplay[] | undefined;
-      return (
-        <FieldBlock key={field.id} label={field.label} required={false}>
-          <RefereeSubmissionsView submissions={Array.isArray(rows) ? rows : []} />
-        </FieldBlock>
-      );
-    }
-
     return (
       <FieldBlock key={field.id} label={field.label} required={required} half={half}>
         <input
@@ -531,11 +488,16 @@ export default function OnboardingWizard({
     );
   };
 
-  if (submitted) {
+  if (submittedForm) {
     return (
-      <SubmittedSuccess
+      <SubmittedProfile
         fullName={application.full_name}
+        roleTitle={application.role_title}
         referenceNumber={application.reference_number}
+        email={application.email}
+        phone={application.phone}
+        applicationFormData={applicationFormData}
+        onboardingFormData={submittedForm}
       />
     );
   }
@@ -570,9 +532,6 @@ export default function OnboardingWizard({
           const isBiosecuritySection =
             sectionTitle === "Biosecurity" ||
             sectionTitle === "K. Biosecurity declaration";
-          const isConsentSection =
-            sectionTitle === "Consent & signature" ||
-            sectionTitle === "L & N. Declarations";
 
           return (
             <section key={sectionTitle || "default"} className="space-y-3">
@@ -582,7 +541,7 @@ export default function OnboardingWizard({
                 </h2>
               )}
 
-              {step === "referee" && isBiosecuritySection && (
+              {step === "medical" && isBiosecuritySection && (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 leading-relaxed">
                     Wills Farms is a pig production business. These questions help us protect
@@ -636,32 +595,35 @@ export default function OnboardingWizard({
               <div className="grid sm:grid-cols-2 gap-3">
                 {sectionFields.map((field) => renderField(field))}
               </div>
-
-              {step === "referee" && isConsentSection && (
-                <label className="flex items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    className="mt-1 accent-red-600"
-                    checked={formExtras.declarations?.data_consent ?? false}
-                    onChange={(e) =>
-                      patchExtras({
-                        declarations: {
-                          ...formExtras.declarations,
-                          data_consent: e.target.checked,
-                        },
-                      })
-                    }
-                  />
-                  <span>
-                    I consent to the collection and processing of my personal data for employment
-                    administration, and I certify that the information provided is accurate and
-                    complete.
-                  </span>
-                </label>
-              )}
             </section>
           );
         })}
+
+        {step === "medical" && (
+          <section className="space-y-4">
+            <h2 className="text-sm font-bold text-gray-900">Consent & signature</h2>
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-1 accent-red-600"
+                checked={formExtras.declarations?.data_consent ?? false}
+                onChange={(e) =>
+                  patchExtras({
+                    declarations: {
+                      ...formExtras.declarations,
+                      data_consent: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <span>
+                I consent to the collection and processing of my personal data for employment
+                administration, and I certify that the information provided is accurate and
+                complete.
+              </span>
+            </label>
+          </section>
+        )}
 
         {step === "medical" && (
           <section className="space-y-3">
@@ -682,7 +644,6 @@ export default function OnboardingWizard({
             </label>
           </section>
         )}
-
       </div>
 
       <div className="flex gap-2 mt-8 pt-6 border-t border-gray-100">
@@ -722,25 +683,47 @@ export default function OnboardingWizard({
   );
 }
 
-function SubmittedSuccess({
+function SubmittedProfile({
   fullName,
+  roleTitle,
   referenceNumber,
+  email,
+  phone,
+  applicationFormData,
+  onboardingFormData,
 }: {
   fullName: string;
+  roleTitle: string;
   referenceNumber: string;
+  email: string;
+  phone: string;
+  applicationFormData?: Record<string, unknown> | null;
+  onboardingFormData: OnboardingFormData;
 }) {
   usePreventBrowserBack(true);
 
   return (
     <FormShell eyebrow="Wills Farms Ltd." title="Onboarding submitted">
-      <div className="text-center py-8">
+      <div className="text-center mb-6 print:hidden">
         <CheckCircle2 className="w-14 h-14 text-green-600 mx-auto mb-4" />
         <p className="text-gray-600 text-sm leading-relaxed">
           Thank you, {fullName.split(/\s+/)[0]}. Your information has been sent to
           Wills Farms HR. We will contact you regarding medical examination and next steps.
         </p>
-        <p className="text-xs text-gray-400 mt-6">Reference {referenceNumber}</p>
+        <p className="text-xs text-gray-400 mt-4">Reference {referenceNumber}</p>
       </div>
+      <CandidateProfileReview
+        applicationFormData={applicationFormData}
+        onboardingFormData={onboardingFormData}
+        header={{
+          fullName,
+          roleTitle,
+          referenceNumber,
+          email,
+          phone,
+          submittedAt: new Date().toISOString(),
+        }}
+      />
     </FormShell>
   );
 }

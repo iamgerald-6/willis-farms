@@ -10,6 +10,7 @@ import {
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import { parseApplicantName } from "@/lib/careers/onboardingTypes";
 import type {
   EducationEntry,
   UploadedFile,
@@ -77,15 +78,87 @@ export type OnboardingFlatValues = Record<string, unknown>;
 
 export const ONBOARDING_STEP_LABELS: Record<OnboardingFieldStep, string> = {
   personal: "Personal information",
-  medical: "Medical & qualifications",
+  medical: "Medical & declarations",
   referee: "References & declarations",
 };
 
-export const ONBOARDING_STEPS: OnboardingFieldStep[] = [
-  "personal",
-  "medical",
-  "referee",
-];
+/** Active candidate-facing steps (legacy `referee` step removed). */
+export const ONBOARDING_STEPS: OnboardingFieldStep[] = ["personal", "medical"];
+
+export type OnboardingApplicationContext = {
+  application_form_data?: Record<string, unknown> | null;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+};
+
+/** Onboarding-only list fields removed from the candidate form. */
+const ONBOARDING_FIELDS_NEVER_COLLECTED = new Set([
+  "qualifications",
+  "application_certificates",
+  "additional_certifications",
+  "work_experience",
+  "referee_submissions",
+]);
+
+/** Never shown on onboarding — derived from the job application (e.g. nationality → citizenship). */
+const ONBOARDING_FIELDS_NEVER_SHOWN = new Set(["personal.is_citizen"]);
+
+function applicationPrefillValueIsPresent(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim() !== "";
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") {
+    if ("secure_url" in value) {
+      return Boolean((value as { secure_url?: string }).secure_url);
+    }
+    return Object.keys(value as object).length > 0;
+  }
+  return true;
+}
+
+/** Flat values sourced from the job application — used for prefill and hide rules. */
+export function buildApplicationBackedOnboardingFlat(
+  ctx: OnboardingApplicationContext,
+): OnboardingFlatValues {
+  const flat = prefillFromApplicationFormData(ctx.application_form_data);
+
+  if (ctx.full_name?.trim()) {
+    const name = parseApplicantName(ctx.full_name);
+    if (name.first_name) flat["personal.first_name"] = name.first_name;
+    if (name.surname) flat["personal.surname"] = name.surname;
+    if (name.has_middle_from_application) {
+      flat["personal.middle_names"] = name.middle_names;
+    }
+    flat["declarations.signature_name"] = ctx.full_name.trim();
+  }
+  if (ctx.email?.trim()) {
+    flat["personal.personal_email"] = ctx.email.trim().toLowerCase();
+  }
+  if (ctx.phone?.trim()) {
+    flat["personal.mobile"] = ctx.phone.trim();
+  }
+
+  return flat;
+}
+
+/** Hide onboarding fields already captured (and prefilled) from the job application. */
+export function isOnboardingFieldCoveredByApplication(
+  fieldKey: string,
+  ctx: OnboardingApplicationContext,
+  _currentValues?: OnboardingFlatValues,
+): boolean {
+  if (ONBOARDING_FIELDS_NEVER_COLLECTED.has(fieldKey)) return true;
+  if (ONBOARDING_FIELDS_NEVER_SHOWN.has(fieldKey)) return true;
+
+  const appFlat = buildApplicationBackedOnboardingFlat(ctx);
+  const appVal =
+    appFlat[fieldKey] ?? getNestedValue(flatToOnboardingForm(appFlat), fieldKey);
+  if (applicationPrefillValueIsPresent(appVal)) return true;
+
+  return false;
+}
 
 /** Ghana Post GPS: e.g. GA-123-4567 */
 export const GPS_ADDRESS_REGEX = /^[A-Z]{2}-\d{3}-\d{4}$/i;
@@ -121,9 +194,9 @@ export function isCompleteGhanaPostGps(value: string): boolean {
 export const BANK_ACCOUNT_REGEX = /^\d{10,16}$/;
 
 export function parseGradeFromRoleTitle(roleTitle: string): string | null {
-  const paren = roleTitle.match(/\(L([1-7])\)/i);
+  const paren = roleTitle.match(/\(L(\d+)\)/i);
   if (paren) return `L${paren[1]}`;
-  const bare = roleTitle.match(/\bL([1-7])\b/i);
+  const bare = roleTitle.match(/\bL(\d+)\b/i);
   return bare ? `L${bare[1]}` : null;
 }
 
@@ -135,8 +208,15 @@ export function parseOnboardingFieldRules(
   const fieldType = (raw?.fieldType as OnboardingFieldType) ?? "text";
   const showWhenRaw = raw?.showWhen as OnboardingFieldShowWhen | undefined;
 
+  const normalizedStep: OnboardingFieldStep =
+    step === "referee"
+      ? "medical"
+      : ONBOARDING_STEPS.includes(step)
+        ? step
+        : "personal";
+
   return {
-    step: ONBOARDING_STEPS.includes(step) ? step : "personal",
+    step: normalizedStep,
     section: typeof raw?.section === "string" ? raw.section : undefined,
     fieldKey,
     fieldType,
@@ -179,6 +259,10 @@ export function systemOptionToOnboardingField(option: SystemOption): OnboardingF
 
 /** Legacy single-field rows replaced by list editors — hide even if still in DB. */
 export const DEPRECATED_ONBOARDING_FIELD_KEYS = new Set([
+  "employment.position_title",
+  "employment.department",
+  "employment.farm_site",
+  "employment.employment_type",
   "qualifications.0.qualification",
   "qualifications.0.institution",
   "work_experience.0.employer",
@@ -192,9 +276,18 @@ export const DEPRECATED_ONBOARDING_FIELD_KEYS = new Set([
   "referees.1.relationship",
   "referees.1.phone",
   "referees.1.email",
+  "qualifications",
+  "application_certificates",
+  "additional_certifications",
+  "work_experience",
+  "referee_submissions",
 ]);
 
 export const DEPRECATED_ONBOARDING_FIELD_IDS = new Set([
+  "opt:onboarding:field:position",
+  "opt:onboarding:field:department",
+  "opt:onboarding:field:location",
+  "opt:onboarding:field:emp_type",
   "opt:onboarding:field:qual",
   "opt:onboarding:field:inst",
   "opt:onboarding:field:employer",
@@ -208,6 +301,11 @@ export const DEPRECATED_ONBOARDING_FIELD_IDS = new Set([
   "opt:onboarding:field:ref2_rel",
   "opt:onboarding:field:ref2_phone",
   "opt:onboarding:field:ref2_email",
+  "opt:onboarding:field:quals",
+  "opt:onboarding:field:app_certs",
+  "opt:onboarding:field:certs",
+  "opt:onboarding:field:experience",
+  "opt:onboarding:field:ref_view",
 ]);
 
 function isDeprecatedOnboardingField(field: OnboardingFormField): boolean {
@@ -444,9 +542,19 @@ export function visibleOnboardingFieldsForStep(
   fields: OnboardingFormField[],
   step: OnboardingFieldStep,
   values: OnboardingFlatValues,
+  applicationContext?: OnboardingApplicationContext,
 ): OnboardingFormField[] {
   return fields
     .filter((f) => f.rules.step === step)
+    .filter(
+      (f) =>
+        !applicationContext ||
+        !isOnboardingFieldCoveredByApplication(
+          f.rules.fieldKey,
+          applicationContext,
+          values,
+        ),
+    )
     .filter((f) => isOnboardingFieldVisible(f, values));
 }
 
@@ -484,10 +592,16 @@ export function validateOnboardingStep(
   step: OnboardingFieldStep,
   values: OnboardingFlatValues,
   optionLists: Record<string, string[]>,
+  applicationContext?: OnboardingApplicationContext,
 ): string[] {
   const errors: string[] = [];
   const nestedForm = flatToOnboardingForm(values);
-  for (const field of visibleOnboardingFieldsForStep(fields, step, values)) {
+  for (const field of visibleOnboardingFieldsForStep(
+    fields,
+    step,
+    values,
+    applicationContext,
+  )) {
     const value =
       values[field.rules.fieldKey] ??
       getNestedValue(nestedForm, field.rules.fieldKey);
@@ -624,6 +738,40 @@ export function validateOnboardingStep(
   return errors;
 }
 
+const BIOSECURITY_QUESTION_KEYS = [
+  "household_pigs",
+  "household_pig_work",
+  "visited_swine_site_12m",
+  "asf_travel_30d",
+] as const;
+
+export function validateOnboardingMedicalExtras(form: OnboardingFormData): string[] {
+  const errors: string[] = [];
+  const bio = form.biosecurity ?? {};
+
+  for (const key of BIOSECURITY_QUESTION_KEYS) {
+    const answer = bio[key];
+    if (answer !== "yes" && answer !== "no") {
+      errors.push("Please answer all biosecurity questions.");
+      break;
+    }
+  }
+
+  if (!bio.commitment_initials?.trim()) {
+    errors.push("Biosecurity commitment initials are required.");
+  }
+
+  if (!form.medical?.acknowledge_referral) {
+    errors.push("Please confirm your medical report declaration.");
+  }
+
+  if (!form.declarations?.data_consent) {
+    errors.push("Please consent to data processing before submitting.");
+  }
+
+  return errors;
+}
+
 /** Citizenship from job application — always locked on onboarding. */
 export function deriveCitizenshipFromApplication(
   applicationData: Record<string, unknown> | null | undefined,
@@ -749,9 +897,17 @@ export function prefillFromApplicationFormData(
 
   for (const [from, to] of Object.entries(map)) {
     const val = applicationData[from];
-    if (val !== undefined && val !== null && String(val).trim() !== "") {
+    if (applicationPrefillValueIsPresent(val)) {
       flat[to] = val;
     }
+  }
+
+  const ghanaCard = applicationData.ghana_card_no ?? applicationData.ghana_card;
+  if (
+    applicationPrefillValueIsPresent(ghanaCard) &&
+    !applicationPrefillValueIsPresent(flat["personal.ghana_card_no"])
+  ) {
+    flat["personal.ghana_card_no"] = ghanaCard;
   }
 
   const nationality = String(applicationData.nationality ?? "").trim();
@@ -804,7 +960,12 @@ export function applyOnboardingPrefill(
 ): OnboardingFlatValues {
   const flat = onboardingFormToFlat(form);
 
-  const fromApp = prefillFromApplicationFormData(opts.application_form_data);
+  const fromApp = buildApplicationBackedOnboardingFlat({
+    application_form_data: opts.application_form_data,
+    full_name: opts.full_name,
+    email: opts.email,
+    phone: opts.phone,
+  });
   for (const [k, v] of Object.entries(fromApp)) {
     if (k === "application_certificates" && Array.isArray(v) && v.length > 0) {
       flat.application_certificates = v;
@@ -849,33 +1010,8 @@ export function applyOnboardingPrefill(
     }
   }
 
-  const parts = opts.full_name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2 && !flat["personal.first_name"]) {
-    flat["personal.first_name"] = parts[0];
-    flat["personal.surname"] = parts[parts.length - 1];
-    if (parts.length > 2) {
-      flat["personal.middle_names"] = parts.slice(1, -1).join(" ");
-    }
-  } else if (parts.length === 1 && !flat["personal.first_name"]) {
-    flat["personal.first_name"] = parts[0];
-  }
-
-  flat["personal.mobile"] = opts.phone.trim();
-  flat["personal.personal_email"] = opts.email.trim().toLowerCase();
-  flat["employment.position_title"] = opts.role_title;
-  flat["declarations.signature_name"] = opts.full_name.trim();
-
-  const citizenship = deriveCitizenshipFromApplication(opts.application_form_data);
-  if (citizenship) {
-    flat["personal.is_citizen"] = citizenship;
-  }
-
   const grade = parseGradeFromRoleTitle(opts.role_title);
   if (grade) flat["_meta.grade_level"] = grade;
-
-  if (opts.location && !flat["employment.farm_site"]) {
-    flat["employment.farm_site"] = opts.location;
-  }
 
   return flat;
 }

@@ -6,12 +6,12 @@
 create extension if not exists "pgcrypto";
 
 -- ---------------------------------------------------------------------------
--- referee_reference_tokens — magic links per referee (1 or 2) per application
+-- referee_reference_tokens — magic links per referee slot per application
 -- ---------------------------------------------------------------------------
 create table if not exists public.referee_reference_tokens (
   id              uuid primary key default gen_random_uuid(),
   application_id  uuid not null references public.job_applications(id) on delete cascade,
-  referee_index   smallint not null check (referee_index in (1, 2)),
+  referee_index   smallint not null check (referee_index between 1 and 5),
   referee_name    text not null,
   referee_email   text not null,
   token           text not null unique,
@@ -35,7 +35,7 @@ create table if not exists public.referee_reference_submissions (
   id              uuid primary key default gen_random_uuid(),
   application_id  uuid not null references public.job_applications(id) on delete cascade,
   token_id        uuid references public.referee_reference_tokens(id) on delete set null,
-  referee_index   smallint not null check (referee_index in (1, 2)),
+  referee_index   smallint not null check (referee_index between 1 and 5),
   form_data       jsonb not null default '{}'::jsonb,
   submitted_at    timestamptz,
   created_at      timestamptz not null default now(),

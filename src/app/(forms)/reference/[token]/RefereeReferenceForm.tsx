@@ -6,6 +6,7 @@ import {
   type RefereeRating,
   type RefereeReferenceFormData,
 } from "@/lib/careers/refereeReferenceTypes";
+import type { RefereeAssessmentAttributeDef } from "@/lib/systemDefinitions/refereeReferenceConfig";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
@@ -61,6 +62,9 @@ export default function RefereeReferenceForm({ token }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assessmentAttributes, setAssessmentAttributes] = useState<
+    RefereeAssessmentAttributeDef[]
+  >(REFEREE_ASSESSMENT_ATTRIBUTES.map((a) => ({ key: a.key, label: a.label })));
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +85,9 @@ export default function RefereeReferenceForm({ token }: Props) {
           setSubmittedAt(data.submitted_at ?? null);
         } else {
           setForm(data.form_data as RefereeReferenceFormData);
+          if (Array.isArray(data.assessment_attributes)) {
+            setAssessmentAttributes(data.assessment_attributes);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -264,7 +271,7 @@ export default function RefereeReferenceForm({ token }: Props) {
             Rate each attribute. Use N/A if not applicable or unable to comment.
           </p>
           <div className="space-y-3">
-            {REFEREE_ASSESSMENT_ATTRIBUTES.map((attr) => (
+            {assessmentAttributes.map((attr) => (
               <div key={attr.key} className="border border-gray-200 rounded-lg p-3">
                 <p className="text-sm text-gray-800 mb-2">{attr.label}</p>
                 <div className="flex flex-wrap gap-2">
@@ -274,7 +281,7 @@ export default function RefereeReferenceForm({ token }: Props) {
                       type="button"
                       onClick={() => setRating(attr.key, rating)}
                       className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                        form.assessment?.[attr.key] === rating
+                        form.assessment?.[attr.key as keyof NonNullable<typeof form.assessment>] === rating
                           ? "bg-red-600 text-white border-red-600"
                           : "bg-white border-gray-200 text-gray-700"
                       }`}

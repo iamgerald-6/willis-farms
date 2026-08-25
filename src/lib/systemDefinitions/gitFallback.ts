@@ -20,6 +20,12 @@ import {
   getDefaultOnboardingLocations,
 } from "./onboardingDefaults";
 import {
+  ONBOARDING_EMPLOYMENT_TYPES_LIST,
+  ONBOARDING_HR_FIELDS_LIST,
+  getDefaultOnboardingEmploymentTypes,
+  getDefaultOnboardingHrFields,
+} from "./onboardingHrDefaults";
+import {
   SKILL_LOG_MODULE_ID,
   SKILL_LOG_REVIEW_PERIODS_LIST,
   SKILL_LOG_SECTIONS_LIST,
@@ -98,6 +104,20 @@ export function getGitFallbackOptions(
 
   if (
     moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_HR_FIELDS_LIST
+  ) {
+    return getDefaultOnboardingHrFields();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_EMPLOYMENT_TYPES_LIST
+  ) {
+    return getDefaultOnboardingEmploymentTypes();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
     (optionList === RECRUITMENT_JOB_POSTINGS_LIST ||
       optionList === "careers.jobTitles")
   ) {
@@ -131,6 +151,8 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
       RECRUITMENT_APPLICATION_FIELDS_LIST,
       RECRUITMENT_JOB_POSTINGS_LIST,
       ONBOARDING_FIELDS_LIST,
+      ONBOARDING_HR_FIELDS_LIST,
+      ONBOARDING_EMPLOYMENT_TYPES_LIST,
       ONBOARDING_LOCATIONS_LIST,
       ONBOARDING_DEPARTMENTS_L1L6_LIST,
       ONBOARDING_DEPARTMENTS_L7_LIST,

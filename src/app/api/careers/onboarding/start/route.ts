@@ -5,6 +5,7 @@ import { onboardingMagicLinkUrl } from "@/lib/appUrl";
 import { sendHireOnboardingEmail } from "@/lib/careers/interviewEmails";
 import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/types";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
+import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 // Moves a hired applicant from "offer" to "onboarding" — creates their
 // onboarding magic-link token, an onboarding_submissions row, and sends the
@@ -52,6 +53,24 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const { data: submission } = await supabaseAdmin
+      .from("onboarding_submissions")
+      .select("hr_data")
+      .eq("application_id", application_id)
+      .maybeSingle();
+
+    const hr = (submission?.hr_data ?? {}) as OnboardingHrData;
+
+    if (!hr.offer_letter?.secure_url) {
+      return NextResponse.json(
+        {
+          error:
+            "Upload the signed offer letter before sending the onboarding link.",
+        },
+        { status: 400 },
+      );
+    }
+
     const tokenRecord = await createOnboardingToken(supabaseAdmin, application_id);
     const onboardingLink = onboardingMagicLinkUrl(tokenRecord.token);
 
@@ -60,7 +79,11 @@ export async function POST(req: NextRequest) {
         application_id,
         token_id: tokenRecord.id,
         form_data: {},
-        hr_data: {},
+        hr_data: hr,
+        submitted_at: null,
+        personal_completed_at: null,
+        medical_completed_at: null,
+        referee_completed_at: null,
       },
       { onConflict: "application_id" },
     );
@@ -73,6 +96,12 @@ export async function POST(req: NextRequest) {
       onboardingLink,
       expiresAt: tokenRecord.expiresAt,
       recommendedStartDate: formData.summary?.recommended_start_date,
+      offerLetter: hr.offer_letter?.secure_url
+        ? {
+            secure_url: hr.offer_letter.secure_url,
+            original_name: hr.offer_letter.original_name,
+          }
+        : undefined,
     });
 
     const status_history = appendStatusHistory(app.status_history, "onboarding", started_by);

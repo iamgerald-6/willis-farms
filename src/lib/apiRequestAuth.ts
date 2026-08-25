@@ -74,18 +74,49 @@ export async function getApiRequestUser(
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) return null;
 
-  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
-  if (authError || !authData?.user) return null;
+  // Both Supabase calls below hit the network. A transient DNS/connectivity
+  // blip to the Supabase host (seen as "TypeError: fetch failed" /
+  // "getaddrinfo ENOTFOUND") used to throw uncaught here, turning into a
+  // hard 500 on every route that calls this (i.e. almost all of them) and
+  // surfacing to the browser as a generic "Load failed" fetch error. Treat
+  // it the same as "not authenticated" instead of crashing the request.
+  let authData;
+  try {
+    const { data, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !data?.user) return null;
+    authData = data;
+  } catch (err) {
+    console.error("[getApiRequestUser] auth.getUser failed", err);
+    return null;
+  }
 
   const authUser = authData.user;
 
-  const { data: profile } = await supabaseAdmin
-    .from("users")
-    .select(
-      "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
-    )
-    .eq("user_id", authUser.id)
-    .maybeSingle();
+  let profile: {
+    role?: string | null;
+    grade_level?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    company_id?: string | null;
+    tm_can_view_all_tasks?: boolean | null;
+    access_tier?: string | null;
+    page_permissions?: string[] | null;
+    page_permission_levels?: AccessProfile["page_permission_levels"];
+    page_permission_actions?: AccessProfile["page_permission_actions"];
+  } | null = null;
+  try {
+    const { data } = await supabaseAdmin
+      .from("users")
+      .select(
+        "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
+      )
+      .eq("user_id", authUser.id)
+      .maybeSingle();
+    profile = data;
+  } catch (err) {
+    console.error("[getApiRequestUser] users lookup failed", err);
+  }
 
   const role = profile?.role ?? metadataRole(authUser);
   const email = profile?.email ?? authUser.email ?? null;

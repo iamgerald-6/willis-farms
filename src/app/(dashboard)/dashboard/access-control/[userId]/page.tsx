@@ -13,15 +13,34 @@ import {
   canManageUserAccounts,
   getEffectivePermissionActionsForProfile,
 } from "@/lib/permissionLevels";
-import { hasIndividualPermissionOverride } from "@/lib/groupPermissionPresets";
+import {
+  getGroupPresetLabels,
+  hasIndividualPermissionOverride,
+  resolveGroupPresetActions,
+} from "@/lib/groupPermissionPresets";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
-import { permissionActionModuleCount } from "@/lib/permissionActions";
+import {
+  gradeBandGroup,
+  permissionActionModuleCount,
+  roleGroup,
+} from "@/lib/permissionActions";
 import PermissionMatrix from "../components/PermissionMatrix";
-import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { AccessControlManageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { toast } from "sonner";
 import { getAccountStatus } from "@/lib/userAccountStatus";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  eligibleSupervisorsForEmployee,
+  supervisorDisplayName,
+} from "@/lib/supervisorAssignment";
 
 const inputClass =
   "w-full border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -34,10 +53,16 @@ export default function ManageUserAccessPage() {
 
   const [permissionActions, setPermissionActions] =
     useState<PagePermissionActions>({});
+  const [permissionMode, setPermissionMode] = useState<"group" | "individual">(
+    "group",
+  );
   const [isDisabled, setIsDisabled] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [supervisorId, setSupervisorId] = useState<string>("");
   const [initialized, setInitialized] = useState(false);
+
+  const { config: gradeConfig } = useGradeLevelsConfig();
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -75,11 +100,46 @@ export default function ManageUserAccessPage() {
     setPermissionActions(
       getEffectivePermissionActionsForProfile(target, groupPresets),
     );
+    setPermissionMode(
+      hasIndividualPermissionOverride(target) ? "individual" : "group",
+    );
     setIsDisabled(!!target.is_disabled);
     setFirstName(target.first_name ?? "");
     setLastName(target.last_name ?? "");
+    setSupervisorId(target.supervisor_id ?? "");
     setInitialized(true);
   }, [target, initialized, groupPresets]);
+
+  const groupBaselineActions = useMemo(() => {
+    if (!target) return {};
+    return resolveGroupPresetActions(
+      { role: target.role, grade_level: target.grade_level },
+      groupPresets ?? {},
+    );
+  }, [target, groupPresets]);
+
+  const presetLabels = useMemo(
+    () => getGroupPresetLabels(gradeConfig),
+    [gradeConfig],
+  );
+  const roleGroupKey = target ? roleGroup(target.role) : null;
+  const gradeGroupKey = target
+    ? gradeBandGroup(target.grade_level, gradeConfig)
+    : null;
+  const groupLabelParts = [
+    roleGroupKey ? presetLabels[roleGroupKey] : null,
+    gradeGroupKey ? presetLabels[gradeGroupKey] : null,
+  ].filter((v): v is string => !!v);
+
+  const supervisorOptions = useMemo(() => {
+    if (!target) return [];
+    return eligibleSupervisorsForEmployee(target, users, gradeConfig);
+  }, [target, users, gradeConfig]);
+
+  const assignedSupervisorName = supervisorDisplayName(
+    users,
+    supervisorId || target?.supervisor_id,
+  );
 
   const usesIndividual = target
     ? hasIndividualPermissionOverride(target)
@@ -89,6 +149,9 @@ export default function ManageUserAccessPage() {
     !!target &&
     (firstName.trim() !== (target.first_name ?? "").trim() ||
       lastName.trim() !== (target.last_name ?? "").trim());
+
+  const supervisorDirty =
+    !!target && (supervisorId || "") !== (target.supervisor_id ?? "");
 
   const permissionModuleCount = permissionActionModuleCount(permissionActions);
 
@@ -125,6 +188,23 @@ export default function ManageUserAccessPage() {
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Could not send email.");
+    },
+  });
+
+  const saveSupervisorMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.patch("/access-control/supervisor", {
+        target_user_id: userId,
+        supervisor_id: supervisorId || null,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Supervisor updated.");
+      queryClient.invalidateQueries({ queryKey: ["get_users"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Failed to update supervisor.");
     },
   });
 
@@ -288,6 +368,79 @@ export default function ManageUserAccessPage() {
 
           <div className="pt-2 border-t border-gray-100">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+              Grade level
+            </label>
+            <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+              {target.grade_level ?? "Not set"}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100">
+            <label
+              htmlFor="assigned-supervisor"
+              className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5"
+            >
+              Assigned supervisor
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Used on new appraisals so the employee does not have to pick their
+              supervisor manually. Must be L4 or above and strictly senior to
+              this user&apos;s grade.
+            </p>
+            <select
+              id="assigned-supervisor"
+              value={supervisorId}
+              onChange={(e) => setSupervisorId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">
+                {supervisorOptions.length === 0
+                  ? "No eligible supervisors"
+                  : "Not assigned"}
+              </option>
+              {supervisorOptions.map((sup) => (
+                <option key={sup.user_id} value={sup.user_id}>
+                  {sup.first_name} {sup.last_name}
+                  {sup.grade_level ? ` (${sup.grade_level})` : ""}
+                </option>
+              ))}
+            </select>
+            {assignedSupervisorName && !supervisorDirty && (
+              <p className="text-xs text-gray-500 mt-2">
+                Current: {assignedSupervisorName}
+              </p>
+            )}
+            {!target.supervisor_id && supervisorOptions.length > 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                No supervisor assigned — set one so appraisals pre-fill correctly.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <button
+                type="button"
+                onClick={() => saveSupervisorMutation.mutate()}
+                disabled={saveSupervisorMutation.isPending || !supervisorDirty}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+              >
+                {saveSupervisorMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                Save supervisor
+              </button>
+              {supervisorDirty && (
+                <button
+                  type="button"
+                  onClick={() => setSupervisorId(target.supervisor_id ?? "")}
+                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
               Account status
             </label>
             <div className="flex flex-wrap items-center gap-3">
@@ -352,43 +505,144 @@ export default function ManageUserAccessPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-          <h3 className="text-sm font-semibold text-gray-800">Module access</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {usesIndividual
-              ? "This user has individual permissions that override their group defaults."
-              : "This user follows group permissions for their role and grade band. Saving here creates an individual override."}
-          </p>
-        </div>
-
-        <PermissionMatrix
-          actions={permissionActions}
-          onChange={setPermissionActions}
-        />
-
-        <div className="p-5 border-t border-gray-100 flex flex-wrap gap-3">
-          {usesIndividual && (
+        <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-800">
+              Module access
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {permissionMode === "group"
+                ? "Read-only — what the group currently grants this user."
+                : "Editable — individual settings fully replace the group's permissions."}
+            </p>
+          </div>
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-1 gap-1 self-start">
             <button
               type="button"
-              onClick={() => saveMutation.mutate({ resetToGroup: true })}
-              disabled={saveMutation.isPending}
-              className="px-5 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60 transition-colors"
+              onClick={() => setPermissionMode("group")}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                permissionMode === "group"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
             >
-              Reset to group defaults
+              Group defaults
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate(undefined)}
-            disabled={saveMutation.isPending || permissionModuleCount === 0}
-            className="w-full sm:w-auto px-8 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {saveMutation.isPending && (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            )}
-            Save access changes
-          </button>
+            <button
+              type="button"
+              onClick={() => setPermissionMode("individual")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                permissionMode === "individual"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Individual override
+              {usesIndividual && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              )}
+            </button>
+          </div>
         </div>
+
+        {permissionMode === "group" ? (
+          <>
+            <div className="px-5 py-3 bg-blue-50/60 border-b border-blue-100 flex items-start gap-2">
+              <Users className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-700" />
+              <p className="text-xs text-blue-800">
+                {groupLabelParts.length > 0 ? (
+                  <>
+                    Showing the default permissions for{" "}
+                    <strong>{groupLabelParts.join(" + ")}</strong>. Edit the
+                    group itself from the group tab on the User Management
+                    list, or switch to{" "}
+                    <strong>Individual override</strong> to customize just{" "}
+                    {displayName}.
+                  </>
+                ) : (
+                  "No group presets apply to this user's role/grade yet — switch to Individual override to set permissions directly."
+                )}
+              </p>
+            </div>
+
+            <PermissionMatrix
+              actions={groupBaselineActions}
+              onChange={() => {}}
+              readOnly
+            />
+
+            {usesIndividual && (
+              <div className="p-5 border-t border-gray-100">
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                  {displayName} currently has an individual override — the
+                  matrix above shows what they would get if that override
+                  were removed, not what they have right now.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => saveMutation.mutate({ resetToGroup: true })}
+                  disabled={saveMutation.isPending}
+                  className="px-5 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60 transition-colors flex items-center gap-2"
+                >
+                  {saveMutation.isPending && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  Remove override — use group defaults
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100 flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-700" />
+              <p className="text-xs text-amber-800">
+                These checkboxes <strong>fully replace</strong> the group
+                defaults for {displayName} — anything left unchecked here is
+                <strong> not</strong> inherited from the group, even if the
+                group grants it. Rows that differ from the group are flagged{" "}
+                <span className="font-semibold">Custom</span>.
+              </p>
+            </div>
+
+            <PermissionMatrix
+              actions={permissionActions}
+              onChange={setPermissionActions}
+              compareTo={groupBaselineActions}
+            />
+
+            <div className="p-5 border-t border-gray-100 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPermissionActions(groupBaselineActions)}
+                className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                Copy group defaults
+              </button>
+              {usesIndividual && (
+                <button
+                  type="button"
+                  onClick={() => saveMutation.mutate({ resetToGroup: true })}
+                  disabled={saveMutation.isPending}
+                  className="px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60 transition-colors"
+                >
+                  Remove override
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => saveMutation.mutate(undefined)}
+                disabled={saveMutation.isPending || permissionModuleCount === 0}
+                className="w-full sm:w-auto sm:ml-auto px-8 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {saveMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                Save individual permissions
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

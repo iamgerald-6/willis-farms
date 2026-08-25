@@ -5,16 +5,35 @@ export const REFEREE_ASSESSMENT_ATTRIBUTES = [
   { key: "honesty_integrity", label: "Honesty & integrity" },
   { key: "quality_of_work", label: "Quality of work" },
   { key: "teamwork_attitude", label: "Teamwork & attitude" },
-  { key: "ability_follow_instructions", label: "Ability to follow instructions" },
+  {
+    key: "ability_follow_instructions",
+    label: "Ability to follow instructions",
+  },
   { key: "health_safety_awareness", label: "Health & safety awareness" },
-  { key: "job_specific_competence", label: "Job-specific technical competence" },
-  { key: "confidential_information", label: "Handling of confidential information" },
-  { key: "supervision_leadership", label: "Supervision / leadership (if applicable)" },
-  { key: "animal_handling_welfare", label: "Animal handling & welfare conduct (if applicable)" },
-  { key: "biosecurity_hygiene", label: "Biosecurity / hygiene discipline (if applicable)" },
+  {
+    key: "job_specific_competence",
+    label: "Job-specific technical competence",
+  },
+  {
+    key: "confidential_information",
+    label: "Handling of confidential information",
+  },
+  {
+    key: "supervision_leadership",
+    label: "Supervision / leadership (if applicable)",
+  },
+  {
+    key: "animal_handling_welfare",
+    label: "Animal handling & welfare conduct (if applicable)",
+  },
+  {
+    key: "biosecurity_hygiene",
+    label: "Biosecurity / hygiene discipline (if applicable)",
+  },
 ] as const;
 
-export type RefereeAssessmentKey = (typeof REFEREE_ASSESSMENT_ATTRIBUTES)[number]["key"];
+export type RefereeAssessmentKey =
+  (typeof REFEREE_ASSESSMENT_ATTRIBUTES)[number]["key"];
 
 export interface RefereeReferenceFormData {
   referee?: {
@@ -62,21 +81,34 @@ const MAX_REFEREE_SLOTS = 5;
 
 export function extractRefereesFromApplication(
   formData: Record<string, unknown> | null | undefined,
+  maxSlots = 5,
 ): RefereeContactFromApplication[] {
   if (!formData) return [];
 
-  const slots: RefereeContactFromApplication[] = [];
-  for (let index = 1; index <= MAX_REFEREE_SLOTS; index++) {
-    slots.push({
-      index,
-      name: String(formData[`reference_${index}_name`] ?? "").trim(),
-      phone: String(formData[`reference_${index}_phone`] ?? "").trim(),
-      email: String(formData[`reference_${index}_email`] ?? "").trim().toLowerCase(),
-      relationship: String(formData[`reference_${index}_relationship`] ?? "").trim(),
-    });
-  }
+  const slots: RefereeContactFromApplication[] = [
+    {
+      index: 1,
+      name: String(formData.reference_1_name ?? "").trim(),
+      phone: String(formData.reference_1_phone ?? "").trim(),
+      email: String(formData.reference_1_email ?? "")
+        .trim()
+        .toLowerCase(),
+      relationship: String(formData.reference_1_relationship ?? "").trim(),
+    },
+    {
+      index: 2,
+      name: String(formData.reference_2_name ?? "").trim(),
+      phone: String(formData.reference_2_phone ?? "").trim(),
+      email: String(formData.reference_2_email ?? "")
+        .trim()
+        .toLowerCase(),
+      relationship: String(formData.reference_2_relationship ?? "").trim(),
+    },
+  ];
 
-  return slots.filter((s) => s.name && s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email));
+  return slots.filter(
+    (s) => s.name && s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email),
+  );
 }
 
 export function emptyRefereeReferenceForm(

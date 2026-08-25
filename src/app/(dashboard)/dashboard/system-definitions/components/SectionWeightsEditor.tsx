@@ -6,13 +6,11 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import {
-  APPRAISAL_GRADE_BANDS,
-  APPRAISAL_GRADE_BAND_LABELS,
   SECTION_SET_UI_LABELS,
   getSectionMetaForBandSet,
-  type AppraisalGradeBand,
   type SectionSet,
 } from "@/lib/appraisal/sections";
+import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
 import type { FormDefinition } from "@/lib/moduleRegistry/types";
 import type { ModuleBusinessLogic } from "@/lib/systemDefinitions";
 
@@ -31,7 +29,7 @@ type SectionWeightsEditorProps = {
   readOnly?: boolean;
 };
 
-type Scope = "global" | AppraisalGradeBand;
+type Scope = "global" | string;
 
 function weightSum(weights: Record<string, number>): number {
   return Object.values(weights).reduce((a, b) => a + b, 0);
@@ -43,6 +41,7 @@ export default function SectionWeightsEditor({
 }: SectionWeightsEditorProps) {
   const queryClient = useQueryClient();
   const queryKey = ["system_module_config", moduleId];
+  const { formOptions, formKeyLabels } = useAppraisalScopeConfig();
 
   const [sectionSet, setSectionSet] = useState<SectionSet>("quarterly");
   const [scope, setScope] = useState<Scope>("global");
@@ -190,18 +189,18 @@ export default function SectionWeightsEditor({
         >
           All grade bands
         </button>
-        {APPRAISAL_GRADE_BANDS.map((band) => (
+        {formOptions.map((option) => (
           <button
-            key={band}
+            key={option.value}
             type="button"
-            onClick={() => setScope(band)}
+            onClick={() => setScope(option.value)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-              scope === band
+              scope === option.value
                 ? "bg-gray-900 text-white border-gray-900"
                 : "bg-white text-gray-600 border-gray-200"
             }`}
           >
-            {APPRAISAL_GRADE_BAND_LABELS[band].split("—")[0].trim()}
+            {(formKeyLabels[option.value] ?? option.label).split("—")[0].trim()}
           </button>
         ))}
       </div>

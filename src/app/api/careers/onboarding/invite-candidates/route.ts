@@ -11,6 +11,11 @@ import {
   collectExistingEmployeeIds,
 } from "@/lib/careers/hrEmployeeDefaults";
 import {
+  canAssignAsSupervisor,
+  resolveSupervisorByName,
+} from "@/lib/supervisorAssignment";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import {
   mergeOnboardingForm,
   parseApplicantName,
   type OnboardingFormData,
@@ -29,6 +34,7 @@ export type OnboardedInviteCandidate = {
     job_position: string;
     grade_level?: string;
     company_id?: string;
+    supervisor_id?: string;
   };
   /** Field keys populated from onboarding — HR should not retype these */
   locked_fields: (
@@ -59,9 +65,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+
     const { data: existingUsers, error: usersError } = await supabaseAdmin
       .from("users")
-      .select("email");
+      .select("user_id, email, first_name, last_name, grade_level, role");
 
     if (usersError) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });
@@ -129,17 +137,17 @@ export async function GET(req: NextRequest) {
         form.personal?.middle_names?.trim() || parsed.middle_names;
       const phone = form.personal?.mobile?.trim() || app.phone?.trim() || "";
       const job_position =
-        form.employment?.position_title?.trim() ||
+        hr.position_title?.trim() ||
         app.role_title?.trim() ||
         "";
       const grade_level = inferGradeLevel(app.role_slug, hr);
 
       // Prefer values HR saved on the onboarding record (Section O).
       let company_id = hr.employee_id?.trim() || undefined;
-      if (!company_id && grade_level) {
+      if (!company_id) {
         const idsPool = [...companyIds, ...assignedIdsThisBatch];
-        company_id = suggestEmployeeId(grade_level, idsPool) ?? undefined;
-        if (company_id) assignedIdsThisBatch.add(company_id);
+        company_id = suggestEmployeeId(idsPool);
+        assignedIdsThisBatch.add(company_id);
       }
 
       const inviteEmail =
@@ -163,6 +171,44 @@ export async function GET(req: NextRequest) {
       if (grade_level) locked_fields.push("grade_level");
       if (company_id) locked_fields.push("company_id");
 
+      const employeeStub = {
+        user_id: "pending",
+        role: "employee" as const,
+        grade_level: grade_level ?? null,
+      };
+
+      let supervisor_id: string | undefined;
+
+      if (hr.supervisor_id) {
+        const picked = (existingUsers ?? []).find(
+          (u) => u.user_id === hr.supervisor_id,
+        );
+        if (
+          picked &&
+          canAssignAsSupervisor(picked, employeeStub, gradeConfig)
+        ) {
+          supervisor_id = picked.user_id;
+        }
+      }
+
+      if (!supervisor_id && hr.supervisor_name) {
+        const matchedSupervisor = resolveSupervisorByName(
+          hr.supervisor_name,
+          existingUsers ?? [],
+        );
+        const matchedSupervisorRow = matchedSupervisor
+          ? (existingUsers ?? []).find(
+              (u) => u.user_id === matchedSupervisor.user_id,
+            )
+          : null;
+        if (
+          matchedSupervisorRow &&
+          canAssignAsSupervisor(matchedSupervisorRow, employeeStub, gradeConfig)
+        ) {
+          supervisor_id = matchedSupervisorRow.user_id;
+        }
+      }
+
       candidates.push({
         application_id: row.application_id,
         full_name: app.full_name,
@@ -175,6 +221,7 @@ export async function GET(req: NextRequest) {
           job_position,
           grade_level,
           company_id,
+          supervisor_id,
         },
         locked_fields,
       });

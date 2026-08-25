@@ -7,10 +7,26 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import {
+  diffFields,
   fetchModuleConfig,
   normalizeFormDefinition,
   parseModuleBusinessLogic,
+  writeSystemConfigAuditLog,
 } from "@/lib/systemDefinitions";
+import { getModuleByIdSync } from "@/lib/moduleRegistry";
+
+const BUSINESS_LOGIC_KEYS = [
+  "sectionWeightRules",
+  "sectionBaseWeights",
+  "globalSectionWeights",
+  "sectionContentOverrides",
+  "competencyContentOverrides",
+  "refereeReferenceConfig",
+  "applicationFormConfig",
+  "gradeLevelsConfig",
+  "appraisalScopeConfig",
+  "annualLeaveCapDays",
+];
 
 function decodeModuleId(raw: string): string {
   try {
@@ -91,6 +107,21 @@ export async function PATCH(
           sectionContentOverrides:
             incomingBl.sectionContentOverrides ??
             current.businessLogic.sectionContentOverrides,
+          competencyContentOverrides:
+            incomingBl.competencyContentOverrides ??
+            current.businessLogic.competencyContentOverrides,
+          refereeReferenceConfig:
+            incomingBl.refereeReferenceConfig ??
+            current.businessLogic.refereeReferenceConfig,
+          applicationFormConfig:
+            incomingBl.applicationFormConfig ??
+            current.businessLogic.applicationFormConfig,
+          gradeLevelsConfig:
+            incomingBl.gradeLevelsConfig ??
+            current.businessLogic.gradeLevelsConfig,
+          appraisalScopeConfig:
+            incomingBl.appraisalScopeConfig ??
+            current.businessLogic.appraisalScopeConfig,
           annualLeaveCapDays:
             incomingBl.annualLeaveCapDays ??
             current.businessLogic.annualLeaveCapDays,
@@ -118,6 +149,29 @@ export async function PATCH(
       patch.form_definition = formDefinition;
     }
 
+    // Diff against the effective (Git + DB merged) config that was in
+    // force a moment ago — this is what actually governed behaviour, so
+    // it's what the audit trail should say "it used to be".
+    const blDiff = diffFields(
+      current.businessLogic as unknown as Record<string, unknown>,
+      businessLogic as unknown as Record<string, unknown>,
+      BUSINESS_LOGIC_KEYS,
+    );
+    const changedFields = [...blDiff.changedFields];
+    const previousValues = { ...blDiff.previousValues };
+    const newValues = { ...blDiff.newValues };
+    if (
+      incomingForm !== undefined &&
+      JSON.stringify(current.formDefinition ?? null) !==
+        JSON.stringify(formDefinition ?? null)
+    ) {
+      changedFields.push("form_definition");
+      previousValues.form_definition = current.formDefinition ?? null;
+      newValues.form_definition = formDefinition ?? null;
+    }
+
+    const moduleLabel = getModuleByIdSync(moduleId)?.label ?? moduleId;
+
     const { data: existing } = await supabase
       .from("system_modules")
       .select("module_id")
@@ -135,6 +189,21 @@ export async function PATCH(
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+
+      if (changedFields.length > 0) {
+        await writeSystemConfigAuditLog(supabase, {
+          module_id: moduleId,
+          config_scope: "business_logic",
+          entity_label: moduleLabel,
+          action: "updated",
+          changed_fields: changedFields,
+          previous_values: previousValues,
+          new_values: newValues,
+          performed_by: caller.id,
+          performed_by_name: caller.name,
+        });
+      }
+
       return NextResponse.json({
         data: {
           ...data,
@@ -170,6 +239,20 @@ export async function PATCH(
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (changedFields.length > 0) {
+      await writeSystemConfigAuditLog(supabase, {
+        module_id: moduleId,
+        config_scope: "business_logic",
+        entity_label: moduleLabel,
+        action: "created",
+        changed_fields: changedFields,
+        previous_values: previousValues,
+        new_values: newValues,
+        performed_by: caller.id,
+        performed_by_name: caller.name,
+      });
     }
 
     return NextResponse.json({

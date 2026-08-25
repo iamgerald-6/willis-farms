@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { isSupervisorRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 
 export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
@@ -69,9 +71,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const GRADE_ORDER = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"];
-    const submitterGradeIdx = GRADE_ORDER.indexOf(submitted_by_grade ?? "");
-    if (submitterGradeIdx < 3) {
+    const gradeConfig = await fetchGradeLevelsConfig(supabase);
+    if (!isSupervisorRank(submitted_by_grade, gradeConfig)) {
       return NextResponse.json(
         {
           error:

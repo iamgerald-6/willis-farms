@@ -4,6 +4,8 @@ import { SKILL_LOG_TYPES } from "@/lib/moduleRegistry/taxonomy/skillLogLogTypes"
 export type CompetencySectionPatch = {
   title?: string;
   skills?: string[];
+  /** When true, this Git section is hidden from the live form. */
+  hidden?: boolean;
 };
 
 /** Per log-type overrides for competency section titles and skill lines. */
@@ -30,6 +32,11 @@ export function normalizeCompetencyContentOverrides(
     )) {
       if (!patchRaw || typeof patchRaw !== "object") continue;
       const patch = patchRaw as Record<string, unknown>;
+      if (patch.hidden === true) {
+        if (!out[logType]) out[logType] = {};
+        out[logType]![sectionKey] = { hidden: true };
+        continue;
+      }
       const title =
         patch.title != null ? String(patch.title).trim() : undefined;
       const skillsRaw = patch.skills;
@@ -59,15 +66,29 @@ export function mergeCompetencyContentPatches(
     return gitSections.map((s) => ({ ...s, skills: [...s.skills] }));
   }
 
-  return gitSections.map((section, index) => {
+  const gitKeys = new Set(gitSections.map((_, index) => sectionKeyForIndex(index)));
+  const merged: SkillLogSectionDef[] = [];
+
+  gitSections.forEach((section, index) => {
     const key = sectionKeyForIndex(index);
     const patch = patches[key];
-    if (!patch) return { ...section, skills: [...section.skills] };
-    return {
-      title: patch.title?.trim() || section.title,
-      skills: patch.skills?.length ? [...patch.skills] : [...section.skills],
-    };
+    if (patch?.hidden) return;
+    merged.push({
+      title: patch?.title?.trim() || section.title,
+      skills: patch?.skills?.length ? [...patch.skills] : [...section.skills],
+    });
   });
+
+  for (const [key, patch] of Object.entries(patches)) {
+    if (!patch || gitKeys.has(key) || patch.hidden) continue;
+    if (!patch.title?.trim() && !patch.skills?.length) continue;
+    merged.push({
+      title: patch.title?.trim() || "New section",
+      skills: patch.skills?.length ? [...patch.skills] : [""],
+    });
+  }
+
+  return merged;
 }
 
 export function resolveSkillLogSectionsForType(

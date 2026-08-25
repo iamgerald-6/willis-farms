@@ -2,6 +2,7 @@ import { canSignOffSkillLog } from "@/lib/accessControl";
 import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { AccessProfile } from "@/lib/pagePermissions";
+import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type SkillLogRecord = {
@@ -110,6 +111,14 @@ export function canFillSkillLog(
   const gradeNum = parseInt(String(grade ?? "").replace(/\D/g, ""), 10) || 0;
   if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
   return canPerformModuleAction(profile, "hc:skillLog", "add", sessionRole, groupPresets);
+}
+
+/** Only the employee's assigned supervisor (User Management) may fill their log. */
+export function canFillSkillLogForEmployee(
+  fillerUserId: string | null | undefined,
+  employee: { supervisor_id?: string | null },
+): boolean {
+  return isAssignedSupervisorOf(fillerUserId, employee);
 }
 
 export async function loadGroupPresetsForSkillLog(

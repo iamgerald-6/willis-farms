@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { isNavigationAbortError } from "@/lib/navigation/safeNavigation";
 
 export default function QueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -11,6 +12,8 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
+            retry: (failureCount, error) =>
+              !isNavigationAbortError(error) && failureCount < 1,
           },
         },
       })

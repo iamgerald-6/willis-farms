@@ -1,22 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
-import type { SystemOption } from "@/lib/systemDefinitions";
+import type { ModuleBusinessLogic, SystemOption } from "@/lib/systemDefinitions";
 import {
-  APPLICATION_STEP_LABELS,
-  APPLICATION_STEPS,
   parseApplicationFieldRules,
   type ApplicationFieldStep,
   type ApplicationFieldType,
 } from "@/lib/careers/applicationFormSchema";
 import {
+  BUILTIN_APPLICATION_FORM_STEPS,
+  DEFAULT_REQUIRED_REFEREE_COUNT,
+  MAX_REFEREE_COUNT,
+  isRefereeSystemOption,
+  REFEREE_CONTACT_PARTS,
+  normalizeApplicationFormConfig,
+  resolveApplicationFormSteps,
+  resolveRequiredRefereeCount,
+  type ApplicationFormConfig,
+  type ApplicationFormStepDef,
+} from "@/lib/systemDefinitions/applicationFormConfig";
+import {
   RECRUITMENT_APPLICATION_FIELDS_LIST,
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+
+async function fetchModuleConfigApi(moduleId: string) {
+  const res = await api.get(
+    `/system-definitions/modules/${encodeURIComponent(moduleId)}`,
+  );
+  return res.data.data as { businessLogic: ModuleBusinessLogic };
+}
+
+function slugifyStepId(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 32);
+}
 
 type ApplicationFormEditorProps = {
   moduleId: string;
@@ -117,6 +143,10 @@ export default function ApplicationFormEditor({
 }: ApplicationFormEditorProps) {
   const queryClient = useQueryClient();
   const queryKey = ["system_options", moduleId, RECRUITMENT_APPLICATION_FIELDS_LIST];
+  const moduleQueryKey = ["system_module_config", moduleId];
+
+  const [layoutDraft, setLayoutDraft] = useState<ApplicationFormConfig>({});
+  const [newStepLabel, setNewStepLabel] = useState("");
 
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -149,6 +179,50 @@ export default function ApplicationFormEditor({
       return res.data.data as SystemOption[];
     },
     enabled: moduleId === RECRUITMENT_MODULE_ID,
+  });
+
+  const { data: businessLogic, isLoading: configLoading } = useQuery({
+    queryKey: moduleQueryKey,
+    queryFn: () => fetchModuleConfigApi(moduleId),
+    select: (data) => data.businessLogic,
+    enabled: moduleId === RECRUITMENT_MODULE_ID,
+  });
+
+  useEffect(() => {
+    const saved = businessLogic?.applicationFormConfig;
+    if (saved) {
+      setLayoutDraft(normalizeApplicationFormConfig(saved));
+    } else {
+      setLayoutDraft({
+        requiredRefereeCount: DEFAULT_REQUIRED_REFEREE_COUNT,
+        steps: BUILTIN_APPLICATION_FORM_STEPS.map((s) => ({ ...s })),
+      });
+    }
+  }, [businessLogic]);
+
+  const editorSteps = useMemo(
+    () => resolveApplicationFormSteps(layoutDraft),
+    [layoutDraft],
+  );
+
+  const saveLayoutMutation = useMutation({
+    mutationFn: async (payload: ApplicationFormConfig) => {
+      const current = (await fetchModuleConfigApi(moduleId)).businessLogic;
+      return api.patch(
+        `/system-definitions/modules/${encodeURIComponent(moduleId)}`,
+        {
+          business_logic: {
+            ...current,
+            applicationFormConfig: payload,
+          },
+        },
+      );
+    },
+    onSuccess: () => {
+      toast.success("Application form layout saved.");
+      queryClient.invalidateQueries({ queryKey: moduleQueryKey });
+    },
+    onError: () => toast.error("Could not save form layout."),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
@@ -200,17 +274,233 @@ export default function ApplicationFormEditor({
     onError: () => toast.error("Could not remove field."),
   });
 
+  const orphanRefereeOptions = useMemo(
+    () => options.filter((o) => o.is_active && isRefereeSystemOption(o)),
+    [options],
+  );
+
+  const cleanupRefereeOptionsMutation = useMutation({
+    mutationFn: async (rows: SystemOption[]) => {
+      await Promise.all(
+        rows.map((row) =>
+          api.patch(`/system-definitions/options/${encodeURIComponent(row.id)}`, {
+            is_active: false,
+          }),
+        ),
+      );
+    },
+    onSuccess: () => {
+      toast.success("Stray referee fields removed.");
+      invalidate();
+    },
+    onError: () => toast.error("Could not remove stray referee fields."),
+  });
+
   if (moduleId !== RECRUITMENT_MODULE_ID) return null;
 
-  const grouped = APPLICATION_STEPS.map((step) => ({
-    step,
-    fields: options
-      .filter((o) => parseApplicationFieldRules(o.rules as Record<string, unknown>).step === step)
+  const requiredRefereeCount = resolveRequiredRefereeCount(layoutDraft);
+
+  const editableOptions = options.filter((o) => !isRefereeSystemOption(o));
+
+  const grouped = editorSteps.map((stepDef) => ({
+    step: stepDef.id,
+    label: stepDef.label,
+    fields: editableOptions
+      .filter(
+        (o) =>
+          parseApplicationFieldRules(o.rules as Record<string, unknown>).step === stepDef.id,
+      )
       .sort((a, b) => a.sort_order - b.sort_order),
   }));
 
+  const allStepOptions = [
+    ...editorSteps.map((s) => ({ id: s.id, label: s.label })),
+    ...BUILTIN_APPLICATION_FORM_STEPS.filter(
+      (b) => !editorSteps.some((s) => s.id === b.id),
+    ).map((b) => ({ id: b.id, label: b.label })),
+  ];
+
+  const updateLayoutStep = (stepId: string, patch: Partial<ApplicationFormStepDef>) => {
+    setLayoutDraft((prev) => {
+      const steps = prev.steps?.length
+        ? prev.steps.map((s) => (s.id === stepId ? { ...s, ...patch } : s))
+        : BUILTIN_APPLICATION_FORM_STEPS.map((s) => ({ ...s }));
+      return { ...prev, steps };
+    });
+  };
+
+  const removeCustomStep = (stepId: string) => {
+    const step = layoutDraft.steps?.find((s) => s.id === stepId);
+    if (step?.builtIn) return;
+    setLayoutDraft((prev) => ({
+      ...prev,
+      steps: (prev.steps ?? BUILTIN_APPLICATION_FORM_STEPS).filter((s) => s.id !== stepId),
+    }));
+  };
+
+  const addCustomStep = () => {
+    const label = newStepLabel.trim();
+    if (!label) {
+      toast.error("Section name is required.");
+      return;
+    }
+    const baseId = slugifyStepId(label) || "custom_section";
+    const steps = layoutDraft.steps?.length
+      ? [...layoutDraft.steps]
+      : BUILTIN_APPLICATION_FORM_STEPS.map((s) => ({ ...s }));
+    let id = baseId;
+    let n = 2;
+    while (steps.some((s) => s.id === id)) {
+      id = `${baseId}_${n++}`;
+    }
+    steps.push({ id, label, builtIn: false });
+    setLayoutDraft((prev) => ({ ...prev, steps }));
+    setNewStepLabel("");
+  };
+
   return (
     <div className="space-y-4">
+      <div className="border border-gray-100 rounded-xl overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+          <p className="text-xs font-semibold text-gray-700">Form layout</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            Changes apply to new applications only. Drafts and submitted applications keep the
+            form they started with.
+          </p>
+        </div>
+        <div className="p-3 space-y-4">
+          <label className="block max-w-xs">
+            <span className="text-xs text-gray-500">Required referees per applicant</span>
+            <select
+              className="mt-1 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
+              value={resolveRequiredRefereeCount(layoutDraft)}
+              disabled={!canEdit}
+              onChange={(e) =>
+                setLayoutDraft((prev) => ({
+                  ...prev,
+                  requiredRefereeCount: Number(e.target.value),
+                }))
+              }
+            >
+              {Array.from({ length: MAX_REFEREE_COUNT }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n} {n === 1 ? "referee" : "referees"}
+                  {n === DEFAULT_REQUIRED_REFEREE_COUNT ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">Sections</p>
+            <ul className="space-y-2">
+              {(layoutDraft.steps ?? BUILTIN_APPLICATION_FORM_STEPS).map((stepDef) => (
+                <li
+                  key={stepDef.id}
+                  className="flex flex-wrap items-center gap-2 border border-gray-100 rounded-lg px-2.5 py-2"
+                >
+                  <input
+                    className="flex-1 min-w-[140px] border border-gray-200 rounded-lg px-2 py-1 text-sm"
+                    value={stepDef.label}
+                    disabled={!canEdit}
+                    onChange={(e) => updateLayoutStep(stepDef.id, { label: e.target.value })}
+                  />
+                  <span className="text-[11px] text-gray-400">{stepDef.id}</span>
+                  {stepDef.builtIn ? (
+                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={stepDef.hidden === true}
+                        disabled={!canEdit}
+                        onChange={(e) =>
+                          updateLayoutStep(stepDef.id, { hidden: e.target.checked })
+                        }
+                      />
+                      Hidden
+                    </label>
+                  ) : (
+                    canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => removeCustomStep(stepDef.id)}
+                        className="p-1 rounded hover:bg-red-50"
+                        title="Remove section"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                      </button>
+                    )
+                  )}
+                </li>
+              ))}
+            </ul>
+            {canAdd && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input
+                  className="flex-1 min-w-[160px] border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
+                  placeholder="New section name"
+                  value={newStepLabel}
+                  onChange={(e) => setNewStepLabel(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={addCustomStep}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add section
+                </button>
+              </div>
+            )}
+          </div>
+
+          {canEdit && (
+            <button
+              type="button"
+              disabled={saveLayoutMutation.isPending || configLoading}
+              onClick={() =>
+                saveLayoutMutation.mutate(
+                  normalizeApplicationFormConfig({
+                    ...layoutDraft,
+                    steps: layoutDraft.steps ?? BUILTIN_APPLICATION_FORM_STEPS,
+                  }),
+                )
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-60"
+            >
+              {saveLayoutMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
+              Save layout
+            </button>
+          )}
+
+          <p className="text-[11px] text-gray-500">
+            Referee contact fields are generated automatically from the referee count above. They
+            appear under the Referees section only — not Personal information.
+          </p>
+        </div>
+      </div>
+
+      {orphanRefereeOptions.length > 0 && canEdit && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="text-xs text-amber-950">
+            Found {orphanRefereeOptions.length} stray referee field
+            {orphanRefereeOptions.length === 1 ? "" : "s"} saved under the wrong section (often
+            Personal information). Remove them — referee fields are controlled by the count above.
+          </p>
+          <button
+            type="button"
+            disabled={cleanupRefereeOptionsMutation.isPending}
+            onClick={() => cleanupRefereeOptionsMutation.mutate(orphanRefereeOptions)}
+            className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-800 text-white hover:bg-amber-900 disabled:opacity-60"
+          >
+            {cleanupRefereeOptionsMutation.isPending ? "Removing…" : "Remove stray fields"}
+          </button>
+        </div>
+      )}
+
       {canAdd && (
         <button
           type="button"
@@ -234,6 +524,19 @@ export default function ApplicationFormEditor({
               toast.error("Label and field key are required.");
               return;
             }
+            const rules = draftToRules(newDraft);
+            if (
+              isRefereeSystemOption({
+                label: newLabel.trim(),
+                legacy_value: newDraft.fieldKey.trim(),
+                rules,
+              })
+            ) {
+              toast.error(
+                "Referee fields are auto-generated. Set the referee count in Form layout instead.",
+              );
+              return;
+            }
             createMutation.mutate({
               module_id: moduleId,
               option_list: RECRUITMENT_APPLICATION_FIELDS_LIST,
@@ -243,6 +546,7 @@ export default function ApplicationFormEditor({
             });
           }}
           saving={createMutation.isPending}
+          stepOptions={allStepOptions}
         />
       )}
 
@@ -251,14 +555,40 @@ export default function ApplicationFormEditor({
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
       ) : (
-        grouped.map(({ step, fields }) => (
+        grouped.map(({ step, label, fields }) => (
           <div key={step} className="border border-gray-100 rounded-xl overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
-              {APPLICATION_STEP_LABELS[step]}
+              {label}
             </div>
-            {fields.length === 0 ? (
+            {step === "references" && (
+              <div className="px-3 py-4 border-b border-gray-100 bg-blue-50/50">
+                <p className="text-xs font-semibold text-gray-900">
+                  {requiredRefereeCount}{" "}
+                  {requiredRefereeCount === 1 ? "referee" : "referees"} — auto-generated
+                </p>
+                <p className="text-[11px] text-gray-600 mt-1">
+                  Applicants fill in contact details for each referee on this step. Change the count
+                  in Form layout above — you do not add these as individual fields.
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {Array.from({ length: requiredRefereeCount }, (_, index) => (
+                    <li
+                      key={index}
+                      className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-[11px] text-gray-700"
+                    >
+                      <span className="font-medium text-gray-900">
+                        Referee {index + 1}
+                      </span>
+                      <span className="text-gray-400 mx-1">·</span>
+                      {REFEREE_CONTACT_PARTS.join(" · ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {fields.length === 0 && step !== "references" ? (
               <p className="text-xs text-gray-400 italic px-3 py-4">No fields in this step.</p>
-            ) : (
+            ) : fields.length === 0 ? null : (
               <ul className="divide-y divide-gray-100">
                 {fields.map((option) => {
                   const rules = parseApplicationFieldRules(
@@ -282,6 +612,22 @@ export default function ApplicationFormEditor({
                               );
                               return;
                             }
+                            const rules = draftToRules(
+                              editDraft,
+                              option.rules as Record<string, unknown>,
+                            );
+                            if (
+                              isRefereeSystemOption({
+                                label: editLabel.trim(),
+                                legacy_value: editDraft.fieldKey.trim(),
+                                rules,
+                              })
+                            ) {
+                              toast.error(
+                                "Referee fields are auto-generated. Set the referee count in Form layout instead.",
+                              );
+                              return;
+                            }
                             patchMutation.mutate({
                               id: option.id,
                               patch: {
@@ -295,6 +641,7 @@ export default function ApplicationFormEditor({
                             });
                           }}
                           saving={patchMutation.isPending}
+                          stepOptions={allStepOptions}
                         />
                       ) : (
                         <div className="flex items-start justify-between gap-3">
@@ -357,6 +704,7 @@ function FieldDraftForm({
   onCancel,
   onSave,
   saving,
+  stepOptions,
 }: {
   label: string;
   draft: DraftRules;
@@ -365,6 +713,7 @@ function FieldDraftForm({
   onCancel: () => void;
   onSave: () => void;
   saving: boolean;
+  stepOptions: { id: string; label: string }[];
 }) {
   const inputClass =
     "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm";
@@ -393,9 +742,9 @@ function FieldDraftForm({
               onDraftChange({ ...draft, step: e.target.value as ApplicationFieldStep })
             }
           >
-            {APPLICATION_STEPS.map((s) => (
-              <option key={s} value={s}>
-                {APPLICATION_STEP_LABELS[s]}
+            {stepOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
               </option>
             ))}
           </select>

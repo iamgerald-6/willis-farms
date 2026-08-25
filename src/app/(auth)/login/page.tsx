@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -9,8 +9,16 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
+import { hasLocalSupabaseSession } from "@/lib/auth/hasLocalSupabaseSession";
 import PasswordInput, { inputClass } from "../components/PasswordInput";
 import { staffAuthBlockMessage, type StaffAuthBlockReason } from "@/lib/staffAccount";
+
+const LoginSpinner = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#C62828]" />
+  </div>
+);
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -29,10 +37,26 @@ function LoginForm() {
   const passwordSetup = searchParams?.get("setup") === "success";
   const fromPasswordFlow = passwordReset || passwordSetup;
 
+  // "checking": might already be signed in, hold off rendering the form.
+  // "guest": confirmed no session — safe to show the form immediately.
+  const [screen, setScreen] = useState<"checking" | "guest">(
+    fromPasswordFlow || !hasLocalSupabaseSession() ? "guest" : "checking",
+  );
+
   useEffect(() => {
+    if (fromPasswordFlow) return;
+    let active = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session && !fromPasswordFlow) router.replace(redirectTo);
+      if (!active) return;
+      if (session) {
+        void ignoreNavigationAbort(router.replace(redirectTo));
+      } else {
+        setScreen("guest");
+      }
     });
+    return () => {
+      active = false;
+    };
   }, [redirectTo, router, fromPasswordFlow]);
 
   const {
@@ -45,14 +69,33 @@ function LoginForm() {
     defaultValues: { email: "", password: "" },
   });
 
-  const onSubmit = async (data: LoginForm) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+  if (screen === "checking") {
+    return <LoginSpinner />;
+  }
 
-    if (error) {
-      toast.error(error.message);
+  const onSubmit = async (data: LoginForm) => {
+    // signInWithPassword() normally resolves to { error } even on failure,
+    // but a genuine network/DNS blip reaching Supabase can make the
+    // underlying fetch throw instead. react-hook-form's handleSubmit()
+    // doesn't catch rejections from this handler, so an uncaught throw here
+    // surfaced directly in the console as a raw "TypeError: Load failed" —
+    // this try/catch turns that into a normal, user-facing toast instead.
+    let signInError: { message: string } | null = null;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
+      signInError = error;
+    } catch {
+      toast.error(
+        "Could not reach the login server. Check your connection and try again.",
+      );
+      return;
+    }
+
+    if (signInError) {
+      toast.error(signInError.message);
       return;
     }
 
@@ -81,7 +124,7 @@ function LoginForm() {
       return;
     }
 
-    router.replace(redirectTo);
+    void ignoreNavigationAbort(router.replace(redirectTo));
   };
 
   return (
@@ -173,13 +216,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gray-100">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-[#C62828]" />
-        </div>
-      }
-    >
+    <Suspense fallback={<LoginSpinner />}>
       <LoginForm />
     </Suspense>
   );

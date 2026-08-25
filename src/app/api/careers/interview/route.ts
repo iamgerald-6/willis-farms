@@ -51,7 +51,10 @@ type InterviewAction =
 // runs while status is "hold" or "rejected" — neither is in INTERVIEW_STATUSES
 // (which gates opening/editing the interview guide itself), so both are
 // exempted from that guard below.
-const DECISION_ACTIONS = new Set<InterviewAction>(["confirm_decision", "reconsider_decision"]);
+const DECISION_ACTIONS = new Set<InterviewAction>([
+  "confirm_decision",
+  "reconsider_decision",
+]);
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -81,7 +84,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const guideKey = await resolveInterviewGuideKey(supabaseAdmin, data.role_slug);
+    const guideKey = await resolveInterviewGuideKey(
+      supabaseAdmin,
+      data.role_slug,
+    );
     const guide = guideKey ? getInterviewGuide(guideKey) : null;
 
     const interview_form_data = normalizeInterviewFormData(
@@ -149,7 +155,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!DECISION_ACTIONS.has(action) && !INTERVIEW_STATUSES.has(application.status)) {
+    if (
+      !DECISION_ACTIONS.has(action) &&
+      !INTERVIEW_STATUSES.has(application.status)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -177,6 +186,8 @@ export async function POST(req: NextRequest) {
     });
 
     const emailWarnings: string[] = [];
+    let postUpdateHireInvite: { recommendedStartDate?: string } | null = null;
+    let postUpdateRejectEmail = false;
 
     if (action === "send_panel_invites") {
       const setup = merged.setup ?? {};
@@ -194,7 +205,9 @@ export async function POST(req: NextRequest) {
       );
       if (validMembers.length === 0) {
         return NextResponse.json(
-          { error: "Add at least one Stage 1 panel member with name and email." },
+          {
+            error: "Add at least one Stage 1 panel member with name and email.",
+          },
           { status: 400 },
         );
       }
@@ -492,18 +505,29 @@ export async function POST(req: NextRequest) {
 
     if (action === "stage1_review_reject") {
       updates.status = "rejected";
-      updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
+      updates.status_history = appendStatusHistory(
+        application.status_history,
+        "rejected",
+        submitted_by,
+      );
     }
 
     if (action === "finalize") {
       updates.interview_submitted_at = new Date().toISOString();
       updates.interview_submitted_by = submitted_by ?? null;
       updates.status = "evaluation";
-      updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
+      updates.status_history = appendStatusHistory(
+        application.status_history,
+        "evaluation",
+        submitted_by,
+      );
     } else if (action === "confirm_decision") {
       if (!application.interview_submitted_at) {
         return NextResponse.json(
-          { error: "Submit the interview evaluation before confirming the outcome." },
+          {
+            error:
+              "Submit the interview evaluation before confirming the outcome.",
+          },
           { status: 400 },
         );
       }
@@ -537,7 +561,11 @@ export async function POST(req: NextRequest) {
       };
       updates.interview_form_data = merged;
       updates.status = statusForDecision(decision);
-      updates.status_history = appendStatusHistory(application.status_history, statusForDecision(decision), submitted_by);
+      updates.status_history = appendStatusHistory(
+        application.status_history,
+        statusForDecision(decision),
+        submitted_by,
+      );
 
       if (decision === "do_not_hire") {
         const rejectResult = await sendRejectionEmail({
@@ -556,11 +584,14 @@ export async function POST(req: NextRequest) {
       // Only reachable from those two states — a fresh "rejected" applicant
       // who never went through evaluation (e.g. an early AI reject) is not
       // eligible, since they never have a confirmed evaluation decision.
-      const priorSummary = normalizeInterviewFormData(application.interview_form_data).summary;
+      const priorSummary = normalizeInterviewFormData(
+        application.interview_form_data,
+      ).summary;
       const eligible =
         !!priorSummary?.decision_confirmed_at &&
         ((application.status === "hold" && priorSummary.decision === "hold") ||
-          (application.status === "rejected" && priorSummary.decision === "do_not_hire"));
+          (application.status === "rejected" &&
+            priorSummary.decision === "do_not_hire"));
 
       if (!eligible) {
         return NextResponse.json(
@@ -577,7 +608,10 @@ export async function POST(req: NextRequest) {
       }
       if (reconsider_to === "rejected" && application.status !== "hold") {
         return NextResponse.json(
-          { error: "Only a Hold/Reserve applicant can be reconsidered as Reject." },
+          {
+            error:
+              "Only a Hold/Reserve applicant can be reconsidered as Reject.",
+          },
           { status: 400 },
         );
       }
@@ -598,7 +632,11 @@ export async function POST(req: NextRequest) {
         };
         updates.interview_form_data = merged;
         updates.status = "evaluation";
-        updates.status_history = appendStatusHistory(application.status_history, "evaluation", submitted_by);
+        updates.status_history = appendStatusHistory(
+          application.status_history,
+          "evaluation",
+          submitted_by,
+        );
       } else {
         merged = {
           ...merged,
@@ -611,7 +649,11 @@ export async function POST(req: NextRequest) {
         };
         updates.interview_form_data = merged;
         updates.status = "rejected";
-        updates.status_history = appendStatusHistory(application.status_history, "rejected", submitted_by);
+        updates.status_history = appendStatusHistory(
+          application.status_history,
+          "rejected",
+          submitted_by,
+        );
 
         const rejectResult = await sendRejectionEmail({
           candidateName: application.full_name,
@@ -628,7 +670,11 @@ export async function POST(req: NextRequest) {
       application.status === "shortlisted"
     ) {
       updates.status = "interview";
-      updates.status_history = appendStatusHistory(application.status_history, "interview", submitted_by);
+      updates.status_history = appendStatusHistory(
+        application.status_history,
+        "interview",
+        submitted_by,
+      );
     }
 
     const { data, error } = await supabaseAdmin
@@ -642,11 +688,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // if (postUpdateHireInvite) {
+    //   try {
+    //     const inviteResult = await sendOnboardingInvite(
+    //       supabaseAdmin,
+    //       application,
+    //       {
+    //         recommendedStartDate: postUpdateHireInvite?.recommendedStartDate.
+    //         updateStatus: false,
+    //       },
+    //     );
+    //     if (!inviteResult.emailSent) {
+    //       emailWarnings.push(
+    //         inviteResult.emailError ?? "Hire / onboarding email not sent",
+    //       );
+    //     }
+    //   } catch (inviteErr) {
+    //     console.error(
+    //       "[POST /api/careers/interview] onboarding invite",
+    //       inviteErr,
+    //     );
+    //     emailWarnings.push(
+    //       inviteErr instanceof Error
+    //         ? inviteErr.message
+    //         : "Onboarding link could not be created",
+    //     );
+    //   }
+    // }
+
+    if (postUpdateRejectEmail) {
+      const rejectResult = await sendRejectionEmail({
+        candidateName: application.full_name,
+        candidateEmail: application.email,
+        roleTitle: application.role_title,
+        referenceNumber: application.reference_number,
+      });
+      if (!rejectResult.sent) {
+        emailWarnings.push(rejectResult.error ?? "Rejection email not sent");
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         ...data,
-        interview_form_data: normalizeInterviewFormData(data.interview_form_data),
+        interview_form_data: normalizeInterviewFormData(
+          data.interview_form_data,
+        ),
       },
       email_warnings: emailWarnings.length ? emailWarnings : undefined,
     });
