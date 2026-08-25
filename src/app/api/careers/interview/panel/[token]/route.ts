@@ -56,6 +56,25 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Invalid or expired interview link." }, { status: 404 });
     }
 
+    // Stage 1 panel forms stay locked until HR deliberately opens them once
+    // the interview actually starts (the scheduled time can slip, so this
+    // isn't derived from interview_start_at).
+    if (
+      match.member.stage === 1 &&
+      !match.application.interview_form_data.setup?.stage1_forms_opened_at
+    ) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          locked: true,
+          candidateName: match.application.full_name,
+          roleTitle: match.application.role_title,
+          referenceNumber: match.application.reference_number,
+          stage: match.member.stage,
+        },
+      });
+    }
+
     const guideKey = await resolveInterviewGuideKey(
       loaded.supabaseAdmin,
       match.application.role_slug,

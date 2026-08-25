@@ -35,6 +35,7 @@ const INTERVIEW_STATUSES = new Set([
 type InterviewAction =
   | "save_draft"
   | "send_panel_invites"
+  | "open_panel_forms"
   | "send_stage2_invites"
   | "submit_hr_stage1"
   | "submit_hr_stage2"
@@ -197,6 +198,18 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      if (setup.location_type === "online" && !setup.meeting_link?.trim()) {
+        return NextResponse.json(
+          { error: "Add the online meeting link before sending invites." },
+          { status: 400 },
+        );
+      }
+      if (setup.location_type === "onsite" && !setup.location?.trim()) {
+        return NextResponse.json(
+          { error: "Add the interview location before sending invites." },
+          { status: 400 },
+        );
+      }
       const stage1Members = ensureMemberTokens(
         setup.stage1_members ?? setup.members ?? [],
       );
@@ -223,7 +236,9 @@ export async function POST(req: NextRequest) {
         roleTitle: application.role_title,
         referenceNumber: application.reference_number,
         interviewStartAt: setup.interview_start_at,
+        locationType: setup.location_type,
         location: setup.location,
+        meetingLink: setup.meeting_link,
       });
 
       if (inviteResult.sent === 0) {
@@ -247,7 +262,9 @@ export async function POST(req: NextRequest) {
         roleTitle: application.role_title,
         referenceNumber: application.reference_number,
         interviewStartAt: setup.interview_start_at,
+        locationType: setup.location_type,
         location: setup.location,
+        meetingLink: setup.meeting_link,
       });
 
       if (!candidateInviteResult.sent) {
@@ -269,6 +286,17 @@ export async function POST(req: NextRequest) {
             : setup.candidate_invite_sent_at,
         },
         current_stage: 1,
+      };
+    }
+
+    if (action === "open_panel_forms") {
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage1_forms_opened_at: new Date().toISOString(),
+        },
       };
     }
 

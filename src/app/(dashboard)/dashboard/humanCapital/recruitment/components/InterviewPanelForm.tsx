@@ -38,6 +38,7 @@ type Props = {
 type InterviewAction =
   | "save_draft"
   | "send_panel_invites"
+  | "open_panel_forms"
   | "send_stage2_invites"
   | "submit_hr_stage1"
   | "submit_hr_stage2"
@@ -180,6 +181,9 @@ export default function InterviewPanelForm({
       if (params.action === "send_panel_invites") {
         toast.success("Stage 1 panel invites sent.");
         setManualStep("stage1");
+      } else if (params.action === "open_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("panel");
       } else if (params.action === "send_stage2_invites") {
         toast.success("Stage 2 invites sent.");
         setManualStep("stage2");
@@ -325,6 +329,13 @@ export default function InterviewPanelForm({
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
+              onOpenPanelForms={() =>
+                saveMutation.mutate({
+                  action: "open_panel_forms",
+                  data: formData,
+                })
+              }
+              isOpeningPanelForms={saveMutation.isPending}
             />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions

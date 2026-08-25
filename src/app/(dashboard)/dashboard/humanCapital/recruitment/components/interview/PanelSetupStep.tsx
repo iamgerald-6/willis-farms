@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -15,6 +15,9 @@ type Props = {
   onContinueWithoutResend?: () => void;
   isPending: boolean;
   readOnly?: boolean;
+  /** HR clicks this once the interview actually starts — unlocks the panel members' forms. */
+  onOpenPanelForms?: () => void;
+  isOpeningPanelForms?: boolean;
 };
 
 export default function PanelSetupStep({
@@ -25,6 +28,8 @@ export default function PanelSetupStep({
   onContinueWithoutResend,
   isPending,
   readOnly = false,
+  onOpenPanelForms,
+  isOpeningPanelForms = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const members = setup.stage1_members?.length
@@ -141,21 +146,62 @@ export default function PanelSetupStep({
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Location</label>
-            <input
-              type="text"
-              placeholder="Farm office / barn meeting room"
-              value={setup.location ?? ""}
+            <label className="text-xs text-gray-500 block mb-1">Interview format *</label>
+            <select
+              value={setup.location_type ?? ""}
               disabled={readOnly}
               onChange={(e) =>
                 onChange({
                   ...formData,
-                  setup: { ...setup, location: e.target.value },
+                  setup: {
+                    ...setup,
+                    location_type:
+                      (e.target.value as "onsite" | "online") || undefined,
+                  },
                 })
               }
               className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
-            />
+            >
+              <option value="">Select…</option>
+              <option value="onsite">Onsite</option>
+              <option value="online">Online</option>
+            </select>
           </div>
+          {setup.location_type === "online" ? (
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Meeting link *</label>
+              <input
+                type="text"
+                placeholder="https://meet.google.com/..."
+                value={setup.meeting_link ?? ""}
+                disabled={readOnly}
+                onChange={(e) =>
+                  onChange({
+                    ...formData,
+                    setup: { ...setup, meeting_link: e.target.value },
+                  })
+                }
+                className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
+              />
+            </div>
+          ) : setup.location_type === "onsite" ? (
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Location *</label>
+              <input
+                type="text"
+                placeholder="Farm office / barn meeting room"
+                value={setup.location ?? ""}
+                disabled={readOnly}
+                onChange={(e) =>
+                  onChange({
+                    ...formData,
+                    setup: { ...setup, location: e.target.value },
+                  })
+                }
+                className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between mb-3">
@@ -219,6 +265,40 @@ export default function PanelSetupStep({
           )}
           .
         </p>
+      )}
+
+      {invitesSent && (
+        <section className="border border-amber-200 bg-amber-50 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-amber-900 mb-1">Panel forms</h3>
+          {setup.stage1_forms_opened_at ? (
+            <p className="text-xs text-amber-800">
+              Panel members can access their forms — opened{" "}
+              {new Date(setup.stage1_forms_opened_at).toLocaleString("en-GB")}.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-amber-800 mb-3">
+                Panel members&apos; links stay locked with a &quot;not open yet&quot; message
+                until you open the forms — do this once the interview actually starts, not before.
+              </p>
+              {onOpenPanelForms && (
+                <button
+                  type="button"
+                  onClick={onOpenPanelForms}
+                  disabled={isOpeningPanelForms}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-60"
+                >
+                  {isOpeningPanelForms ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Unlock className="w-4 h-4" />
+                  )}
+                  Open panel forms now
+                </button>
+              )}
+            </>
+          )}
+        </section>
       )}
 
       {!readOnly && invitesSent && (

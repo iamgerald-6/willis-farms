@@ -101,6 +101,30 @@ function emailShell(title: string, body: string): string {
 </body></html>`;
 }
 
+/** Builds the shared "location or meeting link" line pair (text + html) used by
+ * both the panel invite and candidate invitation emails. */
+function locationLines(params: {
+  locationType?: "onsite" | "online";
+  location?: string;
+  meetingLink?: string;
+}): { text: string; html: string } {
+  if (params.locationType === "online" && params.meetingLink?.trim()) {
+    const link = params.meetingLink.trim();
+    return {
+      text: `This interview will be held online. Meeting link: ${link}`,
+      html: `<p style="margin:0 0 8px;"><strong>Format:</strong> Online</p><p style="margin:0 0 8px;"><strong>Meeting link:</strong> <a href="${escapeHtml(link)}" style="color:#991b1b;">${escapeHtml(link)}</a></p>`,
+    };
+  }
+  const location = params.location?.trim();
+  if (location) {
+    return {
+      text: `Location: ${location}`,
+      html: `<p style="margin:0 0 8px;"><strong>Location:</strong> ${escapeHtml(location)}</p>`,
+    };
+  }
+  return { text: "", html: "" };
+}
+
 /** Panel member invite with link to the public interview form (no login) */
 export async function sendPanelInviteEmail(params: {
   memberName: string;
@@ -111,13 +135,17 @@ export async function sendPanelInviteEmail(params: {
   accessToken: string;
   stage: 1 | 2;
   interviewStartAt: string;
+  locationType?: "onsite" | "online";
   location?: string;
+  meetingLink?: string;
 }): Promise<SendResult> {
   const link = panelInterviewUrl(params.accessToken);
   const when = formatDateTime(params.interviewStartAt);
-  const locationLine = params.location
-    ? `<p style="margin:0 0 12px;font-size:14px;"><strong>Location:</strong> ${escapeHtml(params.location)}</p>`
-    : "";
+  const loc = locationLines(params);
+  const openNote =
+    params.stage === 1
+      ? "Your Stage 1 evaluation form will open once HR starts the interview — the link above will show a short message until then."
+      : "";
 
   const subject = `Interview panel invite (Stage ${params.stage}) — ${params.roleTitle} (${params.referenceNumber})`;
 
@@ -130,9 +158,10 @@ export async function sendPanelInviteEmail(params: {
     `Role: ${params.roleTitle}`,
     `Reference: ${params.referenceNumber}`,
     `Interview start: ${when}`,
-    params.location ? `Location: ${params.location}` : "",
+    loc.text,
     "",
     `Open your Stage ${params.stage} interview form: ${link}`,
+    openNote,
     "",
     "No WillsOne account is required — use the link above on any device.",
     "",
@@ -156,7 +185,7 @@ export async function sendPanelInviteEmail(params: {
           <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
           <p style="margin:0 0 8px;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
           <p style="margin:0 0 8px;"><strong>Interview start:</strong> ${escapeHtml(when)}</p>
-          ${locationLine}
+          ${loc.html}
         </td></tr>
       </table>
       <p style="margin:0 0 20px;font-size:15px;color:#374151;">
@@ -165,7 +194,8 @@ export async function sendPanelInviteEmail(params: {
       <p style="margin:0 0 24px;">
         <a href="${escapeHtml(link)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open interview form</a>
       </p>
-      <p style="margin:0;font-size:13px;color:#6b7280;">Or copy this link: ${escapeHtml(link)}</p>
+      <p style="margin:0 0 12px;font-size:13px;color:#6b7280;">Or copy this link: ${escapeHtml(link)}</p>
+      ${openNote ? `<p style="margin:0;font-size:13px;color:#6b7280;">${escapeHtml(openNote)}</p>` : ""}
     `,
   );
 
@@ -179,18 +209,23 @@ export async function sendInterviewInvitationEmail(params: {
   roleTitle: string;
   referenceNumber: string;
   interviewStartAt: string;
+  locationType?: "onsite" | "online";
   location?: string;
+  meetingLink?: string;
 }): Promise<SendResult> {
   const when = formatDateTime(params.interviewStartAt);
   const hrEmail = getReplyToEmail();
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
-  const locationText = params.location?.trim()
-    ? params.location.trim()
-    : "To be confirmed";
-  const locationHtml = params.location?.trim()
-    ? `<p style="margin:0 0 8px;"><strong>Location:</strong> ${escapeHtml(params.location.trim())}</p>`
-    : `<p style="margin:0 0 8px;"><strong>Location:</strong> To be confirmed</p>`;
+  const loc = locationLines(params);
+  const locationText = loc.text || "Location: To be confirmed";
+  const locationHtml =
+    loc.html ||
+    `<p style="margin:0 0 8px;"><strong>Location:</strong> To be confirmed</p>`;
+  const arriveNote =
+    params.locationType === "online"
+      ? "Please join on time using the meeting link above."
+      : "Please arrive on time.";
 
   const subject = `Interview invitation — ${params.roleTitle} (${params.referenceNumber})`;
 
@@ -206,9 +241,9 @@ export async function sendInterviewInvitationEmail(params: {
     "",
     "Your interview has been scheduled as follows:",
     when,
-    `Location: ${locationText}`,
+    locationText,
     "",
-    "Please arrive on time. If you need to reschedule or have any questions, contact info@willsfarms.com and quote your reference number.",
+    `${arriveNote} If you need to reschedule or have any questions, contact info@willsfarms.com and quote your reference number.`,
     "",
     "We look forward to meeting you.",
     "",
@@ -359,7 +394,9 @@ export async function sendAllPanelInvites(params: {
   roleTitle: string;
   referenceNumber: string;
   interviewStartAt: string;
+  locationType?: "onsite" | "online";
   location?: string;
+  meetingLink?: string;
 }): Promise<{ sent: number; failed: string[] }> {
   const failed: string[] = [];
   let sent = 0;
@@ -375,7 +412,9 @@ export async function sendAllPanelInvites(params: {
       accessToken: member.access_token,
       stage: member.stage,
       interviewStartAt: params.interviewStartAt,
+      locationType: params.locationType,
       location: params.location,
+      meetingLink: params.meetingLink,
     });
     if (result.sent) sent++;
     else failed.push(`${member.email}: ${result.error ?? "send failed"}`);

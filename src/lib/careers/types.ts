@@ -124,13 +124,18 @@ export interface PanelSubmission extends StageSubmissionData {
   stage: 1 | 2;
 }
 
+export type InterviewLocationType = "onsite" | "online";
+
 export interface InterviewSetup {
   /** @deprecated use stage1_members */
   members?: PanelMember[];
   stage1_members?: PanelMember[];
   stage2_members?: PanelMember[];
   interview_start_at?: string;
+  /** Stage 1 — onsite (address in `location`) or online (link in `meeting_link`). Missing = legacy onsite records. */
+  location_type?: InterviewLocationType;
   location?: string;
+  meeting_link?: string;
   stage2_scheduled_at?: string;
   stage2_location?: string;
   /** @deprecated use stage1_invites_sent_at */
@@ -138,6 +143,13 @@ export interface InterviewSetup {
   stage1_invites_sent_at?: string;
   stage2_invites_sent_at?: string;
   candidate_invite_sent_at?: string;
+  /**
+   * HR manually opens the Stage 1 panel forms once the interview actually
+   * begins (times can slip, so this is a deliberate click, not derived from
+   * interview_start_at). Panel members' links show a "not open yet" message
+   * until this is set.
+   */
+  stage1_forms_opened_at?: string;
 }
 
 export interface Stage1Review {
