@@ -168,13 +168,18 @@ export default function CareersTab() {
     },
   });
 
+  // Only closes a posting now — reopening a closed posting no longer flips
+  // this same row back to published (see openReopen below). A closed
+  // posting's applicants are done and settled; a "reopen" is a fresh hiring
+  // round with its own applicants, so it needs its own posting id rather
+  // than reusing this one. Reusing the id used to make every downstream
+  // per-round feature (the role hiring summary report, most notably) treat
+  // the new round's applicants as part of the old, already-decided one.
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: JobPostingStatus }) =>
       api.patch(`/careers/postings/${id}`, { status }),
-    onSuccess: (_data, { status }) => {
-      toast.success(
-        status === "closed" ? "Posting closed." : "Posting republished.",
-      );
+    onSuccess: () => {
+      toast.success("Posting closed.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
     },
     onError: () => toast.error("Could not update posting status."),
@@ -250,6 +255,36 @@ export default function CareersTab() {
     setShowModal(true);
   };
 
+  // Reopening a closed role for a new hiring round — pre-fills the "New
+  // posting" form with the closed posting's content (title, description,
+  // requirements, etc.) but leaves `editing` unset, so saving goes through
+  // POST and creates a genuinely new posting row with its own id, rather
+  // than PATCHing the old one back to published. The old posting stays
+  // closed exactly as it was, with its own applicants and history intact.
+  // Closing date is left blank on purpose — HR reviews and sets a fresh one
+  // rather than accidentally reusing a deadline that's already passed.
+  const openReopen = (posting: JobPosting) => {
+    setEditing(null);
+    setForm({
+      job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
+      location: posting.location,
+      employment_type: posting.employment_type,
+      description: posting.description,
+      role_scope: posting.role_scope ?? "",
+      key_responsibilities: posting.key_responsibilities ?? "",
+      minimum_qualifications: posting.minimum_qualifications ?? "",
+      preferred_qualifications: posting.preferred_qualifications ?? "",
+      experience: posting.experience ?? "",
+      required_skills_attributes: posting.required_skills_attributes ?? "",
+      non_negotiable_standards: posting.non_negotiable_standards ?? "",
+      closes_at: "",
+      status: "published",
+      jd_file_url: posting.jd_file_url,
+      jd_file_public_id: posting.jd_file_public_id,
+    });
+    setShowModal(true);
+  };
+
   const sorted = useMemo(
     () => [...postings].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     [postings],
@@ -261,7 +296,7 @@ export default function CareersTab() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Career postings</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Job titles come from System Definitions. When a closing date passes, status changes to closed — HR can republish or edit anytime.
+            Job titles come from System Definitions. When a closing date passes, status changes to closed. Reopening a closed posting starts a fresh hiring round as a new posting (with its own closing date to set) rather than reusing the old one — its applicants and reports stay untouched.
           </p>
         </div>
         <button
@@ -331,12 +366,10 @@ export default function CareersTab() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() =>
-                          statusMutation.mutate({ id: posting.id, status: "published" })
-                        }
+                        onClick={() => openReopen(posting)}
                         className="text-xs font-medium text-green-700 hover:underline"
                       >
-                        Republish
+                        Reopen
                       </button>
                     )}
                   </td>
