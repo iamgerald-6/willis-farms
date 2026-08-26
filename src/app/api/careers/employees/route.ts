@@ -101,7 +101,7 @@ async function fetchEmployeeUser(
       .maybeSingle();
 
     if (!error && data) {
-      return data as {
+      return data as unknown as {
         user_id: string;
         role: string;
         application_id?: string | null;
@@ -150,13 +150,13 @@ export async function GET() {
       msg.includes("employment_status") ||
       msg.includes("platform_invited_at")
     ) {
-      usersResult = await supabaseAdmin
+      usersResult = (await supabaseAdmin
         .from("users")
         .select(
           "user_id, first_name, last_name, email, company_id, job_position, grade_level, role, created_at, is_disabled",
         )
         .eq("role", "employee")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })) as typeof usersResult;
     }
   }
 

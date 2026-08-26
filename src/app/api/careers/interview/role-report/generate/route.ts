@@ -42,7 +42,7 @@ const ROLE_REPORT_TOOL = {
       executive_summary: {
         type: "string",
         description:
-          "A 4-7 sentence overview a senior manager could read on its own and know everything that matters about this hiring round without attending a single interview: how many candidates are still in the running, how competitive the field is, who the standout candidate is and the single biggest reason why, and where things currently stand.",
+          "A 4-7 sentence overview the head of the business could read on its own and know everything that matters about this hiring round without attending a single interview: how many candidates are in the running, how competitive the field is, who the standout candidate is and the single biggest reason why, and where things currently stand. Write it as a briefing on what happened in the interviews, not as a decision already made.",
       },
       core_competencies_summary: {
         type: "string",
@@ -139,7 +139,6 @@ export async function POST(req: NextRequest) {
     let neverStartedInterview = 0;
     let reachedStage1Only = 0;
     let completedFull = 0;
-    const completedBreakdown = { still_deciding: 0, hold: 0, rejected: 0, hired: 0 };
 
     const COMPLETED_STAGE_LABEL: Record<string, string> = {
       evaluation: "Completed — Evaluation",
@@ -168,10 +167,6 @@ export async function POST(req: NextRequest) {
       } else if (a.interview_submitted_at) {
         completedFull++;
         stageReached = COMPLETED_STAGE_LABEL[a.status] ?? `Completed — ${a.status}`;
-        if (a.status === "evaluation") completedBreakdown.still_deciding++;
-        else if (a.status === "hold") completedBreakdown.hold++;
-        else if (a.status === "rejected") completedBreakdown.rejected++;
-        else if (a.status === "onboarding" || a.status === "offer") completedBreakdown.hired++;
       } else if (formData.setup?.stage1_invites_sent_at) {
         reachedStage1Only++;
         stageReached = "Reached Stage 1";
@@ -290,8 +285,8 @@ export async function POST(req: NextRequest) {
     });
 
     const prompt = [
-      `You are writing a consolidated hiring summary for Wills Farms' Human Capital team, for the role "${roleTitle}". This report will be used to make the final hire decision, so it only concerns candidates still awaiting one — anyone already put on hold, rejected, or hired is out of scope. The reader will not have attended any interviews — your job is to make sure they understand everything that matters from this report alone.`,
-      `${evaluationApplicants.length} candidate(s) are still awaiting a decision for this role. Combined-score ranking (highest first):`,
+      `You are writing a hiring summary for the head of the business at Wills Farms, covering the interviews conducted so far for the role "${roleTitle}". No hiring decision has been made yet for these candidates — this report exists to inform that decision, not to record one, so write it as an account of what happened during the interviews, not as an announcement of an outcome. It only concerns candidates who have finished their interview and are still waiting to hear whether they've got the role. The reader will not have attended any interviews — your job is to make sure they understand everything that matters from this report alone, so they can decide who to hire and who not to hire.`,
+      `${evaluationApplicants.length} candidate(s) are awaiting a decision for this role. Combined-score ranking (highest first):`,
       rankings.length
         ? rankings
             .map((r) => `${r.rank}. ${r.name} (Ref ${r.reference_number}) — score ${r.combined_score?.toFixed(2) ?? "—"}/5`)
@@ -333,7 +328,6 @@ export async function POST(req: NextRequest) {
         never_started_interview: neverStartedInterview,
         reached_stage1_only: reachedStage1Only,
         completed_full_interview: completedFull,
-        completed_breakdown: completedBreakdown,
       },
       candidate_rankings: rankings,
       applicant_roster: applicantRoster,

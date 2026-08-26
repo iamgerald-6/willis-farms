@@ -209,7 +209,10 @@ export interface OnboardingHrData {
   employment_type?: string;
   work_location?: string;
   /** Additional admin-configured HR fields stored in hr_data JSON. */
-  [key: string]: string | undefined;
+  [key: string]:
+    | string
+    | undefined
+    | { secure_url?: string; public_id?: string; original_name?: string };
 }
 
 export const ONBOARDING_EMPLOYMENT_TYPES = [
