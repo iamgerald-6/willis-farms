@@ -296,13 +296,13 @@ export default function CareersTab() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Career postings</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Job titles come from System Definitions. When a closing date passes, status changes to closed. Reopening a closed posting starts a fresh hiring round as a new posting (with its own closing date to set) rather than reusing the old one — its applicants and reports stay untouched.
+            Job titles come from System Definitions. Reopening a closed posting creates a new posting rather than reusing the old one.
           </p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 shrink-0"
         >
           <Plus className="w-4 h-4" />
           New posting
