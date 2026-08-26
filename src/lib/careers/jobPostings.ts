@@ -26,6 +26,26 @@ export type JobPostingContentField =
   | "required_skills_attributes"
   | "non_negotiable_standards";
 
+export interface PostingHistoryActor {
+  user_id: string | null;
+  name: string | null;
+  email: string | null;
+}
+
+/**
+ * "opened" — this posting's own creation, as a genuinely new posting.
+ * "republished" — this posting's creation, but it replaced an older closed
+ * posting (via Republish) rather than being created from scratch. Recorded
+ * on the NEW posting, not the old one — the old one drops off the HR list
+ * once superseded, so an event logged there would never be seen.
+ * "closed" — appended whenever this posting's status is set to closed.
+ */
+export interface PostingHistoryEntry {
+  event: "opened" | "republished" | "closed";
+  at: string;
+  by: PostingHistoryActor;
+}
+
 export interface JobPosting {
   id: string;
   slug: string;
@@ -56,6 +76,8 @@ export interface JobPosting {
   updated_at: string;
   /** Set once this closed posting has been reopened as a new posting — points at the new one. Null means still current. */
   superseded_by?: string | null;
+  /** Oldest first: opened/republished, then closed if it happened. */
+  history?: PostingHistoryEntry[];
 }
 
 export type JobPostingInput = {
@@ -77,6 +99,8 @@ export type JobPostingInput = {
   status?: JobPostingStatus;
   /** Set when this new posting is reopening an old, closed one — marks that old posting as superseded so it drops off the HR list. */
   supersedes_id?: string;
+  /** Account id of whoever is publishing this posting — recorded as the "opened"/"republished" history entry's actor. */
+  created_by?: string;
 };
 
 export const JOB_POSTING_STATUS_LABELS: Record<JobPostingStatus, string> = {

@@ -3,8 +3,10 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   statusFromClosingDate,
   type JobPostingStatus,
+  type PostingHistoryEntry,
 } from "@/lib/careers/jobPostings";
 import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
+import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
@@ -79,6 +81,28 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+    }
+
+    // Log a "closed" history entry whenever this update newly closes the
+    // posting (skips it if already closed, so re-saving an already-closed
+    // posting doesn't pile up duplicate entries).
+    if (updates.status === "closed") {
+      const { data: existing } = await supabaseAdmin
+        .from("job_postings")
+        .select("history")
+        .eq("id", id)
+        .maybeSingle();
+      const currentHistory: PostingHistoryEntry[] = Array.isArray(existing?.history)
+        ? existing.history
+        : [];
+      const last = currentHistory[currentHistory.length - 1];
+      if (!last || last.event !== "closed") {
+        const actor = await resolvePostingActor(supabaseAdmin, body.changed_by);
+        updates.history = [
+          ...currentHistory,
+          { event: "closed", at: new Date().toISOString(), by: actor } satisfies PostingHistoryEntry,
+        ];
+      }
     }
 
     const { data, error } = await updateJobPostingWithColumnFallback(

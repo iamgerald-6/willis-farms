@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Clock,
   FileText,
+  History,
   Loader2,
   Pencil,
   Plus,
@@ -29,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import PostingHistoryDrawer from "./PostingHistoryDrawer";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
@@ -101,7 +103,7 @@ const emptyForm = (): FormState => ({
   jd_file_public_id: null,
 });
 
-export default function CareersTab() {
+export default function CareersTab({ adminId }: { adminId: string }) {
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<JobPosting | null>(null);
@@ -109,6 +111,7 @@ export default function CareersTab() {
   // closed posting being reopened. Distinct from `editing` (which stays
   // null here, since saving must create a new row, not update this one).
   const [reopeningFrom, setReopeningFrom] = useState<JobPosting | null>(null);
+  const [historyPosting, setHistoryPosting] = useState<JobPosting | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -161,6 +164,7 @@ export default function CareersTab() {
       return api.post("/careers/postings", {
         ...payload,
         ...(reopeningFrom ? { supersedes_id: reopeningFrom.id } : {}),
+        created_by: adminId,
       });
     },
     onSuccess: () => {
@@ -185,7 +189,7 @@ export default function CareersTab() {
   // the new round's applicants as part of the old, already-decided one.
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: JobPostingStatus }) =>
-      api.patch(`/careers/postings/${id}`, { status }),
+      api.patch(`/careers/postings/${id}`, { status, changed_by: adminId }),
     onSuccess: () => {
       toast.success("Posting closed.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
@@ -369,6 +373,14 @@ export default function CareersTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setHistoryPosting(posting)}
+                      title="History"
+                      className="inline-flex p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400 mr-3 align-middle"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => openEdit(posting)}
@@ -629,6 +641,13 @@ export default function CareersTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {historyPosting && (
+        <PostingHistoryDrawer
+          posting={historyPosting}
+          onClose={() => setHistoryPosting(null)}
+        />
       )}
     </div>
   );

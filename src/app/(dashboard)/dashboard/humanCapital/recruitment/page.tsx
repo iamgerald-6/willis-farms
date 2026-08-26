@@ -4000,7 +4000,7 @@ function RecruitmentPageContent() {
       </div>
 
       {activeTab === "careers" ? (
-        <CareersTab />
+        <CareersTab adminId={session?.user?.id ?? ""} />
       ) : activeTab === "ai_rejects" ? (
         <RejectsTab
           applications={aiRejectApplications}

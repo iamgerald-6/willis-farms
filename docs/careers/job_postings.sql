@@ -125,5 +125,21 @@ create index if not exists job_postings_superseded_by_idx
 comment on column public.job_postings.superseded_by is
   'Set on an old, closed posting once it is reopened as a new posting — points at the new posting that replaced it. Null means still current (or never reopened).';
 
+-- ============================================================================
+-- Per-posting history log — when it was opened (or, if it replaced a closed
+-- posting, republished) and closed, and by whom. Since a superseded posting
+-- drops off the HR list (see above), its own "republished" moment wouldn't
+-- be visible there — so that event is recorded as the NEW posting's first
+-- history entry instead ("republished" rather than "opened"), not on the
+-- old one.
+-- Run this in the Supabase SQL editor.
+-- ============================================================================
+
+alter table public.job_postings
+  add column if not exists history jsonb not null default '[]'::jsonb;
+
+comment on column public.job_postings.history is
+  'Array of {event: "opened"|"republished"|"closed", at, by: {user_id, name, email}}, oldest first.';
+
 -- Refresh PostgREST schema cache after adding columns
 notify pgrst, 'reload schema';
