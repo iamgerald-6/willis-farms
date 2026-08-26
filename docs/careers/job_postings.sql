@@ -105,5 +105,25 @@ alter table public.job_applications
 comment on column public.job_applications.application_form_fields_snapshot is
   'Frozen job application form definition when the applicant first saves. Later system definition changes do not affect this application.';
 
+-- ============================================================================
+-- Reopening a closed posting now creates a brand-new posting row (its own
+-- id, own closing date) instead of flipping the closed one's status back to
+-- published in place. superseded_by links the OLD posting to whichever new
+-- posting replaced it, so the HR postings list can hide it — it would
+-- otherwise sit there alongside its replacement looking like a duplicate.
+-- The old row (and its applicants, and any report generated for it) is
+-- never deleted or modified beyond this one link.
+-- Run this in the Supabase SQL editor.
+-- ============================================================================
+
+alter table public.job_postings
+  add column if not exists superseded_by uuid references public.job_postings(id) on delete set null;
+
+create index if not exists job_postings_superseded_by_idx
+  on public.job_postings (superseded_by);
+
+comment on column public.job_postings.superseded_by is
+  'Set on an old, closed posting once it is reopened as a new posting — points at the new posting that replaced it. Null means still current (or never reopened).';
+
 -- Refresh PostgREST schema cache after adding columns
 notify pgrst, 'reload schema';

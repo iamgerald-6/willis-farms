@@ -120,6 +120,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message + hint }, { status: 500 });
     }
 
+    // Reopening a closed posting — link the old one to this new one so it
+    // drops off the HR postings list. Best-effort: the new posting is
+    // already created and saved regardless of whether this succeeds, so a
+    // stale/missing superseded_by column (pre-migration) never blocks
+    // reopening a role, it just means the old posting keeps showing.
+    if (body.supersedes_id && data) {
+      await supabaseAdmin
+        .from("job_postings")
+        .update({ superseded_by: (data as { id: string }).id })
+        .eq("id", body.supersedes_id)
+        .then(({ error: linkError }) => {
+          if (linkError) {
+            console.error("[POST /api/careers/postings] supersede link failed", linkError);
+          }
+        });
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (err) {
     console.error("[POST /api/careers/postings]", err);

@@ -54,6 +54,8 @@ export interface JobPosting {
   is_active?: boolean;
   created_at: string;
   updated_at: string;
+  /** Set once this closed posting has been reopened as a new posting — points at the new one. Null means still current. */
+  superseded_by?: string | null;
 }
 
 export type JobPostingInput = {
@@ -73,6 +75,8 @@ export type JobPostingInput = {
   jd_file_public_id?: string | null;
   closes_at: string;
   status?: JobPostingStatus;
+  /** Set when this new posting is reopening an old, closed one — marks that old posting as superseded so it drops off the HR list. */
+  supersedes_id?: string;
 };
 
 export const JOB_POSTING_STATUS_LABELS: Record<JobPostingStatus, string> = {

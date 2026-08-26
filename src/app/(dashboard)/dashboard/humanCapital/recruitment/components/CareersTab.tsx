@@ -105,6 +105,10 @@ export default function CareersTab() {
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<JobPosting | null>(null);
+  // Set only when the "New posting" form was opened via Republish — the
+  // closed posting being reopened. Distinct from `editing` (which stays
+  // null here, since saving must create a new row, not update this one).
+  const [reopeningFrom, setReopeningFrom] = useState<JobPosting | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -154,13 +158,17 @@ export default function CareersTab() {
       if (editing) {
         return api.patch(`/careers/postings/${editing.id}`, payload);
       }
-      return api.post("/careers/postings", payload);
+      return api.post("/careers/postings", {
+        ...payload,
+        ...(reopeningFrom ? { supersedes_id: reopeningFrom.id } : {}),
+      });
     },
     onSuccess: () => {
       toast.success(editing ? "Posting updated." : "Career posting published.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
       setShowModal(false);
       setEditing(null);
+      setReopeningFrom(null);
       setForm(emptyForm());
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
@@ -226,6 +234,7 @@ export default function CareersTab() {
 
   const openCreate = () => {
     setEditing(null);
+    setReopeningFrom(null);
     setForm({
       ...emptyForm(),
       job_title_key: jobPostings[0]?.key ?? "",
@@ -235,6 +244,7 @@ export default function CareersTab() {
 
   const openEdit = (posting: JobPosting) => {
     setEditing(posting);
+    setReopeningFrom(null);
     setForm({
       job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
       location: posting.location,
@@ -265,6 +275,7 @@ export default function CareersTab() {
   // rather than accidentally reusing a deadline that's already passed.
   const openReopen = (posting: JobPosting) => {
     setEditing(null);
+    setReopeningFrom(posting);
     setForm({
       job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
       location: posting.location,
@@ -285,8 +296,20 @@ export default function CareersTab() {
     setShowModal(true);
   };
 
+  const closeModal = () => {
+    setShowModal(false);
+    setEditing(null);
+    setReopeningFrom(null);
+  };
+
+  // Once a closed posting has been reopened as a new one, hide it here — it
+  // would otherwise sit alongside its replacement looking like a duplicate.
+  // Nothing is deleted; it's still reachable via its own applicants' pages.
   const sorted = useMemo(
-    () => [...postings].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
+    () =>
+      postings
+        .filter((p) => !p.superseded_by)
+        .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     [postings],
   );
 
@@ -369,7 +392,7 @@ export default function CareersTab() {
                         onClick={() => openReopen(posting)}
                         className="text-xs font-medium text-green-700 hover:underline"
                       >
-                        Reopen
+                        Republish
                       </button>
                     )}
                   </td>
@@ -389,7 +412,7 @@ export default function CareersTab() {
               </h3>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="p-1 rounded-lg hover:bg-gray-100"
               >
                 <X className="w-5 h-5 text-gray-500" />
@@ -590,7 +613,7 @@ export default function CareersTab() {
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50"
               >
                 Cancel
