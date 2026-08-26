@@ -183,14 +183,18 @@ function ApplicationDetail({
   // who applied for the same role. Cheap GET, so no need to gate it behind
   // a specific status — it simply renders nothing if none exists yet.
   const { data: roleReportRow } = useQuery({
-    queryKey: ["role_interview_report", application.role_slug],
+    queryKey: [
+      "role_interview_report",
+      application.job_posting_id ?? application.role_slug,
+    ],
     queryFn: async () => {
-      const res = await api.get(
-        `/careers/interview/role-report?role_slug=${application.role_slug}`,
-      );
+      const params = application.job_posting_id
+        ? `job_posting_id=${application.job_posting_id}`
+        : `role_slug=${application.role_slug}`;
+      const res = await api.get(`/careers/interview/role-report?${params}`);
       return res.data.data as RoleInterviewReportRow | null;
     },
-    enabled: !!application.role_slug,
+    enabled: !!(application.job_posting_id || application.role_slug),
   });
 
   const allowedStatusOptions = useMemo(
@@ -1277,7 +1281,11 @@ function ApplicationDetail({
                 {roleReportRow && (
                   <div className="pt-2 mt-2 border-t border-gray-100">
                     <a
-                      href={`/api/careers/interview/role-report/pdf?role_slug=${application.role_slug}`}
+                      href={`/api/careers/interview/role-report/pdf?${
+                        application.job_posting_id
+                          ? `job_posting_id=${application.job_posting_id}`
+                          : `role_slug=${application.role_slug}`
+                      }`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
@@ -2499,15 +2507,50 @@ function ApprovalsTab({
   const [nameFilters, setNameFilters] = useState<string[]>([]);
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
 
-  const roles = useMemo(() => {
-    const map = new Map<string, string>();
+  // Opened-date labels for the round picker below — cheap, cached lookup of
+  // every posting so we can show "Pig Farm Manager — opened 30 Aug 2026".
+  const { data: postingsLookup } = useQuery({
+    queryKey: ["job_postings_opened_dates"],
+    queryFn: async () => {
+      const res = await api.get("/careers/postings");
+      const rows = (res.data.data ?? []) as { id: string; created_at: string }[];
+      return new Map(rows.map((p) => [p.id, p.created_at]));
+    },
+  });
+
+  // A "round" is one specific job posting (job_posting_id) — a role can be
+  // posted more than once over time, and each posting is its own hiring
+  // round with its own applicants. Only rounds that currently have someone
+  // in Evaluation status show up here, since `applications` is already
+  // scoped to that status — once a round is fully decided, it naturally
+  // drops off this list. Applicants from before job_posting_id existed
+  // (legacy, null) are excluded — there's no round to attribute them to.
+  const rounds = useMemo(() => {
+    const map = new Map<
+      string,
+      { jobPostingId: string; roleSlug: string; title: string }
+    >();
     for (const a of applications) {
-      if (!map.has(a.role_slug)) map.set(a.role_slug, a.role_title);
+      if (!a.job_posting_id) continue;
+      if (!map.has(a.job_posting_id)) {
+        map.set(a.job_posting_id, {
+          jobPostingId: a.job_posting_id,
+          roleSlug: a.role_slug,
+          title: a.role_title,
+        });
+      }
     }
-    return Array.from(map.entries())
-      .map(([slug, title]) => ({ slug, title }))
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }, [applications]);
+    return Array.from(map.values())
+      .map((r) => ({
+        ...r,
+        openedAt: postingsLookup?.get(r.jobPostingId) ?? null,
+      }))
+      .sort((a, b) => {
+        const byTitle = a.title.localeCompare(b.title);
+        if (byTitle !== 0) return byTitle;
+        return (b.openedAt ?? "").localeCompare(a.openedAt ?? "");
+      });
+  }, [applications, postingsLookup]);
 
   const ranked = useMemo(() => {
     const byRole = new Map<string, JobApplication[]>();
@@ -2598,7 +2641,7 @@ function ApprovalsTab({
         <button
           type="button"
           onClick={() => setShowRoleReport(true)}
-          disabled={roles.length === 0}
+          disabled={rounds.length === 0}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
         >
           Generate role report
@@ -2633,7 +2676,7 @@ function ApprovalsTab({
 
       {showRoleReport && (
         <RoleReportModal
-          roles={roles}
+          rounds={rounds}
           adminId={adminId}
           onClose={() => setShowRoleReport(false)}
         />
@@ -2917,36 +2960,38 @@ function OfferTab({
 // funnel progress and (where available) individual interview report into a
 // single report HR can generate once, then edit/download/email freely.
 function RoleReportModal({
-  roles,
+  rounds,
   adminId,
   onClose,
 }: {
-  roles: { slug: string; title: string }[];
+  rounds: { jobPostingId: string; roleSlug: string; title: string; openedAt: string | null }[];
   adminId: string;
   onClose: () => void;
 }) {
-  const [selectedSlug, setSelectedSlug] = useState(roles[0]?.slug ?? "");
+  const [selectedPostingId, setSelectedPostingId] = useState(
+    rounds[0]?.jobPostingId ?? "",
+  );
   const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(
     null,
   );
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const selectedRole = roles.find((r) => r.slug === selectedSlug);
+  const selectedRound = rounds.find((r) => r.jobPostingId === selectedPostingId);
 
   const {
     data: reportRow,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["role_interview_report", selectedSlug],
+    queryKey: ["role_interview_report", selectedPostingId],
     queryFn: async () => {
       const res = await api.get(
-        `/careers/interview/role-report?role_slug=${selectedSlug}`,
+        `/careers/interview/role-report?job_posting_id=${selectedPostingId}`,
       );
       return res.data.data as RoleInterviewReportRow | null;
     },
-    enabled: !!selectedSlug,
+    enabled: !!selectedPostingId,
   });
 
   useEffect(() => {
@@ -2962,7 +3007,7 @@ function RoleReportModal({
   const generateMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/role-report/generate", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
       }),
     onSuccess: async () => {
       toast.success("Role report generated.");
@@ -2976,7 +3021,7 @@ function RoleReportModal({
   const saveMutation = useMutation({
     mutationFn: () =>
       api.patch("/careers/interview/role-report", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
         report: reportDraft,
         edited_by: adminId,
       }),
@@ -2992,7 +3037,7 @@ function RoleReportModal({
   const emailMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/role-report/email", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
         to: emailTo,
       }),
     onSuccess: () => {
@@ -3030,19 +3075,25 @@ function RoleReportModal({
         <div className="p-5 overflow-y-auto min-h-0 space-y-5">
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-              Role
+              Hiring round
             </label>
             <select
-              value={selectedSlug}
-              onChange={(e) => setSelectedSlug(e.target.value)}
+              value={selectedPostingId}
+              onChange={(e) => setSelectedPostingId(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             >
-              {roles.map((r) => (
-                <option key={r.slug} value={r.slug}>
+              {rounds.map((r) => (
+                <option key={r.jobPostingId} value={r.jobPostingId}>
                   {r.title}
+                  {r.openedAt ? ` — opened ${formatDate(r.openedAt)}` : ""}
                 </option>
               ))}
             </select>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Only shows rounds that currently have an applicant awaiting a
+              decision. Once a round is fully decided, its report stays
+              accessible from each applicant&apos;s own page.
+            </p>
           </div>
 
           {isLoading ? (
@@ -3051,7 +3102,7 @@ function RoleReportModal({
             <div className="space-y-2">
               <p className="text-xs text-gray-500">
                 Generates a consolidated report for{" "}
-                {selectedRole?.title ?? "this role"} — applicant funnel numbers,
+                {selectedRound?.title ?? "this round"} — applicant funnel numbers,
                 constraints flagged in HR/panel notes, and a final hire
                 recommendation based on the current ranking. You can edit it
                 freely afterward, and regenerate it again any time the applicant
@@ -3086,7 +3137,7 @@ function RoleReportModal({
                   </button>
                 )}
                 <a
-                  href={`/api/careers/interview/role-report/pdf?role_slug=${selectedSlug}`}
+                  href={`/api/careers/interview/role-report/pdf?job_posting_id=${selectedPostingId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"

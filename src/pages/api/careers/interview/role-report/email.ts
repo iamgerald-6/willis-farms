@@ -1,8 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { normalizeRoleInterviewReport, type RoleInterviewReportRow } from "@/lib/careers/types";
+import { normalizeRoleInterviewReport } from "@/lib/careers/types";
 import { renderRoleInterviewReportPdf } from "@/lib/reports/renderRoleInterviewReportPdf";
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+import { findRoleReportRow } from "@/lib/careers/roleReportLookup";
 
 // Pages Router — see src/pages/api/careers/interview/report/email.ts for why
 // (@react-pdf/renderer crashes inside the App Router).
@@ -23,22 +24,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { role_slug, to } = req.body ?? {};
-    if (!role_slug || !to) {
-      return res.status(400).json({ error: "role_slug and to are required." });
+    const { job_posting_id, role_slug, to } = req.body ?? {};
+    if ((!job_posting_id && !role_slug) || !to) {
+      return res.status(400).json({ error: "job_posting_id (or role_slug) and to are required." });
     }
 
-    const { data, error: fetchError } = await supabaseAdmin
-      .from("role_interview_reports")
-      .select("*")
-      .eq("role_slug", role_slug)
-      .single();
+    const { data, error: fetchError } = await findRoleReportRow(supabaseAdmin, {
+      jobPostingId: job_posting_id ?? null,
+      roleSlug: role_slug ?? null,
+    });
 
     if (fetchError || !data) {
-      return res.status(404).json({ error: fetchError?.message ?? "No report found for this role." });
+      return res.status(404).json({ error: fetchError?.message ?? "No report found for this hiring round." });
     }
 
-    const row = data as RoleInterviewReportRow;
+    const row = data;
     const report = normalizeRoleInterviewReport(row.report_edit ?? row.report);
 
     const pdfBuffer = await renderRoleInterviewReportPdf(report);

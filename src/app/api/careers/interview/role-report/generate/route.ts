@@ -13,21 +13,27 @@ import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
 import { getAppBaseUrl, recruitmentInterviewUrl } from "@/lib/appUrl";
 
-// Generates the consolidated per-role hiring summary report for a role. Can
-// be run more than once — each run overwrites the AI-generated `report` with
-// a fresh one built from the applicants' current state, and clears out any
-// HR edit (report_edit/report_edit_log) so the edit history doesn't linger
-// against a report it no longer describes. Between generations, HR can edit
-// freely — see the PATCH handler in ../route.ts for the "edit always writes
-// to report_edit, never overwrites report" model.
+// Generates the consolidated hiring summary report for one specific hiring
+// round (job_posting_id) — not the role as a whole. A role can be posted
+// more than once over time (filled, then reopened months later); each
+// posting is its own round with its own applicants, and reports must not
+// mix rounds together. Can be run more than once for the same round — each
+// run overwrites that round's AI-generated `report` with a fresh one built
+// from the applicants' current state, and clears out any HR edit
+// (report_edit/report_edit_log) so the edit history doesn't linger against
+// a report it no longer describes. Reopening the role for a new round
+// creates a brand-new report row instead, keyed to the new job_posting_id —
+// it never touches the previous round's saved report. Between generations,
+// HR can edit freely — see the PATCH handler in ../route.ts for the "edit
+// always writes to report_edit, never overwrites report" model.
 //
 // This report exists to make the final hire decision, so everything that
 // drives that decision (ranking, competency/observation tables, final
 // recommendation) only ever considers candidates currently in Evaluation
 // status — anyone already Hold/Rejected/Hired has a decision already and
 // isn't part of "who do we hire now". The funnel and full applicant roster
-// are the exception: those cover every applicant for the role, at any
-// status, as pipeline-wide context.
+// are the exception: those cover every applicant for this round, at any
+// status, as pipeline-wide context — still scoped to this one round only.
 export const maxDuration = 60;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -89,33 +95,36 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { role_slug } = await req.json();
-    if (!role_slug) {
-      return NextResponse.json({ error: "role_slug is required." }, { status: 400 });
+    const { job_posting_id } = await req.json();
+    if (!job_posting_id) {
+      return NextResponse.json({ error: "job_posting_id is required." }, { status: 400 });
     }
 
     const { data: existing } = await supabaseAdmin
       .from("role_interview_reports")
       .select("id")
-      .eq("role_slug", role_slug)
+      .eq("job_posting_id", job_posting_id)
       .maybeSingle();
 
+    // Scoped to this specific hiring round only — not every applicant who
+    // ever applied under this role name. See docs/careers/role_interview_reports.sql.
     const { data: applications, error: fetchError } = await supabaseAdmin
       .from("job_applications")
       .select("*")
-      .eq("role_slug", role_slug);
+      .eq("job_posting_id", job_posting_id);
 
     if (fetchError) {
       return NextResponse.json({ error: fetchError.message }, { status: 500 });
     }
     if (!applications || applications.length === 0) {
       return NextResponse.json(
-        { error: "No applicants found for this role." },
+        { error: "No applicants found for this hiring round." },
         { status: 404 },
       );
     }
 
     const roleTitle = applications[0].role_title as string;
+    const role_slug = applications[0].role_slug as string;
     const apps = applications as JobApplication[];
 
     const guideKey = await resolveInterviewGuideKey(supabaseAdmin, role_slug);
@@ -360,7 +369,7 @@ export async function POST(req: NextRequest) {
             report_edit_log: [],
             updated_at: new Date().toISOString(),
           })
-          .eq("role_slug", role_slug)
+          .eq("job_posting_id", job_posting_id)
           .select()
           .single()
       : await supabaseAdmin
@@ -368,6 +377,7 @@ export async function POST(req: NextRequest) {
           .insert({
             role_slug,
             role_title: roleTitle,
+            job_posting_id,
             report,
           })
           .select()
