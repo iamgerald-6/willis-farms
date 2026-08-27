@@ -322,6 +322,8 @@ export interface RoleInterviewReportRow {
   id: string;
   role_slug: string;
   role_title: string;
+  /** The specific hiring round (job_postings row) this report covers. Null on legacy, role-wide reports generated before rounds were tracked. */
+  job_posting_id?: string | null;
   report: RoleInterviewReport;
   report_edit: RoleInterviewReport | null;
   report_edit_log: { edited_at: string; edited_by: string }[];
