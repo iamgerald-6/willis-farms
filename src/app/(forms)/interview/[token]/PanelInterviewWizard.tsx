@@ -4,10 +4,19 @@ import { useEffect, useState } from "react";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import type { StageSubmissionData } from "@/lib/careers/types";
 import { FormShell } from "@/components/Forms/FormShell";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, Clock3 } from "lucide-react";
 import { RatingRow, StageInfoBanner } from "@/app/(dashboard)/dashboard/humanCapital/recruitment/components/interview/shared";
 
-type PanelData = {
+type PanelDataLocked = {
+  locked: true;
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  stage: 1 | 2;
+};
+
+type PanelDataOpen = {
+  locked?: false;
   candidateName: string;
   roleTitle: string;
   referenceNumber: string;
@@ -17,6 +26,9 @@ type PanelData = {
   submission: StageSubmissionData | null;
   submitted: boolean;
 };
+
+/** Stage 1 forms report `locked: true` until HR opens them once the interview starts. */
+type PanelData = PanelDataLocked | PanelDataOpen;
 
 type Props = { token: string };
 
@@ -102,6 +114,30 @@ export default function PanelInterviewWizard({ token }: Props) {
         <p className="text-sm text-gray-600 bg-white border border-gray-200 rounded-xl p-6">
           {loadError ?? "This interview link is invalid or has expired."}
         </p>
+      </FormShell>
+    );
+  }
+
+  if (data.locked) {
+    return (
+      <FormShell
+        eyebrow="Interview panel"
+        title="Not open yet"
+        subtitle={`${data.candidateName} · Ref ${data.referenceNumber}`}
+      >
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 flex gap-3">
+          <Clock3 className="w-6 h-6 text-amber-600 shrink-0" />
+          <div>
+            <p className="font-semibold text-amber-900">
+              This form will be accessible on the day of the interview.
+            </p>
+            <p className="text-sm text-amber-800 mt-1">
+              Your Stage {data.stage} evaluation form for {data.candidateName} (
+              {data.roleTitle}) opens once HR starts the interview. Check back then, or
+              use this same link again.
+            </p>
+          </div>
+        </div>
       </FormShell>
     );
   }

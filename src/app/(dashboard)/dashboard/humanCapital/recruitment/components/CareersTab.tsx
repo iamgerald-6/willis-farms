@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Clock,
   FileText,
+  History,
   Loader2,
   Pencil,
   Plus,
@@ -29,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import PostingHistoryDrawer from "./PostingHistoryDrawer";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
@@ -101,10 +103,15 @@ const emptyForm = (): FormState => ({
   jd_file_public_id: null,
 });
 
-export default function CareersTab() {
+export default function CareersTab({ adminId }: { adminId: string }) {
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<JobPosting | null>(null);
+  // Set only when the "New posting" form was opened via Republish — the
+  // closed posting being reopened. Distinct from `editing` (which stays
+  // null here, since saving must create a new row, not update this one).
+  const [reopeningFrom, setReopeningFrom] = useState<JobPosting | null>(null);
+  const [historyPosting, setHistoryPosting] = useState<JobPosting | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -154,13 +161,18 @@ export default function CareersTab() {
       if (editing) {
         return api.patch(`/careers/postings/${editing.id}`, payload);
       }
-      return api.post("/careers/postings", payload);
+      return api.post("/careers/postings", {
+        ...payload,
+        ...(reopeningFrom ? { supersedes_id: reopeningFrom.id } : {}),
+        created_by: adminId,
+      });
     },
     onSuccess: () => {
       toast.success(editing ? "Posting updated." : "Career posting published.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
       setShowModal(false);
       setEditing(null);
+      setReopeningFrom(null);
       setForm(emptyForm());
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
@@ -168,13 +180,18 @@ export default function CareersTab() {
     },
   });
 
+  // Only closes a posting now — reopening a closed posting no longer flips
+  // this same row back to published (see openReopen below). A closed
+  // posting's applicants are done and settled; a "reopen" is a fresh hiring
+  // round with its own applicants, so it needs its own posting id rather
+  // than reusing this one. Reusing the id used to make every downstream
+  // per-round feature (the role hiring summary report, most notably) treat
+  // the new round's applicants as part of the old, already-decided one.
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: JobPostingStatus }) =>
-      api.patch(`/careers/postings/${id}`, { status }),
-    onSuccess: (_data, { status }) => {
-      toast.success(
-        status === "closed" ? "Posting closed." : "Posting republished.",
-      );
+      api.patch(`/careers/postings/${id}`, { status, changed_by: adminId }),
+    onSuccess: () => {
+      toast.success("Posting closed.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
     },
     onError: () => toast.error("Could not update posting status."),
@@ -221,6 +238,7 @@ export default function CareersTab() {
 
   const openCreate = () => {
     setEditing(null);
+    setReopeningFrom(null);
     setForm({
       ...emptyForm(),
       job_title_key: jobPostings[0]?.key ?? "",
@@ -230,6 +248,7 @@ export default function CareersTab() {
 
   const openEdit = (posting: JobPosting) => {
     setEditing(posting);
+    setReopeningFrom(null);
     setForm({
       job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
       location: posting.location,
@@ -250,8 +269,51 @@ export default function CareersTab() {
     setShowModal(true);
   };
 
+  // Reopening a closed role for a new hiring round — pre-fills the "New
+  // posting" form with the closed posting's content (title, description,
+  // requirements, etc.) but leaves `editing` unset, so saving goes through
+  // POST and creates a genuinely new posting row with its own id, rather
+  // than PATCHing the old one back to published. The old posting stays
+  // closed exactly as it was, with its own applicants and history intact.
+  // Closing date is left blank on purpose — HR reviews and sets a fresh one
+  // rather than accidentally reusing a deadline that's already passed.
+  const openReopen = (posting: JobPosting) => {
+    setEditing(null);
+    setReopeningFrom(posting);
+    setForm({
+      job_title_key: resolvePostingJobTitleKey(posting, jobPostings),
+      location: posting.location,
+      employment_type: posting.employment_type,
+      description: posting.description,
+      role_scope: posting.role_scope ?? "",
+      key_responsibilities: posting.key_responsibilities ?? "",
+      minimum_qualifications: posting.minimum_qualifications ?? "",
+      preferred_qualifications: posting.preferred_qualifications ?? "",
+      experience: posting.experience ?? "",
+      required_skills_attributes: posting.required_skills_attributes ?? "",
+      non_negotiable_standards: posting.non_negotiable_standards ?? "",
+      closes_at: "",
+      status: "published",
+      jd_file_url: posting.jd_file_url,
+      jd_file_public_id: posting.jd_file_public_id,
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditing(null);
+    setReopeningFrom(null);
+  };
+
+  // Once a closed posting has been reopened as a new one, hide it here — it
+  // would otherwise sit alongside its replacement looking like a duplicate.
+  // Nothing is deleted; it's still reachable via its own applicants' pages.
   const sorted = useMemo(
-    () => [...postings].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
+    () =>
+      postings
+        .filter((p) => !p.superseded_by)
+        .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     [postings],
   );
 
@@ -261,13 +323,13 @@ export default function CareersTab() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Career postings</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Job titles come from System Definitions. When a closing date passes, status changes to closed — HR can republish or edit anytime.
+            Job titles come from System Definitions. Reopening a closed posting creates a new posting rather than reusing the old one.
           </p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 shrink-0"
         >
           <Plus className="w-4 h-4" />
           New posting
@@ -313,6 +375,14 @@ export default function CareersTab() {
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
+                      onClick={() => setHistoryPosting(posting)}
+                      title="History"
+                      className="inline-flex p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400 mr-3 align-middle"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => openEdit(posting)}
                       className="text-xs font-medium text-red-700 hover:underline mr-3"
                     >
@@ -331,9 +401,7 @@ export default function CareersTab() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() =>
-                          statusMutation.mutate({ id: posting.id, status: "published" })
-                        }
+                        onClick={() => openReopen(posting)}
                         className="text-xs font-medium text-green-700 hover:underline"
                       >
                         Republish
@@ -356,7 +424,7 @@ export default function CareersTab() {
               </h3>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="p-1 rounded-lg hover:bg-gray-100"
               >
                 <X className="w-5 h-5 text-gray-500" />
@@ -557,7 +625,7 @@ export default function CareersTab() {
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50"
               >
                 Cancel
@@ -573,6 +641,13 @@ export default function CareersTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {historyPosting && (
+        <PostingHistoryDrawer
+          posting={historyPosting}
+          onClose={() => setHistoryPosting(null)}
+        />
       )}
     </div>
   );

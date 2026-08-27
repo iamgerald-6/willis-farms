@@ -124,20 +124,36 @@ export interface PanelSubmission extends StageSubmissionData {
   stage: 1 | 2;
 }
 
+export type InterviewLocationType = "onsite" | "online";
+
 export interface InterviewSetup {
   /** @deprecated use stage1_members */
   members?: PanelMember[];
   stage1_members?: PanelMember[];
   stage2_members?: PanelMember[];
   interview_start_at?: string;
+  /** Stage 1 — onsite (address in `location`) or online (link in `meeting_link`). Missing = legacy onsite records. */
+  location_type?: InterviewLocationType;
   location?: string;
+  meeting_link?: string;
   stage2_scheduled_at?: string;
+  /** Stage 2 — onsite (address in `stage2_location`) or online (link in `stage2_meeting_link`). Missing = legacy onsite records. */
+  stage2_location_type?: InterviewLocationType;
   stage2_location?: string;
+  stage2_meeting_link?: string;
   /** @deprecated use stage1_invites_sent_at */
   invites_sent_at?: string;
   stage1_invites_sent_at?: string;
   stage2_invites_sent_at?: string;
   candidate_invite_sent_at?: string;
+  /**
+   * HR manually opens the Stage 1 / Stage 2 panel forms once the interview
+   * actually begins (times can slip, so this is a deliberate click, not
+   * derived from interview_start_at / stage2_scheduled_at). Panel members'
+   * links show a "not open yet" message until the relevant one is set.
+   */
+  stage1_forms_opened_at?: string;
+  stage2_forms_opened_at?: string;
 }
 
 export interface Stage1Review {
@@ -166,8 +182,14 @@ export interface InterviewReport {
     role: string;
     reference_number: string;
     panel_names: string[];
-    interview_date: string | null;
-    location: string | null;
+    stage1_interview_date: string | null;
+    /** Only set when Stage 1 was onsite — no location to show for an online stage. */
+    stage1_location: string | null;
+    stage1_location_type?: InterviewLocationType | null;
+    stage2_interview_date: string | null;
+    /** Only set when Stage 2 was onsite — no location to show for an online stage. */
+    stage2_location: string | null;
+    stage2_location_type?: InterviewLocationType | null;
     overall_rating: number | null;
   };
   core_competencies: { area: string; score: number | null; assessment: string }[];
@@ -226,13 +248,6 @@ export interface RoleInterviewReport {
     reached_stage1_only: number;
     /** Completed both interview stages in full. */
     completed_full_interview: number;
-    /** Breakdown of the completed_full_interview group by current outcome. */
-    completed_breakdown: {
-      still_deciding: number;
-      hold: number;
-      rejected: number;
-      hired: number;
-    };
   };
 
   // 3. Candidate ranking — Evaluation status only (who's actually still in the running).
@@ -307,6 +322,8 @@ export interface RoleInterviewReportRow {
   id: string;
   role_slug: string;
   role_title: string;
+  /** The specific hiring round (job_postings row) this report covers. Null on legacy, role-wide reports generated before rounds were tracked. */
+  job_posting_id?: string | null;
   report: RoleInterviewReport;
   report_edit: RoleInterviewReport | null;
   report_edit_log: { edited_at: string; edited_by: string }[];

@@ -369,6 +369,23 @@ export function validateStep(
       }
     }
 
+    // Applicants must be at least 15 — the date picker's `max` attribute
+    // stops most people picking an invalid date, but that's a soft UI
+    // constraint some browsers don't fully enforce on manual typing, so
+    // it's re-checked here too.
+    if (field.rules.fieldType === "date" && field.rules.fieldKey === "date_of_birth" && !isEmpty) {
+      const dob = new Date(String(value));
+      if (Number.isNaN(dob.getTime())) {
+        errors.push(`${field.label} isn't a valid date.`);
+      } else {
+        const fifteenYearsAgo = new Date();
+        fifteenYearsAgo.setFullYear(fifteenYearsAgo.getFullYear() - 15);
+        if (dob.getTime() > fifteenYearsAgo.getTime()) {
+          errors.push(`${field.label}: applicants must be at least 15 years old.`);
+        }
+      }
+    }
+
     const maxLen = effectiveMaxLength(field);
     if (!isEmpty && maxLen != null && String(value).length > maxLen) {
       errors.push(`${field.label} must be ${maxLen} characters or fewer.`);

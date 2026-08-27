@@ -16,7 +16,8 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 10, color: GRAY, marginTop: 3 },
   meta: { fontSize: 8, color: GRAY, textAlign: "right" },
 
-  sectionTitle: { fontSize: 12.5, fontWeight: 700, color: DARK, marginTop: 20, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
+  section: { marginTop: 22, paddingTop: 14, borderTop: `1pt solid ${BORDER}` },
+  sectionTitle: { fontSize: 12.5, fontWeight: 700, color: DARK, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   paragraph: { fontSize: 10, color: DARK, lineHeight: 1.6 },
 
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -103,166 +104,162 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
         </View>
 
         {/* 1. Executive summary */}
-        <View wrap={false}>
+        <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Executive Summary</Text>
           <Text style={styles.paragraph}>{report.executive_summary}</Text>
         </View>
 
         {/* 2. Applicant funnel */}
-        <Text style={styles.sectionTitle}>Applicant Funnel</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total applicants</Text>
-            <Text style={styles.statValue}>{f.total_applicants}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Never shortlisted</Text>
-            <Text style={styles.statValue}>{f.never_shortlisted}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Shortlisted (total)</Text>
-            <Text style={styles.statValue}>{f.shortlisted_total}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Never started interview</Text>
-            <Text style={styles.statValue}>{f.never_started_interview}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Reached Stage 1 only</Text>
-            <Text style={styles.statValue}>{f.reached_stage1_only}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Completed full interview</Text>
-            <Text style={styles.statValue}>{f.completed_full_interview}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Still deciding</Text>
-            <Text style={styles.statValue}>{f.completed_breakdown.still_deciding}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>On hold</Text>
-            <Text style={styles.statValue}>{f.completed_breakdown.hold}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Rejected</Text>
-            <Text style={styles.statValue}>{f.completed_breakdown.rejected}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Hired</Text>
-            <Text style={styles.statValue}>{f.completed_breakdown.hired}</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Applicant Funnel</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Total applicants</Text>
+              <Text style={styles.statValue}>{f.total_applicants}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Never shortlisted</Text>
+              <Text style={styles.statValue}>{f.never_shortlisted}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Shortlisted (total)</Text>
+              <Text style={styles.statValue}>{f.shortlisted_total}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Never started interview</Text>
+              <Text style={styles.statValue}>{f.never_started_interview}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Reached Stage 1 only</Text>
+              <Text style={styles.statValue}>{f.reached_stage1_only}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Completed full interview</Text>
+              <Text style={styles.statValue}>{f.completed_full_interview}</Text>
+            </View>
           </View>
         </View>
 
         {/* 3. Candidate ranking (Evaluation status only) */}
-        <Text style={styles.sectionTitle}>Candidate Ranking</Text>
-        <Text style={[styles.emptyNote, { marginBottom: 6 }]}>
-          Candidates still awaiting a decision only — Hold, Rejected, and Hired candidates already have one.
-        </Text>
-        {report.candidate_rankings.length === 0 ? (
-          <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
-        ) : (
-          report.candidate_rankings.map((c) => (
-            <View key={c.application_id} style={styles.rankRow} wrap={false}>
-              <Text style={styles.rankNum}>{c.rank}</Text>
-              <Text style={styles.rankName}>{c.name}</Text>
-              <Text style={styles.rankRef}>{c.reference_number}</Text>
-              <Text style={styles.rankScore}>{c.combined_score != null ? `${c.combined_score.toFixed(2)} / 5` : "—"}</Text>
-            </View>
-          ))
-        )}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Candidate Ranking</Text>
+          <Text style={[styles.emptyNote, { marginBottom: 6 }]}>
+            Below are the rankings of the candidates.
+          </Text>
+          {report.candidate_rankings.length === 0 ? (
+            <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
+          ) : (
+            report.candidate_rankings.map((c) => (
+              <View key={c.application_id} style={styles.rankRow} wrap={false}>
+                <Text style={styles.rankNum}>{c.rank}</Text>
+                <Text style={styles.rankName}>{c.name}</Text>
+                <Text style={styles.rankRef}>{c.reference_number}</Text>
+                <Text style={styles.rankScore}>{c.combined_score != null ? `${c.combined_score.toFixed(2)} / 5` : "—"}</Text>
+              </View>
+            ))
+          )}
+        </View>
 
         {/* 4. Full applicant roster — every applicant, any status */}
-        <Text style={styles.sectionTitle}>All Applicants</Text>
-        <View style={styles.rosterHeaderRow}>
-          <Text style={[styles.rosterHeaderCell, styles.colName]}>Name</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colRole]}>Role</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colStage]}>Stage reached</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colPanel]}>Panel</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colDate]}>Date</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colLocation]}>Location</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colS1]}>S1</Text>
-          <Text style={[styles.rosterHeaderCell, styles.colS2]}>S2</Text>
-        </View>
-        {report.applicant_roster.map((a) => (
-          <View key={a.application_id} style={styles.rosterRow} wrap={false}>
-            <Text style={[styles.rosterCell, styles.colName]}>{a.name}</Text>
-            <Text style={[styles.rosterCell, styles.colRole]}>{a.role_title}</Text>
-            <Text style={[styles.rosterCell, styles.colStage]}>{a.stage_reached}</Text>
-            <Text style={[styles.rosterCell, styles.colPanel]}>{a.panel_names.length ? a.panel_names.join(", ") : "—"}</Text>
-            <Text style={[styles.rosterCell, styles.colDate]}>{fmtDate(a.interview_date)}</Text>
-            <Text style={[styles.rosterCell, styles.colLocation]}>{a.location ?? "—"}</Text>
-            <Text style={[styles.rosterCell, styles.colS1]}>{a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}</Text>
-            <Text style={[styles.rosterCell, styles.colS2]}>{a.stage2_rating != null ? a.stage2_rating.toFixed(2) : "—"}</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>All Applicants</Text>
+          <View style={styles.rosterHeaderRow}>
+            <Text style={[styles.rosterHeaderCell, styles.colName]}>Name</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colRole]}>Role</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colStage]}>Stage reached</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colPanel]}>Panel</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colDate]}>Date</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colLocation]}>Location</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colS1]}>S1</Text>
+            <Text style={[styles.rosterHeaderCell, styles.colS2]}>S2</Text>
           </View>
-        ))}
+          {report.applicant_roster.map((a) => (
+            <View key={a.application_id} style={styles.rosterRow} wrap={false}>
+              <Text style={[styles.rosterCell, styles.colName]}>{a.name}</Text>
+              <Text style={[styles.rosterCell, styles.colRole]}>{a.role_title}</Text>
+              <Text style={[styles.rosterCell, styles.colStage]}>{a.stage_reached}</Text>
+              <Text style={[styles.rosterCell, styles.colPanel]}>{a.panel_names.length ? a.panel_names.join(", ") : "—"}</Text>
+              <Text style={[styles.rosterCell, styles.colDate]}>{fmtDate(a.interview_date)}</Text>
+              <Text style={[styles.rosterCell, styles.colLocation]}>{a.location ?? "—"}</Text>
+              <Text style={[styles.rosterCell, styles.colS1]}>{a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}</Text>
+              <Text style={[styles.rosterCell, styles.colS2]}>{a.stage2_rating != null ? a.stage2_rating.toFixed(2) : "—"}</Text>
+            </View>
+          ))}
+        </View>
 
         {/* 5. Core competencies (Evaluation status only) */}
-        <Text style={styles.sectionTitle}>Core Competencies</Text>
-        <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.core_competencies_summary}</Text>
-        {report.core_competencies_table.length === 0 ? (
-          <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
-        ) : (
-          report.core_competencies_table.map((c) => (
-            <View key={c.application_id} style={styles.candidateBlock} wrap={false}>
-              <Text style={styles.candidateBlockHeader}>{c.name}</Text>
-              {c.competencies.length === 0 ? (
-                <Text style={styles.emptyNote}>No competency data available.</Text>
-              ) : (
-                c.competencies.map((comp, i) => (
-                  <View key={i} style={styles.competencyRow}>
-                    <Text style={styles.competencyArea}>{comp.area}</Text>
-                    <Text style={styles.competencyScore}>{comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}</Text>
-                    <Text style={styles.competencyText}>{comp.assessment || "—"}</Text>
-                  </View>
-                ))
-              )}
-            </View>
-          ))
-        )}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Core Competencies</Text>
+          <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.core_competencies_summary}</Text>
+          {report.core_competencies_table.length === 0 ? (
+            <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
+          ) : (
+            report.core_competencies_table.map((c) => (
+              <View key={c.application_id} style={styles.candidateBlock} wrap={false}>
+                <Text style={styles.candidateBlockHeader}>{c.name}</Text>
+                {c.competencies.length === 0 ? (
+                  <Text style={styles.emptyNote}>No competency data available.</Text>
+                ) : (
+                  c.competencies.map((comp, i) => (
+                    <View key={i} style={styles.competencyRow}>
+                      <Text style={styles.competencyArea}>{comp.area}</Text>
+                      <Text style={styles.competencyScore}>{comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}</Text>
+                      <Text style={styles.competencyText}>{comp.assessment || "—"}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            ))
+          )}
+        </View>
 
         {/* 6. Key observations (Evaluation status only) */}
-        <Text style={styles.sectionTitle}>Key Observations</Text>
-        <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.key_observations_summary}</Text>
-        {report.key_observations_table.length === 0 ? (
-          <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
-        ) : (
-          report.key_observations_table.map((c) => (
-            <View key={c.application_id} style={styles.candidateBlock} wrap={false}>
-              <Text style={styles.candidateBlockHeader}>{c.name}</Text>
-              <View style={{ flexDirection: "row", gap: 16 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 7.5, fontWeight: 700, color: GREEN, marginBottom: 3, textTransform: "uppercase" }}>
-                    Strengths
-                  </Text>
-                  <Bullets items={c.strengths} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 7.5, fontWeight: 700, color: AMBER, marginBottom: 3, textTransform: "uppercase" }}>
-                    Weaknesses
-                  </Text>
-                  <Bullets items={c.weaknesses} />
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Key Observations</Text>
+          <Text style={[styles.paragraph, { marginBottom: 10 }]}>{report.key_observations_summary}</Text>
+          {report.key_observations_table.length === 0 ? (
+            <Text style={styles.emptyNote}>No candidate is currently awaiting a decision for this role.</Text>
+          ) : (
+            report.key_observations_table.map((c) => (
+              <View key={c.application_id} style={styles.candidateBlock} wrap={false}>
+                <Text style={styles.candidateBlockHeader}>{c.name}</Text>
+                <View style={{ flexDirection: "row", gap: 16 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 7.5, fontWeight: 700, color: GREEN, marginBottom: 3, textTransform: "uppercase" }}>
+                      Strengths
+                    </Text>
+                    <Bullets items={c.strengths} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 7.5, fontWeight: 700, color: AMBER, marginBottom: 3, textTransform: "uppercase" }}>
+                      Weaknesses
+                    </Text>
+                    <Bullets items={c.weaknesses} />
+                  </View>
                 </View>
               </View>
-            </View>
-          ))
-        )}
+            ))
+          )}
+        </View>
 
         {/* 7. Constraints */}
-        <View wrap={false}>
+        <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Constraints Noted</Text>
           <Bullets items={report.constraints} />
         </View>
 
         {/* 8. Final recommendation */}
-        <Text style={styles.sectionTitle}>Final Recommendation</Text>
-        <View style={styles.recommendationBox} wrap={false}>
-          <Text style={styles.recommendationLabel}>Recommended candidate</Text>
-          <Text style={styles.recommendationDecision}>
-            {report.final_recommendation.candidate_name
-              ? `${report.final_recommendation.candidate_name} (${report.final_recommendation.reference_number})`
-              : "No candidate currently recommendable"}
-          </Text>
-          <Text style={styles.recommendationRationale}>{report.final_recommendation.rationale}</Text>
+        <View style={styles.section} wrap={false}>
+          <Text style={styles.sectionTitle}>Final Recommendation</Text>
+          <View style={styles.recommendationBox}>
+            <Text style={styles.recommendationLabel}>Recommended candidate</Text>
+            <Text style={styles.recommendationDecision}>
+              {report.final_recommendation.candidate_name
+                ? `${report.final_recommendation.candidate_name} (${report.final_recommendation.reference_number})`
+                : "No candidate currently recommendable"}
+            </Text>
+            <Text style={styles.recommendationRationale}>{report.final_recommendation.rationale}</Text>
+          </View>
         </View>
 
         <Text style={styles.footer} fixed>

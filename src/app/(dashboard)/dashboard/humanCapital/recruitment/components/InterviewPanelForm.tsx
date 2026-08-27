@@ -9,6 +9,8 @@ import {
   combinedAreaScores,
   combinedInterviewAverage,
   interviewWorkflowStepV2,
+  stage1ReadyForReview,
+  stage2ReadyForEvaluation,
   type WorkflowStep,
 } from "@/lib/careers/panelInterview";
 import {
@@ -16,7 +18,7 @@ import {
   type InterviewFormData,
   type StageSubmissionData,
 } from "@/lib/careers/types";
-import { Loader2, Save, X } from "lucide-react";
+import { Clock3, Loader2, Save, X } from "lucide-react";
 import { ListRowsSkeleton } from "@/components/skeletons/PageSkeletons";
 import { toast } from "sonner";
 import PanelSetupStep from "./interview/PanelSetupStep";
@@ -38,7 +40,9 @@ type Props = {
 type InterviewAction =
   | "save_draft"
   | "send_panel_invites"
+  | "open_panel_forms"
   | "send_stage2_invites"
+  | "open_stage2_panel_forms"
   | "submit_hr_stage1"
   | "submit_hr_stage2"
   | "stage1_review_pass"
@@ -106,7 +110,19 @@ export default function InterviewPanelForm({
   const currentIdx = STEP_ORDER.indexOf(workflowStep);
   const activeIdx = STEP_ORDER.indexOf(activeStep);
   /** Viewing an earlier, already-completed step rather than the live one. */
-  const isPastStep = activeIdx < currentIdx;
+  const rawIsPastStep = activeIdx < currentIdx;
+  // The Stage 1 and Stage 2 panel setup steps stay fully editable — even
+  // while viewing them "in the past" from a later step — until that stage is
+  // actually done (HR's form plus every panel member's submission). Every
+  // other step keeps the normal past-step rule.
+  const stage1PanelLocked = stage1ReadyForReview(formData);
+  const stage2PanelLocked = stage2ReadyForEvaluation(formData);
+  const isPastStep =
+    activeStep === "panel"
+      ? stage1PanelLocked && rawIsPastStep
+      : activeStep === "stage2_setup"
+        ? stage2PanelLocked && rawIsPastStep
+        : rawIsPastStep;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;
@@ -177,9 +193,15 @@ export default function InterviewPanelForm({
       if (params.action === "send_panel_invites") {
         toast.success("Stage 1 panel invites sent.");
         setManualStep("stage1");
+      } else if (params.action === "open_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("panel");
       } else if (params.action === "send_stage2_invites") {
         toast.success("Stage 2 invites sent.");
         setManualStep("stage2");
+      } else if (params.action === "open_stage2_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("stage2_setup");
       } else if (params.action === "submit_hr_stage1") {
         toast.success("HR Stage 1 submitted.");
         setManualStep("stage1_review");
@@ -322,11 +344,18 @@ export default function InterviewPanelForm({
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
-              onSaveMemberEdits={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
+              onOpenPanelForms={() =>
+                saveMutation.mutate({
+                  action: "open_panel_forms",
+                  data: formData,
+                })
               }
-              isSavingMemberEdits={saveMutation.isPending}
+              isOpeningPanelForms={saveMutation.isPending}
             />
+          ) : activeStep === "stage1" &&
+            !formData.setup?.stage1_forms_opened_at &&
+            !hrStage1.submitted_at ? (
+            <FormsNotOpenNotice stage={1} onGoToSetup={() => setManualStep("panel")} />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
               guide={guide}
@@ -394,11 +423,18 @@ export default function InterviewPanelForm({
               }
               isPending={saveMutation.isPending}
               readOnly={isPastStep}
-              onSaveMemberEdits={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
+              onOpenPanelForms={() =>
+                saveMutation.mutate({
+                  action: "open_stage2_panel_forms",
+                  data: formData,
+                })
               }
-              isSavingMemberEdits={saveMutation.isPending}
+              isOpeningPanelForms={saveMutation.isPending}
             />
+          ) : activeStep === "stage2" &&
+            !formData.setup?.stage2_forms_opened_at &&
+            !hrStage2.submitted_at ? (
+            <FormsNotOpenNotice stage={2} onGoToSetup={() => setManualStep("stage2_setup")} />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
               guide={guide}
@@ -486,6 +522,40 @@ export default function InterviewPanelForm({
             </p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Same "not open yet" gate as the panel members' own links — HR's own
+// scoring form is blocked too, so nobody (including HR) can fill anything
+// in before the interview actually starts.
+function FormsNotOpenNotice({
+  stage,
+  onGoToSetup,
+}: {
+  stage: 1 | 2;
+  onGoToSetup: () => void;
+}) {
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 flex gap-3">
+      <Clock3 className="w-6 h-6 text-amber-600 shrink-0" />
+      <div>
+        <p className="font-semibold text-amber-900">
+          Stage {stage} forms are not open yet.
+        </p>
+        <p className="text-sm text-amber-800 mt-1">
+          Nobody — including HR — can fill in Stage {stage} scores until you
+          open the forms from Panel setup, once the interview actually
+          starts.
+        </p>
+        <button
+          type="button"
+          onClick={onGoToSetup}
+          className="mt-3 text-sm font-medium text-amber-900 underline underline-offset-2"
+        >
+          Go to Stage {stage} panel setup
+        </button>
       </div>
     </div>
   );

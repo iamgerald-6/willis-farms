@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { InterviewReport } from "@/lib/careers/types";
+import { stageDateLabel } from "@/lib/careers/panelInterview";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -116,13 +117,25 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <Text style={styles.detailValue}>{d.panel_names.length ? d.panel_names.join(", ") : "—"}</Text>
           </View>
           <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>Interview date</Text>
-            <Text style={styles.detailValue}>{fmtDate(d.interview_date)}</Text>
+            <Text style={styles.detailLabel}>{stageDateLabel(d.stage1_location_type)} (Stage 1)</Text>
+            <Text style={styles.detailValue}>{fmtDate(d.stage1_interview_date)}</Text>
           </View>
+          {d.stage1_location && (
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Stage 1 location</Text>
+              <Text style={styles.detailValue}>{d.stage1_location}</Text>
+            </View>
+          )}
           <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>Location</Text>
-            <Text style={styles.detailValue}>{d.location ?? "—"}</Text>
+            <Text style={styles.detailLabel}>{stageDateLabel(d.stage2_location_type)} (Stage 2)</Text>
+            <Text style={styles.detailValue}>{fmtDate(d.stage2_interview_date)}</Text>
           </View>
+          {d.stage2_location && (
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Stage 2 location</Text>
+              <Text style={styles.detailValue}>{d.stage2_location}</Text>
+            </View>
+          )}
           <View style={styles.detailCard}>
             <Text style={styles.detailLabel}>Overall rating</Text>
             <Text style={styles.detailValue}>{d.overall_rating != null ? `${d.overall_rating.toFixed(2)} / 5` : "—"}</Text>
