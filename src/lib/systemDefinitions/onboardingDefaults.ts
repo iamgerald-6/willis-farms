@@ -188,7 +188,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       showWhen: { field: "personal.is_citizen", equals: "Non-citizen" },
       colSpan: "half",
     }),
-    field("opt:onboarding:field:passport_bio", "Passport bio page (photo)", "personal.passport_bio_page", 9, {
+    field("opt:onboarding:field:passport_bio", "Passport bio page (photo or PDF)", "personal.passport_bio_page", 9, {
       step: "personal",
       section: "A. Personal information",
       fieldKey: "personal.passport_bio_page",

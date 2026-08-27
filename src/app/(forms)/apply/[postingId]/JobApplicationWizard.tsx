@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   type ApplicationFormData,
@@ -101,6 +101,12 @@ export default function JobApplicationWizard({
   const [cvFillNotice, setCvFillNotice] = useState<string | null>(null);
   const [passportBioStatus, setPassportBioStatus] = useState<PassportBioStatus>("idle");
   const [passportBioMessage, setPassportBioMessage] = useState<string | null>(null);
+  // Tracks the in-flight verification request so a superseded call (e.g. a
+  // duplicate fired by an effect re-run, or the applicant editing a field
+  // mid-check) is aborted outright instead of racing to update state — this
+  // also stops the abandoned request from showing as a spurious "failed to
+  // load" network error in the browser.
+  const passportBioAbortRef = useRef<AbortController | null>(null);
 
   const step = steps[stepIndex] ?? steps[0];
   const stepFields = useMemo(
@@ -317,6 +323,10 @@ export default function JobApplicationWizard({
     dateOfBirth: string,
     passportNumber: string,
   ) => {
+    passportBioAbortRef.current?.abort();
+    const controller = new AbortController();
+    passportBioAbortRef.current = controller;
+
     setPassportBioStatus("checking");
     setPassportBioMessage(null);
     try {
@@ -331,9 +341,15 @@ export default function JobApplicationWizard({
           date_of_birth: dateOfBirth,
           passport_number: passportNumber,
         }),
+        signal: controller.signal,
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Could not verify passport photo");
+      if (!res.ok) {
+        throw new Error(
+          json.error ??
+            "We couldn't verify this photo. Please upload a clear passport bio page and try again.",
+        );
+      }
       if (json.data.matches) {
         setPassportBioStatus("ok");
         setPassportBioMessage(null);
@@ -344,12 +360,11 @@ export default function JobApplicationWizard({
             "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
         );
       }
-    } catch (e) {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setPassportBioStatus("error");
       setPassportBioMessage(
-        e instanceof Error
-          ? e.message
-          : "We couldn't verify this photo automatically — please try re-uploading it.",
+        "We couldn't verify this photo. Please upload a clear passport bio page and try again.",
       );
     }
   };
