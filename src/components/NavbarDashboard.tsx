@@ -103,7 +103,7 @@ const PAGE_TITLE_ENTRIES: { path: string; title: string; subtitle: string }[] = 
   {
     path: "/dashboard/sop",
     title: "SOPs",
-    subtitle: "Standard operating procedures",
+    subtitle: "Standard Operating Procedures",
   },
   {
     path: "/dashboard/lms",

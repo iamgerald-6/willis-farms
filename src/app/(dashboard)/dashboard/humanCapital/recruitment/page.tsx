@@ -1233,7 +1233,7 @@ function ApplicationDetail({
                   Interview Report
                 </p>
                 <p className="text-xs text-gray-500">
-                  This applicant&apos;s outcome has already been confirmed, so
+                  This applicant&apos;s outcome has already been confirmed, hence,
                   the report is shown as reference links rather than an editable
                   form.
                 </p>
@@ -1411,8 +1411,8 @@ function ApplicationDetail({
                     : "Do not hire"}
                   .{" "}
                   {application.status === "hold"
-                    ? "Reopen for evaluation to reconsider them fresh, or Reject to confirm rejection."
-                    : "Reopen for evaluation to reconsider them fresh."}
+                    ? "Reopen for evaluation to reconsider, or Reject to confirm rejection."
+                    : "Reopen for evaluation to reconsider."}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
