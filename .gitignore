@@ -5,6 +5,7 @@ node_modules/
 .next/
 out/
 
+
 # Production build
 build/
 
@@ -20,6 +21,7 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.tsbuildinfo
 
 # OS generated files
 .DS_Store
