@@ -1,6 +1,19 @@
 /** Shared between the passport bio validation API route and (if ever needed) the client —
  * plain TS so it can be imported from a server route without pulling in React. */
 
+/** Shown when the upload is not a passport bio page (wrong document, unreadable, etc.). */
+export const INVALID_PASSPORT_BIO_PAGE_MESSAGE =
+  "This doesn't look like a valid passport bio page. Please upload a clear photo of your passport bio page and try again.";
+
+/** Anthropic sometimes rejects non-passport images (e.g. Ghana Card) before tool extraction. */
+export function isUnprocessablePassportImageError(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err ?? "");
+  return (
+    /could not process image/i.test(text) ||
+    (/invalid_request_error/i.test(text) && /image/i.test(text))
+  );
+}
+
 export type ExtractedPassportBio = {
   isPassportBioPage: boolean;
   fullName: string;
@@ -22,12 +35,6 @@ export function normalizeNameTokens(raw: string | undefined | null): string[] {
     .filter(Boolean);
 }
 
-/**
- * True when every token from the applicant's typed first/last name can be
- * found (exactly, or as a prefix either way — handles truncation like
- * "Alexander" vs "Alex") among the tokens read off the passport photo.
- * Order-independent, tolerant of extra middle names on the document.
- */
 export function namesLikelyMatch(
   firstName: string,
   lastName: string,
@@ -105,8 +112,7 @@ export function evaluatePassportBioMatch(
       nameMatches: false,
       dobMatches: false,
       passportNumberMatches: false,
-      message:
-        "That doesn't look like a passport bio page — please upload a clear photo of the page with your photo, name, and date of birth.",
+      message: INVALID_PASSPORT_BIO_PAGE_MESSAGE,
     };
   }
 
@@ -130,14 +136,23 @@ export function evaluatePassportBioMatch(
     applicant.lastName,
     extracted.fullName,
   );
-  const dobMatches = datesOfBirthMatch(applicant.dateOfBirth, extracted.dateOfBirth);
+  const dobMatches = datesOfBirthMatch(
+    applicant.dateOfBirth,
+    extracted.dateOfBirth,
+  );
   const passportNumberMatches = passportNumbersMatch(
     applicant.passportNumber,
     extracted.passportNumber,
   );
 
   if (nameMatches && dobMatches && passportNumberMatches) {
-    return { matches: true, nameMatches, dobMatches, passportNumberMatches, message: null };
+    return {
+      matches: true,
+      nameMatches,
+      dobMatches,
+      passportNumberMatches,
+      message: null,
+    };
   }
 
   const failedFields: string[] = [];
@@ -149,5 +164,11 @@ export function evaluatePassportBioMatch(
     failedFields.length === 1 ? "doesn't" : "don't"
   } match what you entered — please check your details or upload a clearer photo of your passport bio page.`;
 
-  return { matches: false, nameMatches, dobMatches, passportNumberMatches, message };
+  return {
+    matches: false,
+    nameMatches,
+    dobMatches,
+    passportNumberMatches,
+    message,
+  };
 }

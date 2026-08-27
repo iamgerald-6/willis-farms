@@ -12,8 +12,8 @@ export const ACCEPT_IMAGE_JPEG_PNG = "image/jpeg,image/png,.jpg,.jpeg,.png";
 export const ACCEPT_PDF_WORD_OR_IMAGE = `${ACCEPT_PDF_OR_WORD},${ACCEPT_IMAGE_JPEG_PNG}`;
 /** @deprecated use ACCEPT_PDF_WORD_OR_IMAGE */
 export const ACCEPT_PDF_OR_IMAGE = ACCEPT_PDF_WORD_OR_IMAGE;
-/** Passport bio page — photo scan only (no PDF). */
-export const ACCEPT_PASSPORT_BIO = ACCEPT_IMAGE_JPEG_PNG;
+/** Passport bio page — JPEG, PNG, or PDF scan. */
+export const ACCEPT_PASSPORT_BIO = `${ACCEPT_IMAGE_JPEG_PNG},${ACCEPT_PDF}`;
 export const ACCEPT_CV = `${ACCEPT_PDF_OR_WORD},${ACCEPT_IMAGE_JPEG_PNG}`;
 export const ACCEPT_JD = ACCEPT_CV;
 export const ACCEPT_TASK_MANAGER_DOC = ACCEPT_PDF_WORD_OR_IMAGE;
@@ -104,6 +104,12 @@ export function validateTaskManagerDocumentFile(file: File): string | null {
   return validatePdfOrImageFile(file);
 }
 
+export function validatePassportBioFile(file: File): string | null {
+  if (isPdfFile(file)) return validatePdfSize(file);
+  if (isJpegOrPngFile(file)) return validateImageFile(file);
+  return "Only JPEG, PNG, or PDF files are accepted.";
+}
+
 /** Validate a browser File against an HTML accept string (and optional field key). */
 export function validateFileForAccept(
   file: File,
@@ -111,7 +117,7 @@ export function validateFileForAccept(
   fieldKey?: string,
 ): string | null {
   if (fieldKey && PASSPORT_BIO_FIELD_KEYS.has(fieldKey)) {
-    return validateImageFile(file);
+    return validatePassportBioFile(file);
   }
 
   const normalized = (accept ?? "").toLowerCase().trim();
@@ -145,7 +151,7 @@ export function validateFileForAccept(
 
 export function uploadHintForField(fieldKey?: string, accept?: string): string {
   if (fieldKey && PASSPORT_BIO_FIELD_KEYS.has(fieldKey)) {
-    return `JPEG or PNG only, max ${MAX_UPLOAD_FILE_SIZE_MB}MB.`;
+    return `JPEG, PNG, or PDF — max ${MAX_UPLOAD_FILE_SIZE_MB}MB.`;
   }
 
   const normalized = (accept ?? "").toLowerCase();

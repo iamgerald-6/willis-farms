@@ -145,7 +145,7 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     }),
     field(
       "opt:recruitment:field:passport_bio",
-      "Passport bio page (photo)",
+      "Passport bio page (photo or PDF)",
       "passport_bio_page",
       11,
       {
