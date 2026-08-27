@@ -6,10 +6,19 @@ import {
 } from "@/lib/careers/interviewFormConfigs";
 import type {
   InterviewFormData,
+  InterviewLocationType,
   PanelMember,
   PanelSubmission,
   StageSubmissionData,
 } from "@/lib/careers/types";
+
+/** "Onsite interview date" / "Online interview date" — falls back to plain
+ * "Interview date" for records saved before onsite/online was tracked. */
+export function stageDateLabel(locationType?: InterviewLocationType | null): string {
+  if (locationType === "online") return "Online interview date";
+  if (locationType === "onsite") return "Onsite interview date";
+  return "Interview date";
+}
 
 export function generatePanelAccessToken(): string {
   return randomBytes(24).toString("hex");

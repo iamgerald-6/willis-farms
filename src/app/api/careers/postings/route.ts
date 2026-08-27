@@ -5,8 +5,10 @@ import {
   statusFromClosingDate,
   syncExpiredPostings,
   type JobPostingInput,
+  type PostingHistoryEntry,
 } from "@/lib/careers/jobPostings";
 import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
+import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   insertJobPostingWithColumnFallback,
   isMissingColumnError,
@@ -89,6 +91,16 @@ export async function POST(req: NextRequest) {
         ? body.status
         : statusFromClosingDate(closes_at);
 
+    // The very first history entry: "republished" if this posting is
+    // replacing an older closed one (supersedes_id set), otherwise
+    // "opened" for a genuinely new posting.
+    const actor = await resolvePostingActor(supabaseAdmin, body.created_by);
+    const openingEntry: PostingHistoryEntry = {
+      event: body.supersedes_id ? "republished" : "opened",
+      at: new Date().toISOString(),
+      by: actor,
+    };
+
     const { data, error } = await insertJobPostingWithColumnFallback(supabaseAdmin, {
       slug,
       job_title_key: option.key,
@@ -110,6 +122,7 @@ export async function POST(req: NextRequest) {
       closes_at,
       status,
       is_active: status === "published",
+      history: [openingEntry],
     });
 
     if (error) {
@@ -118,6 +131,23 @@ export async function POST(req: NextRequest) {
         ? JOB_POSTINGS_MIGRATION_HINT
         : "";
       return NextResponse.json({ error: error.message + hint }, { status: 500 });
+    }
+
+    // Reopening a closed posting — link the old one to this new one so it
+    // drops off the HR postings list. Best-effort: the new posting is
+    // already created and saved regardless of whether this succeeds, so a
+    // stale/missing superseded_by column (pre-migration) never blocks
+    // reopening a role, it just means the old posting keeps showing.
+    if (body.supersedes_id && data) {
+      await supabaseAdmin
+        .from("job_postings")
+        .update({ superseded_by: (data as { id: string }).id })
+        .eq("id", body.supersedes_id)
+        .then(({ error: linkError }) => {
+          if (linkError) {
+            console.error("[POST /api/careers/postings] supersede link failed", linkError);
+          }
+        });
     }
 
     return NextResponse.json({ success: true, data });

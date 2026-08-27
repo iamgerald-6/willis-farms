@@ -35,6 +35,7 @@ import GraderSubmissionModal from "./components/interview/GraderSubmissionModal"
 import {
   gradersForStage,
   getSubmission,
+  stageDateLabel,
   type GraderResult,
 } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -182,14 +183,18 @@ function ApplicationDetail({
   // who applied for the same role. Cheap GET, so no need to gate it behind
   // a specific status — it simply renders nothing if none exists yet.
   const { data: roleReportRow } = useQuery({
-    queryKey: ["role_interview_report", application.role_slug],
+    queryKey: [
+      "role_interview_report",
+      application.job_posting_id ?? application.role_slug,
+    ],
     queryFn: async () => {
-      const res = await api.get(
-        `/careers/interview/role-report?role_slug=${application.role_slug}`,
-      );
+      const params = application.job_posting_id
+        ? `job_posting_id=${application.job_posting_id}`
+        : `role_slug=${application.role_slug}`;
+      const res = await api.get(`/careers/interview/role-report?${params}`);
       return res.data.data as RoleInterviewReportRow | null;
     },
-    enabled: !!application.role_slug,
+    enabled: !!(application.job_posting_id || application.role_slug),
   });
 
   const allowedStatusOptions = useMemo(
@@ -235,8 +240,16 @@ function ApplicationDetail({
     !!decisionConfirmed && application.status !== "evaluation";
 
   const confirmMutation = useMutation({
-    mutationFn: () =>
-      api.post("/careers/interview", {
+    mutationFn: async () => {
+      // HR notes are required before an outcome can be confirmed here, so
+      // persist them alongside the decision rather than relying on the
+      // general application-notes save (that field no longer exists once an
+      // applicant reaches this step).
+      await api.patch("/careers/applications", {
+        id: application.id,
+        hr_notes: hrNotes,
+      });
+      return api.post("/careers/interview", {
         application_id: application.id,
         interview_form_data: {
           ...application.interview_form_data,
@@ -247,7 +260,8 @@ function ApplicationDetail({
         },
         submitted_by: adminId,
         action: "confirm_decision",
-      }),
+      });
+    },
     onSuccess: (res) => {
       const warnings = res.data.email_warnings as string[] | undefined;
       const hired = selectedDecision === "hire";
@@ -851,136 +865,63 @@ function ApplicationDetail({
                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                         Applicant &amp; interview details
                       </label>
-                      <div className="grid sm:grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Candidate name
-                          </label>
-                          <input
-                            value={reportDraft.applicant_details.name}
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  name: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
+                      <p className="text-[11px] text-gray-400 mb-2">
+                        Pulled from the system — not editable here.
+                      </p>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
+                        <div className="space-y-1.5">
+                          <p>
+                            <span className="text-gray-400">Candidate: </span>
+                            {reportDraft.applicant_details.name}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Role: </span>
+                            {reportDraft.applicant_details.role}
+                          </p>
+                          <p>
+                            <span className="text-gray-400">Panel: </span>
+                            {reportDraft.applicant_details.panel_names.length
+                              ? reportDraft.applicant_details.panel_names.join(", ")
+                              : "—"}
+                          </p>
                         </div>
-                        <div>
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Role applied for
-                          </label>
-                          <input
-                            value={reportDraft.applicant_details.role}
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  role: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Interview panel (comma-separated)
-                          </label>
-                          <input
-                            value={reportDraft.applicant_details.panel_names.join(
-                              ", ",
-                            )}
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  panel_names: e.target.value
-                                    .split(",")
-                                    .map((s) => s.trim())
-                                    .filter(Boolean),
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Interview date
-                          </label>
-                          <input
-                            type="date"
-                            value={
-                              reportDraft.applicant_details.interview_date?.slice(
-                                0,
-                                10,
-                              ) ?? ""
-                            }
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  interview_date: e.target.value
-                                    ? `${e.target.value}T00:00:00Z`
-                                    : null,
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Location
-                          </label>
-                          <input
-                            value={reportDraft.applicant_details.location ?? ""}
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  location: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wide block mb-1">
-                            Overall rating (out of 5)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="5"
-                            value={
-                              reportDraft.applicant_details.overall_rating ?? ""
-                            }
-                            onChange={(e) =>
-                              setReportDraft({
-                                ...reportDraft,
-                                applicant_details: {
-                                  ...reportDraft.applicant_details,
-                                  overall_rating:
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value),
-                                },
-                              })
-                            }
-                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                          />
+                        <div className="space-y-1.5">
+                          <p>
+                            <span className="text-gray-400">
+                              {stageDateLabel(reportDraft.applicant_details.stage1_location_type)}
+                              {" (Stage 1): "}
+                            </span>
+                            {reportDraft.applicant_details.stage1_interview_date
+                              ? formatDate(reportDraft.applicant_details.stage1_interview_date)
+                              : "—"}
+                          </p>
+                          {reportDraft.applicant_details.stage1_location && (
+                            <p>
+                              <span className="text-gray-400">Stage 1 location: </span>
+                              {reportDraft.applicant_details.stage1_location}
+                            </p>
+                          )}
+                          <p>
+                            <span className="text-gray-400">
+                              {stageDateLabel(reportDraft.applicant_details.stage2_location_type)}
+                              {" (Stage 2): "}
+                            </span>
+                            {reportDraft.applicant_details.stage2_interview_date
+                              ? formatDate(reportDraft.applicant_details.stage2_interview_date)
+                              : "—"}
+                          </p>
+                          {reportDraft.applicant_details.stage2_location && (
+                            <p>
+                              <span className="text-gray-400">Stage 2 location: </span>
+                              {reportDraft.applicant_details.stage2_location}
+                            </p>
+                          )}
+                          <p>
+                            <span className="text-gray-400">Overall rating: </span>
+                            {reportDraft.applicant_details.overall_rating != null
+                              ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
+                              : "—"}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1292,7 +1233,7 @@ function ApplicationDetail({
                   Interview Report
                 </p>
                 <p className="text-xs text-gray-500">
-                  This applicant&apos;s outcome has already been confirmed, so
+                  This applicant&apos;s outcome has already been confirmed, hence,
                   the report is shown as reference links rather than an editable
                   form.
                 </p>
@@ -1340,7 +1281,11 @@ function ApplicationDetail({
                 {roleReportRow && (
                   <div className="pt-2 mt-2 border-t border-gray-100">
                     <a
-                      href={`/api/careers/interview/role-report/pdf?role_slug=${application.role_slug}`}
+                      href={`/api/careers/interview/role-report/pdf?${
+                        application.job_posting_id
+                          ? `job_posting_id=${application.job_posting_id}`
+                          : `role_slug=${application.role_slug}`
+                      }`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
@@ -1357,18 +1302,20 @@ function ApplicationDetail({
               </div>
             )}
 
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                HR notes (internal)
-              </label>
-              <textarea
-                value={hrNotes}
-                onChange={(e) => setHrNotes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                placeholder="Screening notes, interview scheduling, etc."
-              />
-            </div>
+            {!(application.status === "evaluation" && canConfirmOutcome) && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  HR notes (internal)
+                </label>
+                <textarea
+                  value={hrNotes}
+                  onChange={(e) => setHrNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Screening notes, interview scheduling, etc."
+                />
+              </div>
+            )}
 
             {application.status === "evaluation" && canConfirmOutcome && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
@@ -1389,13 +1336,31 @@ function ApplicationDetail({
                     </>
                   )}
                 </p>
+                <div>
+                  <label className="text-xs font-semibold text-amber-900 uppercase tracking-wide block mb-1">
+                    HR notes *
+                  </label>
+                  <textarea
+                    value={hrNotes}
+                    onChange={(e) => setHrNotes(e.target.value)}
+                    rows={3}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white"
+                    placeholder="Record your team's reasoning before choosing an outcome — required."
+                  />
+                  {!hrNotes.trim() && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      Add HR notes before you can choose an outcome.
+                    </p>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {PANEL_DECISIONS.map((d) => (
                     <button
                       key={d.value}
                       type="button"
                       onClick={() => setSelectedDecision(d.value)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                      disabled={!hrNotes.trim()}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium border disabled:opacity-40 disabled:cursor-not-allowed ${
                         selectedDecision === d.value
                           ? "bg-amber-800 text-white border-amber-800"
                           : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
@@ -1417,7 +1382,11 @@ function ApplicationDetail({
                 <button
                   type="button"
                   onClick={() => confirmMutation.mutate()}
-                  disabled={confirmMutation.isPending || !selectedDecision}
+                  disabled={
+                    confirmMutation.isPending ||
+                    !selectedDecision ||
+                    !hrNotes.trim()
+                  }
                   className="w-full py-2.5 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-60"
                 >
                   {confirmMutation.isPending
@@ -1442,8 +1411,8 @@ function ApplicationDetail({
                     : "Do not hire"}
                   .{" "}
                   {application.status === "hold"
-                    ? "Reopen for evaluation to reconsider them fresh, or Reject to confirm rejection."
-                    : "Reopen for evaluation to reconsider them fresh."}
+                    ? "Reopen for evaluation to reconsider, or Reject to confirm rejection."
+                    : "Reopen for evaluation to reconsider."}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2000,37 +1969,61 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
           Applicant &amp; interview details
         </p>
-        <div className="grid sm:grid-cols-2 gap-1.5 text-xs text-gray-700">
-          <p>
-            <span className="text-gray-400">Candidate: </span>
-            {report.applicant_details.name}
-          </p>
-          <p>
-            <span className="text-gray-400">Role: </span>
-            {report.applicant_details.role}
-          </p>
-          <p className="sm:col-span-2">
-            <span className="text-gray-400">Panel: </span>
-            {report.applicant_details.panel_names.length
-              ? report.applicant_details.panel_names.join(", ")
-              : "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Date: </span>
-            {report.applicant_details.interview_date
-              ? formatDate(report.applicant_details.interview_date)
-              : "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Location: </span>
-            {report.applicant_details.location ?? "—"}
-          </p>
-          <p>
-            <span className="text-gray-400">Overall rating: </span>
-            {report.applicant_details.overall_rating != null
-              ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
-              : "—"}
-          </p>
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700">
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-gray-400">Candidate: </span>
+              {report.applicant_details.name}
+            </p>
+            <p>
+              <span className="text-gray-400">Role: </span>
+              {report.applicant_details.role}
+            </p>
+            <p>
+              <span className="text-gray-400">Panel: </span>
+              {report.applicant_details.panel_names.length
+                ? report.applicant_details.panel_names.join(", ")
+                : "—"}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-gray-400">
+                {stageDateLabel(report.applicant_details.stage1_location_type)}
+                {" (Stage 1): "}
+              </span>
+              {report.applicant_details.stage1_interview_date
+                ? formatDate(report.applicant_details.stage1_interview_date)
+                : "—"}
+            </p>
+            {report.applicant_details.stage1_location && (
+              <p>
+                <span className="text-gray-400">Stage 1 location: </span>
+                {report.applicant_details.stage1_location}
+              </p>
+            )}
+            <p>
+              <span className="text-gray-400">
+                {stageDateLabel(report.applicant_details.stage2_location_type)}
+                {" (Stage 2): "}
+              </span>
+              {report.applicant_details.stage2_interview_date
+                ? formatDate(report.applicant_details.stage2_interview_date)
+                : "—"}
+            </p>
+            {report.applicant_details.stage2_location && (
+              <p>
+                <span className="text-gray-400">Stage 2 location: </span>
+                {report.applicant_details.stage2_location}
+              </p>
+            )}
+            <p>
+              <span className="text-gray-400">Overall rating: </span>
+              {report.applicant_details.overall_rating != null
+                ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
+                : "—"}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -2264,9 +2257,84 @@ function RejectsTab({
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
 }) {
-  const pending = applications.filter((a) => a.status === "under_review");
-  const confirmed = applications.filter((a) => a.status === "rejected");
-  const held = applications.filter((a) => a.status === "hold");
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+
+  // Same cross-filtering pattern as the Applications tab: each field's
+  // option list is scoped by the OTHER active filters (never by itself).
+  const applyFilters = (
+    list: JobApplication[],
+    opts: { name?: string[]; role?: string[]; status?: string[] },
+  ) =>
+    list.filter((a) => {
+      if (opts.name && opts.name.length > 0 && !opts.name.includes(a.full_name))
+        return false;
+      if (
+        opts.role &&
+        opts.role.length > 0 &&
+        !opts.role.includes(a.role_title)
+      )
+        return false;
+      if (
+        opts.status &&
+        opts.status.length > 0 &&
+        !opts.status.includes(a.status)
+      )
+        return false;
+      return true;
+    });
+
+  const nameOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      role: roleFilters,
+      status: statusFilters,
+    });
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters, statusFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      name: nameFilters,
+      status: statusFilters,
+    });
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters, statusFilters]);
+
+  const statusOptions = useMemo(() => {
+    const scoped = applyFilters(applications, {
+      name: nameFilters,
+      role: roleFilters,
+    });
+    const present = new Set(scoped.map((a) => a.status));
+    return APPLICATION_STATUSES.filter((s) => present.has(s)).map((s) => ({
+      value: s,
+      label: STATUS_LABELS[s],
+    }));
+  }, [applications, nameFilters, roleFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applyFilters(applications, {
+        name: nameFilters,
+        role: roleFilters,
+        status: statusFilters,
+      }),
+    [applications, nameFilters, roleFilters, statusFilters],
+  );
+
+  const hasActiveFilters =
+    nameFilters.length + roleFilters.length + statusFilters.length > 0;
+
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+    setStatusFilters([]);
+  };
 
   const renderRow = (a: JobApplication) => (
     <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/80">
@@ -2307,45 +2375,6 @@ function RejectsTab({
     </tr>
   );
 
-  const renderTable = (rows: JobApplication[], emptyLabel: string) => (
-    <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
-      <table className="w-full text-left text-sm min-w-[800px]">
-        <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
-            <th className="px-4 py-3 font-semibold text-gray-600">
-              AI screening
-            </th>
-            <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
-            <th className="px-4 py-3 font-semibold text-gray-600 text-right">
-              Action
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            Array.from({ length: 3 }).map((_, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td colSpan={5} className="px-4 py-3">
-                  <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
-                </td>
-              </tr>
-            ))
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                {emptyLabel}
-              </td>
-            </tr>
-          ) : (
-            rows.map(renderRow)
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
@@ -2357,24 +2386,102 @@ function RejectsTab({
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Awaiting your review ({pending.length})
-        </h3>
-        {renderTable(pending, "Nothing waiting on your review.")}
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={statusOptions}
+            selected={statusFilters}
+            onChange={setStatusFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            {statusFilters.map((s) => (
+              <FilterChip
+                key={`status-${s}`}
+                label={STATUS_LABELS[s as ApplicationStatus]}
+                onRemove={() =>
+                  setStatusFilters(statusFilters.filter((v) => v !== s))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Hold / Reserve ({held.length})
-        </h3>
-        {renderTable(held, "No applicants on hold.")}
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Confirmed rejects ({confirmed.length})
-        </h3>
-        {renderTable(confirmed, "No confirmed rejects yet.")}
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                AI screening
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={5} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
+                  No applications found.
+                </td>
+              </tr>
+            ) : (
+              filtered.map(renderRow)
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -2397,16 +2504,53 @@ function ApprovalsTab({
   adminId: string;
 }) {
   const [showRoleReport, setShowRoleReport] = useState(false);
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
 
-  const roles = useMemo(() => {
-    const map = new Map<string, string>();
+  // Opened-date labels for the round picker below — cheap, cached lookup of
+  // every posting so we can show "Pig Farm Manager — opened 30 Aug 2026".
+  const { data: postingsLookup } = useQuery({
+    queryKey: ["job_postings_opened_dates"],
+    queryFn: async () => {
+      const res = await api.get("/careers/postings");
+      const rows = (res.data.data ?? []) as { id: string; created_at: string }[];
+      return new Map(rows.map((p) => [p.id, p.created_at]));
+    },
+  });
+
+  // A "round" is one specific job posting (job_posting_id) — a role can be
+  // posted more than once over time, and each posting is its own hiring
+  // round with its own applicants. Only rounds that currently have someone
+  // in Evaluation status show up here, since `applications` is already
+  // scoped to that status — once a round is fully decided, it naturally
+  // drops off this list. Applicants from before job_posting_id existed
+  // (legacy, null) are excluded — there's no round to attribute them to.
+  const rounds = useMemo(() => {
+    const map = new Map<
+      string,
+      { jobPostingId: string; roleSlug: string; title: string }
+    >();
     for (const a of applications) {
-      if (!map.has(a.role_slug)) map.set(a.role_slug, a.role_title);
+      if (!a.job_posting_id) continue;
+      if (!map.has(a.job_posting_id)) {
+        map.set(a.job_posting_id, {
+          jobPostingId: a.job_posting_id,
+          roleSlug: a.role_slug,
+          title: a.role_title,
+        });
+      }
     }
-    return Array.from(map.entries())
-      .map(([slug, title]) => ({ slug, title }))
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }, [applications]);
+    return Array.from(map.values())
+      .map((r) => ({
+        ...r,
+        openedAt: postingsLookup?.get(r.jobPostingId) ?? null,
+      }))
+      .sort((a, b) => {
+        const byTitle = a.title.localeCompare(b.title);
+        if (byTitle !== 0) return byTitle;
+        return (b.openedAt ?? "").localeCompare(a.openedAt ?? "");
+      });
+  }, [applications, postingsLookup]);
 
   const ranked = useMemo(() => {
     const byRole = new Map<string, JobApplication[]>();
@@ -2437,22 +2581,102 @@ function ApprovalsTab({
     return rows;
   }, [applications]);
 
+  // Cross-filtering, same pattern as the Applications/Rejects tabs: each
+  // field's option list is scoped by the OTHER active filter. Filtering
+  // happens on the already-ranked rows, so rank numbers stay computed from
+  // the full role cohort and don't shift just because the view is filtered.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? ranked.filter((r) => roleFilters.includes(r.application.role_title))
+      : ranked;
+    return Array.from(new Set(scoped.map((r) => r.application.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [ranked, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? ranked.filter((r) => nameFilters.includes(r.application.full_name))
+      : ranked;
+    return Array.from(new Set(scoped.map((r) => r.application.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [ranked, nameFilters]);
+
+  const filteredRanked = useMemo(
+    () =>
+      ranked.filter(
+        (r) =>
+          (nameFilters.length === 0 ||
+            nameFilters.includes(r.application.full_name)) &&
+          (roleFilters.length === 0 ||
+            roleFilters.includes(r.application.role_title)),
+      ),
+    [ranked, nameFilters, roleFilters],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
         <button
           type="button"
           onClick={() => setShowRoleReport(true)}
-          disabled={roles.length === 0}
+          disabled={rounds.length === 0}
           className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
         >
           Generate role report
         </button>
       </div>
 
+      {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {nameFilters.map((n) => (
+            <FilterChip
+              key={`name-${n}`}
+              label={n}
+              onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
+            />
+          ))}
+          {roleFilters.map((r) => (
+            <FilterChip
+              key={`role-${r}`}
+              label={r}
+              onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
       {showRoleReport && (
         <RoleReportModal
-          roles={roles}
+          rounds={rounds}
           adminId={adminId}
           onClose={() => setShowRoleReport(false)}
         />
@@ -2484,17 +2708,19 @@ function ApprovalsTab({
                   </td>
                 </tr>
               ))
-            ) : ranked.length === 0 ? (
+            ) : filteredRanked.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No applications awaiting approval.
+                  {ranked.length === 0
+                    ? "No applications awaiting approval."
+                    : "No applications match the selected filters."}
                 </td>
               </tr>
             ) : (
-              ranked.map(({ application: a, rank }) => (
+              filteredRanked.map(({ application: a, rank }) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2551,12 +2777,98 @@ function OfferTab({
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
 }) {
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+
+  // Cross-filtering, same pattern as the other tabs: each field's option
+  // list is scoped by the other active filter.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? applications.filter((a) => roleFilters.includes(a.role_title))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? applications.filter((a) => nameFilters.includes(a.full_name))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applications.filter(
+        (a) =>
+          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+      ),
+    [applications, nameFilters, roleFilters],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-sm text-green-800">
         Applicants confirmed Hire land here with an outstanding offer. Open an
         applicant to send the congratulations email with the onboarding link
         (moves them to the Onboarding tab), or to rescind the offer.
+      </div>
+
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -2586,17 +2898,19 @@ function OfferTab({
                   </td>
                 </tr>
               ))
-            ) : applications.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <tr>
                 <td
                   colSpan={6}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No applicants with an outstanding offer right now.
+                  {applications.length === 0
+                    ? "No applicants with an outstanding offer right now."
+                    : "No applicants match the selected filters."}
                 </td>
               </tr>
             ) : (
-              applications.map((a) => (
+              filtered.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2646,36 +2960,38 @@ function OfferTab({
 // funnel progress and (where available) individual interview report into a
 // single report HR can generate once, then edit/download/email freely.
 function RoleReportModal({
-  roles,
+  rounds,
   adminId,
   onClose,
 }: {
-  roles: { slug: string; title: string }[];
+  rounds: { jobPostingId: string; roleSlug: string; title: string; openedAt: string | null }[];
   adminId: string;
   onClose: () => void;
 }) {
-  const [selectedSlug, setSelectedSlug] = useState(roles[0]?.slug ?? "");
+  const [selectedPostingId, setSelectedPostingId] = useState(
+    rounds[0]?.jobPostingId ?? "",
+  );
   const [reportDraft, setReportDraft] = useState<RoleInterviewReport | null>(
     null,
   );
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const selectedRole = roles.find((r) => r.slug === selectedSlug);
+  const selectedRound = rounds.find((r) => r.jobPostingId === selectedPostingId);
 
   const {
     data: reportRow,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["role_interview_report", selectedSlug],
+    queryKey: ["role_interview_report", selectedPostingId],
     queryFn: async () => {
       const res = await api.get(
-        `/careers/interview/role-report?role_slug=${selectedSlug}`,
+        `/careers/interview/role-report?job_posting_id=${selectedPostingId}`,
       );
       return res.data.data as RoleInterviewReportRow | null;
     },
-    enabled: !!selectedSlug,
+    enabled: !!selectedPostingId,
   });
 
   useEffect(() => {
@@ -2691,7 +3007,7 @@ function RoleReportModal({
   const generateMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/role-report/generate", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
       }),
     onSuccess: async () => {
       toast.success("Role report generated.");
@@ -2705,7 +3021,7 @@ function RoleReportModal({
   const saveMutation = useMutation({
     mutationFn: () =>
       api.patch("/careers/interview/role-report", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
         report: reportDraft,
         edited_by: adminId,
       }),
@@ -2721,7 +3037,7 @@ function RoleReportModal({
   const emailMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/role-report/email", {
-        role_slug: selectedSlug,
+        job_posting_id: selectedPostingId,
         to: emailTo,
       }),
     onSuccess: () => {
@@ -2759,19 +3075,25 @@ function RoleReportModal({
         <div className="p-5 overflow-y-auto min-h-0 space-y-5">
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-              Role
+              Hiring round
             </label>
             <select
-              value={selectedSlug}
-              onChange={(e) => setSelectedSlug(e.target.value)}
+              value={selectedPostingId}
+              onChange={(e) => setSelectedPostingId(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             >
-              {roles.map((r) => (
-                <option key={r.slug} value={r.slug}>
+              {rounds.map((r) => (
+                <option key={r.jobPostingId} value={r.jobPostingId}>
                   {r.title}
+                  {r.openedAt ? ` — opened ${formatDate(r.openedAt)}` : ""}
                 </option>
               ))}
             </select>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Only shows rounds that currently have an applicant awaiting a
+              decision. Once a round is fully decided, its report stays
+              accessible from each applicant&apos;s own page.
+            </p>
           </div>
 
           {isLoading ? (
@@ -2780,7 +3102,7 @@ function RoleReportModal({
             <div className="space-y-2">
               <p className="text-xs text-gray-500">
                 Generates a consolidated report for{" "}
-                {selectedRole?.title ?? "this role"} — applicant funnel numbers,
+                {selectedRound?.title ?? "this round"} — applicant funnel numbers,
                 constraints flagged in HR/panel notes, and a final hire
                 recommendation based on the current ranking. You can edit it
                 freely afterward, and regenerate it again any time the applicant
@@ -2815,7 +3137,7 @@ function RoleReportModal({
                   </button>
                 )}
                 <a
-                  href={`/api/careers/interview/role-report/pdf?role_slug=${selectedSlug}`}
+                  href={`/api/careers/interview/role-report/pdf?job_posting_id=${selectedPostingId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
@@ -2847,7 +3169,7 @@ function RoleReportModal({
                 </button>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Executive summary
                 </label>
@@ -2864,7 +3186,7 @@ function RoleReportModal({
                 />
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Applicant funnel
                 </label>
@@ -2888,16 +3210,6 @@ function RoleReportModal({
                       "Completed full interview",
                       reportDraft.funnel.completed_full_interview,
                     ],
-                    [
-                      "Still deciding",
-                      reportDraft.funnel.completed_breakdown.still_deciding,
-                    ],
-                    ["On hold", reportDraft.funnel.completed_breakdown.hold],
-                    [
-                      "Rejected",
-                      reportDraft.funnel.completed_breakdown.rejected,
-                    ],
-                    ["Hired", reportDraft.funnel.completed_breakdown.hired],
                   ].map(([label, value]) => (
                     <div
                       key={label as string}
@@ -2914,7 +3226,7 @@ function RoleReportModal({
                 </div>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Constraints noted
                 </label>
@@ -2964,13 +3276,12 @@ function RoleReportModal({
                 </div>
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Candidate ranking
                 </label>
                 <p className="text-xs text-gray-500 mb-2">
-                  Candidates still awaiting a decision only — Hold, Rejected,
-                  and Hired candidates already have one.
+                  Below are the rankings of the candidates.
                 </p>
                 {reportDraft.candidate_rankings.length === 0 ? (
                   <p className="text-xs text-gray-400 italic">
@@ -3001,7 +3312,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   All applicants
                 </label>
@@ -3080,7 +3391,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Core competencies
                 </label>
@@ -3141,7 +3452,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Key observations
                 </label>
@@ -3214,7 +3525,7 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                   Final recommendation
                 </label>
@@ -3239,7 +3550,7 @@ function RoleReportModal({
                 />
               </div>
 
-              <div>
+              <div className="border border-gray-200 rounded-xl p-4">
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
                   Appendix — panel forms &amp; individual reports
                 </label>
@@ -3696,7 +4007,7 @@ function RecruitmentPageContent() {
       </div>
 
       {activeTab === "careers" ? (
-        <CareersTab />
+        <CareersTab adminId={session?.user?.id ?? ""} />
       ) : activeTab === "ai_rejects" ? (
         <RejectsTab
           applications={aiRejectApplications}

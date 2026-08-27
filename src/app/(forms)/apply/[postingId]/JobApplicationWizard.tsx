@@ -519,7 +519,7 @@ export default function JobApplicationWizard({
               className={`text-xs mt-1 ${
                 remaining === 0
                   ? "text-red-600 font-medium"
-                  : remaining <= 100
+                  : remaining != null && remaining <= 100
                     ? "text-amber-600"
                     : "text-gray-400"
               }`}

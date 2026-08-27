@@ -6,7 +6,7 @@ const LMS = () => {
       <div className="text-center">
         <h1 className="text-4xl font-bold mb-2">🚧 Under Construction 🚧</h1>
         <p className="text-lg text-gray-600">
-          Our Notification is on its way. Stay tuned!
+          Stay tuned!
         </p>
       </div>
     </div>
