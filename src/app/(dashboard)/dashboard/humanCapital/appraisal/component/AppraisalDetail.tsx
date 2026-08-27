@@ -379,10 +379,6 @@ export default function AppraisalDetail({
                   ? "Annual Appraisal (Q4)"
                   : "Quarterly Review"}
               </span>
-              <span className="text-white/30">·</span>
-              <span className="text-[10px] sm:text-xs font-semibold text-white/50 uppercase tracking-widest">
-                {appraisal.grade_band}
-              </span>
               <StatusBadge
                 status={appraisal.status}
                 submittedBy={appraisal.submitted_by}
@@ -724,7 +720,6 @@ export default function AppraisalDetail({
           <DetailField label="Company ID" value={appraisal.company_id} />
           <DetailField label="Job Title" value={appraisal.job_title} />
           <DetailField label="Current Grade" value={appraisal.current_grade} />
-          <DetailField label="Grade Band" value={appraisal.grade_band} />
           <DetailField
             label="Cycle"
             value={

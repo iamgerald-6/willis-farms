@@ -4,23 +4,16 @@ import {
   requireUserManagementAccess,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { resolveCompanyEmailDomain } from "@/lib/systemDefinitions/companyEmailDomain";
+import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import {
-  inferGradeLevel,
-  suggestCompanyEmail,
   suggestEmployeeId,
   collectExistingEmployeeIds,
 } from "@/lib/careers/hrEmployeeDefaults";
-import {
-  canAssignAsSupervisor,
-  resolveSupervisorByName,
-} from "@/lib/supervisorAssignment";
-import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
-import {
-  mergeOnboardingForm,
-  parseApplicantName,
-  type OnboardingFormData,
-  type OnboardingHrData,
-} from "@/lib/careers/onboardingTypes";
+import { buildOnboardingInvitePrefill } from "@/lib/careers/buildOnboardingInvitePrefill";
+import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 export type OnboardedInviteCandidate = {
   application_id: string;
@@ -29,7 +22,10 @@ export type OnboardedInviteCandidate = {
   prefill: {
     first_name: string;
     last_name: string;
+    /** WillsOne login username (HR company email). */
     email: string;
+    /** Job application email — invite is sent here. */
+    delivery_email: string;
     phone: string;
     job_position: string;
     grade_level?: string;
@@ -66,6 +62,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+    const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
+    const emailDomain = resolveCompanyEmailDomain(moduleConfig.businessLogic);
 
     const { data: existingUsers, error: usersError } = await supabaseAdmin
       .from("users")
@@ -75,16 +73,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });
     }
 
-    const { companyIds, companyEmails: existingCompanyEmails } =
-      await collectExistingEmployeeIds(supabaseAdmin);
+    const { companyIds, companyEmails } = await collectExistingEmployeeIds(supabaseAdmin);
 
     const assignedIdsThisBatch = new Set<string>();
 
-    const invitedEmails = new Set(
-      (existingUsers ?? [])
-        .map((u) => u.email?.trim().toLowerCase())
-        .filter(Boolean),
-    );
+    const invitedEmails = new Set(companyEmails);
 
     const { data: rows, error } = await supabaseAdmin
       .from("onboarding_submissions")
@@ -126,23 +119,8 @@ export async function GET(req: NextRequest) {
 
       if (!app?.full_name) continue;
 
-      const form = mergeOnboardingForm(row.form_data as OnboardingFormData);
       const hr = (row.hr_data ?? {}) as OnboardingHrData;
-      const parsed = parseApplicantName(app.full_name);
 
-      const first_name =
-        form.personal?.first_name?.trim() || parsed.first_name;
-      const last_name = form.personal?.surname?.trim() || parsed.surname;
-      const middle_names =
-        form.personal?.middle_names?.trim() || parsed.middle_names;
-      const phone = form.personal?.mobile?.trim() || app.phone?.trim() || "";
-      const job_position =
-        hr.position_title?.trim() ||
-        app.role_title?.trim() ||
-        "";
-      const grade_level = inferGradeLevel(app.role_slug, hr);
-
-      // Prefer values HR saved on the onboarding record (Section O).
       let company_id = hr.employee_id?.trim() || undefined;
       if (!company_id) {
         const idsPool = [...companyIds, ...assignedIdsThisBatch];
@@ -150,78 +128,43 @@ export async function GET(req: NextRequest) {
         assignedIdsThisBatch.add(company_id);
       }
 
-      const inviteEmail =
-        hr.company_email?.trim().toLowerCase() ||
-        suggestCompanyEmail({
-          firstName: first_name,
-          middleNames: middle_names,
-          lastName: last_name,
-          existingEmails: existingCompanyEmails,
-        });
+      const prefill = buildOnboardingInvitePrefill({
+        app,
+        form_data: row.form_data as OnboardingFormData,
+        hr_data: { ...hr, employee_id: company_id } as OnboardingHrData,
+        existingUsers: existingUsers ?? [],
+        existingEmails: [...invitedEmails],
+        gradeConfig,
+        emailDomain,
+      });
 
-      if (!inviteEmail) continue;
+      if (!prefill) continue;
 
-      if (invitedEmails.has(inviteEmail)) continue;
+      if (invitedEmails.has(prefill.email)) continue;
+      invitedEmails.add(prefill.email);
 
       const locked_fields: OnboardedInviteCandidate["locked_fields"] = [];
-      if (first_name) locked_fields.push("first_name");
-      if (last_name) locked_fields.push("last_name");
-      if (phone) locked_fields.push("phone");
-      if (job_position) locked_fields.push("job_position");
-      if (grade_level) locked_fields.push("grade_level");
-      if (company_id) locked_fields.push("company_id");
-
-      const employeeStub = {
-        user_id: "pending",
-        role: "employee" as const,
-        grade_level: grade_level ?? null,
-      };
-
-      let supervisor_id: string | undefined;
-
-      if (hr.supervisor_id) {
-        const picked = (existingUsers ?? []).find(
-          (u) => u.user_id === hr.supervisor_id,
-        );
-        if (
-          picked &&
-          canAssignAsSupervisor(picked, employeeStub, gradeConfig)
-        ) {
-          supervisor_id = picked.user_id;
-        }
-      }
-
-      if (!supervisor_id && hr.supervisor_name) {
-        const matchedSupervisor = resolveSupervisorByName(
-          hr.supervisor_name,
-          existingUsers ?? [],
-        );
-        const matchedSupervisorRow = matchedSupervisor
-          ? (existingUsers ?? []).find(
-              (u) => u.user_id === matchedSupervisor.user_id,
-            )
-          : null;
-        if (
-          matchedSupervisorRow &&
-          canAssignAsSupervisor(matchedSupervisorRow, employeeStub, gradeConfig)
-        ) {
-          supervisor_id = matchedSupervisorRow.user_id;
-        }
-      }
+      if (prefill.first_name) locked_fields.push("first_name");
+      if (prefill.last_name) locked_fields.push("last_name");
+      if (prefill.phone) locked_fields.push("phone");
+      if (prefill.job_position) locked_fields.push("job_position");
+      if (prefill.grade_level) locked_fields.push("grade_level");
+      if (prefill.company_id) locked_fields.push("company_id");
 
       candidates.push({
         application_id: row.application_id,
         full_name: app.full_name,
         reference_number: app.reference_number,
         prefill: {
-          first_name,
-          last_name,
-          email: inviteEmail,
-          phone,
-          job_position,
-          grade_level,
-          company_id,
-          supervisor_id,
+          first_name: prefill.first_name,
+          last_name: prefill.last_name,
+          email: prefill.email,
+          delivery_email: prefill.delivery_email,
+          phone: prefill.phone,
+          job_position: prefill.job_position,
+          grade_level: prefill.grade_level,
+          company_id: prefill.company_id,
+          supervisor_id: prefill.supervisor_id,
         },
         locked_fields,
       });

@@ -27,6 +27,7 @@ export const EDITABLE_OPTION_LISTS: Partial<Record<string, readonly string[]>> =
       "careers.onboardingDepartmentsL1L6",
       "careers.onboardingDepartmentsL7",
       "careers.onboardingEmploymentTypes",
+      "careers.onboardingMedicalReports",
     ],
   };
 
@@ -99,6 +100,15 @@ export const EDITABLE_REFEREE_REFERENCE_MODULES = ["mod:recruitment"] as const;
 export function isEditableRefereeReferenceModule(moduleId: string): boolean {
   return EDITABLE_REFEREE_REFERENCE_MODULES.includes(
     moduleId as (typeof EDITABLE_REFEREE_REFERENCE_MODULES)[number],
+  );
+}
+
+/** Modules whose interview guides can be edited in System Definitions. */
+export const EDITABLE_INTERVIEW_GUIDES_MODULES = ["mod:recruitment"] as const;
+
+export function isEditableInterviewGuidesModule(moduleId: string): boolean {
+  return EDITABLE_INTERVIEW_GUIDES_MODULES.includes(
+    moduleId as (typeof EDITABLE_INTERVIEW_GUIDES_MODULES)[number],
   );
 }
 

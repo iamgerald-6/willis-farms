@@ -38,18 +38,27 @@ export function canConfirmHire(total: number | null | undefined): boolean {
 export function observedDisqualifiers(
   formData: InterviewFormData,
   disqualifierLabels: string[],
+  disqualifierItems?: { id: string; label: string }[],
 ): { id: string; label: string; notes?: string }[] {
   const entries = formData.disqualifiers ?? {};
+  const labelById = new Map<string, string>();
+  if (disqualifierItems?.length) {
+    for (const item of disqualifierItems) {
+      labelById.set(item.id, item.label);
+    }
+  } else {
+    disqualifierLabels.forEach((label, i) => {
+      labelById.set(`dq_${i}`, label);
+    });
+  }
+
   return Object.entries(entries)
     .filter(([, v]) => v.observed === "yes")
-    .map(([id, v]) => {
-      const index = Number.parseInt(id.replace("dq_", ""), 10);
-      return {
-        id,
-        label: disqualifierLabels[index] ?? id,
-        notes: v.notes?.trim() || undefined,
-      };
-    });
+    .map(([id, v]) => ({
+      id,
+      label: labelById.get(id) ?? disqualifierLabels[Number.parseInt(id.replace("dq_", ""), 10)] ?? id,
+      notes: v.notes?.trim() || undefined,
+    }));
 }
 
 export function validatePanelDecision(

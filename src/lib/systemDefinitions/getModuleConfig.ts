@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FormDefinition } from "@/lib/moduleRegistry/types";
 import { DEFAULT_ANNUAL_LEAVE_CAP_DAYS } from "@/lib/leave/leavePolicy";
+import {
+  DEFAULT_COMPANY_EMAIL_DOMAIN,
+  normalizeCompanyEmailDomain,
+} from "./companyEmailDomain";
 import { DEFAULT_APPRAISAL_SECTION_WEIGHT_RULES } from "./appraisalDefaults";
 import {
   formDefinitionForModule,
@@ -69,6 +73,11 @@ export async function fetchModuleConfig(
       annualLeaveCapDays:
         businessLogic.annualLeaveCapDays ??
         gitFallbackBusinessLogic(moduleId).annualLeaveCapDays,
+      companyEmailDomain:
+        businessLogic.companyEmailDomain ??
+        gitFallbackBusinessLogic(moduleId).companyEmailDomain,
+      interviewGuidesConfig: businessLogic.interviewGuidesConfig,
+      interviewEvaluationConfig: businessLogic.interviewEvaluationConfig,
     },
     formDefinition,
   };
@@ -80,6 +89,9 @@ function gitFallbackBusinessLogic(moduleId: string): ModuleBusinessLogic {
   }
   if (moduleId === "mod:leave") {
     return { annualLeaveCapDays: DEFAULT_ANNUAL_LEAVE_CAP_DAYS };
+  }
+  if (moduleId === "mod:recruitment") {
+    return { companyEmailDomain: DEFAULT_COMPANY_EMAIL_DOMAIN };
   }
   return {};
 }

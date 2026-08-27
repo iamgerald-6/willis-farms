@@ -85,30 +85,25 @@ export function extractRefereesFromApplication(
 ): RefereeContactFromApplication[] {
   if (!formData) return [];
 
-  const slots: RefereeContactFromApplication[] = [
-    {
-      index: 1,
-      name: String(formData.reference_1_name ?? "").trim(),
-      phone: String(formData.reference_1_phone ?? "").trim(),
-      email: String(formData.reference_1_email ?? "")
-        .trim()
-        .toLowerCase(),
-      relationship: String(formData.reference_1_relationship ?? "").trim(),
-    },
-    {
-      index: 2,
-      name: String(formData.reference_2_name ?? "").trim(),
-      phone: String(formData.reference_2_phone ?? "").trim(),
-      email: String(formData.reference_2_email ?? "")
-        .trim()
-        .toLowerCase(),
-      relationship: String(formData.reference_2_relationship ?? "").trim(),
-    },
-  ];
+  const slots: RefereeContactFromApplication[] = [];
 
-  return slots.filter(
-    (s) => s.name && s.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.email),
-  );
+  for (let index = 1; index <= Math.min(maxSlots, MAX_REFEREE_SLOTS); index++) {
+    const name = String(formData[`reference_${index}_name`] ?? "").trim();
+    const email = String(formData[`reference_${index}_email`] ?? "")
+      .trim()
+      .toLowerCase();
+    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+
+    slots.push({
+      index,
+      name,
+      phone: String(formData[`reference_${index}_phone`] ?? "").trim(),
+      email,
+      relationship: String(formData[`reference_${index}_relationship`] ?? "").trim(),
+    });
+  }
+
+  return slots;
 }
 
 export function emptyRefereeReferenceForm(

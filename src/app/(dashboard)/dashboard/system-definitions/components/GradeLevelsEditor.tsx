@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
@@ -11,9 +11,18 @@ import {
   type GradeLevelDef,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import {
+  SALARY_TIER_IDS,
+  SALARY_TIER_LABELS,
+  formatSalaryTierBand,
+  mergeSalaryTiersIntoLevels,
+  type GradeSalaryTiers,
+  type SalaryTierId,
+} from "@/lib/systemDefinitions/salaryRanges";
+import {
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { GRADE_LEVELS_CONFIG_QUERY_KEY } from "@/hooks/useGradeLevelsConfig";
 
 type JobPostingRow = {
   id: string;
@@ -36,6 +45,47 @@ function slugifyKey(label: string): string {
     .replace(/^_|_$/g, "");
 }
 
+/** Compact low/mid/high salary inputs — wraps on small screens, never forces horizontal scroll. */
+function SalaryTierFields({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: GradeSalaryTiers;
+  onChange: (tier: SalaryTierId, field: "min" | "max", nextValue: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {SALARY_TIER_IDS.map((tier) => (
+        <div key={tier} className="space-y-1 rounded-lg border border-gray-200 bg-white p-2">
+          <p className="text-[11px] font-medium text-gray-500">{SALARY_TIER_LABELS[tier]}</p>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              inputMode="decimal"
+              disabled={disabled}
+              placeholder="Min"
+              className="w-1/2 min-w-0 border border-gray-200 rounded px-2 py-1 text-xs"
+              value={value?.[tier]?.min ?? ""}
+              onChange={(e) => onChange(tier, "min", e.target.value)}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              disabled={disabled}
+              placeholder="Max"
+              className="w-1/2 min-w-0 border border-gray-200 rounded px-2 py-1 text-xs"
+              value={value?.[tier]?.max ?? ""}
+              onChange={(e) => onChange(tier, "max", e.target.value)}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function GradeLevelsEditor({
   moduleId,
   canAdd = true,
@@ -49,9 +99,11 @@ export default function GradeLevelsEditor({
   const [newRank, setNewRank] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [newRoleTitle, setNewRoleTitle] = useState("");
+  const [newSalaryTiers, setNewSalaryTiers] = useState<GradeSalaryTiers>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editRank, setEditRank] = useState("");
+  const [salaryByGrade, setSalaryByGrade] = useState<Record<string, GradeSalaryTiers>>({});
 
   const { data: moduleConfig, isLoading: loadingConfig } = useQuery({
     queryKey: configKey,
@@ -88,6 +140,14 @@ export default function GradeLevelsEditor({
     [moduleConfig],
   );
 
+  useEffect(() => {
+    const next: Record<string, GradeSalaryTiers> = {};
+    for (const level of levels) {
+      if (level.salaryTiers) next[level.id] = { ...level.salaryTiers };
+    }
+    setSalaryByGrade(next);
+  }, [moduleConfig]);
+
   const rolesByGrade = useMemo(() => {
     const map = new Map<string, JobPostingRow[]>();
     for (const row of jobPostings) {
@@ -110,6 +170,7 @@ export default function GradeLevelsEditor({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKey });
+      queryClient.invalidateQueries({ queryKey: [...GRADE_LEVELS_CONFIG_QUERY_KEY] });
       toast.success("Grade levels saved.");
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
@@ -135,11 +196,48 @@ export default function GradeLevelsEditor({
         queryKey: ["system_options", moduleId, RECRUITMENT_JOB_POSTINGS_LIST],
       });
       queryClient.invalidateQueries({ queryKey: ["careers_job_postings"] });
+      queryClient.invalidateQueries({ queryKey: configKey });
+      queryClient.invalidateQueries({ queryKey: [...GRADE_LEVELS_CONFIG_QUERY_KEY] });
     },
   });
 
-  const persistLevels = (nextLevels: GradeLevelDef[]) => {
-    saveConfigMutation.mutate(nextLevels);
+  const persistLevels = (
+    nextLevels: GradeLevelDef[],
+    salaryOverrides?: Record<string, GradeSalaryTiers>,
+  ) => {
+    const salaryMap = salaryOverrides
+      ? { ...salaryByGrade, ...salaryOverrides }
+      : salaryByGrade;
+    const withSalary = mergeSalaryTiersIntoLevels(nextLevels, salaryMap);
+    saveConfigMutation.mutate(withSalary);
+  };
+
+  const patchSalaryCell = (
+    gradeId: string,
+    tier: SalaryTierId,
+    field: "min" | "max",
+    value: string,
+  ) => {
+    setSalaryByGrade((prev) => ({
+      ...prev,
+      [gradeId]: {
+        ...prev[gradeId],
+        [tier]: {
+          ...prev[gradeId]?.[tier],
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const patchNewSalaryTier = (tier: SalaryTierId, field: "min" | "max", value: string) => {
+    setNewSalaryTiers((prev) => ({
+      ...prev,
+      [tier]: {
+        ...prev[tier],
+        [field]: value,
+      },
+    }));
   };
 
   const handleAdd = async () => {
@@ -182,24 +280,20 @@ export default function GradeLevelsEditor({
         interviewGuideKey: id,
       });
 
-      const nextLevels: GradeLevelDef[] = [
-        ...(moduleConfig?.businessLogic?.gradeLevelsConfig?.levels ?? []),
-        { id, rank, label, roleKey, builtIn: false },
-      ];
-      if (!moduleConfig?.businessLogic?.gradeLevelsConfig?.levels?.length) {
-        persistLevels([
-          ...DEFAULT_GRADE_LEVELS.map((l) => ({ ...l })),
-          { id, rank, label, roleKey, builtIn: false },
-        ]);
-      } else {
-        persistLevels(nextLevels);
-      }
+      const newLevel: GradeLevelDef = { id, rank, label, roleKey, builtIn: false };
+      const nextLevels: GradeLevelDef[] = moduleConfig?.businessLogic?.gradeLevelsConfig?.levels
+        ?.length
+        ? [...moduleConfig.businessLogic.gradeLevelsConfig.levels, newLevel]
+        : [...DEFAULT_GRADE_LEVELS.map((l) => ({ ...l })), newLevel];
+
+      persistLevels(nextLevels, { [id]: newSalaryTiers });
 
       setShowAdd(false);
       setNewId("");
       setNewRank("");
       setNewLabel("");
       setNewRoleTitle("");
+      setNewSalaryTiers({});
     } catch {
       toast.error("Could not create linked role for this grade.");
     }
@@ -249,15 +343,16 @@ export default function GradeLevelsEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       <p className="text-xs text-gray-500">
         L1–L7 are built in. Add L8 or higher with a linked job posting role (e.g. L1 → Junior
-        Swine Technician). HR uses these grades in Section O; job postings pick the interview guide
-        from the linked role.
+        Swine Technician). Each grade also has low / mid / high salary bands (GHS) — set them
+        when adding or editing a grade. HR onboarding auto-fills salary from the employee&apos;s
+        grade and tier.
       </p>
 
-      <div className="overflow-x-auto border border-gray-200 rounded-xl">
-        <table className="w-full text-sm text-left min-w-[640px]">
+      <div className="w-full max-w-full overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm text-left">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-3 py-2 font-semibold text-gray-600">Grade</th>
@@ -272,83 +367,108 @@ export default function GradeLevelsEditor({
               const linked = rolesByGrade.get(level.id) ?? [];
               const isEditing = editingId === level.id;
               const isBuiltIn = DEFAULT_GRADE_LEVELS.some((d) => d.id === level.id);
+              const midSummary = formatSalaryTierBand(level.salaryTiers?.mid);
+              const colSpan = canEdit ? 5 : 4;
 
               return (
-                <tr key={level.id} className="border-b border-gray-100 last:border-0">
-                  <td className="px-3 py-2 font-mono text-xs">{level.id}</td>
-                  <td className="px-3 py-2">
-                    {isEditing ? (
-                      <input
-                        className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-                        value={editLabel}
-                        onChange={(e) => setEditLabel(e.target.value)}
-                      />
-                    ) : (
-                      level.label
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-20 border border-gray-200 rounded px-2 py-1 text-sm"
-                        value={editRank}
-                        onChange={(e) => setEditRank(e.target.value)}
-                      />
-                    ) : (
-                      level.rank
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">
-                    {linked.length > 0
-                      ? linked.map((r) => r.label).join(", ")
-                      : level.roleKey
-                        ? level.roleKey
-                        : "—"}
-                  </td>
-                  {canEdit && (
-                    <td className="px-3 py-2 text-right">
+                <Fragment key={level.id}>
+                  <tr className="border-b border-gray-100 last:border-0">
+                    <td className="px-3 py-2 font-mono text-xs align-top">{level.id}</td>
+                    <td className="px-3 py-2 align-top">
                       {isEditing ? (
-                        <div className="inline-flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => saveEdit(level)}
-                            className="p-1.5 rounded hover:bg-green-50 text-green-700"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingId(null)}
-                            className="p-1.5 rounded hover:bg-gray-100"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
+                        <input
+                          className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                        />
                       ) : (
-                        <div className="inline-flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(level)}
-                            className="p-1.5 rounded hover:bg-gray-100"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          {!isBuiltIn && (
-                            <button
-                              type="button"
-                              onClick={() => removeCustomGrade(level)}
-                              className="p-1.5 rounded hover:bg-red-50 text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                        <div>
+                          <p>{level.label}</p>
+                          {midSummary && (
+                            <p className="text-[11px] text-gray-400 mt-0.5">Mid: {midSummary}</p>
                           )}
                         </div>
                       )}
                     </td>
+                    <td className="px-3 py-2 align-top">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-20 border border-gray-200 rounded px-2 py-1 text-sm"
+                          value={editRank}
+                          onChange={(e) => setEditRank(e.target.value)}
+                        />
+                      ) : (
+                        level.rank
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 align-top">
+                      {linked.length > 0
+                        ? linked.map((r) => r.label).join(", ")
+                        : level.roleKey
+                          ? level.roleKey
+                          : "—"}
+                    </td>
+                    {canEdit && (
+                      <td className="px-3 py-2 text-right align-top">
+                        {isEditing ? (
+                          <div className="inline-flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => saveEdit(level)}
+                              className="p-1.5 rounded hover:bg-green-50 text-green-700"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="p-1.5 rounded hover:bg-gray-100"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(level)}
+                              className="p-1.5 rounded hover:bg-gray-100"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            {!isBuiltIn && (
+                              <button
+                                type="button"
+                                onClick={() => removeCustomGrade(level)}
+                                className="p-1.5 rounded hover:bg-red-50 text-red-600"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                  {isEditing && (
+                    <tr className="border-b border-gray-100 last:border-0">
+                      <td colSpan={colSpan} className="px-3 pb-3 bg-gray-50/70">
+                        <p className="text-[11px] font-semibold text-gray-600 mb-2">
+                          Salary bands (GHS)
+                        </p>
+                        <SalaryTierFields
+                          value={salaryByGrade[level.id] ?? {}}
+                          onChange={(tier, field, value) =>
+                            patchSalaryCell(level.id, tier, field, value)
+                          }
+                          disabled={!canEdit}
+                        />
+                      </td>
+                    </tr>
                   )}
-                </tr>
+                </Fragment>
               );
             })}
           </tbody>
@@ -367,7 +487,7 @@ export default function GradeLevelsEditor({
               Add grade level
             </button>
           ) : (
-            <div className="border border-dashed border-gray-300 rounded-xl p-4 space-y-3 bg-gray-50/50">
+            <div className="border border-dashed border-gray-300 rounded-xl p-4 space-y-3 bg-gray-50/50 max-w-full">
               <p className="text-xs font-semibold text-gray-700">New grade (L8+)</p>
               <div className="grid sm:grid-cols-2 gap-3">
                 <label className="block text-xs">
@@ -409,6 +529,16 @@ export default function GradeLevelsEditor({
                   />
                 </label>
               </div>
+
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Salary bands (GHS, optional)</p>
+                <SalaryTierFields
+                  value={newSalaryTiers}
+                  onChange={patchNewSalaryTier}
+                  disabled={!canAdd}
+                />
+              </div>
+
               <div className="flex gap-2">
                 <button
                   type="button"

@@ -7,6 +7,10 @@ import {
   getResendFromAddress,
   getReplyToEmail,
 } from "@/lib/email/resendClient";
+import {
+  formatMedicalReportsHtml,
+  formatMedicalReportsPlainText,
+} from "@/lib/systemDefinitions/onboardingMedicalReports";
 
 type SendResult = { sent: boolean; error?: string };
 
@@ -393,6 +397,7 @@ export async function sendHireOnboardingEmail(params: {
   onboardingLink: string;
   expiresAt: string;
   recommendedStartDate?: string;
+  requiredMedicalReports?: string[];
   offerLetter?: {
     secure_url: string;
     original_name?: string;
@@ -422,6 +427,10 @@ export async function sendHireOnboardingEmail(params: {
     ? `<p style="margin:0 0 16px;font-size:15px;color:#374151;">Your signed offer letter is attached to this email.</p>`
     : "";
 
+  const medicalReports = params.requiredMedicalReports ?? [];
+  const medicalReportsText = formatMedicalReportsPlainText(medicalReports);
+  const medicalReportsHtml = formatMedicalReportsHtml(medicalReports);
+
   const subject = `Congratulations — ${params.roleTitle} (${params.referenceNumber})`;
 
   const text = [
@@ -437,12 +446,13 @@ export async function sendHireOnboardingEmail(params: {
     "",
     offerLetterText,
     "",
+    ...(medicalReportsText ? [medicalReportsText, ""] : []),
     "Please complete your employee onboarding using the secure link below. This link is valid for 7 days:",
     params.onboardingLink,
     "",
     `Link expires: ${expiry}`,
     "",
-    "The onboarding has three stages: personal information, medical & qualifications, and references & declarations. After submission, our HR team will contact you regarding medical examination and next steps.",
+    "The onboarding includes personal information, medical declarations (upload proof of the reports listed above), and consent & signature. After submission, our HR team will contact you regarding any follow-up medical steps.",
     "",
     "If you have questions, contact info@willsfarms.com quoting your reference number.",
     "",
@@ -469,6 +479,7 @@ export async function sendHireOnboardingEmail(params: {
         </td></tr>
       </table>
       ${offerLetterHtml}
+      ${medicalReportsHtml}
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
         Please complete your employee onboarding using the secure link below.
         The link is valid for <strong>7 days</strong> (expires ${escapeHtml(expiry)}).

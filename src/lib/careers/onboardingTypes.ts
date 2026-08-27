@@ -170,6 +170,10 @@ export interface OnboardingHrData {
   /** user_id of assigned reporting supervisor (Section O picker). */
   supervisor_id?: string;
   supervisor_contact?: string;
+  /** low | mid | high — picks salary band for the selected grade. */
+  salary_tier?: string;
+  /** Read-only display of configured band (also mirrored in salary_ghs). */
+  salary_range?: string;
   salary_ghs?: string;
   pay_frequency?: string;
   grade_level?: string;
@@ -198,6 +202,8 @@ export interface OnboardingHrData {
   offer_letter_uploaded_at?: string;
   /** Set when HR sends the WillsOne platform invite (User Management). */
   platform_invited_at?: string;
+  /** Set when HR completes Section O and sends the WillsOne invite from Recruitment. */
+  hr_finished_at?: string;
   /** probation | active | fired | quit | deceased */
   employment_status?: string;
   probation_completed_at?: string;

@@ -4,6 +4,10 @@ import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 const ONBOARDING_LIST_STATUSES = ["onboarding"] as const;
 
+function isOnboardingHrComplete(hr: OnboardingHrData | null | undefined): boolean {
+  return Boolean(hr?.platform_invited_at?.trim() || hr?.hr_finished_at?.trim());
+}
+
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
@@ -79,10 +83,31 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const { data: platformUsers, error: platformUsersError } = await supabaseAdmin
+    .from("users")
+    .select("application_id")
+    .not("application_id", "is", null);
+
+  const invitedApplicationIds = new Set<string>();
+  if (!platformUsersError) {
+    for (const row of platformUsers ?? []) {
+      if (row.application_id) invitedApplicationIds.add(row.application_id as string);
+    }
+  } else if (
+    !platformUsersError.message.toLowerCase().includes("application_id") &&
+    !platformUsersError.message.toLowerCase().includes("schema cache")
+  ) {
+    return NextResponse.json({ error: platformUsersError.message }, { status: 500 });
+  }
+
   const visibleAppIds = new Set((onboardingApps ?? []).map((a) => a.id));
-  const filtered = (data ?? []).filter((row) =>
-    visibleAppIds.has(row.application_id),
-  );
+  const filtered = (data ?? []).filter((row) => {
+    if (!visibleAppIds.has(row.application_id)) return false;
+    const hr = (row.hr_data ?? {}) as OnboardingHrData;
+    if (isOnboardingHrComplete(hr)) return false;
+    if (invitedApplicationIds.has(row.application_id)) return false;
+    return true;
+  });
 
   return NextResponse.json({ success: true, data: filtered });
 }

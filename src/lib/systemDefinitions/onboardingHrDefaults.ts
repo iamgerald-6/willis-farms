@@ -15,7 +15,9 @@ export type OnboardingHrFieldType =
   | "department"
   | "employment_type"
   | "work_location"
-  | "supervisor";
+  | "supervisor"
+  | "salary_tier"
+  | "salary_range";
 
 function hrField(
   id: string,
@@ -95,14 +97,26 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldKey: "company_email",
         fieldType: "text",
         group: "hr",
-        hint: "e.g. k.kwame@willsfarms.com or j.michaeljohn@willsfarms.com (initial.middle?+first)",
+        hint: "e.g. l.akoto or m.oofuso — first initial, optional middle initial, then surname",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:salary_tier",
+      "Salary tier",
+      "salary_tier",
+      13,
+      {
+        fieldKey: "salary_tier",
+        fieldType: "salary_tier",
+        group: "hr",
+        hint: "Low, mid, or high band for this grade — set under System Definitions → Grade levels.",
       },
     ),
     hrField(
       "opt:recruitment:hr:supervisor_id",
       "Assigned supervisor",
       "supervisor_id",
-      13,
+      14,
       {
         fieldKey: "supervisor_id",
         fieldType: "supervisor",
@@ -114,49 +128,67 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "opt:recruitment:hr:salary_ghs",
       "Salary / wage (GHS)",
       "salary_ghs",
-      14,
-      { fieldKey: "salary_ghs", fieldType: "text", group: "hr" },
+      15,
+      {
+        fieldKey: "salary_ghs",
+        fieldType: "text",
+        group: "hr",
+        hint: "Auto-filled from grade level and salary tier — edit only if an exception applies.",
+      },
     ),
     hrField(
       "opt:recruitment:hr:pay_frequency",
       "Pay frequency",
       "pay_frequency",
-      15,
+      16,
       { fieldKey: "pay_frequency", fieldType: "text", group: "hr" },
     ),
     hrField(
       "opt:recruitment:hr:fitness_determination",
       "Fitness determination",
       "fitness_determination",
-      16,
+      17,
       { fieldKey: "fitness_determination", fieldType: "text", group: "hr" },
     ),
     hrField(
       "opt:recruitment:hr:medical_referral_issued",
       "Medical referral issued on",
       "medical_referral_issued",
-      17,
+      18,
       { fieldKey: "medical_referral_issued", fieldType: "date", group: "hr" },
     ),
     hrField(
       "opt:recruitment:hr:reference_forms_sent",
       "Reference forms sent on",
       "reference_forms_sent",
-      18,
+      19,
       { fieldKey: "reference_forms_sent", fieldType: "date", group: "hr" },
     ),
     hrField(
       "opt:recruitment:hr:approved_by",
       "Approved by",
       "approved_by",
-      19,
+      20,
       { fieldKey: "approved_by", fieldType: "text", group: "hr" },
+    ),
+    hrField(
+      "opt:recruitment:hr:salary_range",
+      "Salary range (system)",
+      "salary_range",
+      29,
+      {
+        fieldKey: "salary_range",
+        fieldType: "salary_range",
+        group: "notes",
+        colSpan: "full",
+        hint: "Filled from grade level and tier configured in System Definitions.",
+      },
     ),
     hrField(
       "opt:recruitment:hr:hr_notes",
       "HR notes",
       "hr_notes",
-      30,
+      31,
       { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full" },
     ),
   ];

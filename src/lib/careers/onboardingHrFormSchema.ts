@@ -74,8 +74,17 @@ export function normalizeOnboardingHrFields(
 
 export function resolveOnboardingHrFields(options: SystemOption[]): OnboardingHrFieldDef[] {
   const fromDb = normalizeOnboardingHrFields(options);
-  if (fromDb.length > 0) return fromDb;
-  return normalizeOnboardingHrFields(getDefaultOnboardingHrFields());
+  const defaults = normalizeOnboardingHrFields(getDefaultOnboardingHrFields());
+  if (fromDb.length === 0) return defaults;
+
+  const byKey = new Map<string, OnboardingHrFieldDef>();
+  for (const field of defaults) {
+    byKey.set(field.fieldKey, field);
+  }
+  for (const field of fromDb) {
+    byKey.set(field.fieldKey, field);
+  }
+  return [...byKey.values()].sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export const ONBOARDING_HR_FIELD_TYPES: OnboardingHrFieldType[] = [
@@ -88,6 +97,8 @@ export const ONBOARDING_HR_FIELD_TYPES: OnboardingHrFieldType[] = [
   "employment_type",
   "work_location",
   "supervisor",
+  "salary_tier",
+  "salary_range",
 ];
 
 export const ONBOARDING_HR_FIELD_GROUPS: { value: OnboardingHrFieldGroup; label: string }[] = [

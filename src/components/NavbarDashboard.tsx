@@ -12,12 +12,18 @@ import { canOpenUserManagement } from "@/lib/permissionLevels";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import { performLogout } from "@/lib/auth/performLogout";
+import { useAppraisalFormProgressOptional } from "@/lib/appraisal/appraisalFormProgress";
 
 // ── Page title map ────────────────────────────────────────────────────────────
 // Ordered longest-path-first so nested routes (e.g. justifications/new,
 // skillLogForms, appraisalForms) resolve to the right section instead of
 // falling through to the generic default.
 const PAGE_TITLE_ENTRIES: { path: string; title: string; subtitle: string }[] = [
+  {
+    path: "/dashboard/humanCapital/appraisal/appraisalForms",
+    title: "Performance Appraisal",
+    subtitle: "Complete your performance review",
+  },
   {
     path: "/dashboard/humanCapital/appraisal/justifications",
     title: "Justifications",
@@ -147,6 +153,11 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const pageInfo = getPageInfo(pathname ?? "");
+  const appraisalProgress = useAppraisalFormProgressOptional();
+  const isAppraisalForm =
+    (pathname ?? "").startsWith("/dashboard/humanCapital/appraisal/appraisalForms");
+  const showAppraisalProgress =
+    isAppraisalForm && appraisalProgress?.completionPct != null;
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -226,6 +237,11 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
           <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">
             {pageInfo.subtitle}
           </p>
+          {showAppraisalProgress && (
+            <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">
+              {appraisalProgress!.completionPct}% complete
+            </p>
+          )}
         </div>
       </div>
 

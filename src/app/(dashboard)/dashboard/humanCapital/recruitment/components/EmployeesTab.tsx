@@ -15,6 +15,7 @@ import {
 } from "@/lib/careers/employeeStatus";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import ProbationRefereesSection from "./ProbationRefereesSection";
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -194,6 +195,13 @@ function EmployeeDetail({
             </div>
           )}
 
+          {onProbation && (
+            <ProbationRefereesSection
+              userId={row.user_id}
+              applicationId={row.application_id}
+            />
+          )}
+
           {canManage && (
             <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
               <div>
@@ -333,12 +341,6 @@ export default function EmployeesTab() {
 
   return (
     <>
-      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-900 mb-4">
-        Invited WillsOne employees appear here. Use <strong>Permanent</strong> when
-        probation passes, or <strong>Exit</strong> (Fired / Quit / Deceased) with a
-        reason — exits deactivate the account like User Management.
-      </div>
-
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
         <table className="w-full text-left text-sm min-w-[800px]">
           <thead>
@@ -361,8 +363,9 @@ export default function EmployeesTab() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
-                  No invited employees yet. Complete onboarding, then invite from User
-                  Management.
+                  No employees on probation yet. After a candidate submits onboarding, complete
+                  Section O on the Onboarding tab and click{" "}
+                  <strong>Finish onboarding & invite to WillsOne</strong>.
                 </td>
               </tr>
             ) : (

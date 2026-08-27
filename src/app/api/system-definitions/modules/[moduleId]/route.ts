@@ -26,7 +26,18 @@ const BUSINESS_LOGIC_KEYS = [
   "gradeLevelsConfig",
   "appraisalScopeConfig",
   "annualLeaveCapDays",
+  "companyEmailDomain",
+  "interviewGuidesConfig",
+  "interviewEvaluationConfig",
 ];
+
+function pickDefinedBusinessLogic(
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(incoming).filter(([, value]) => value !== undefined),
+  );
+}
 
 function decodeModuleId(raw: string): string {
   try {
@@ -95,36 +106,8 @@ export async function PATCH(
     const incomingBl = body.business_logic ?? body.businessLogic;
     const businessLogic = incomingBl
       ? {
-          sectionWeightRules:
-            incomingBl.sectionWeightRules ??
-            current.businessLogic.sectionWeightRules,
-          sectionBaseWeights:
-            incomingBl.sectionBaseWeights ??
-            current.businessLogic.sectionBaseWeights,
-          globalSectionWeights:
-            incomingBl.globalSectionWeights ??
-            current.businessLogic.globalSectionWeights,
-          sectionContentOverrides:
-            incomingBl.sectionContentOverrides ??
-            current.businessLogic.sectionContentOverrides,
-          competencyContentOverrides:
-            incomingBl.competencyContentOverrides ??
-            current.businessLogic.competencyContentOverrides,
-          refereeReferenceConfig:
-            incomingBl.refereeReferenceConfig ??
-            current.businessLogic.refereeReferenceConfig,
-          applicationFormConfig:
-            incomingBl.applicationFormConfig ??
-            current.businessLogic.applicationFormConfig,
-          gradeLevelsConfig:
-            incomingBl.gradeLevelsConfig ??
-            current.businessLogic.gradeLevelsConfig,
-          appraisalScopeConfig:
-            incomingBl.appraisalScopeConfig ??
-            current.businessLogic.appraisalScopeConfig,
-          annualLeaveCapDays:
-            incomingBl.annualLeaveCapDays ??
-            current.businessLogic.annualLeaveCapDays,
+          ...current.businessLogic,
+          ...pickDefinedBusinessLogic(incomingBl as Record<string, unknown>),
         }
       : current.businessLogic;
 

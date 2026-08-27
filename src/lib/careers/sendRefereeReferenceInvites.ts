@@ -122,6 +122,7 @@ export type RefereeHrContextRow = {
   phone: string;
   invite_sent_at: string | null;
   submitted_at: string | null;
+  form_data: Record<string, unknown>;
 };
 
 export type OnboardingHrReferenceContext = {
@@ -174,6 +175,7 @@ export async function fetchOnboardingHrReferenceContext(
     phone: row.phone,
     invite_sent_at: inviteSentByIndex.get(row.referee_index) ?? null,
     submitted_at: row.submitted_at,
+    form_data: row.form_data,
   }));
 
   const { data: onboardingRow } = await supabase

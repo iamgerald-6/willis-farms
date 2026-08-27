@@ -11,11 +11,13 @@ import {
   ONBOARDING_DEPARTMENTS_L7_LIST,
   ONBOARDING_FIELDS_LIST,
   ONBOARDING_LOCATIONS_LIST,
+  ONBOARDING_MEDICAL_REPORTS_LIST,
   RECRUITMENT_MODULE_ID,
   getDefaultOnboardingDepartmentsL1L6,
   getDefaultOnboardingDepartmentsL7,
   getDefaultOnboardingFormFields,
   getDefaultOnboardingLocations,
+  getDefaultOnboardingMedicalReports,
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import type { SystemOption } from "@/lib/systemDefinitions";
 
@@ -66,7 +68,7 @@ export async function fetchOnboardingFormFields(
 export async function fetchOnboardingOptionLists(
   supabase: SupabaseClient,
 ): Promise<Record<string, string[]>> {
-  const [locations, deptL16, deptL7] = await Promise.all([
+  const [locations, deptL16, deptL7, medicalReports] = await Promise.all([
     fetchOptionList(supabase, ONBOARDING_LOCATIONS_LIST, getDefaultOnboardingLocations),
     fetchOptionList(
       supabase,
@@ -78,12 +80,18 @@ export async function fetchOnboardingOptionLists(
       ONBOARDING_DEPARTMENTS_L7_LIST,
       getDefaultOnboardingDepartmentsL7,
     ),
+    fetchOptionList(
+      supabase,
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      getDefaultOnboardingMedicalReports,
+    ),
   ]);
 
   return {
     [ONBOARDING_LOCATIONS_LIST]: locations,
     [ONBOARDING_DEPARTMENTS_L1L6_LIST]: deptL16,
     [ONBOARDING_DEPARTMENTS_L7_LIST]: deptL7,
+    [ONBOARDING_MEDICAL_REPORTS_LIST]: medicalReports,
   };
 }
 
@@ -95,6 +103,9 @@ export function getGitOnboardingOptionLists(): Record<string, string[]> {
     ),
     [ONBOARDING_DEPARTMENTS_L7_LIST]: optionListLabelsFromOptions(
       getDefaultOnboardingDepartmentsL7(),
+    ),
+    [ONBOARDING_MEDICAL_REPORTS_LIST]: optionListLabelsFromOptions(
+      getDefaultOnboardingMedicalReports(),
     ),
   };
 }

@@ -3473,10 +3473,17 @@ function RecruitmentPageContent() {
     () => nonAiApplications.filter((a) => a.status === "offer"),
     [nonAiApplications],
   );
-  const onboardingApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status === "onboarding"),
-    [nonAiApplications],
-  );
+
+  const { data: activeOnboardingRows = [] } = useQuery({
+    queryKey: ["onboarding_submissions"],
+    queryFn: async () => {
+      const res = await api.get("/careers/onboarding");
+      return res.data.data as unknown[];
+    },
+    enabled: isHr,
+  });
+
+  const activeOnboardingCount = activeOnboardingRows.length;
   // Evaluation → Approvals; confirmed hire → Offer; onboarding link sent →
   // Onboarding — none of these belong in the Applications tab.
   const mainApplications = useMemo(
@@ -3679,9 +3686,9 @@ function RecruitmentPageContent() {
                 {offerApplications.length}
               </span>
             )}
-            {tab === "onboarding" && onboardingApplications.length > 0 && (
+            {tab === "onboarding" && activeOnboardingCount > 0 && (
               <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {onboardingApplications.length}
+                {activeOnboardingCount}
               </span>
             )}
           </button>

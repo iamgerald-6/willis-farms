@@ -14,10 +14,12 @@ import {
   ONBOARDING_DEPARTMENTS_L7_LIST,
   ONBOARDING_FIELDS_LIST,
   ONBOARDING_LOCATIONS_LIST,
+  ONBOARDING_MEDICAL_REPORTS_LIST,
   getDefaultOnboardingDepartmentsL1L6,
   getDefaultOnboardingDepartmentsL7,
   getDefaultOnboardingFormFields,
   getDefaultOnboardingLocations,
+  getDefaultOnboardingMedicalReports,
 } from "./onboardingDefaults";
 import {
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
@@ -118,6 +120,13 @@ export function getGitFallbackOptions(
 
   if (
     moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_MEDICAL_REPORTS_LIST
+  ) {
+    return getDefaultOnboardingMedicalReports();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
     (optionList === RECRUITMENT_JOB_POSTINGS_LIST ||
       optionList === "careers.jobTitles")
   ) {
@@ -156,6 +165,7 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
       ONBOARDING_LOCATIONS_LIST,
       ONBOARDING_DEPARTMENTS_L1L6_LIST,
       ONBOARDING_DEPARTMENTS_L7_LIST,
+      ONBOARDING_MEDICAL_REPORTS_LIST,
     ],
     [SKILL_LOG_MODULE_ID]: [
       SKILL_LOG_TYPES_LIST,

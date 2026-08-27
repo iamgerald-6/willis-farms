@@ -112,12 +112,6 @@ function AppraisalCard({ appraisal }: { appraisal: Appraisal }) {
           </p>
         </div>
         <div>
-          <p className="text-gray-400">Grade Band</p>
-          <p className="font-medium text-gray-700 mt-0.5">
-            {appraisal.grade_band}
-          </p>
-        </div>
-        <div>
           <p className="text-gray-400">Score</p>
           <p className="font-medium text-gray-700 mt-0.5">
             <ScoreCell appraisal={appraisal} />
@@ -331,7 +325,7 @@ export default function AppraisalLandingPage({
         </div>
       )}
 
-      {!isError && isLoading && <TableSkeleton rows={6} cols={8} />}
+      {!isError && isLoading && <TableSkeleton rows={6} cols={7} />}
 
       {!isError && !isLoading && (
         <>
@@ -363,9 +357,6 @@ export default function AppraisalLandingPage({
                     Type
                   </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
-                    Grade Band
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">
                     Score
                   </th>
                   <th className="px-4 py-3 font-semibold text-gray-600">
@@ -383,7 +374,7 @@ export default function AppraisalLandingPage({
                 {appraisals.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={7}
                       className="px-4 py-16 text-center text-gray-400"
                     >
                       <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
@@ -430,9 +421,6 @@ export default function AppraisalLandingPage({
                         >
                           {a.review_quarter === "Q4" ? "Annual" : "Quarterly"}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {a.grade_band}
                       </td>
                       <td className="px-4 py-3">
                         <ScoreCell appraisal={a} />

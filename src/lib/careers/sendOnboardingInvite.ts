@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { onboardingMagicLinkUrl } from "@/lib/appUrl";
 import { sendHireOnboardingEmail } from "@/lib/careers/interviewEmails";
+import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
@@ -77,6 +78,7 @@ export async function sendOnboardingInvite(
     onboardingLink,
     expiresAt: tokenRecord.expiresAt,
     recommendedStartDate: options?.recommendedStartDate,
+    requiredMedicalReports: await fetchRequiredMedicalReports(supabase),
     offerLetter: hr.offer_letter?.secure_url
       ? {
           secure_url: hr.offer_letter.secure_url,

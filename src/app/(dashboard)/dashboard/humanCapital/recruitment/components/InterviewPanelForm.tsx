@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { DEFAULT_INTERVIEW_EVALUATION_LABELS } from "@/lib/systemDefinitions/interviewEvaluationConfig";
 import {
   combinedAreaScores,
   combinedInterviewAverage,
@@ -75,6 +76,9 @@ export default function InterviewPanelForm({
 }: Props) {
   const [formData, setFormData] = useState<InterviewFormData>(emptyForm());
   const [guide, setGuide] = useState<InterviewGuideConfig | null>(null);
+  const [evaluationLabels, setEvaluationLabels] = useState(
+    DEFAULT_INTERVIEW_EVALUATION_LABELS,
+  );
   const [candidateName, setCandidateName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
@@ -86,11 +90,12 @@ export default function InterviewPanelForm({
       const res = await api.get(
         `/careers/interview?application_id=${applicationId}`,
       );
-      const { application, guide: g } = res.data.data;
+      const { application, guide: g, evaluationLabels: labels } = res.data.data;
       setCandidateName(application.full_name);
       setReferenceNumber(application.reference_number);
       setInterviewSubmitted(!!application.interview_submitted_at);
       setGuide(g);
+      setEvaluationLabels(labels ?? DEFAULT_INTERVIEW_EVALUATION_LABELS);
       setFormData(normalizeInterviewFormData(application.interview_form_data));
       return res.data.data;
     },
@@ -440,6 +445,7 @@ export default function InterviewPanelForm({
               scores={evaluationScores}
               onChange={setFormData}
               readOnly={interviewSubmitted}
+              evaluationLabels={evaluationLabels}
               onGenerateAnalysis={() => finalAnalysisMutation.mutate()}
               isGeneratingAnalysis={finalAnalysisMutation.isPending}
             />

@@ -116,23 +116,50 @@ export function buildPasswordResetEmail(actionLink: string): {
   return { subject, html, text };
 }
 
-export function buildInviteEmail(actionLink: string, firstName: string): {
+export function buildInviteEmail(
+  actionLink: string,
+  firstName: string,
+  loginUsername?: string,
+): {
   subject: string;
   html: string;
   text: string;
 } {
   const subject = "You're invited to Wills Farms staff portal";
   const greeting = firstName.trim() || "there";
+  const usernameLine = loginUsername?.trim()
+    ? [
+        "",
+        `Your WillsOne username (use this to sign in after setting your password):`,
+        loginUsername.trim(),
+        "",
+        "We sent this link to the email address from your job application in case your work inbox is not ready yet.",
+      ]
+    : [];
+
   const text = [
     `Hello ${greeting},`,
     "",
     "You have been invited to the Wills Farms management portal.",
+    ...usernameLine,
     "",
     "Open this link to set your password and activate your account:",
     actionLink,
     "",
+    loginUsername?.trim()
+      ? "After setup, sign in at the staff login page with your username above and the password you choose."
+      : "",
+    "",
     "Wills Farms",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const usernameHtml = loginUsername?.trim()
+    ? `<p style="margin:0 0 12px;font-size:14px;color:#374151;">Your <strong>WillsOne username</strong> (use this to sign in after setting your password):</p>
+          <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#111827;font-family:monospace;">${escapeHtml(loginUsername.trim())}</p>
+          <p style="margin:0 0 20px;font-size:13px;color:#6b7280;">This link was sent to the email from your job application in case your work inbox is not ready yet.</p>`
+    : "";
 
   const html = `
 <!DOCTYPE html>
@@ -147,8 +174,10 @@ export function buildInviteEmail(actionLink: string, firstName: string): {
         </td></tr>
         <tr><td style="padding:28px;color:#374151;font-size:15px;line-height:1.6;">
           <p style="margin:0 0 16px;">Hello ${escapeHtml(greeting)},</p>
-          <p style="margin:0 0 24px;">You have been invited to the Wills Farms staff portal. Set your password to get started.</p>
+          <p style="margin:0 0 16px;">You have been invited to the Wills Farms staff portal. Set your password to get started.</p>
+          ${usernameHtml}
           <a href="${escapeHtml(actionLink)}" style="display:inline-block;background:#C62828;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">Set your password</a>
+          ${loginUsername?.trim() ? `<p style="margin:16px 0 0;font-size:13px;color:#6b7280;">After setup, sign in with your username above and the password you choose.</p>` : ""}
         </td></tr>
       </table>
     </td></tr>

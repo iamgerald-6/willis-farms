@@ -59,12 +59,12 @@ export default async function OnboardingPage({ params }: PageProps) {
         <p className="text-sm text-gray-600 mb-6 print:hidden">
           Your onboarding is complete
           {submitted_at ? ` (submitted ${new Date(submitted_at).toLocaleDateString("en-GB")})` : ""}.
-          Below is your full record from job application through onboarding. You can print a copy
-          for your records.
+          Below is your employee profile on file. You can download a PDF or print a copy for your records.
         </p>
         <CandidateProfileReview
           applicationFormData={application_form_data as Record<string, unknown> | null}
           onboardingFormData={form_data as OnboardingFormData}
+          profileDownloadUrl={`/api/careers/onboarding/profile/pdf?token=${encodeURIComponent(token)}`}
           header={{
             fullName: application.full_name,
             roleTitle: application.role_title,

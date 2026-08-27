@@ -1,3 +1,8 @@
+import {
+  normalizeGradeSalaryTiers,
+  type GradeSalaryTiers,
+} from "./salaryRanges";
+
 export type GradeLevelDef = {
   id: string;
   rank: number;
@@ -5,6 +10,8 @@ export type GradeLevelDef = {
   /** Job posting role key (legacy_value) linked to this grade, when set. */
   roleKey?: string;
   builtIn?: boolean;
+  /** Low / mid / high salary bands (GHS) for HR Section O. */
+  salaryTiers?: GradeSalaryTiers;
 };
 
 export type GradeLevelsConfig = {
@@ -53,12 +60,14 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (!/^L\d+$/.test(id) || !label || !Number.isFinite(rank) || rank < 1) continue;
     if (usedIds.has(id)) continue;
     usedIds.add(id);
+    const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
     levels.push({
       id,
       rank: Math.round(rank),
       label,
       roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
       builtIn: row.builtIn === true,
+      ...(salaryTiers ? { salaryTiers } : {}),
     });
   }
 

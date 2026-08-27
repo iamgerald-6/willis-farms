@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
-import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
+import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 import {
   gradersForStage,
@@ -79,7 +80,13 @@ export async function POST(req: NextRequest) {
     if (!guideKey) {
       return NextResponse.json({ error: "Unknown role on application." }, { status: 400 });
     }
-    const guide = getInterviewGuide(guideKey);
+    const guide = await fetchResolvedInterviewGuide(supabaseAdmin, guideKey);
+    if (!guide) {
+      return NextResponse.json(
+        { error: "Interview guide not configured for this role." },
+        { status: 400 },
+      );
+    }
     const formData = normalizeInterviewFormData(application.interview_form_data);
 
     if (!stage1ReadyForReview(formData)) {
@@ -179,7 +186,7 @@ export async function POST(req: NextRequest) {
 function formatGraderSection(
   name: string,
   role: string,
-  guide: ReturnType<typeof getInterviewGuide>,
+  guide: InterviewGuideConfig,
   sub: { screening?: Record<string, { pass: string; notes: string }>; question_ratings?: Record<string, { rating: number | null; notes: string }> },
 ): string {
   const lines: string[] = [`— ${name} (${role}):`];

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
+import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
 import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
@@ -88,7 +88,10 @@ export async function GET(req: NextRequest) {
       supabaseAdmin,
       data.role_slug,
     );
-    const guide = guideKey ? getInterviewGuide(guideKey) : null;
+    const { guide, evaluationLabels } = await fetchResolvedInterviewContext(
+      supabaseAdmin,
+      guideKey,
+    );
 
     const interview_form_data = normalizeInterviewFormData(
       data.interview_form_data,
@@ -99,6 +102,7 @@ export async function GET(req: NextRequest) {
       data: {
         application: { ...data, interview_form_data },
         guide,
+        evaluationLabels,
       },
     });
   } catch (err) {
@@ -179,7 +183,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const guide = getInterviewGuide(guideKey);
+    const { guide } = await fetchResolvedInterviewContext(
+      supabaseAdmin,
+      guideKey,
+    );
+    if (!guide) {
+      return NextResponse.json(
+        { error: "Interview guide not configured for this role." },
+        { status: 400 },
+      );
+    }
     let merged = normalizeInterviewFormData({
       ...normalizeInterviewFormData(application.interview_form_data),
       ...interview_form_data,

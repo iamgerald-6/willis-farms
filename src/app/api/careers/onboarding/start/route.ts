@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { createOnboardingToken } from "@/lib/careers/onboardingTokens";
 import { onboardingMagicLinkUrl } from "@/lib/appUrl";
 import { sendHireOnboardingEmail } from "@/lib/careers/interviewEmails";
+import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/types";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
       onboardingLink,
       expiresAt: tokenRecord.expiresAt,
       recommendedStartDate: formData.summary?.recommended_start_date,
+      requiredMedicalReports: await fetchRequiredMedicalReports(supabaseAdmin),
       offerLetter: hr.offer_letter?.secure_url
         ? {
             secure_url: hr.offer_letter.secure_url,
