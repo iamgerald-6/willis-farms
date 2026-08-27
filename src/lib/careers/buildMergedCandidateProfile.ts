@@ -1,8 +1,4 @@
-import type {
-  EducationEntry,
-  UploadedFile,
-  WorkHistoryEntry,
-} from "@/lib/careers/applicationFormSchema";
+import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
 import { deriveCitizenshipFromApplication } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
 import { formatDisplayDate } from "@/lib/formatDisplayDate";
@@ -88,60 +84,6 @@ function fileItem(label: string, file: unknown): ProfileReviewItem | null {
   };
 }
 
-function formatWorkHistory(value: unknown): string | null {
-  const entries = Array.isArray(value) ? value : [];
-  if (entries.length === 0) return null;
-  return entries
-    .map((entry) => {
-      const e = entry as WorkHistoryEntry & {
-        employer?: string;
-        job_title?: string;
-        from?: string;
-        to?: string;
-      };
-      const end = e.current ? "Present" : e.end || e.to || "—";
-      const title = e.title || e.job_title || "Role";
-      const company = e.company || e.employer || "Company";
-      const start = e.start || e.from || "?";
-      return `${title} at ${company} (${start} – ${end})`;
-    })
-    .join("\n");
-}
-
-function formatEducation(value: unknown): string | null {
-  const entries = Array.isArray(value) ? value : [];
-  if (entries.length === 0) return null;
-  return entries
-    .map((entry) => {
-      const e = entry as EducationEntry & {
-        institution?: string;
-        from?: string;
-        to?: string;
-      };
-      const degree = e.degree?.trim() ? ` — ${e.degree}` : "";
-      const institution = e.institutionName || e.institution || "—";
-      const type = e.institutionType ? `${e.institutionType}: ` : "";
-      const start = e.yearStarted || e.from || "?";
-      const end = e.yearCompleted || e.to || "?";
-      return `${type}${institution} (${start}–${end}${degree})`;
-    })
-    .join("\n");
-}
-
-function certificateItems(files: unknown): ProfileReviewItem[] {
-  if (!Array.isArray(files)) return [];
-  return files
-    .filter((f) => f && typeof f === "object" && (f as UploadedFile).secure_url)
-    .map((f, i) => {
-      const file = f as UploadedFile;
-      return {
-        label: files.length > 1 ? `Certificate ${i + 1}` : "Certificate",
-        value: file.original_name || "Uploaded file",
-        href: file.secure_url,
-      };
-    });
-}
-
 function pick(...values: (string | null | undefined)[]): string | null {
   for (const v of values) {
     if (v?.trim()) return v.trim();
@@ -208,8 +150,8 @@ function nonEmptySections(sections: (ProfileReviewSection | null)[]): ProfileRev
 }
 
 /**
- * Printable final profile only — job application + onboarding additions.
- * Not used on the onboarding form steps.
+ * Consolidated employee profile for HR review and post-submit candidate view.
+ * Personal details from application + onboarding are merged into one section.
  */
 export function buildMergedCandidateProfile(input: {
   applicationFormData?: Record<string, unknown> | null;
@@ -225,71 +167,38 @@ export function buildMergedCandidateProfile(input: {
   const bio = onboard.biosecurity ?? {};
   const declarations = onboard.declarations ?? {};
 
-  const applicationGroup: ProfileReviewGroup = {
-    title: "Job application",
-    description: "Information submitted when you applied for this role.",
+  const profileGroup: ProfileReviewGroup = {
+    title: "Employee profile",
+    description: "Personal and onboarding information on file.",
     sections: nonEmptySections([
       section(
         "Personal details",
         collect([
-          item("First name", str(app.first_name)),
-          item("Surname", str(app.last_name)),
-          item("Email", str(app.email)),
-          item("Mobile phone", str(app.phone)),
-          item("Date of birth", formatDateDisplay(str(app.date_of_birth))),
-          item("Gender", str(app.gender)),
-          item("Nationality", str(app.nationality)),
-          item("Citizenship", citizenshipLabel(app)),
-          item("Ghana Card number", pick(str(app.ghana_card), str(app.ghana_card_no))),
-          item("Passport number", str(app.passport_number)),
-        ]),
-      ),
-      section(
-        "Work experience",
-        collect([
-          item("Work history", formatWorkHistory(app.work_history ?? app.work_experience), {
-            fullWidth: true,
-          }),
-          item("Years of experience", str(app.years_experience)),
-          item("Skills", str(app.skills), { fullWidth: true }),
-        ]),
-      ),
-      section(
-        "Qualifications & education",
-        collect([
-          item(
-            "Educational qualifications",
-            formatEducation(app.education_history ?? app.education),
-            { fullWidth: true },
-          ),
-        ]),
-      ),
-      section("Application documents", [
-        ...collect([
-          fileItem("CV / résumé", app.cv),
-          item("Cover letter", str(app.cover_letter), { fullWidth: true }),
-          fileItem("Passport bio page", app.passport_bio_page),
-        ]),
-        ...certificateItems(app.certificates),
-      ]),
-      section("Referees", collectRefereeItems(app)),
-    ]),
-  };
-
-  const onboardingGroup: ProfileReviewGroup = {
-    title: "Onboarding",
-    description: "Additional details collected during employee onboarding.",
-    sections: nonEmptySections([
-      section(
-        "Personal details (onboarding)",
-        collect([
+          item("First name", pick(str(personal.first_name), str(app.first_name))),
           item("Middle name(s)", str(personal.middle_names)),
+          item("Surname", pick(str(personal.surname), str(app.last_name))),
+          item("Email", pick(str(personal.personal_email), str(app.email))),
+          item("Mobile phone", pick(str(personal.mobile), str(app.phone))),
+          item(
+            "Date of birth",
+            formatDateDisplay(pick(str(personal.date_of_birth), str(app.date_of_birth))),
+          ),
+          item("Gender", pick(str(personal.gender), str(app.gender))),
+          item("Nationality", pick(str(personal.nationality), str(app.nationality))),
+          item("Citizenship", citizenshipLabel(app)),
+          item(
+            "Ghana Card number",
+            pick(str(personal.ghana_card_no), str(app.ghana_card), str(app.ghana_card_no)),
+          ),
+          item("Passport number", pick(str(personal.passport_number), str(app.passport_number))),
+          fileItem("Passport bio page", app.passport_bio_page),
           item("SSNIT number", str(personal.ssnit_number)),
           item("Region", str(personal.region)),
           item("Residential address", str(personal.residential_address), { fullWidth: true }),
           item("Ghana Post GPS address", str(personal.gps_address)),
         ]),
       ),
+      section("Referees", collectRefereeItems(app)),
       section(
         "Emergency contact",
         collect([
@@ -371,7 +280,7 @@ export function buildMergedCandidateProfile(input: {
     ]),
   };
 
-  return [applicationGroup, onboardingGroup].filter((group) => group.sections.length > 0);
+  return profileGroup.sections.length > 0 ? [profileGroup] : [];
 }
 
 /** Flat section list (legacy). */

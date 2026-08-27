@@ -59,6 +59,7 @@ import {
   type ModuleBusinessLogic,
   type SystemOption,
 } from "@/lib/systemDefinitions";
+import { useAppraisalFormProgress } from "@/lib/appraisal/appraisalFormProgress";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -86,29 +87,6 @@ interface ExistingAppraisal {
   deadline_at?: string | null;
   reopened_deadline_at?: string | null;
   locked_reason?: "employee_incomplete" | "supervisor_incomplete" | "reopen_incomplete" | null;
-}
-
-// ─── Completion progress (no score — avoids influencing ratings) ─────────────
-function CompletionBanner({ completionPct }: { completionPct: number }) {
-  return (
-    <div className="sticky top-4 z-10 bg-[#1e3a5f] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-lg">
-      <div className="flex items-center gap-3">
-        <ClipboardList className="w-4 h-4 text-white/60" />
-        <span className="text-xs font-semibold text-white/60 uppercase tracking-wide">
-          Form progress
-        </span>
-      </div>
-      <div className="flex items-center gap-4">
-        <p className="text-xs text-white/50">{completionPct}% complete</p>
-        <div className="w-24 h-1.5 bg-white/20 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-white/70 rounded-full transition-all"
-            style={{ width: `${completionPct}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
@@ -288,6 +266,7 @@ export default function AppraisalForm({
   defaultYear,
   onSuccess,
 }: AppraisalFormProps) {
+  const { setCompletionPct } = useAppraisalFormProgress();
   const activePeriod = getActiveAppraisalPeriod();
   const lockedQuarter = defaultQuarter ?? activePeriod.quarter;
   const lockedYear = defaultYear ?? activePeriod.year;
@@ -621,16 +600,20 @@ export default function AppraisalForm({
   // ── Filter employees for a fresh supervisor fill ──
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
-    const formKeyGrades = appraisalFormKeyCovers[gradeBand] ?? [];
+    const allowedGrades = new Set<string>();
+    for (const band of allowedGradeBands) {
+      for (const grade of appraisalFormKeyCovers[band.value] ?? []) {
+        allowedGrades.add(grade);
+      }
+    }
     return allUsers.filter((u) => {
-      if (!u.grade_level || !formKeyGrades.includes(u.grade_level))
-        return false;
+      if (!u.grade_level || !allowedGrades.has(u.grade_level)) return false;
       if (u.user_id === userId) return false;
       return isSuperAdmin || canRate(currentUserGrade, u.grade_level);
     });
   }, [
     allUsers,
-    gradeBand,
+    allowedGradeBands,
     appraisalFormKeyCovers,
     userId,
     currentUserGrade,
@@ -669,6 +652,9 @@ export default function AppraisalForm({
     sectionBaseWeights,
     sectionContentOverrides,
   ]);
+
+  const visibleSections =
+    !isFillingSecond && !fillingForSelf && !selectedEmployee ? [] : sections;
 
   // Nobody to supervise → the only appraisal available is your own
   useEffect(() => {
@@ -712,6 +698,24 @@ export default function AppraisalForm({
       setValue("employee_email", currentUserProfile.email);
     }
   }, [fillingForSelf, currentUserProfile, setValue]);
+
+  // Supervisor fill: derive the form band from the selected employee's grade.
+  useEffect(() => {
+    if (isFillingSecond || fillingForSelf || !selectedEmployee?.grade_level) return;
+    setGradeBand(
+      resolveAppraisalFormKey(
+        selectedEmployee.grade_level,
+        gradeConfig,
+        scopeConfig,
+      ),
+    );
+  }, [
+    isFillingSecond,
+    fillingForSelf,
+    selectedEmployee,
+    gradeConfig,
+    scopeConfig,
+  ]);
 
   // Detect a prior self-submission for the active period (supervisors using
   // "Myself" after already filing — pure employees are gated on the page).
@@ -765,9 +769,21 @@ export default function AppraisalForm({
 
   // ── Live score ──
   const { weightedScore, completionPct } = useMemo(
-    () => computeWeightedScore(ratings, sections),
-    [ratings, sections],
+    () => computeWeightedScore(ratings, visibleSections),
+    [ratings, visibleSections],
   );
+
+  const showingFillForm =
+    !loadingExisting && !selfAlreadyFiled && !isLocked;
+
+  useEffect(() => {
+    if (!showingFillForm) {
+      setCompletionPct(null);
+      return;
+    }
+    setCompletionPct(completionPct);
+    return () => setCompletionPct(null);
+  }, [showingFillForm, completionPct, setCompletionPct]);
 
   const handleRatingChange = (
     sectionKey: string,
@@ -817,7 +833,7 @@ export default function AppraisalForm({
     }
 
     let missingRatings = false;
-    for (const section of sections) {
+    for (const section of visibleSections) {
       for (const item of section.items) {
         if (ratings[section.key]?.[item]?.rating == null) {
           missingRatings = true;
@@ -1029,7 +1045,7 @@ export default function AppraisalForm({
             ? `Self-appraisal for your own ${currentUserGrade ?? ""} record. Once you submit, your supervisor is notified by email and your ratings stay hidden from them until they submit theirs.`
             : supervisorMode
               ? `Supervisor evaluation for ${selectedEmployee?.first_name} ${selectedEmployee?.last_name} (${selectedEmployee?.grade_level}).`
-              : `As ${currentUserGrade}, choose a grade band and an employee below your level to appraise.`}
+              : `As ${currentUserGrade}, choose an employee below your level to appraise.`}
       </div>
 
       {existingAppraisal?.status === "reopened" && (
@@ -1061,9 +1077,6 @@ export default function AppraisalForm({
         </div>
       )}
 
-      {/* ── Form progress ── */}
-      <CompletionBanner completionPct={completionPct} />
-
       {/* ── Employee Details ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -1078,57 +1091,35 @@ export default function AppraisalForm({
 
         {fillTargetToggle}
 
-        {/* Grade Band — self-assessment already knows its own band (set via
-            the useEffect below), so it's only shown as an editable choice
-            when appraising someone else. */}
         {!isFillingSecond && !fillingForSelf && (
-          <div className="grid gap-4 mb-4 grid-cols-2">
-            <div>
-              <FieldLabel required>Grade Band</FieldLabel>
-              <select
-                value={gradeBand}
-                onChange={(e) => setGradeBand(e.target.value)}
-                className={inputCls()}
-              >
-                {allowedGradeBands.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-                <FieldLabel required>Select Employee</FieldLabel>
-                <select
-                  className={inputCls(!!formErrors.employee)}
-                  value={selectedEmployee?.company_id ?? ""}
-                  onChange={(e) => {
-                    const emp = filteredEmployees.find(
-                      (u) => u.company_id === e.target.value,
-                    );
-                    setSelectedEmployee(emp ?? null);
-                    setFormErrors((prev) => ({ ...prev, employee: "" }));
-                  }}
-                >
-                  <option value="">
-                    {filteredEmployees.length === 0
-                      ? "No eligible employees in this grade"
-                      : "Choose employee"}
-                  </option>
-                  {filteredEmployees.map((emp) => (
-                    <option key={emp.company_id} value={emp.company_id}>
-                      {emp.first_name} {emp.last_name} —{" "}
-                      {emp.grade_level ?? "?"} ({emp.company_id})
-                    </option>
-                  ))}
-                </select>
-                {formErrors.employee && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {formErrors.employee}
-                  </p>
-                )}
-            </div>
+          <div className="mb-4">
+            <FieldLabel required>Select Employee</FieldLabel>
+            <select
+              className={inputCls(!!formErrors.employee)}
+              value={selectedEmployee?.company_id ?? ""}
+              onChange={(e) => {
+                const emp = filteredEmployees.find(
+                  (u) => u.company_id === e.target.value,
+                );
+                setSelectedEmployee(emp ?? null);
+                setFormErrors((prev) => ({ ...prev, employee: "" }));
+              }}
+            >
+              <option value="">
+                {filteredEmployees.length === 0
+                  ? "No eligible employees found"
+                  : "Choose employee"}
+              </option>
+              {filteredEmployees.map((emp) => (
+                <option key={emp.company_id} value={emp.company_id}>
+                  {emp.first_name} {emp.last_name} — {emp.grade_level ?? "?"} (
+                  {emp.company_id})
+                </option>
+              ))}
+            </select>
+            {formErrors.employee && (
+              <p className="text-red-500 text-xs mt-1">{formErrors.employee}</p>
+            )}
           </div>
         )}
 
@@ -1390,13 +1381,13 @@ export default function AppraisalForm({
           </div>
         )}
 
-        {sections.length === 0 && (
+        {visibleSections.length === 0 && (
           <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-            Select a grade band above to load the rating sections
+            Select an employee above to load the rating sections
           </div>
         )}
 
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <SectionBlock
             key={section.key}
             section={section}

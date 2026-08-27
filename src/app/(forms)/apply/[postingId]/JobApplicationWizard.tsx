@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   type ApplicationFormData,
@@ -27,6 +27,7 @@ import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { WorkHistoryInput } from "@/components/WorkHistoryInput";
 import { EducationHistoryInput } from "@/components/EducationHistoryInput";
 import {
+  AlertCircle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -42,6 +43,8 @@ function minApplicantBirthdate(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 const MIN_APPLICANT_BIRTHDATE = minApplicantBirthdate();
+
+type PassportBioStatus = "idle" | "incomplete" | "checking" | "ok" | "mismatch" | "error";
 
 type Props = {
   posting: JobPosting;
@@ -96,6 +99,8 @@ export default function JobApplicationWizard({
   const [activeDraftToken, setActiveDraftToken] = useState(draftToken);
   const [extractingCv, setExtractingCv] = useState(false);
   const [cvFillNotice, setCvFillNotice] = useState<string | null>(null);
+  const [passportBioStatus, setPassportBioStatus] = useState<PassportBioStatus>("idle");
+  const [passportBioMessage, setPassportBioMessage] = useState<string | null>(null);
 
   const step = steps[stepIndex] ?? steps[0];
   const stepFields = useMemo(
@@ -145,6 +150,11 @@ export default function JobApplicationWizard({
       setError(errors[0]);
       return;
     }
+    const bioIssue = resolvePassportBioIssue();
+    if (bioIssue) {
+      setError(bioIssue);
+      return;
+    }
     setError(null);
     setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   };
@@ -157,6 +167,11 @@ export default function JobApplicationWizard({
           setError(stepErrors[0]);
           return;
         }
+      }
+      const bioIssue = resolvePassportBioIssue();
+      if (bioIssue) {
+        setError(bioIssue);
+        return;
       }
     } else {
       const stepErrors = validateStep(fields, step, values);
@@ -289,6 +304,123 @@ export default function JobApplicationWizard({
     }
   };
 
+  // Reads the applicant's name, date of birth, and passport number off their
+  // uploaded passport bio page photo and checks it against what they typed
+  // in the form. Called automatically (see effect below) once a photo is
+  // present and those fields are filled — never asked to run more than once
+  // per upload unless the applicant explicitly asks to re-check.
+  const handleVerifyPassportBio = async (
+    fileUrl: string,
+    fileName: string,
+    firstName: string,
+    lastName: string,
+    dateOfBirth: string,
+    passportNumber: string,
+  ) => {
+    setPassportBioStatus("checking");
+    setPassportBioMessage(null);
+    try {
+      const res = await fetch("/api/careers/applications/validate-passport-bio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_url: fileUrl,
+          file_name: fileName,
+          first_name: firstName,
+          last_name: lastName,
+          date_of_birth: dateOfBirth,
+          passport_number: passportNumber,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not verify passport photo");
+      if (json.data.matches) {
+        setPassportBioStatus("ok");
+        setPassportBioMessage(null);
+      } else {
+        setPassportBioStatus("mismatch");
+        setPassportBioMessage(
+          json.data.message ??
+            "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
+        );
+      }
+    } catch (e) {
+      setPassportBioStatus("error");
+      setPassportBioMessage(
+        e instanceof Error
+          ? e.message
+          : "We couldn't verify this photo automatically — please try re-uploading it.",
+      );
+    }
+  };
+
+  // Auto-verify whenever there's an uploaded bio page photo, the applicant
+  // isn't a Ghana citizen, and we don't already have a settled result for
+  // the current photo. Re-runs as they finish typing name/DOB (guarded so
+  // it only ever calls the AI once those are filled in), and again whenever
+  // they upload a new photo (handleFileUpload resets status back to idle).
+  useEffect(() => {
+    if (values.is_citizen !== "No") return;
+    if (passportBioStatus !== "idle" && passportBioStatus !== "incomplete") return;
+
+    const bio = values.passport_bio_page as UploadedFile | undefined;
+    if (!bio?.secure_url) return;
+
+    const firstName = String(values.first_name ?? "").trim();
+    const lastName = String(values.last_name ?? "").trim();
+    const dob = String(values.date_of_birth ?? "").trim();
+    const passportNumber = String(values.passport_number ?? "").trim();
+
+    if (!firstName || !lastName || !dob || !passportNumber) {
+      setPassportBioStatus("incomplete");
+      setPassportBioMessage(
+        "Enter your first name, last name, date of birth, and passport number above — we'll verify your passport photo against them automatically.",
+      );
+      return;
+    }
+
+    void handleVerifyPassportBio(
+      bio.secure_url,
+      bio.original_name,
+      firstName,
+      lastName,
+      dob,
+      passportNumber,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    values.is_citizen,
+    (values.passport_bio_page as UploadedFile | undefined)?.secure_url,
+    values.first_name,
+    values.last_name,
+    values.date_of_birth,
+    values.passport_number,
+    passportBioStatus,
+  ]);
+
+  // Blocks moving on while the passport bio page hasn't been verified yet —
+  // still checking, still missing name/DOB to check against, or a settled
+  // mismatch/error. Returns null (nothing to block) once verified or not
+  // applicable (Ghana citizens never see this field).
+  const resolvePassportBioIssue = (): string | null => {
+    if (values.is_citizen !== "No") return null;
+    const bio = values.passport_bio_page as UploadedFile | undefined;
+    if (!bio?.secure_url) return null;
+    if (uploadingKey === "passport_bio_page") {
+      return "Please wait for your passport photo to finish uploading.";
+    }
+    if (passportBioStatus === "checking") {
+      return "Please wait while we verify your passport bio page photo…";
+    }
+    if (passportBioStatus === "incomplete" || passportBioStatus === "mismatch" || passportBioStatus === "error") {
+      return (
+        passportBioMessage ??
+        "Your passport bio page photo doesn't match the details you entered — please review and re-upload it."
+      );
+    }
+    return null;
+  };
+
   const handleFileUpload = async (
     fieldKey: string,
     file: File,
@@ -315,6 +447,12 @@ export default function JobApplicationWizard({
       }
       if (fieldKey === "cv") {
         void handleExtractCv(uploaded.secure_url, uploaded.original_name);
+      }
+      if (fieldKey === "passport_bio_page") {
+        // New photo — clear any previous result so the effect above
+        // re-verifies it fresh against the current name/DOB fields.
+        setPassportBioStatus("idle");
+        setPassportBioMessage(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
@@ -449,6 +587,7 @@ export default function JobApplicationWizard({
       const fileVal = value as
         | { secure_url?: string; original_name?: string }
         | undefined;
+      const isPassportBio = fieldKey === "passport_bio_page";
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300 hover:bg-red-50/30">
@@ -476,6 +615,45 @@ export default function JobApplicationWizard({
           <p className="text-[11px] text-gray-400 mt-1">
             {uploadHintForField(fieldKey, accept)}
           </p>
+          {isPassportBio && fileVal?.secure_url && (
+            <div className="mt-2">
+              {passportBioStatus === "checking" && (
+                <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Verifying…
+                </p>
+              )}
+              {passportBioStatus === "ok" && (
+                <p className="text-xs text-green-700 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Verified.
+                </p>
+              )}
+              {(passportBioStatus === "incomplete" ||
+                passportBioStatus === "mismatch" ||
+                passportBioStatus === "error") &&
+                passportBioMessage && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-red-600 flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>{passportBioMessage}</span>
+                    </p>
+                    {(passportBioStatus === "mismatch" || passportBioStatus === "error") && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPassportBioStatus("idle");
+                          setPassportBioMessage(null);
+                        }}
+                        className="text-xs font-medium text-red-700 underline hover:text-red-800"
+                      >
+                        I've fixed my details — re-check
+                      </button>
+                    )}
+                  </div>
+                )}
+            </div>
+          )}
         </FieldBlock>
       );
     }
@@ -670,7 +848,7 @@ export default function JobApplicationWizard({
         {stepIndex < steps.length - 1 ? (
           <button
             type="button"
-            disabled={saving || !!uploadingKey}
+            disabled={saving || !!uploadingKey || passportBioStatus === "checking"}
             onClick={goNext}
             className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
           >
@@ -689,7 +867,7 @@ export default function JobApplicationWizard({
             </button>
             <button
               type="button"
-              disabled={saving || !!uploadingKey}
+              disabled={saving || !!uploadingKey || passportBioStatus === "checking"}
               onClick={() => saveApplication(true)}
               className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
             >

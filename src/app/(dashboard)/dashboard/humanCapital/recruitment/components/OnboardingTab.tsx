@@ -17,8 +17,9 @@ import {
   STATUS_STYLES,
   type ApplicationStatus,
 } from "@/lib/careers/types";
-import { FileText, Loader2, Mail, RefreshCw, X } from "lucide-react";
+import { FileText, Loader2, Mail, RefreshCw, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
+import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
 
 type SubmissionRow = {
   id: string;
@@ -77,20 +78,32 @@ function OnboardingDetail({
   );
   const employeeIdTouched = useRef(Boolean(row.hr_data?.employee_id?.trim()));
   const companyEmailTouched = useRef(Boolean(row.hr_data?.company_email?.trim()));
+  const { domain: companyEmailDomain } = useCompanyEmailDomain();
 
   const { data: suggestions, isLoading: loadingSuggestions, refetch: refetchSuggestions } =
     useQuery({
-      queryKey: ["onboarding-hr-suggest", row.application_id, hrData.grade_level ?? ""],
+      queryKey: [
+        "onboarding-hr-suggest",
+        row.application_id,
+        hrData.grade_level ?? "",
+        hrData.salary_tier ?? "",
+      ],
       queryFn: async () => {
         const params = new URLSearchParams({ application_id: row.application_id });
         if (hrData.grade_level?.trim()) {
           params.set("grade_level", hrData.grade_level.trim());
+        }
+        if (hrData.salary_tier?.trim()) {
+          params.set("salary_tier", hrData.salary_tier.trim());
         }
         const res = await api.get(`/careers/onboarding/suggest-hr-fields?${params}`);
         return res.data.data as {
           grade_level: string | null;
           employee_id: string | null;
           company_email: string | null;
+          salary_tier: string | null;
+          salary_range: string | null;
+          salary_ghs: string | null;
         };
       },
     });
@@ -107,6 +120,15 @@ function OnboardingDetail({
       }
       if (!companyEmailTouched.current && suggestions.company_email) {
         next.company_email = suggestions.company_email;
+      }
+      if (suggestions.salary_tier && !prev.salary_tier?.trim()) {
+        next.salary_tier = suggestions.salary_tier;
+      }
+      if (suggestions.salary_range) {
+        next.salary_range = suggestions.salary_range;
+      }
+      if (suggestions.salary_ghs && !prev.salary_ghs?.trim()) {
+        next.salary_ghs = suggestions.salary_ghs;
       }
       return next;
     });
@@ -140,6 +162,40 @@ function OnboardingDetail({
     },
     onError: (e: { response?: { data?: { error?: string } } }) => {
       toast.error(e?.response?.data?.error ?? "Save failed.");
+    },
+  });
+
+  const platformInvited = Boolean(
+    row.hr_data?.platform_invited_at?.trim() || row.hr_data?.hr_finished_at?.trim(),
+  );
+
+  const finishHr = useMutation({
+    mutationFn: async () => {
+      await api.patch("/careers/onboarding", {
+        application_id: row.application_id,
+        hr_data: hrData,
+      });
+      const res = await api.post("/careers/onboarding/finish-hr", {
+        application_id: row.application_id,
+        hr_data: hrData,
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      const login = data?.data?.email as string | undefined;
+      const delivery = data?.data?.delivery_email as string | undefined;
+      const detail =
+        login && delivery && login !== delivery
+          ? ` Invite sent to ${delivery}; they sign in with ${login}.`
+          : "";
+      toast.success(
+        `Onboarding finished — WillsOne invite sent.${detail} Employee is on probation in the Employees tab.`,
+      );
+      onUpdated();
+      onClose();
+    },
+    onError: (e: { response?: { data?: { error?: string } } }) => {
+      toast.error(e?.response?.data?.error ?? "Could not finish onboarding.");
     },
   });
 
@@ -235,7 +291,7 @@ function OnboardingDetail({
                 className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
               >
                 <FileText className="w-4 h-4" />
-                View personal info
+                View employee profile
               </button>
             </div>
 
@@ -274,8 +330,8 @@ function OnboardingDetail({
               </div>
               <p className="text-xs text-gray-500 mb-3">
                 Employee ID is a company-wide number (WF-00001, WF-00042 — no grade in the ID).
-                Company email uses first initial, dot, middle name if present, then full first
-                name @willsfarms.com — e.g. k.kwame@ or j.michaeljohn@. Edit either field if
+                Company email uses first initial, optional middle initial, then surname @
+                {companyEmailDomain} — e.g. l.akoto@ or m.oofuso@. Edit the name part if
                 needed. Employment placement is HR-only — candidates do not fill these on the
                 form.
               </p>
@@ -295,11 +351,51 @@ function OnboardingDetail({
               <button
                 type="button"
                 onClick={() => saveHr.mutate()}
-                disabled={saveHr.isPending}
-                className="mt-4 w-full sm:w-auto px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
+                disabled={saveHr.isPending || finishHr.isPending}
+                className="mt-4 w-full sm:w-auto px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
               >
                 {saveHr.isPending ? "Saving…" : "Save HR fields"}
               </button>
+
+              {row.submitted_at && !platformInvited && (
+                <div className="mt-4 rounded-xl border border-green-100 bg-green-50/80 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Finish onboarding
+                  </p>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    When Section O is complete, finish onboarding to send the WillsOne
+                    platform invite to their job application email ({app.email}). They
+                    sign in with the company email from Section O. The employee will
+                    appear on the <strong>Employees</strong> tab with status{" "}
+                    <strong>Probation</strong>.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => finishHr.mutate()}
+                    disabled={finishHr.isPending || saveHr.isPending}
+                    className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-green-700 text-white text-sm font-medium rounded-lg hover:bg-green-800 disabled:opacity-60"
+                  >
+                    {finishHr.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <UserCheck className="w-4 h-4" />
+                    )}
+                    {finishHr.isPending
+                      ? "Finishing…"
+                      : "Finish onboarding & invite to WillsOne"}
+                  </button>
+                </div>
+              )}
+
+              {platformInvited && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+                  WillsOne invite sent
+                  {row.hr_data?.platform_invited_at
+                    ? ` · ${formatDate(row.hr_data.platform_invited_at)}`
+                    : ""}
+                  . View and manage probation on the <strong>Employees</strong> tab.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -315,7 +411,7 @@ function OnboardingDetail({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-bold text-gray-900">Personal info</h2>
+              <h2 className="text-base font-bold text-gray-900">Employee profile</h2>
               <button
                 type="button"
                 onClick={() => setShowPersonalInfo(false)}
@@ -329,6 +425,7 @@ function OnboardingDetail({
                 applicationFormData={app.application_form_data ?? null}
                 onboardingFormData={form}
                 showPrintButton
+                profileDownloadUrl={`/api/careers/onboarding/profile/pdf?application_id=${row.application_id}`}
                 header={{
                   fullName: app.full_name,
                   roleTitle: app.role_title,
@@ -427,6 +524,7 @@ export default function OnboardingTab() {
             queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });
             queryClient.invalidateQueries({ queryKey: ["job_applications"] });
             queryClient.invalidateQueries({ queryKey: ["onboarded-invite-candidates"] });
+            queryClient.invalidateQueries({ queryKey: ["recruitment-employees"] });
           }}
         />
       )}

@@ -11,6 +11,7 @@ import RouteAccessGuard from "@/components/RouteAccessGuard";
 import { AuthLayoutSkeleton } from "@/components/skeletons/PageSkeletons";
 import { Toaster } from "sonner";
 import { AppNavigationProvider } from "@/lib/navigation/appNavigation";
+import { AppraisalFormProgressProvider } from "@/lib/appraisal/appraisalFormProgress";
 import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -44,6 +45,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <AppNavigationProvider>
+          <AppraisalFormProgressProvider>
           {!authChecked ? (
             <AuthLayoutSkeleton />
           ) : (
@@ -65,6 +67,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </QueryProvider>
             </ReduxProvider>
           )}
+          </AppraisalFormProgressProvider>
         </AppNavigationProvider>
       </body>
     </html>

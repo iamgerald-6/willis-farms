@@ -18,6 +18,7 @@ function normalizeRules(raw: unknown): SystemOptionRules | undefined {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
   return {
+    ...r,
     requires_document: r.requires_document === true,
     requires_reason: r.requires_reason === true,
   };

@@ -32,6 +32,7 @@ export {
   isEditableOptionList,
   isEditableRatingSectionModule,
   isEditableRefereeReferenceModule,
+  isEditableInterviewGuidesModule,
   registryRefToOptionList,
 } from "./optionListKeys";
 
@@ -115,6 +116,24 @@ export {
   type RefereeAssessmentAttributeDef,
   type RefereeReferenceConfig,
 } from "./refereeReferenceConfig";
+
+export {
+  buildGuideOverrideFromResolved,
+  listInterviewGuideKeys,
+  normalizeInterviewGuidesConfig,
+  resolveInterviewGuideFromConfig,
+  type DisqualifierDef,
+  type ExtraInterviewStageDef,
+  type InterviewGuideOverride,
+  type InterviewGuidesConfig,
+} from "./interviewGuidesConfig";
+
+export {
+  DEFAULT_INTERVIEW_EVALUATION_LABELS,
+  normalizeInterviewEvaluationConfig,
+  resolveInterviewEvaluationLabels,
+  type InterviewEvaluationConfig,
+} from "./interviewEvaluationConfig";
 
 export {
   DEFAULT_APPRAISAL_SCOPE,

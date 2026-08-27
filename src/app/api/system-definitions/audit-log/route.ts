@@ -4,8 +4,13 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
+import {
+  auditEntriesToCsv,
+  auditReportFilename,
+} from "@/lib/systemDefinitions/auditLogExport";
 
 const PAGE_SIZE = 50;
+const EXPORT_LIMIT = 10_000;
 
 // GET /api/system-definitions/audit-log — who changed what, and when, across
 // every System Definitions module (leave policy, appraisal weights, grade
@@ -31,12 +36,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const moduleId = searchParams.get("module_id");
     const before = searchParams.get("before");
+    const format = searchParams.get("format");
+    const isCsvExport = format === "csv";
 
     let query = supabase
       .from("system_config_audit_log")
       .select("*")
       .order("performed_at", { ascending: false })
-      .limit(PAGE_SIZE);
+      .limit(isCsvExport ? EXPORT_LIMIT : PAGE_SIZE);
 
     if (moduleId) query = query.eq("module_id", moduleId);
     if (before) query = query.lt("performed_at", before);
@@ -45,6 +52,15 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       if (error.code === "42P01" || error.message?.includes("does not exist")) {
+        if (isCsvExport) {
+          return NextResponse.json(
+            {
+              error:
+                "The system_config_audit_log table is not set up yet. Run docs/system-definitions/audit-log.sql in Supabase first.",
+            },
+            { status: 503 },
+          );
+        }
         return NextResponse.json(
           {
             entries: [],
@@ -55,6 +71,17 @@ export async function GET(req: NextRequest) {
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (isCsvExport) {
+      const csv = auditEntriesToCsv(data ?? []);
+      const filename = auditReportFilename(moduleId);
+      return new NextResponse(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
     }
 
     return NextResponse.json({

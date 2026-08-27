@@ -13,6 +13,8 @@ import {
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { resolveCompanyEmailDomain } from "@/lib/systemDefinitions/companyEmailDomain";
+import { resolveSalaryForGradeTier } from "@/lib/systemDefinitions/salaryRanges";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 export async function GET(req: NextRequest) {
@@ -23,6 +25,7 @@ export async function GET(req: NextRequest) {
 
   const applicationId = req.nextUrl.searchParams.get("application_id");
   const gradeOverride = req.nextUrl.searchParams.get("grade_level");
+  const salaryTierOverride = req.nextUrl.searchParams.get("salary_tier");
 
   if (!applicationId) {
     return NextResponse.json({ error: "application_id is required." }, { status: 400 });
@@ -71,6 +74,7 @@ export async function GET(req: NextRequest) {
 
     const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
     const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+    const emailDomain = resolveCompanyEmailDomain(moduleConfig.businessLogic);
 
     const gradeLevel =
       gradeOverride?.trim().toUpperCase() ||
@@ -90,7 +94,18 @@ export async function GET(req: NextRequest) {
       middleNames,
       lastName,
       existingEmails: emailsForSuggestion,
+      domain: emailDomain,
     });
+
+    const salaryTier =
+      salaryTierOverride?.trim().toLowerCase() ||
+      hr.salary_tier?.trim().toLowerCase() ||
+      "mid";
+    const salary = resolveSalaryForGradeTier(
+      gradeLevel,
+      salaryTier,
+      gradeConfig,
+    );
 
     return NextResponse.json({
       success: true,
@@ -98,6 +113,10 @@ export async function GET(req: NextRequest) {
         grade_level: gradeLevel ?? null,
         employee_id,
         company_email,
+        company_email_domain: emailDomain,
+        salary_tier: salary.tier ?? salaryTier,
+        salary_range: salary.formatted || null,
+        salary_ghs: salary.salaryGhs || null,
       },
     });
   } catch (err) {

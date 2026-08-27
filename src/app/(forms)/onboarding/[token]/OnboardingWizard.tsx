@@ -28,6 +28,7 @@ import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
+import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -174,6 +175,11 @@ export default function OnboardingWizard({
     }
     return [...map.entries()];
   }, [stepFields]);
+
+  const requiredMedicalReports = useMemo(
+    () => optionLists[ONBOARDING_MEDICAL_REPORTS_LIST] ?? [],
+    [optionLists],
+  );
 
   const setFieldValue = (key: string, value: unknown) => {
     setValues((prev) => {
@@ -491,6 +497,7 @@ export default function OnboardingWizard({
   if (submittedForm) {
     return (
       <SubmittedProfile
+        token={token}
         fullName={application.full_name}
         roleTitle={application.role_title}
         referenceNumber={application.reference_number}
@@ -528,6 +535,26 @@ export default function OnboardingWizard({
       )}
 
       <div className="space-y-6">
+        {step === "medical" && requiredMedicalReports.length > 0 && (
+          <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-2">
+            <h2 className="text-sm font-bold text-gray-900">Required medical reports</h2>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Obtain the following from a registered clinic or hospital, then upload proof on
+              this step. The same list was included in your onboarding email.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {requiredMedicalReports.map((item) => (
+                <li key={item} className="flex gap-2 text-sm text-gray-800">
+                  <span className="text-red-600 shrink-0" aria-hidden>
+                    •
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {sections.map(([sectionTitle, sectionFields]) => {
           const isBiosecuritySection =
             sectionTitle === "Biosecurity" ||
@@ -684,6 +711,7 @@ export default function OnboardingWizard({
 }
 
 function SubmittedProfile({
+  token,
   fullName,
   roleTitle,
   referenceNumber,
@@ -692,6 +720,7 @@ function SubmittedProfile({
   applicationFormData,
   onboardingFormData,
 }: {
+  token: string;
   fullName: string;
   roleTitle: string;
   referenceNumber: string;
@@ -715,6 +744,7 @@ function SubmittedProfile({
       <CandidateProfileReview
         applicationFormData={applicationFormData}
         onboardingFormData={onboardingFormData}
+        profileDownloadUrl={`/api/careers/onboarding/profile/pdf?token=${encodeURIComponent(token)}`}
         header={{
           fullName,
           roleTitle,

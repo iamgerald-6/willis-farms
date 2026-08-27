@@ -2,18 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { History, Loader2 } from "lucide-react";
+import { Download, History, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { getModuleRegistrySync } from "@/lib/moduleRegistry";
 import type { SystemConfigAuditEntry } from "@/lib/systemDefinitions";
+import {
+  AUDIT_ACTION_LABEL,
+  auditFieldLabel,
+  auditReportFilename,
+} from "@/lib/systemDefinitions/auditLogExport";
 import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
-
-const ACTION_LABEL: Record<string, string> = {
-  created: "Created",
-  updated: "Updated",
-  deactivated: "Deactivated",
-  reactivated: "Reactivated",
-};
 
 const ACTION_COLOR: Record<string, string> = {
   created: "bg-blue-50 text-blue-700 border border-blue-200",
@@ -22,27 +20,8 @@ const ACTION_COLOR: Record<string, string> = {
   reactivated: "bg-green-50 text-green-700 border border-green-200",
 };
 
-const FIELD_LABEL: Record<string, string> = {
-  annualLeaveCapDays: "Annual leave cap (days)",
-  sectionWeightRules: "Section weight rules",
-  sectionBaseWeights: "Section base weights",
-  globalSectionWeights: "Global section weights",
-  sectionContentOverrides: "Rating section content",
-  competencyContentOverrides: "Competency sections",
-  refereeReferenceConfig: "Referee reference config",
-  applicationFormConfig: "Application form config",
-  gradeLevelsConfig: "Grade levels",
-  appraisalScopeConfig: "Appraisal scope config",
-  form_definition: "Form layout",
-  label: "Label",
-  legacy_value: "Value code",
-  sort_order: "Sort order",
-  is_active: "Active",
-  rules: "Rules",
-};
-
 function fieldLabel(field: string): string {
-  return FIELD_LABEL[field] ?? field;
+  return auditFieldLabel(field);
 }
 
 function ValueDisplay({ value }: { value: unknown }) {
@@ -74,7 +53,7 @@ function AuditEntryRow({ entry }: { entry: SystemConfigAuditEntry }) {
         <span
           className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${ACTION_COLOR[entry.action] ?? "bg-gray-100 text-gray-600 border border-gray-200"}`}
         >
-          {ACTION_LABEL[entry.action] ?? entry.action}
+          {AUDIT_ACTION_LABEL[entry.action] ?? entry.action}
         </span>
         <p className="text-sm font-semibold text-gray-900">
           {entry.entity_label ?? entry.module_id}
@@ -106,6 +85,8 @@ function AuditEntryRow({ entry }: { entry: SystemConfigAuditEntry }) {
 
 export default function AuditLogPanel() {
   const [moduleFilter, setModuleFilter] = useState<string>("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const modules = useMemo(() => getModuleRegistrySync(), []);
 
   const { data, isLoading, isFetching } = useQuery<{
@@ -124,6 +105,33 @@ export default function AuditLogPanel() {
   const entries = data?.entries ?? [];
   const setupError = data?.error;
 
+  const handleDownloadReport = async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const res = await api.get("/system-definitions/audit-log", {
+        params: {
+          format: "csv",
+          ...(moduleFilter ? { module_id: moduleFilter } : {}),
+        },
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = auditReportFilename(moduleFilter || null);
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Could not download the audit report.";
+      setDownloadError(message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -135,29 +143,54 @@ export default function AuditLogPanel() {
             <h2 className="text-lg font-bold text-gray-900">Audit log</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Every save made in System Definitions — old value, new value,
-              who changed it, and when. Use this to confirm what a rule (e.g.
-              the annual leave cap) used to be on a given date.
+              who changed it, and when. Download a report to share with auditors
+              without giving them platform access.
             </p>
           </div>
         </div>
 
-        <div className="mt-4">
-          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-            Filter by section
-          </label>
-          <select
-            value={moduleFilter}
-            onChange={(e) => setModuleFilter(e.target.value)}
-            className="w-full sm:w-72 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400"
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1 min-w-0">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+              Filter by section
+            </label>
+            <select
+              value={moduleFilter}
+              onChange={(e) => setModuleFilter(e.target.value)}
+              className="w-full sm:w-72 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400"
+            >
+              <option value="">All sections</option>
+              {modules.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleDownloadReport()}
+            disabled={downloading || !!setupError}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
-            <option value="">All sections</option>
-            {modules.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+            {downloading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Preparing…
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Download report
+              </>
+            )}
+          </button>
         </div>
+        {downloadError && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {downloadError}
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4">

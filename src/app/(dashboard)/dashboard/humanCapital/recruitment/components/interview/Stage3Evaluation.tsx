@@ -3,8 +3,11 @@
 import { useState } from "react";
 import {
   computeWeightedScore,
-  RATING_LABELS,
+  ratingLabelForGuide,
 } from "@/lib/careers/interviewFormConfigs";
+import {
+  DEFAULT_INTERVIEW_EVALUATION_LABELS,
+} from "@/lib/systemDefinitions/interviewEvaluationConfig";
 import {
   observedDisqualifiers,
   scoreStanding,
@@ -115,6 +118,11 @@ type Props = {
   readOnly?: boolean;
   onGenerateAnalysis?: () => void;
   isGeneratingAnalysis?: boolean;
+  evaluationLabels?: {
+    observed: string;
+    notObserved: string;
+    neutral: string;
+  };
 };
 
 const STANDING_CLASSES: Record<string, string> = {
@@ -133,6 +141,7 @@ export default function Stage3Evaluation({
   readOnly = false,
   onGenerateAnalysis,
   isGeneratingAnalysis = false,
+  evaluationLabels = DEFAULT_INTERVIEW_EVALUATION_LABELS,
 }: Props) {
   const updateDisqualifier = (
     id: string,
@@ -152,7 +161,15 @@ export default function Stage3Evaluation({
   const total = scores.total;
   const standing = scoreStanding(total);
   const standingClass = STANDING_CLASSES[standing];
-  const observedDqs = observedDisqualifiers(formData, guide.disqualifiers);
+  const observedDqs = observedDisqualifiers(
+    formData,
+    guide.disqualifiers,
+    guide.disqualifierItems,
+  );
+
+  const disqualifierRows =
+    guide.disqualifierItems ??
+    guide.disqualifiers.map((label, i) => ({ id: `dq_${i}`, label }));
 
   const [selected, setSelected] = useState<SelectedGrader | null>(null);
   const submissionForGrader = (g: GraderResult, stage: 1 | 2): StageSubmissionData | undefined => {
@@ -269,9 +286,9 @@ export default function Stage3Evaluation({
             Rating scale reference
           </summary>
           <ul className="mt-2 space-y-1 pl-4">
-            {Object.entries(RATING_LABELS).map(([n, label]) => (
+            {[1, 2, 3, 4, 5].map((n) => (
               <li key={n}>
-                {n} — {label}
+                {n} — {ratingLabelForGuide(guide, n)}
               </li>
             ))}
           </ul>
@@ -335,12 +352,12 @@ export default function Stage3Evaluation({
           Note anything observed during the interview. These are for HR review — they do not automatically reject the candidate.
         </p>
         <div className="space-y-2">
-          {guide.disqualifiers.map((d, i) => (
+          {disqualifierRows.map((item) => (
             <div
-              key={i}
+              key={item.id}
               className="flex flex-col sm:flex-row sm:items-center gap-2 border border-gray-200 bg-gray-50 rounded-lg p-3"
             >
-              <p className="text-sm text-gray-800 flex-1">{d}</p>
+              <p className="text-sm text-gray-800 flex-1">{item.label}</p>
               <div className="flex gap-1">
                 {(["yes", "no", ""] as const).map((v) => (
                   <button
@@ -349,20 +366,24 @@ export default function Stage3Evaluation({
                     disabled={readOnly}
                     onClick={() =>
                       updateDisqualifier(
-                        `dq_${i}`,
+                        item.id,
                         v,
-                        formData.disqualifiers?.[`dq_${i}`]?.notes ?? "",
+                        formData.disqualifiers?.[item.id]?.notes ?? "",
                       )
                     }
                     className={`px-2 py-1 rounded text-xs font-medium border ${
-                      formData.disqualifiers?.[`dq_${i}`]?.observed === v
+                      formData.disqualifiers?.[item.id]?.observed === v
                         ? v === "yes"
                           ? "bg-amber-600 text-white border-amber-600"
                           : "bg-gray-700 text-white border-gray-700"
                         : "bg-white border-gray-200"
                     } ${readOnly ? "opacity-60" : ""}`}
                   >
-                    {v === "yes" ? "Observed" : v === "no" ? "Not observed" : "—"}
+                    {v === "yes"
+                      ? evaluationLabels.observed
+                      : v === "no"
+                        ? evaluationLabels.notObserved
+                        : evaluationLabels.neutral}
                   </button>
                 ))}
               </div>

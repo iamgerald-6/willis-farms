@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import {
+  requireAuth,
+  jsonForbidden,
+} from "@/lib/apiRequestAuth";
 import { fetchOnboardingHrReferenceContext } from "@/lib/careers/sendRefereeReferenceInvites";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+  }
+
+  const caller = await requireAuth(req);
+  if (!caller) {
+    return jsonForbidden("Forbidden — sign in required.");
   }
 
   const applicationId = req.nextUrl.searchParams.get("application_id");
