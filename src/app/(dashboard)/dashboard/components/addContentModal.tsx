@@ -9,7 +9,6 @@ import {
   Plus,
   X,
   FileText,
-  Video,
   FileImage,
   Upload,
   Loader2,
@@ -53,7 +52,6 @@ const contentSchema = z.object({
       `Description must be at most ${SOP_DESCRIPTION_MAX_CHARS} characters`,
     ),
   document_read_minutes: z.number().min(1, "Read time is required"),
-  video_duration_minutes: z.number().optional(),
 });
 
 export type ContentFormValues = {
@@ -62,7 +60,6 @@ export type ContentFormValues = {
   sub_category: string;
   description: string;
   document_read_minutes: number;
-  video_duration_minutes?: number;
 };
 
 interface Props {
@@ -79,10 +76,6 @@ interface Props {
 // at 100MB — larger files don't get a graceful JSON error back, the
 // connection just gets cut, which the browser reports as a bare "Failed to
 // fetch" (no status code, no response body to read a real reason from).
-// Checked client-side before ever attempting the upload so that case shows
-// a clear, actionable message instead of that generic network error.
-const MAX_VIDEO_FILE_SIZE_MB = 100;
-
 function formatFileSizeMB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1);
 }
@@ -235,11 +228,9 @@ export default function AddContentModal({
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [fileErrors, setFileErrors] = useState<{
     cover?: string;
     doc?: string;
-    video?: string;
   }>({});
 
   const {
@@ -265,8 +256,6 @@ export default function AddContentModal({
         description: editingContent.description,
         document_read_minutes:
           editingContent.document_read_minutes ?? undefined,
-        video_duration_minutes:
-          editingContent.video_duration_minutes ?? undefined,
       });
     } else {
       reset({
@@ -275,12 +264,10 @@ export default function AddContentModal({
         sub_category: "",
         description: "",
         document_read_minutes: undefined,
-        video_duration_minutes: undefined,
       });
     }
     setCoverFile(null);
     setDocFile(null);
-    setVideoFile(null);
     setFileErrors({});
     setServerError(null);
     setSuccessMsg(null);
@@ -302,13 +289,8 @@ export default function AddContentModal({
     const errs: { cover?: string; doc?: string } = {};
     // Document is only required when creating a brand-new SOP (matches the
     // Document field's required={!isEditing} hint below). When editing,
-    // whatever the SOP already has — a document, none at all, or one about
-    // to be replaced — is preserved/updated as-is by onSubmit's docUrl
-    // fallback. The previous check instead required editingContent to
-    // already have a document_url to skip this, which silently blocked
-    // "Save Changes" on any video-only SOP (no document ever attached) —
-    // e.g. just replacing its video — with no visible feedback beyond a
-    // small inline error under the Document field.
+    // whatever the SOP already has is preserved/updated as-is by onSubmit's
+    // docUrl fallback.
     if (!isEditing && !docFile) {
       errs.doc = "Document is required";
     }
@@ -354,10 +336,6 @@ export default function AddContentModal({
           : Promise.resolve(editingContent?.document_url ?? null),
       ]);
 
-      const videoUrl = videoFile
-        ? await uploadToCloudinary(videoFile, "WillsVideos")
-        : (editingContent?.video_url ?? null);
-
       mutate({
         ...(isEditing ? { id: editingContent!.id } : {}),
         title: data.title,
@@ -367,8 +345,8 @@ export default function AddContentModal({
         cover_image_url: coverUrl,
         document_url: docUrl,
         document_read_minutes: data.document_read_minutes,
-        video_url: videoUrl,
-        video_duration_minutes: data.video_duration_minutes ?? null,
+        video_url: editingContent?.video_url ?? null,
+        video_duration_minutes: editingContent?.video_duration_minutes ?? null,
         ...(isEditing ? {} : { created_by: performedBy?.id }),
         performed_by: performedBy?.id,
         performed_by_name: performedBy?.name,
@@ -383,7 +361,6 @@ export default function AddContentModal({
     reset();
     setCoverFile(null);
     setDocFile(null);
-    setVideoFile(null);
     setFileErrors({});
     setServerError(null);
     setSuccessMsg(null);
@@ -626,56 +603,6 @@ export default function AddContentModal({
                       setValueAs: (v) => (v === "" ? undefined : Number(v)),
                     })}
                     className={inputCls(!!errors.document_read_minutes)}
-                  />
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mt-4 items-start">
-                <Field
-                  label="Video (Optional)"
-                  icon={<Video className="w-4 h-4" />}
-                  error={fileErrors.video}
-                >
-                  <FileDropZone
-                    accept="video/*"
-                    file={videoFile}
-                    onChange={(f) => {
-                      if (f && f.size > MAX_VIDEO_FILE_SIZE_MB * 1024 * 1024) {
-                        setFileErrors((prev) => ({
-                          ...prev,
-                          video: `Video must be under ${MAX_VIDEO_FILE_SIZE_MB}MB — this file is ${formatFileSizeMB(f.size)}MB. Compress it or trim it down and try again.`,
-                        }));
-                        setVideoFile(null);
-                        return;
-                      }
-                      setFileErrors((prev) => ({ ...prev, video: undefined }));
-                      setVideoFile(f);
-                    }}
-                    placeholder={
-                      isEditing && editingContent?.video_url
-                        ? "Existing video on file — click to replace"
-                        : "Click to upload a video"
-                    }
-                    hasError={!!fileErrors.video}
-                  />
-                </Field>
-
-                <Field
-                  label="Video Duration (min)"
-                  error={errors.video_duration_minutes?.message}
-                >
-                  <input
-                    type="number"
-                    min={1}
-                    placeholder="e.g. 15"
-                    disabled={!videoFile && !(isEditing && editingContent?.video_url)}
-                    {...register("video_duration_minutes", {
-                      setValueAs: (v) => (v === "" ? undefined : Number(v)),
-                    })}
-                    className={inputCls(
-                      !!errors.video_duration_minutes,
-                      !videoFile && !(isEditing && editingContent?.video_url),
-                    )}
                   />
                 </Field>
               </div>

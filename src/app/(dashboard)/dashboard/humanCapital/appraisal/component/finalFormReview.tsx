@@ -317,7 +317,7 @@ export default function FinalReviewForm({
             <h2 className="text-xl font-bold">{appraisal.employee_name}</h2>
             <p className="text-white/60 text-sm mt-0.5">{appraisal.job_title}</p>
             <p className="text-white/40 text-xs mt-1">
-              {period} · {appraisal.grade_band} · Supervisor: {appraisal.immediate_supervisor}
+              {period} · Supervisor: {appraisal.immediate_supervisor}
             </p>
           </div>
 

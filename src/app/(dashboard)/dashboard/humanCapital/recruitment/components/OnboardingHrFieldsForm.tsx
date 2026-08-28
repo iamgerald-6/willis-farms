@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
@@ -19,7 +19,17 @@ import {
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
+import {
+  SALARY_TIER_IDS,
+  SALARY_TIER_LABELS,
+  resolveSalaryForGradeTier,
+} from "@/lib/systemDefinitions/salaryRanges";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
+import {
+  joinCompanyEmail,
+  splitCompanyEmail,
+} from "@/lib/systemDefinitions/companyEmailDomain";
 import {
   eligibleSupervisorsForEmployee,
 } from "@/lib/supervisorAssignment";
@@ -89,6 +99,25 @@ export default function OnboardingHrFieldsForm({
   });
 
   const { config: gradeConfig, gradeOptions } = useGradeLevelsConfig();
+  const { domain: companyEmailDomain } = useCompanyEmailDomain();
+  const salaryGhsTouched = useRef(false);
+
+  const applySalaryFromSystem = useCallback(
+    (gradeLevel: string, tierInput?: string, forceSalary = false) => {
+      const tier = tierInput?.trim() || "mid";
+      const resolved = resolveSalaryForGradeTier(gradeLevel, tier, gradeConfig);
+      setHrData((prev) => ({
+        ...prev,
+        salary_tier: tier,
+        salary_range: resolved.formatted || undefined,
+        salary_ghs:
+          forceSalary || !salaryGhsTouched.current
+            ? resolved.salaryGhs || prev.salary_ghs
+            : prev.salary_ghs,
+      }));
+    },
+    [gradeConfig, setHrData],
+  );
 
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["get_users"],
@@ -130,6 +159,22 @@ export default function OnboardingHrFieldsForm({
       }));
     }
   }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
+
+  useEffect(() => {
+    if (!hrData.grade_level?.trim()) return;
+    if (hrData.salary_range?.trim() && hrData.salary_ghs?.trim()) return;
+    applySalaryFromSystem(
+      hrData.grade_level,
+      hrData.salary_tier,
+      !hrData.salary_ghs?.trim(),
+    );
+  }, [
+    applySalaryFromSystem,
+    hrData.grade_level,
+    hrData.salary_tier,
+    hrData.salary_range,
+    hrData.salary_ghs,
+  ]);
 
   const departmentOptions = useMemo(() => {
     const lists = optionLists ?? {};
@@ -215,7 +260,13 @@ export default function OnboardingHrFieldsForm({
             value={hrData.grade_level ?? ""}
             onChange={(e) => {
               onGradeChange?.();
-              setHrData((prev) => ({ ...prev, grade_level: e.target.value || undefined }));
+              const grade = e.target.value || undefined;
+              const tier = hrData.salary_tier;
+              salaryGhsTouched.current = false;
+              setHrData((prev) => ({ ...prev, grade_level: grade }));
+              if (grade) {
+                applySalaryFromSystem(grade, tier, true);
+              }
             }}
           >
             <option value="">Select grade level…</option>
@@ -225,6 +276,60 @@ export default function OnboardingHrFieldsForm({
               </option>
             ))}
           </select>
+        </label>
+      );
+    }
+
+    if (field.fieldType === "salary_tier") {
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          {!hrData.grade_level ? (
+            <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              Select a grade level first to pick a salary tier.
+            </p>
+          ) : (
+            <select
+              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+              value={hrData.salary_tier ?? "mid"}
+              onChange={(e) => {
+                salaryGhsTouched.current = false;
+                applySalaryFromSystem(hrData.grade_level!, e.target.value, true);
+              }}
+            >
+              {SALARY_TIER_IDS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {SALARY_TIER_LABELS[tier]}
+                </option>
+              ))}
+            </select>
+          )}
+          {field.hint && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
+        </label>
+      );
+    }
+
+    if (field.fieldType === "salary_range") {
+      const rangeText =
+        hrData.salary_range?.trim() ||
+        (hrData.grade_level
+          ? resolveSalaryForGradeTier(
+              hrData.grade_level,
+              hrData.salary_tier ?? "mid",
+              gradeConfig,
+            ).formatted
+          : "");
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            {rangeText || "Select grade level and salary tier to see the configured range."}
+          </div>
+          {field.hint && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
         </label>
       );
     }
@@ -338,15 +443,49 @@ export default function OnboardingHrFieldsForm({
       );
     }
 
+    if (field.fieldKey === "company_email") {
+      const { local } = splitCompanyEmail(value, companyEmailDomain);
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <div className="mt-1 flex w-full items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:ring-2 focus-within:ring-red-500">
+            <input
+              className="min-w-0 flex-1 border-0 px-3 py-2 text-sm focus:outline-none focus:ring-0"
+              value={local}
+              placeholder="l.akoto"
+              onChange={(e) => {
+                onCompanyEmailChange?.();
+                const nextLocal = e.target.value.replace(/@.*/g, "").toLowerCase();
+                setField(
+                  "company_email",
+                  joinCompanyEmail(nextLocal, companyEmailDomain) || undefined,
+                );
+              }}
+            />
+            <span className="flex shrink-0 items-center border-l border-gray-100 bg-gray-50/80 px-3 py-2 text-sm italic text-gray-400 select-none">
+              @{companyEmailDomain}
+            </span>
+          </div>
+          {field.hint && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
+        </label>
+      );
+    }
+
     return (
       <label key={field.id} className={`block ${spanClass}`}>
         <span className="text-xs text-gray-500">{field.label}</span>
         <input
-          className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          className={`mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${
+            field.fieldKey === "salary_ghs" && hrData.salary_range?.trim()
+              ? "bg-gray-50"
+              : ""
+          }`}
           value={value}
           onChange={(e) => {
             if (field.fieldKey === "employee_id") onEmployeeIdChange?.();
-            if (field.fieldKey === "company_email") onCompanyEmailChange?.();
+            if (field.fieldKey === "salary_ghs") salaryGhsTouched.current = true;
             setField(field.fieldKey, e.target.value);
           }}
         />

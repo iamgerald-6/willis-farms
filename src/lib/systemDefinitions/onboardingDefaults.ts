@@ -10,6 +10,7 @@ export const ONBOARDING_FIELDS_LIST = "careers.onboardingFields";
 export const ONBOARDING_LOCATIONS_LIST = "careers.onboardingLocations";
 export const ONBOARDING_DEPARTMENTS_L1L6_LIST = "careers.onboardingDepartmentsL1L6";
 export const ONBOARDING_DEPARTMENTS_L7_LIST = "careers.onboardingDepartmentsL7";
+export const ONBOARDING_MEDICAL_REPORTS_LIST = "careers.onboardingMedicalReports";
 
 function field(
   id: string,
@@ -47,6 +48,47 @@ function optionRow(
     is_active: true,
     rules: {},
   };
+}
+
+/** Required medical reports — shown on onboarding medical step and hire email. */
+export function getDefaultOnboardingMedicalReports(): SystemOption[] {
+  return [
+    optionRow(
+      "opt:onboarding:med:1",
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      "Pre-employment medical fitness certificate",
+      "pre_employment_fitness",
+      0,
+    ),
+    optionRow(
+      "opt:onboarding:med:2",
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      "Blood group / basic haematology",
+      "blood_group_haematology",
+      1,
+    ),
+    optionRow(
+      "opt:onboarding:med:3",
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      "Chest X-ray (where clinically indicated)",
+      "chest_xray",
+      2,
+    ),
+    optionRow(
+      "opt:onboarding:med:4",
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      "Vision / hearing screening (if required for the role)",
+      "vision_hearing",
+      3,
+    ),
+    optionRow(
+      "opt:onboarding:med:5",
+      ONBOARDING_MEDICAL_REPORTS_LIST,
+      "Clinic-issued “fit for duty” report (if separate from fitness certificate)",
+      "fit_for_duty",
+      4,
+    ),
+  ];
 }
 
 export function getDefaultOnboardingLocations(): SystemOption[] {
@@ -146,7 +188,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       showWhen: { field: "personal.is_citizen", equals: "Non-citizen" },
       colSpan: "half",
     }),
-    field("opt:onboarding:field:passport_bio", "Passport bio page (photo)", "personal.passport_bio_page", 9, {
+    field("opt:onboarding:field:passport_bio", "Passport bio page (photo or PDF)", "personal.passport_bio_page", 9, {
       step: "personal",
       section: "A. Personal information",
       fieldKey: "personal.passport_bio_page",

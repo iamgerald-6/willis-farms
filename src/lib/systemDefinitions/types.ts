@@ -2,6 +2,10 @@
 export interface SystemOptionRules {
   requires_document?: boolean;
   requires_reason?: boolean;
+  /** Recruitment job posting → interview guide key (e.g. L1, L5). */
+  interviewGuideKey?: string;
+  /** Application form and other module-specific rule fields. */
+  [key: string]: unknown;
 }
 
 /** Row shape for public.system_options */

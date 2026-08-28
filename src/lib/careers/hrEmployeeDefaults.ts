@@ -2,6 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpeningBySlug } from "@/lib/careers/openings";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import {
+  DEFAULT_COMPANY_EMAIL_DOMAIN,
+  normalizeCompanyEmailDomain,
+} from "@/lib/systemDefinitions/companyEmailDomain";
+import {
   DEFAULT_GRADE_LEVELS,
   gradeLevelToRank as gradeLevelToRankFromConfig,
   resolveGradeLevelOptions,
@@ -100,37 +104,79 @@ function sanitizeEmailPart(value: string): string {
 }
 
 /**
- * Company email: {firstInitial}.{middleName?}{firstName}@willsfarms.com
- * e.g. Kwame → k.kwame@willsfarms.com
- * e.g. John Michael → j.michaeljohn@willsfarms.com
+ * Company email local part: {firstNameLetter}.{middleInitial?}{lastName}
+ * e.g. Lisa Akoto → l.akoto
+ * e.g. Mark Okyei Ofuso → m.oofuso
+ *
+ * Use `firstNameLetterIndex` to pick which letter from the first name forms
+ * the prefix (0 = first letter, 1 = second, …) when resolving duplicates.
+ */
+export function buildCompanyEmailLocalPart(params: {
+  firstName: string;
+  middleNames?: string;
+  lastName: string;
+  firstNameLetterIndex?: number;
+}): string | null {
+  const first = sanitizeEmailPart(params.firstName);
+  const last = sanitizeEmailPart(params.lastName);
+  if (!first || !last) return null;
+
+  const letterIndex = params.firstNameLetterIndex ?? 0;
+  if (letterIndex < 0 || letterIndex >= first.length) return null;
+
+  const firstInitial = first[letterIndex];
+  const middleWord = params.middleNames?.trim().split(/\s+/)[0];
+  const middleInitial = middleWord ? sanitizeEmailPart(middleWord)[0] : "";
+
+  return middleInitial
+    ? `${firstInitial}.${middleInitial}${last}`
+    : `${firstInitial}.${last}`;
+}
+
+/**
+ * Suggest a unique company email. Starts with the first letter of the first
+ * name; if taken (users table or pending onboarding), tries the second letter,
+ * then the third, and so on — e.g. Gerome → g.agyeabour, Gregory → r.agyeabour.
  */
 export function suggestCompanyEmail(params: {
   firstName: string;
   middleNames?: string;
   lastName: string;
   existingEmails?: string[];
+  domain?: string;
 }): string | null {
   const first = sanitizeEmailPart(params.firstName);
-  if (!first) return null;
+  const last = sanitizeEmailPart(params.lastName);
+  if (!first || !last) return null;
 
-  const firstInitial = first[0];
-  const middleWord = params.middleNames?.trim().split(/\s+/)[0];
-  const middle = middleWord ? sanitizeEmailPart(middleWord) : "";
-  const localBase = middle ? `${firstInitial}.${middle}${first}` : `${firstInitial}.${first}`;
+  const domain = normalizeCompanyEmailDomain(
+    params.domain ?? DEFAULT_COMPANY_EMAIL_DOMAIN,
+  );
 
   const taken = new Set(
     (params.existingEmails ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean),
   );
 
-  let candidate = `${localBase}@willsfarms.com`;
-  if (!taken.has(candidate)) return candidate;
+  for (let letterIndex = 0; letterIndex < first.length; letterIndex++) {
+    const localPart = buildCompanyEmailLocalPart({
+      ...params,
+      firstNameLetterIndex: letterIndex,
+    });
+    if (!localPart) continue;
 
-  for (let n = 2; n <= 99; n++) {
-    candidate = `${localBase}${n}@willsfarms.com`;
+    const candidate = `${localPart}@${domain}`;
     if (!taken.has(candidate)) return candidate;
   }
 
-  return `${localBase}${Date.now().toString().slice(-4)}@willsfarms.com`;
+  const fallbackLocal = buildCompanyEmailLocalPart(params);
+  if (!fallbackLocal) return null;
+
+  for (let n = 2; n <= 99; n++) {
+    const candidate = `${fallbackLocal}${n}@${domain}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+
+  return `${fallbackLocal}${Date.now().toString().slice(-4)}@${domain}`;
 }
 
 export async function collectExistingEmployeeIds(supabaseAdmin: SupabaseClient): Promise<{

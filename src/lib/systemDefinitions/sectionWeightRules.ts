@@ -30,10 +30,19 @@ import {
 import {
   normalizeAnnualLeaveCapDays,
 } from "@/lib/leave/leavePolicy";
+import { normalizeCompanyEmailDomain } from "./companyEmailDomain";
 import {
   normalizeAppraisalScopeConfig,
   type AppraisalScopeConfig,
 } from "./appraisalScopeConfig";
+import {
+  normalizeInterviewGuidesConfig,
+  type InterviewGuidesConfig,
+} from "./interviewGuidesConfig";
+import {
+  normalizeInterviewEvaluationConfig,
+  type InterviewEvaluationConfig,
+} from "./interviewEvaluationConfig";
 
 export interface SectionWeightRule {
   id: string;
@@ -64,6 +73,12 @@ export interface ModuleBusinessLogic {
   appraisalScopeConfig?: AppraisalScopeConfig;
   /** Leave module — annual working-day allowance per employee per calendar year. */
   annualLeaveCapDays?: number;
+  /** Recruitment — domain for HR-assigned company emails (e.g. willsfarms.com). */
+  companyEmailDomain?: string;
+  /** Recruitment — interview guide overrides per grade / role key. */
+  interviewGuidesConfig?: InterviewGuidesConfig;
+  /** Recruitment — evaluation checklist labels (Observed / Not observed). */
+  interviewEvaluationConfig?: InterviewEvaluationConfig;
 }
 
 function rebalanceSectionWeights(
@@ -164,5 +179,15 @@ export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
       obj.annualLeaveCapDays != null
         ? normalizeAnnualLeaveCapDays(obj.annualLeaveCapDays)
         : undefined,
+    companyEmailDomain:
+      obj.companyEmailDomain != null
+        ? normalizeCompanyEmailDomain(obj.companyEmailDomain)
+        : undefined,
+    interviewGuidesConfig: normalizeInterviewGuidesConfig(
+      obj.interviewGuidesConfig,
+    ),
+    interviewEvaluationConfig: normalizeInterviewEvaluationConfig(
+      obj.interviewEvaluationConfig,
+    ),
   };
 }

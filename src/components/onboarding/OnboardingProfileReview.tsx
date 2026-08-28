@@ -35,7 +35,7 @@ export default function OnboardingProfileReview({ formData }: Props) {
 
   const sections: { title: string; items: { label: string; value: string }[] }[] = [
     {
-      title: "Personal details (onboarding)",
+      title: "Personal details",
       items: [
         field("Middle name(s)", personal.middle_names),
         field("SSNIT number", personal.ssnit_number),
@@ -126,18 +126,12 @@ export default function OnboardingProfileReview({ formData }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-        Onboarding information
-      </p>
+    <div className="space-y-6">
       {sections.map((section) => (
-        <div
-          key={section.title}
-          className="rounded-xl border border-gray-200 bg-white p-4 space-y-3"
-        >
-          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-            {section.title}
-          </p>
+        <div key={section.title} className="break-inside-avoid">
+          <div className="border-b border-gray-200 pb-2 mb-4">
+            <h3 className="text-sm font-semibold text-gray-900">{section.title}</h3>
+          </div>
           <div className="grid sm:grid-cols-2 gap-3 text-sm">
             {section.items.map((item) => (
               <div

@@ -37,6 +37,7 @@ import {
   isEditableLeavePolicyModule,
   isEditableRatingSectionModule,
   isEditableRefereeReferenceModule,
+  isEditableInterviewGuidesModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
@@ -46,6 +47,7 @@ import SectionWeightsEditor from "./components/SectionWeightsEditor";
 import RatingSectionsEditor from "./components/RatingSectionsEditor";
 import AppraisalScopeEditor from "./components/AppraisalScopeEditor";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
+import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
 import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
@@ -53,11 +55,13 @@ import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
 import GradeLevelsEditor from "./components/GradeLevelsEditor";
 import JobPostingsEditor from "./components/JobPostingsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
+import InterviewGuidesEditor from "./components/InterviewGuidesEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import {
   ONBOARDING_DEPARTMENTS_L1L6_LIST,
   ONBOARDING_DEPARTMENTS_L7_LIST,
   ONBOARDING_LOCATIONS_LIST,
+  ONBOARDING_MEDICAL_REPORTS_LIST,
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import { ONBOARDING_EMPLOYMENT_TYPES_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
 
@@ -340,6 +344,21 @@ function ModuleDetail({
         </SectionCard>
       )}
 
+      {isEditableInterviewGuidesModule(m.id) && (
+        <SectionCard
+          icon={Rows3}
+          title="Interview guides"
+          description="Questions, practical scenarios, rating scale, and evaluation checklist per grade level (L1–L7+). Linked to job postings via interview guide key."
+        >
+          <InterviewGuidesEditor
+            moduleId={m.id}
+            readOnly={!canEdit}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      )}
+
       {isEditableOnboardingFormModule(m.id) && (
         <>
           <SectionCard
@@ -400,7 +419,23 @@ function ModuleDetail({
                 canAdd={canAdd}
                 canEdit={canEdit}
               />
+              <OptionsEditor
+                moduleId={m.id}
+                optionList={ONBOARDING_MEDICAL_REPORTS_LIST}
+                title="Required medical reports"
+                description="Shown on the onboarding medical step and in the congratulations / onboarding email."
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
             </div>
+          </SectionCard>
+
+          <SectionCard
+            icon={Settings2}
+            title="Company email domain"
+            description="Domain for HR-assigned company emails in Section O (e.g. willsfarms.com)."
+          >
+            <CompanyEmailDomainEditor moduleId={m.id} readOnly={!canEdit} />
           </SectionCard>
 
           <SectionCard
@@ -499,6 +534,13 @@ function ModuleDetail({
 
 const AUDIT_LOG_ID = "__audit_log__";
 
+/** Not configurable here — hide from the System Definitions module picker. */
+const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
+  "mod:overview",
+  "mod:notifications",
+  "mod:system-definitions",
+]);
+
 export default function SystemDefinitionsPage() {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
 
@@ -559,6 +601,7 @@ export default function SystemDefinitionsPage() {
         group,
         modules: modules
           .filter((m) => m.groupId === group.id)
+          .filter((m) => !HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS.has(m.id))
           .sort((a, b) => a.sortOrder - b.sortOrder),
       }))
       .filter((g) => g.modules.length > 0);

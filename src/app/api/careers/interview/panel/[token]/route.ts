@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { getInterviewGuide } from "@/lib/careers/interviewFormConfigs";
+import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import {
   findPanelByToken,
@@ -81,7 +81,10 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       loaded.supabaseAdmin,
       match.application.role_slug,
     );
-    const guide = guideKey ? getInterviewGuide(guideKey) : null;
+    const guide = await fetchResolvedInterviewGuide(
+      loaded.supabaseAdmin,
+      guideKey,
+    );
     if (!guide) {
       return NextResponse.json({ error: "Interview guide not found." }, { status: 404 });
     }
@@ -136,7 +139,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
     if (!guideKey) {
       return NextResponse.json({ error: "Interview guide not found." }, { status: 400 });
     }
-    const guide = getInterviewGuide(guideKey);
+    const guide = await fetchResolvedInterviewGuide(
+      loaded.supabaseAdmin,
+      guideKey,
+    );
+    if (!guide) {
+      return NextResponse.json({ error: "Interview guide not found." }, { status: 404 });
+    }
 
     const scored = scoreSubmission(guide, submission, match.member.stage);
     const panelSubmission: PanelSubmission = {

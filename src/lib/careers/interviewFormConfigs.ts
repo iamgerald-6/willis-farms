@@ -40,8 +40,13 @@ export interface StageDurations {
   stage3: string;
 }
 
+export interface DisqualifierDef {
+  id: string;
+  label: string;
+}
+
 export interface InterviewGuideConfig {
-  key: InterviewGuideKey;
+  key: string;
   title: string;
   grade?: string;
   briefing: string;
@@ -54,6 +59,10 @@ export interface InterviewGuideConfig {
   weights: WeightRow[];
   interpretation: string;
   disqualifiers: string[];
+  /** Stable ids for evaluation checklist (System Definitions). */
+  disqualifierItems?: DisqualifierDef[];
+  /** Rating scale labels (1–5), editable in System Definitions. */
+  ratingLabels?: Record<number, string>;
 }
 
 function stageDurations(
@@ -542,8 +551,28 @@ const GUIDES: Record<InterviewGuideKey, InterviewGuideConfig> = {
   veterinarian: VETERINARIAN_GUIDE,
 };
 
-export function getInterviewGuide(key: InterviewGuideKey): InterviewGuideConfig {
+export const GIT_INTERVIEW_GUIDE_KEYS = Object.keys(GUIDES) as InterviewGuideKey[];
+
+export function getGitInterviewGuide(
+  key: InterviewGuideKey,
+): InterviewGuideConfig | undefined {
   return GUIDES[key];
+}
+
+/** Git defaults only — prefer `fetchResolvedInterviewGuide` on the server. */
+export function getInterviewGuide(key: InterviewGuideKey): InterviewGuideConfig {
+  const guide = GUIDES[key];
+  if (!guide) {
+    throw new Error(`Unknown interview guide key: ${key}`);
+  }
+  return guide;
+}
+
+export function ratingLabelForGuide(
+  guide: InterviewGuideConfig,
+  rating: number,
+): string {
+  return guide.ratingLabels?.[rating] ?? RATING_LABELS[rating] ?? String(rating);
 }
 
 /** Compute weighted score from ratings (1–5) */

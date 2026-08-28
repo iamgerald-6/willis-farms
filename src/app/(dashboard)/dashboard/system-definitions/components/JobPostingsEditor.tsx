@@ -6,6 +6,7 @@ import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { InterviewGuideKey } from "@/lib/careers/openings";
+import { getInterviewGuideKeyForRoleSlug } from "@/lib/careers/openings";
 import {
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
@@ -38,6 +39,16 @@ function slugifyKey(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
+}
+
+function resolveRowInterviewGuide(
+  row: JobPostingRow,
+): InterviewGuideKey {
+  const fromRules = row.rules?.interviewGuideKey;
+  if (fromRules) return fromRules;
+  const legacy = getInterviewGuideKeyForRoleSlug(row.legacy_value ?? "");
+  if (legacy) return legacy;
+  return "L1";
 }
 
 export default function JobPostingsEditor({
@@ -82,6 +93,15 @@ export default function JobPostingsEditor({
     enabled: moduleId === RECRUITMENT_MODULE_ID,
   });
 
+  const activeRows = useMemo(
+    () => rows.filter((r) => r.is_active).sort((a, b) => a.sort_order - b.sort_order),
+    [rows],
+  );
+  const inactiveRows = useMemo(
+    () => rows.filter((r) => !r.is_active).sort((a, b) => a.sort_order - b.sort_order),
+    [rows],
+  );
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const createMutation = useMutation({
@@ -92,8 +112,13 @@ export default function JobPostingsEditor({
       legacy_value: string;
       rules: { interviewGuideKey: InterviewGuideKey };
     }) => api.post("/system-definitions/options", payload),
-    onSuccess: () => {
-      toast.success("Job posting role added.");
+    onSuccess: (res) => {
+      const reactivated = res?.data?.reactivated === true;
+      toast.success(
+        reactivated
+          ? "Job posting role restored and updated."
+          : "Job posting role added.",
+      );
       setShowAdd(false);
       setNewLabel("");
       setNewKey("");
@@ -101,7 +126,10 @@ export default function JobPostingsEditor({
       queryClient.invalidateQueries({ queryKey: ["careers_job_postings"] });
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
-      toast.error(err?.response?.data?.error ?? "Could not add job posting role.");
+      toast.error(
+        err?.response?.data?.error ??
+          "Could not add job posting role. The internal key may already exist — try editing the existing row.",
+      );
     },
   });
 
@@ -143,7 +171,9 @@ export default function JobPostingsEditor({
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-500">
-        Roles HR can select when publishing a career posting. Add new roles here — no code changes needed. Each role maps to an internal interview guide (not shown publicly).
+        Roles HR can select when publishing a career posting. Each role maps to an interview guide (not shown publicly).
+        Salary bands (low / mid / high) are configured per grade under Grade levels.
+        If a role already exists (e.g. Senior Swine Technician from setup), edit it below instead of adding again.
       </p>
 
       {canAdd && (
@@ -209,11 +239,22 @@ export default function JobPostingsEditor({
                   toast.error("Title and key are required.");
                   return;
                 }
+                const key = newKey.trim();
+                const existing = rows.find((r) => r.legacy_value === key);
+                if (existing?.is_active) {
+                  toast.error(
+                    `"${existing.label}" already uses key "${key}". Edit it in the list below.`,
+                  );
+                  return;
+                }
+                if (existing && !existing.is_active) {
+                  toast.message("Restoring removed role with your updates…");
+                }
                 createMutation.mutate({
                   module_id: moduleId,
                   option_list: RECRUITMENT_JOB_POSTINGS_LIST,
                   label: newLabel.trim(),
-                  legacy_value: newKey.trim(),
+                  legacy_value: key,
                   rules: { interviewGuideKey: newGuide },
                 });
               }}
@@ -234,18 +275,15 @@ export default function JobPostingsEditor({
         <div className="py-4 flex justify-center">
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
-      ) : rows.filter((r) => r.is_active).length === 0 ? (
+      ) : activeRows.length === 0 ? (
         <p className="text-xs text-gray-400 italic py-4 text-center">
-          No job posting roles yet. Add roles above — they will appear in Recruitment → Careers.
+          No active job posting roles. Add one above or restore a removed role below.
         </p>
       ) : (
         <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
-          {rows
-            .filter((r) => r.is_active)
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((row) => {
+          {activeRows.map((row) => {
               const isEditing = editingId === row.id;
-              const guide = row.rules?.interviewGuideKey ?? "L1";
+              const guide = resolveRowInterviewGuide(row);
 
               return (
                 <li key={row.id} className="px-3 py-3 bg-white">
@@ -349,6 +387,44 @@ export default function JobPostingsEditor({
               );
             })}
         </ul>
+      )}
+
+      {inactiveRows.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-medium text-gray-500">Removed roles (can be restored)</p>
+          <ul className="divide-y divide-gray-100 border border-dashed border-gray-200 rounded-xl overflow-hidden">
+            {inactiveRows.map((row) => {
+              const guide = resolveRowInterviewGuide(row);
+              return (
+                <li
+                  key={row.id}
+                  className="px-3 py-2.5 bg-gray-50 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm text-gray-600">{row.label}</p>
+                    <p className="text-xs text-gray-400">
+                      Key: {row.legacy_value} · Guide: {guide}
+                    </p>
+                  </div>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patchMutation.mutate({
+                          id: row.id,
+                          patch: { is_active: true },
+                        })
+                      }
+                      className="text-xs font-medium text-red-700 hover:underline shrink-0"
+                    >
+                      Restore
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </div>
   );

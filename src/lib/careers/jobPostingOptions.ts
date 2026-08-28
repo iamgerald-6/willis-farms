@@ -26,11 +26,23 @@ export type JobTitleOption = JobPostingOption;
 export function parseJobPostingRules(
   raw: Record<string, unknown> | null | undefined,
   gradeConfig?: GradeLevelsConfig,
+  roleSlug?: string,
 ): InterviewGuideKey {
-  const key = String(raw?.interviewGuideKey ?? "L1");
-  const allowed = resolveInterviewGuideKeys(gradeConfig);
-  if (allowed.includes(key)) return key as InterviewGuideKey;
-  if (/^L\d+$/.test(key)) return key as InterviewGuideKey;
+  const key = String(raw?.interviewGuideKey ?? "").trim();
+  if (key) {
+    const allowed = resolveInterviewGuideKeys(gradeConfig);
+    if (allowed.includes(key)) return key as InterviewGuideKey;
+    if (/^L\d+$/.test(key)) return key as InterviewGuideKey;
+    if (key === "data_analyst" || key === "veterinarian") {
+      return key as InterviewGuideKey;
+    }
+  }
+
+  if (roleSlug?.trim()) {
+    const legacy = getInterviewGuideKeyForRoleSlug(roleSlug.trim());
+    if (legacy) return legacy;
+  }
+
   return "L1";
 }
 
@@ -47,7 +59,11 @@ export function systemOptionToJobPosting(
     id: option.id,
     key,
     label: option.label,
-    interviewGuideKey: parseJobPostingRules(option.rules as Record<string, unknown>),
+    interviewGuideKey: parseJobPostingRules(
+      option.rules as Record<string, unknown>,
+      undefined,
+      key,
+    ),
     sort_order: option.sort_order,
     is_active: option.is_active,
   };

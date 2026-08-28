@@ -37,6 +37,7 @@ type OnboardedCandidate = {
     first_name: string;
     last_name: string;
     email: string;
+    delivery_email: string;
     phone: string;
     job_position: string;
     grade_level?: string;
@@ -63,6 +64,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
   const queryClient = useQueryClient();
   const { gradeOptions: gradeLevels } = useGradeLevelsConfig();
   const [selectedOnboardingId, setSelectedOnboardingId] = useState("");
+  const [inviteDeliveryEmail, setInviteDeliveryEmail] = useState("");
   const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
   const [pendingSupervisorId, setPendingSupervisorId] = useState<string | null>(
     null,
@@ -83,6 +85,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
       ...data,
       supervisor_id: pendingSupervisorId ?? undefined,
       application_id: selectedOnboardingId || undefined,
+      invite_delivery_email: inviteDeliveryEmail || undefined,
     });
     return res.data;
   }
@@ -99,6 +102,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
 
   const resetForm = () => {
     setSelectedOnboardingId("");
+    setInviteDeliveryEmail("");
     setLockedFields(new Set());
     setPendingSupervisorId(null);
     reset({ role: "employee" });
@@ -114,6 +118,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     if (!applicationId) {
       setLockedFields(new Set());
       setPendingSupervisorId(null);
+      setInviteDeliveryEmail("");
       reset({ role: "employee" });
       return;
     }
@@ -124,8 +129,9 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     if (!candidate) return;
 
     const { prefill, locked_fields } = candidate;
-    setLockedFields(new Set(locked_fields));
+    setLockedFields(new Set([...locked_fields, "email"]));
     setPendingSupervisorId(prefill.supervisor_id ?? null);
+    setInviteDeliveryEmail(prefill.delivery_email ?? "");
 
     reset({
       first_name: prefill.first_name,
@@ -176,7 +182,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
         queryKey: ["recruitment-employees"],
       });
       toast.success(
-        `Invite sent to ${variables.email}! They'll receive an email to set their password.`,
+        `Invite sent${inviteDeliveryEmail ? ` to ${inviteDeliveryEmail}` : ""}! They sign in with ${variables.email} after setting their password.`,
       );
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
@@ -197,8 +203,8 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
             Invite New User
           </Dialog.Title>
           <p className="text-sm text-gray-500 mb-6">
-            An invite email will be sent. The user sets their own password via
-            the link.
+            An invite email will be sent. For new hires, it goes to their job
+            application email; they sign in with their company username.
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -229,8 +235,8 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               </select>
               {selectedOnboardingId && (
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Pre-filled from onboarding HR fields — company email and employee ID from
-                  Section O. You can edit the email before sending the invite.
+                  Pre-filled from onboarding — WillsOne username from Section O company
+                  email. The set-password invite goes to their job application email.
                 </p>
               )}
             </div>
@@ -269,14 +275,15 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
             <div>
               <input
                 type="email"
-                placeholder="Company email @willsfarms.com"
+                placeholder="WillsOne username @willsfarms.com"
+                readOnly={lockedFields.has("email")}
                 {...register("email")}
-                className={inputClass}
+                className={fieldClass("email")}
               />
               <p className="text-[11px] text-gray-500 mt-1">
                 {selectedOnboardingId
-                  ? "From onboarding HR — this is the address the invite is sent to. Edit if needed."
-                  : "Work email for the WillsOne account invite."}
+                  ? `Login username (company email). Invite will be sent to ${inviteDeliveryEmail || "their application email"}.`
+                  : "Work email used as the WillsOne login username."}
               </p>
               {errors.email && (
                 <p className="text-red-500 text-xs mt-1">
