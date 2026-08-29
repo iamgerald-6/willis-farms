@@ -4,8 +4,10 @@ import { FileText, ExternalLink } from "lucide-react";
 import type {
   EducationEntry,
   UploadedFile,
+  UploadedFileCategory,
   WorkHistoryEntry,
 } from "@/lib/careers/applicationFormSchema";
+import { UPLOADED_FILE_CATEGORY_LABELS } from "@/lib/careers/applicationFormSchema";
 
 type Props = {
   formData: Record<string, unknown>;
@@ -32,7 +34,11 @@ function normalizeApplicationFormData(
 type ReviewItem =
   | { kind: "text"; label: string; text: string }
   | { kind: "list"; label: string; lines: string[] }
-  | { kind: "files"; label: string; files: { name: string; url: string }[] };
+  | {
+      kind: "files";
+      label: string;
+      files: { name: string; url: string; category?: UploadedFileCategory }[];
+    };
 
 function buildItem(
   key: string,
@@ -87,7 +93,11 @@ function buildItem(
     ) {
       const files = (value as UploadedFile[])
         .filter((f) => f.secure_url)
-        .map((f) => ({ name: f.original_name || "File", url: f.secure_url }));
+        .map((f) => ({
+          name: f.original_name || "File",
+          url: f.secure_url,
+          category: f.category,
+        }));
       if (files.length === 0) return null;
       return { kind: "files", label, files };
     }
@@ -211,17 +221,23 @@ export default function ApplicationFormReview({ formData }: Props) {
                   {item.kind === "files" && (
                     <div className="mt-1 flex flex-col gap-1.5">
                       {item.files.map((f, i) => (
-                        <a
-                          key={`${f.url}-${i}`}
-                          href={f.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:underline w-fit"
-                        >
-                          <FileText className="w-3.5 h-3.5 shrink-0" />
-                          {f.name}
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </a>
+                        <div key={`${f.url}-${i}`} className="flex items-center gap-2">
+                          <a
+                            href={f.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:underline w-fit"
+                          >
+                            <FileText className="w-3.5 h-3.5 shrink-0" />
+                            {f.name}
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                          {f.category && (
+                            <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
+                              {UPLOADED_FILE_CATEGORY_LABELS[f.category]}
+                            </span>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}

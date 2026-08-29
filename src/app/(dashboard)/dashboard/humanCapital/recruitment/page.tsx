@@ -657,6 +657,16 @@ function ApplicationDetail({
               application.status !== "evaluation" &&
               application.status !== "offer" && (
                 <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                  {application.ai_screening.certificate_validation_summary && (
+                    <div className="mb-3 pb-3 border-b border-purple-200">
+                      <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                        Certificate validation summary
+                      </p>
+                      <p className="text-sm text-purple-900 whitespace-pre-wrap">
+                        {application.ai_screening.certificate_validation_summary}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
                     AI screening — {application.ai_screening.score}% match
                   </p>

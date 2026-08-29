@@ -88,6 +88,15 @@ export interface AiScreening {
   summary: string;
   model: string;
   screened_at: string;
+  /**
+   * Cross-checks each document the applicant tagged and uploaded on the
+   * Experience & qualifications step (work experience / educational
+   * qualifications / other) against the corresponding entries they typed
+   * in. Names each certificate and states any discrepancy found (or that
+   * none was found). Absent when the applicant uploaded no certificates,
+   * or on reports generated before this field was added.
+   */
+  certificate_validation_summary?: string;
 }
 
 /** Applications the AI screening has flagged — shown in the Rejects tab. */

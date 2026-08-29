@@ -76,10 +76,37 @@ export interface ApplicationFieldRules {
   maxLength?: number;
 }
 
+// Which part of the "Experience & qualifications" step a supporting
+// document backs up — chosen by the applicant before each individual
+// upload (see JobApplicationWizard.tsx), and used by the AI screening
+// step to know which structured entries (education vs. work history) to
+// cross-check a given document against. "other" has nothing to cross-check
+// against, so it's just noted as uploaded.
+export type UploadedFileCategory = "work_experience" | "education" | "other";
+
+export const UPLOADED_FILE_CATEGORIES: {
+  value: UploadedFileCategory;
+  label: string;
+}[] = [
+  { value: "work_experience", label: "Work Experience" },
+  { value: "education", label: "Educational Qualifications" },
+  { value: "other", label: "Other" },
+];
+
+export const UPLOADED_FILE_CATEGORY_LABELS: Record<
+  UploadedFileCategory,
+  string
+> = Object.fromEntries(
+  UPLOADED_FILE_CATEGORIES.map((c) => [c.value, c.label]),
+) as Record<UploadedFileCategory, string>;
+
 export interface UploadedFile {
   secure_url: string;
   public_id: string;
   original_name: string;
+  /** Absent on files uploaded before this field existed, and on
+   * single-file fields (e.g. the CV) that don't ask for a category. */
+  category?: UploadedFileCategory;
 }
 
 export interface ApplicationFormField {
