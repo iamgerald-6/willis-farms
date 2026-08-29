@@ -50,7 +50,7 @@ type InterviewAction =
   | "finalize";
 
 const STEP_LABELS: Record<WorkflowStep, string> = {
-  panel: "Panel",
+  panel: "Stage 1 setup",
   stage1: "Stage 1",
   stage1_review: "Review",
   stage2_setup: "Stage 2 setup",
