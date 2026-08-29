@@ -668,7 +668,7 @@ function ApplicationDetail({
                     </div>
                   )}
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                    AI screening — {application.ai_screening.score}% match
+                    AI job posting screening — {application.ai_screening.score}% match
                   </p>
                   <p className="text-sm text-purple-900">
                     {application.ai_screening.summary}
