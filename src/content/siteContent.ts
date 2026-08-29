@@ -385,23 +385,8 @@ export const siteContent = {
     intro:
       "Join a professional agribusiness built on discipline, biosecurity, and measurable performance. We hire people who value quality, integrity, and continuous improvement.",
     howToApply:
-      "Send your CV and a short cover note indicating the role you are applying for to info@willsfarms.com. Include your location and availability.",
-    openings: [
-      {
-        title: "Farm Operations Technician (Talent Pool)",
-        location: "Eastern Region, Ghana",
-        type: "Full-time",
-        summary:
-          "Support daily animal care, records, hygiene routines, and SOP adherence under supervision of the farm manager.",
-      },
-      {
-        title: "Quality & Biosecurity Assistant (Talent Pool)",
-        location: "Eastern Region, Ghana",
-        type: "Full-time",
-        summary:
-          "Support compliance checks, hygiene routines, visitor control, and documentation discipline across operations.",
-      },
-    ],
+      "Email info@willsfarms.com to register your interest in future opportunities.",
+    openings: [],
   },
   news: {
     headline: "News & Insights",
