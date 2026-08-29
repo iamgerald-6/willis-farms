@@ -594,28 +594,37 @@ export default function InterviewPanelForm({
         </div>
 
         {activeStep === "evaluation" && !interviewSubmitted && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col sm:flex-row gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
-              }
-              disabled={saveMutation.isPending || isLoading}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-            >
-              <Save className="w-4 h-4" />
-              Save draft
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                saveMutation.mutate({ action: "finalize", data: formData })
-              }
-              disabled={saveMutation.isPending || isLoading}
-              className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-            >
-              {saveMutation.isPending ? "Submitting…" : "Finish"}
-            </button>
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col gap-2 shrink-0">
+            {!formData.summary?.ai_analysis && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Generate the AI analysis above before finishing.
+              </p>
+            )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  saveMutation.mutate({ action: "save_draft", data: formData })
+                }
+                disabled={saveMutation.isPending || isLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+              >
+                <Save className="w-4 h-4" />
+                Save draft
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  saveMutation.mutate({ action: "finalize", data: formData })
+                }
+                disabled={
+                  saveMutation.isPending || isLoading || !formData.summary?.ai_analysis
+                }
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+              >
+                {saveMutation.isPending ? "Submitting…" : "Finish"}
+              </button>
+            </div>
           </div>
         )}
 
