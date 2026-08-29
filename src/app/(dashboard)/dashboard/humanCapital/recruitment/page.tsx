@@ -101,6 +101,16 @@ function stageLocationText(
   return locationType === "online" ? "Online" : "—";
 }
 
+// Stage-specific panel names, falling back to the combined list for
+// reports generated before per-stage tracking was added.
+function stagePanelText(
+  stageNames: string[] | undefined,
+  combinedNames: string[],
+): string {
+  const names = stageNames ?? combinedNames;
+  return names.length ? names.join(", ") : "—";
+}
+
 const INTERVIEW_GUIDE_STATUSES: ApplicationStatus[] = [
   "interview",
   "evaluation",
@@ -951,12 +961,6 @@ function ApplicationDetail({
                           {reportDraft.applicant_details.role}
                         </p>
                         <p>
-                          <span className="text-gray-400">Panel: </span>
-                          {reportDraft.applicant_details.panel_names.length
-                            ? reportDraft.applicant_details.panel_names.join(", ")
-                            : "—"}
-                        </p>
-                        <p>
                           <span className="text-gray-400">Overall rating: </span>
                           {reportDraft.applicant_details.overall_rating != null
                             ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
@@ -971,6 +975,9 @@ function ApplicationDetail({
                                 Stage
                               </th>
                               <th className="px-3 py-2 font-semibold text-gray-500">
+                                Panel
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
                                 Location
                               </th>
                               <th className="px-3 py-2 font-semibold text-gray-500">
@@ -981,6 +988,12 @@ function ApplicationDetail({
                           <tbody>
                             <tr className="border-b border-gray-100">
                               <td className="px-3 py-2 text-gray-700">1</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stagePanelText(
+                                  reportDraft.applicant_details.stage1_panel_names,
+                                  reportDraft.applicant_details.panel_names,
+                                )}
+                              </td>
                               <td className="px-3 py-2 text-gray-700">
                                 {stageLocationText(
                                   reportDraft.applicant_details.stage1_location,
@@ -997,6 +1010,12 @@ function ApplicationDetail({
                             </tr>
                             <tr>
                               <td className="px-3 py-2 text-gray-700">2</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stagePanelText(
+                                  reportDraft.applicant_details.stage2_panel_names,
+                                  reportDraft.applicant_details.panel_names,
+                                )}
+                              </td>
                               <td className="px-3 py-2 text-gray-700">
                                 {stageLocationText(
                                   reportDraft.applicant_details.stage2_location,
@@ -2078,12 +2097,6 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
             {report.applicant_details.role}
           </p>
           <p>
-            <span className="text-gray-400">Panel: </span>
-            {report.applicant_details.panel_names.length
-              ? report.applicant_details.panel_names.join(", ")
-              : "—"}
-          </p>
-          <p>
             <span className="text-gray-400">Overall rating: </span>
             {report.applicant_details.overall_rating != null
               ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
@@ -2096,6 +2109,9 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2 font-semibold text-gray-500">Stage</th>
                 <th className="px-3 py-2 font-semibold text-gray-500">
+                  Panel
+                </th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
                   Location
                 </th>
                 <th className="px-3 py-2 font-semibold text-gray-500">
@@ -2106,6 +2122,12 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
             <tbody>
               <tr className="border-b border-gray-100">
                 <td className="px-3 py-2 text-gray-700">1</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stagePanelText(
+                    report.applicant_details.stage1_panel_names,
+                    report.applicant_details.panel_names,
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-700">
                   {stageLocationText(
                     report.applicant_details.stage1_location,
@@ -2120,6 +2142,12 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
               </tr>
               <tr>
                 <td className="px-3 py-2 text-gray-700">2</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stagePanelText(
+                    report.applicant_details.stage2_panel_names,
+                    report.applicant_details.panel_names,
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-700">
                   {stageLocationText(
                     report.applicant_details.stage2_location,

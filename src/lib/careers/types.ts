@@ -208,7 +208,14 @@ export interface InterviewReport {
     name: string;
     role: string;
     reference_number: string;
+    /** Combined, deduplicated across both stages — kept for backward
+     * compatibility with reports generated before per-stage panel names
+     * were tracked. Prefer stage1_panel_names/stage2_panel_names. */
     panel_names: string[];
+    /** Absent on reports generated before per-stage tracking — fall back
+     * to panel_names (combined) when rendering those older reports. */
+    stage1_panel_names?: string[];
+    stage2_panel_names?: string[];
     stage1_interview_date: string | null;
     /** Only set when Stage 1 was onsite — no location to show for an online stage. */
     stage1_location: string | null;

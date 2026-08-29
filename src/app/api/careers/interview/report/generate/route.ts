@@ -154,6 +154,12 @@ export async function POST(req: NextRequest) {
     const panelNames = Array.from(
       new Set([...stage1Members, ...stage2Members].map((m) => m.name).filter(Boolean)),
     );
+    const stage1PanelNames = Array.from(
+      new Set(stage1Members.map((m) => m.name).filter(Boolean)),
+    );
+    const stage2PanelNames = Array.from(
+      new Set(stage2Members.map((m) => m.name).filter(Boolean)),
+    );
 
     const combined = combinedInterviewAverage(formData, guide);
     const areaScores = combinedAreaScores(formData, guide);
@@ -278,6 +284,8 @@ export async function POST(req: NextRequest) {
         role: application.role_title,
         reference_number: application.reference_number,
         panel_names: panelNames,
+        stage1_panel_names: stage1PanelNames,
+        stage2_panel_names: stage2PanelNames,
         stage1_interview_date: formData.setup?.interview_start_at ?? null,
         stage1_location:
           formData.setup?.location_type === "onsite"

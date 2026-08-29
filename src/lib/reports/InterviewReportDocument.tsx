@@ -40,9 +40,10 @@ const styles = StyleSheet.create({
   stageTableRow: { flexDirection: "row", borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
   stageTableHeaderCell: { fontSize: 7, fontWeight: 700, color: GRAY, textTransform: "uppercase" },
   stageTableCell: { fontSize: 9.5, color: DARK },
-  colStageNum: { flexBasis: "15%", paddingRight: 4 },
-  colStageLocation: { flexBasis: "40%", paddingRight: 4 },
-  colStageDateTime: { flexBasis: "45%" },
+  colStageNum: { flexBasis: "10%", paddingRight: 4 },
+  colStagePanel: { flexBasis: "30%", paddingRight: 4 },
+  colStageLocation: { flexBasis: "28%", paddingRight: 4 },
+  colStageDateTime: { flexBasis: "32%" },
 
   competencyRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 8 },
   competencyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 },
@@ -93,6 +94,16 @@ function stageLocationText(
   return locationType === "online" ? "Online" : "—";
 }
 
+// Stage-specific panel names, falling back to the combined list for
+// reports generated before per-stage tracking was added.
+function stagePanelText(
+  stageNames: string[] | undefined,
+  combinedNames: string[],
+): string {
+  const names = stageNames ?? combinedNames;
+  return names.length ? names.join(", ") : "—";
+}
+
 function Bullets({ items }: { items: string[] }) {
   if (items.length === 0) return <Text style={styles.emptyNote}>None noted.</Text>;
   return (
@@ -141,10 +152,6 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <Text style={styles.detailValue}>{d.role}</Text>
           </View>
           <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>Interview panel</Text>
-            <Text style={styles.detailValue}>{d.panel_names.length ? d.panel_names.join(", ") : "—"}</Text>
-          </View>
-          <View style={styles.detailCard}>
             <Text style={styles.detailLabel}>Overall rating</Text>
             <Text style={styles.detailValue}>{d.overall_rating != null ? `${d.overall_rating.toFixed(2)} / 5` : "—"}</Text>
           </View>
@@ -153,11 +160,15 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
         <View wrap={false}>
           <View style={styles.stageTableHeaderRow}>
             <Text style={[styles.stageTableHeaderCell, styles.colStageNum]}>Stage</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStagePanel]}>Panel</Text>
             <Text style={[styles.stageTableHeaderCell, styles.colStageLocation]}>Location</Text>
             <Text style={[styles.stageTableHeaderCell, styles.colStageDateTime]}>Date &amp; Time</Text>
           </View>
           <View style={styles.stageTableRow}>
             <Text style={[styles.stageTableCell, styles.colStageNum]}>1</Text>
+            <Text style={[styles.stageTableCell, styles.colStagePanel]}>
+              {stagePanelText(d.stage1_panel_names, d.panel_names)}
+            </Text>
             <Text style={[styles.stageTableCell, styles.colStageLocation]}>
               {stageLocationText(d.stage1_location, d.stage1_location_type)}
             </Text>
@@ -165,6 +176,9 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
           </View>
           <View style={styles.stageTableRow}>
             <Text style={[styles.stageTableCell, styles.colStageNum]}>2</Text>
+            <Text style={[styles.stageTableCell, styles.colStagePanel]}>
+              {stagePanelText(d.stage2_panel_names, d.panel_names)}
+            </Text>
             <Text style={[styles.stageTableCell, styles.colStageLocation]}>
               {stageLocationText(d.stage2_location, d.stage2_location_type)}
             </Text>
