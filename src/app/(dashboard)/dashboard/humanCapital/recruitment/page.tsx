@@ -2753,6 +2753,9 @@ function ApprovalsTab({
                           <p className="text-xs text-gray-500">
                             {a.role_title}
                           </p>
+                          <p className="text-xs text-gray-400">
+                            Applied {formatDate(a.created_at)}
+                          </p>
                         </span>
                         <span className="text-xs font-medium text-red-600">
                           View
