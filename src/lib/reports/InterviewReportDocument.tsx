@@ -56,9 +56,17 @@ const styles = StyleSheet.create({
   emptyNote: { fontSize: 8.5, color: GRAY, fontStyle: "italic" },
 
   appendixStageHeader: { fontSize: 10.5, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 16, marginBottom: 8 },
-  appendixCard: { backgroundColor: LIGHT, borderRadius: 6, padding: 10, marginBottom: 8 },
+  appendixRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  appendixName: { fontSize: 9.5, fontWeight: 700, color: DARK, marginBottom: 3 },
   appendixText: { fontSize: 8.5, color: DARK, lineHeight: 1.6 },
 });
+
+function splitPanelBlock(block: string): { header: string; body: string } {
+  const trimmed = block.trim();
+  const idx = trimmed.indexOf("\n");
+  if (idx === -1) return { header: trimmed, body: "" };
+  return { header: trimmed.slice(0, idx), body: trimmed.slice(idx + 1) };
+}
 
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
@@ -198,17 +206,22 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             Every panel member&apos;s and HR&apos;s full raw ratings and notes across both
             interview stages, captured at the time this report was generated.
           </Text>
-          {report.panel_responses.map((block, i) =>
-            block.trim().toUpperCase().startsWith("STAGE") ? (
-              <Text key={i} style={styles.appendixStageHeader}>
-                {block.trim()}
-              </Text>
-            ) : (
-              <View key={i} style={styles.appendixCard}>
-                <Text style={styles.appendixText}>{block}</Text>
+          {report.panel_responses.map((block, i) => {
+            if (block.trim().toUpperCase().startsWith("STAGE")) {
+              return (
+                <Text key={i} style={styles.appendixStageHeader}>
+                  {block.trim()}
+                </Text>
+              );
+            }
+            const { header, body } = splitPanelBlock(block);
+            return (
+              <View key={i} style={styles.appendixRow} wrap={false}>
+                <Text style={styles.appendixName}>{header}</Text>
+                {body ? <Text style={styles.appendixText}>{body}</Text> : null}
               </View>
-            ),
-          )}
+            );
+          })}
           <Text style={styles.footer} fixed>
             Wills Farms Ltd — Human Capital — Interview Report for {d.name}
           </Text>
