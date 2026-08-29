@@ -242,6 +242,23 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           )}
         </View>
 
+        {/* 6.5 Decision history — every applicant with a noted status change, any status */}
+        {report.decision_history_table && report.decision_history_table.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Decision History</Text>
+            <Text style={[styles.paragraph, { marginBottom: 10 }]}>
+              Candidates in this round whose status changed alongside an HR note — covering the
+              whole pipeline, not just those still awaiting a decision.
+            </Text>
+            {report.decision_history_table.map((c) => (
+              <View key={c.application_id} style={styles.candidateBlock} wrap={false}>
+                <Text style={styles.candidateBlockHeader}>{c.name}</Text>
+                <Text style={styles.paragraph}>{c.summary}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* 7. Constraints */}
         <View style={styles.section} wrap={false}>
           <Text style={styles.sectionTitle}>Constraints Noted</Text>

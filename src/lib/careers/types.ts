@@ -51,6 +51,16 @@ export interface StatusHistoryEntry {
   status: ApplicationStatus;
   changed_at: string;
   changed_by: string | null;
+  /**
+   * The HR note that justified this specific transition, archived here at
+   * the moment the status actually changed — see the PATCH handler in
+   * src/app/api/careers/applications/route.ts, which clears the
+   * applicant's hr_notes field back to null right after archiving it here,
+   * so hr_notes always holds only the draft note for the *next* change.
+   * Null when the transition had no note attached (e.g. a system/AI
+   * change, or HR changed status without writing anything).
+   */
+  note?: string | null;
 }
 
 export interface JobApplication {
@@ -225,6 +235,15 @@ export interface InterviewReport {
    * responses. Absent on reports generated before this field was added.
    */
   panel_forms_url?: string;
+  /**
+   * AI-narrated story of this applicant's status changes and the HR notes
+   * recorded against them (e.g. an AI hold overturned by management, a
+   * later rejection after underperforming at interview) — built from
+   * status_history at generation time. Absent when no status change in
+   * their history had a note attached, or on reports generated before
+   * this field was added.
+   */
+  decision_history_summary?: string;
 }
 
 /**
@@ -331,6 +350,21 @@ export interface RoleInterviewReport {
     panel_forms_url: string;
     /** Their individual interview report PDF (includes the full panel-responses appendix) — null if none was generated. */
     individual_report_url: string | null;
+  }[];
+
+  /**
+   * AI-narrated decision history — one entry per applicant for this role
+   * (any status, not just Evaluation) who has at least one status change
+   * with an HR note attached, telling the story of how they moved through
+   * the pipeline (AI screening outcomes, management interventions,
+   * eventual result). Applicants with no noted status change are omitted
+   * entirely rather than included with an empty story. Absent on reports
+   * generated before this field was added.
+   */
+  decision_history_table?: {
+    application_id: string;
+    name: string;
+    summary: string;
   }[];
 }
 

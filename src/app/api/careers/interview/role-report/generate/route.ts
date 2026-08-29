@@ -5,6 +5,7 @@ import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import {
   isAiFlagged,
   normalizeInterviewFormData,
+  STATUS_LABELS,
   type JobApplication,
   type RoleInterviewReport,
 } from "@/lib/careers/types";
@@ -70,6 +71,19 @@ const ROLE_REPORT_TOOL = {
         type: "string",
         description:
           "3-6 sentences making the explicit case for why the recommended candidate is the best choice — name their specific standout strengths, then directly contrast them against the next 1-2 highest-ranked candidates' specific weaknesses or gaps by name, so a reader who never sat in on the interviews understands exactly why this candidate won out. If no candidate is currently recommendable (e.g. none are still awaiting a decision), explain why not instead.",
+      },
+      decision_histories: {
+        type: "array",
+        description:
+          "One entry per candidate listed under 'Decision history' below — do not add entries for any candidate not listed there, and do not skip any that are. For each, write a 2-4 sentence narrative telling the story of that candidate's status changes using the specific HR notes given — e.g. how AI screening flagged them, what management or HR intervened to request and why, and how that led to their eventual outcome. Write it as an account of what happened, not a bare list of status changes.",
+        items: {
+          type: "object",
+          properties: {
+            application_id: { type: "string" },
+            summary: { type: "string" },
+          },
+          required: ["application_id", "summary"],
+        },
       },
     },
     required: [
@@ -293,6 +307,27 @@ export async function POST(req: NextRequest) {
       return lines.join("\n");
     });
 
+    // --- Decision history — every applicant for this round (any status,
+    // not just Evaluation) who has at least one status change with an HR
+    // note attached. Told as a narrative per candidate, not a raw list —
+    // covers the whole pipeline since a note justifying a rejection or a
+    // management-requested reinstatement is worth recording regardless of
+    // where the candidate ended up.
+    const decisionHistoryCandidates = apps.filter((a) =>
+      (a.status_history ?? []).some((h) => h.note?.trim()),
+    );
+    const decisionHistoryBlocks = decisionHistoryCandidates.map((a) => {
+      const historyLines = (a.status_history ?? []).map((h) => {
+        const label = STATUS_LABELS[h.status] ?? h.status;
+        const when = new Date(h.changed_at).toLocaleDateString();
+        const noteText = h.note?.trim() ? ` — HR note: "${h.note.trim()}"` : "";
+        return `    ${label} (${when})${noteText}`;
+      });
+      return [`— ${a.full_name} (Ref ${a.reference_number}), application_id ${a.id}:`, ...historyLines].join(
+        "\n",
+      );
+    });
+
     const prompt = [
       `You are writing a hiring summary for the head of the business at Wills Farms, covering the interviews conducted so far for the role "${roleTitle}". No hiring decision has been made yet for these candidates — this report exists to inform that decision, not to record one, so write it as an account of what happened during the interviews, not as an announcement of an outcome. It only concerns candidates who have finished their interview and are still waiting to hear whether they've got the role. The reader will not have attended any interviews — your job is to make sure they understand everything that matters from this report alone, so they can decide who to hire and who not to hire.`,
       `${evaluationApplicants.length} candidate(s) are awaiting a decision for this role. Combined-score ranking (highest first):`,
@@ -306,12 +341,20 @@ export async function POST(req: NextRequest) {
         : "No candidate for this role is currently awaiting a decision — say plainly that there is no one to recommend right now.",
       "Per-candidate detail (panel, location, HR notes, and their own interview report, where one exists):",
       ...candidateBlocks,
+      ...(decisionHistoryBlocks.length > 0
+        ? [
+            [
+              "Decision history — for every candidate in this round (any status, not just those awaiting a decision) who has at least one status change with an HR note recorded, their status changes in chronological order:",
+              ...decisionHistoryBlocks,
+            ].join("\n\n"),
+          ]
+        : []),
       "Using the record_role_interview_report tool: write the executive summary so it names the standout candidate and why; synthesise the core-competencies and key-observations summaries across these candidates; list any constraints flagged in the notes above; and in the recommendation rationale, explicitly compare the top candidate's specific strengths against the specific weaknesses or gaps of the next 1-2 highest-ranked candidates, by name, so the case for the recommendation is unambiguous.",
     ].join("\n\n");
 
     const message = await anthropic.messages.create({
       model: TASK_MANAGER_AI_MODEL,
-      max_tokens: 2500,
+      max_tokens: 3500,
       tools: [ROLE_REPORT_TOOL],
       tool_choice: { type: "tool", name: "record_role_interview_report" },
       messages: [{ role: "user", content: prompt }],
@@ -324,6 +367,23 @@ export async function POST(req: NextRequest) {
     if (!executiveSummary) {
       return NextResponse.json({ error: "AI did not return a report." }, { status: 502 });
     }
+
+    const decisionHistoriesRaw = Array.isArray(result.decision_histories)
+      ? (result.decision_histories as { application_id?: unknown; summary?: unknown }[])
+      : [];
+    const decisionHistoryByAppId = new Map(
+      decisionHistoriesRaw
+        .filter((h) => typeof h.application_id === "string" && typeof h.summary === "string")
+        .map((h) => [h.application_id as string, h.summary as string]),
+    );
+    const decisionHistoryTable: NonNullable<RoleInterviewReport["decision_history_table"]> =
+      decisionHistoryCandidates
+        .map((a) => ({
+          application_id: a.id,
+          name: a.full_name,
+          summary: decisionHistoryByAppId.get(a.id) ?? "",
+        }))
+        .filter((entry) => entry.summary);
 
     const report: RoleInterviewReport = {
       generated_at: new Date().toISOString(),
@@ -357,6 +417,7 @@ export async function POST(req: NextRequest) {
           typeof result.recommendation_rationale === "string" ? result.recommendation_rationale : "",
       },
       candidate_links: candidateLinks,
+      decision_history_table: decisionHistoryTable,
     };
 
     const { data: saved, error: saveError } = existing

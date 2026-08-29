@@ -12,12 +12,21 @@ export function appendStatusHistory(
   history: StatusHistoryEntry[] | null | undefined,
   status: ApplicationStatus,
   changedBy?: string | null,
+  note?: string | null,
 ): StatusHistoryEntry[] {
   const list = Array.isArray(history) ? history : [];
   if (list.length > 0 && list[list.length - 1].status === status) {
     return list;
   }
-  return [...list, { status, changed_at: new Date().toISOString(), changed_by: changedBy ?? null }];
+  return [
+    ...list,
+    {
+      status,
+      changed_at: new Date().toISOString(),
+      changed_by: changedBy ?? null,
+      note: note?.trim() || null,
+    },
+  ];
 }
 
 /**
@@ -30,6 +39,7 @@ export async function fetchAndAppendStatusHistory(
   applicationId: string,
   status: ApplicationStatus,
   changedBy?: string | null,
+  note?: string | null,
 ): Promise<StatusHistoryEntry[]> {
   const { data } = await supabaseAdmin
     .from("job_applications")
@@ -41,5 +51,6 @@ export async function fetchAndAppendStatusHistory(
     (data?.status_history as StatusHistoryEntry[] | null | undefined) ?? [],
     status,
     changedBy,
+    note,
   );
 }

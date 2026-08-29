@@ -143,6 +143,13 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
           </View>
         </View>
 
+        {report.decision_history_summary && (
+          <View wrap={false}>
+            <Text style={styles.sectionTitle}>Decision History</Text>
+            <Text style={styles.paragraph}>{report.decision_history_summary}</Text>
+          </View>
+        )}
+
         <Text style={styles.sectionTitle}>Core Competencies</Text>
         {report.core_competencies.length === 0 ? (
           <Text style={styles.emptyNote}>No competency data available.</Text>

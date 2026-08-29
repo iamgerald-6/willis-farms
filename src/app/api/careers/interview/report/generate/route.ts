@@ -6,7 +6,7 @@ import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import { recruitmentInterviewUrl } from "@/lib/appUrl";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
-import { normalizeInterviewFormData, type InterviewReport } from "@/lib/careers/types";
+import { normalizeInterviewFormData, STATUS_LABELS, type InterviewReport } from "@/lib/careers/types";
 import {
   gradersForStage,
   combinedInterviewAverage,
@@ -71,6 +71,11 @@ const REPORT_TOOL = {
       recommendation_rationale: {
         type: "string",
         description: "2-3 sentences explaining the rationale behind the final recommendation.",
+      },
+      decision_history_summary: {
+        type: "string",
+        description:
+          "Only include this field if a 'Decision history' section is given below. Tell the story of the candidate's status changes in 2-5 sentences of connected prose — how they moved through the pipeline, and specifically what each HR note said and why (e.g. an AI hold overturned by management for a stated reason, then a later outcome). Write it as a narrative account, not a bare list of status changes.",
       },
     },
     required: [
@@ -196,6 +201,29 @@ export async function POST(req: NextRequest) {
       .map((w) => `${w.area}: ${areaScores[w.area]?.toFixed(2) ?? "—"}/5`)
       .join(", ");
 
+    // Decision history — status changes with an HR note attached, told as
+    // a narrative in the report rather than a raw list. Omitted from both
+    // the prompt and the tool's required output when nothing was ever
+    // noted (the common case), so the AI isn't asked to invent a story
+    // where there isn't one.
+    const notedHistory = (application.status_history ?? []).filter(
+      (h: { note?: string | null }) => h.note?.trim(),
+    );
+    const decisionHistorySection =
+      notedHistory.length > 0
+        ? [
+            "Decision history — this candidate's status changes with the HR note recorded for each, in chronological order:",
+            (application.status_history ?? [])
+              .map((h: { status: string; changed_at: string; note?: string | null }) => {
+                const label = STATUS_LABELS[h.status as keyof typeof STATUS_LABELS] ?? h.status;
+                const when = new Date(h.changed_at).toLocaleDateString();
+                const noteText = h.note?.trim() ? ` — HR note: "${h.note.trim()}"` : "";
+                return `  ${label} (${when})${noteText}`;
+              })
+              .join("\n"),
+          ].join("\n")
+        : null;
+
     const prompt = [
       `You are writing a comprehensive interview report for Wills Farms' Human Capital team for the role "${guide.title}".`,
       `Candidate: ${application.full_name}. Reference: ${application.reference_number}.`,
@@ -208,6 +236,7 @@ export async function POST(req: NextRequest) {
       `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. Note: HR can only confirm "hire" when this combined score is at least 3.3/5.`,
       "Detailed per-grader notes follow:",
       ...sections,
+      ...(decisionHistorySection ? [decisionHistorySection] : []),
       "Using the record_interview_report tool, produce the full report. For core_competencies, give exactly one entry per assessment area listed above, in the same order, using the exact area name given.",
     ].join("\n\n");
 
@@ -290,6 +319,9 @@ export async function POST(req: NextRequest) {
       // PDF appendix links back to this applicant's panel forms/responses
       // on the platform instead of embedding the raw text.
       panel_forms_url: recruitmentInterviewUrl(application_id),
+      ...(notedHistory.length > 0 && typeof result.decision_history_summary === "string"
+        ? { decision_history_summary: result.decision_history_summary }
+        : {}),
     };
 
     const updatedFormData = {
