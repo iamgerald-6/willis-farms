@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
+import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -23,6 +23,10 @@ type Props = {
   onContinueToStage2Form?: () => void;
   /** Background autosave status for the setup fields below. */
   saveStatus?: "idle" | "saving" | "saved";
+  /** Shown once forms are opened, before the interview evaluation is finalized. */
+  canReschedule?: boolean;
+  onReschedule?: () => void;
+  isRescheduling?: boolean;
 };
 
 // Same date + IOSTimePicker split used when creating a job posting
@@ -51,6 +55,9 @@ export default function Stage2SetupStep({
   isOpeningPanelForms = false,
   onContinueToStage2Form,
   saveStatus = "idle",
+  canReschedule = false,
+  onReschedule,
+  isRescheduling = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -121,9 +128,36 @@ export default function Stage2SetupStep({
       />
 
       {readOnly && (
-        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          Stage 2 is complete and all panel members have submitted — this panel setup is now locked.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+          <p className="text-xs text-gray-500">
+            {canReschedule
+              ? "Panel forms are open, so the date, location, and panel list are locked to protect what's already been submitted."
+              : "Stage 2 is complete and all panel members have submitted — this panel setup is now locked."}
+          </p>
+          {canReschedule && onReschedule && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Reschedule Stage 2? This clears the \"forms opened\" status and wipes any Stage 2 panel member or HR submissions/drafts already collected. Invite-sent status and the panel member list are kept so you can edit and resend. This cannot be undone.",
+                  )
+                ) {
+                  onReschedule();
+                }
+              }}
+              disabled={isRescheduling}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-60 shrink-0"
+            >
+              {isRescheduling ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CalendarClock className="w-3.5 h-3.5" />
+              )}
+              Reschedule
+            </button>
+          )}
+        </div>
       )}
 
       <section className="border border-gray-200 rounded-xl p-4">

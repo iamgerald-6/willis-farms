@@ -47,7 +47,9 @@ type InterviewAction =
   | "complete_stage2"
   | "finalize"
   | "confirm_decision"
-  | "reconsider_decision";
+  | "reconsider_decision"
+  | "reschedule_stage1"
+  | "reschedule_stage2";
 
 // confirm_decision runs while status is "evaluation" and reconsider_decision
 // runs while status is "hold" or "rejected" — neither is in INTERVIEW_STATUSES
@@ -414,6 +416,69 @@ export async function POST(req: NextRequest) {
         setup: {
           ...setup,
           stage2_forms_opened_at: new Date().toISOString(),
+        },
+      };
+    }
+
+    // Reschedule wipes that stage's forms-opened flag and any grading
+    // collected so far, so the stage can be redone cleanly once the new
+    // date/panel is set. Invite-sent status, the date fields, and the
+    // panel member list are left untouched — HR edits them as needed and
+    // reuses the existing resend-invites / open-forms actions. Blocked
+    // once the outcome that data feeds into is already on record, so a
+    // reschedule can never orphan a decision from the data behind it.
+    if (action === "reschedule_stage1") {
+      if (merged.stage1_review?.reviewed_at) {
+        return NextResponse.json(
+          {
+            error:
+              "Stage 1 already has a pass/reject decision recorded — reschedule isn't available anymore.",
+          },
+          { status: 400 },
+        );
+      }
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage1_forms_opened_at: undefined,
+        },
+        panel_submissions: (merged.panel_submissions ?? []).filter(
+          (s) => s.stage !== 1,
+        ),
+        panel_drafts: (merged.panel_drafts ?? []).filter((s) => s.stage !== 1),
+        hr_submission: {
+          ...merged.hr_submission,
+          stage1: undefined,
+        },
+      };
+    }
+
+    if (action === "reschedule_stage2") {
+      if (application.interview_submitted_at) {
+        return NextResponse.json(
+          {
+            error:
+              "The interview evaluation has already been submitted — reschedule isn't available anymore.",
+          },
+          { status: 400 },
+        );
+      }
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage2_forms_opened_at: undefined,
+        },
+        panel_submissions: (merged.panel_submissions ?? []).filter(
+          (s) => s.stage !== 2,
+        ),
+        panel_drafts: (merged.panel_drafts ?? []).filter((s) => s.stage !== 2),
+        hr_submission: {
+          ...merged.hr_submission,
+          stage2: undefined,
         },
       };
     }

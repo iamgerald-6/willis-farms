@@ -47,7 +47,9 @@ type InterviewAction =
   | "submit_hr_stage2"
   | "stage1_review_pass"
   | "stage1_review_reject"
-  | "finalize";
+  | "finalize"
+  | "reschedule_stage1"
+  | "reschedule_stage2";
 
 const STEP_LABELS: Record<WorkflowStep, string> = {
   panel: "Stage 1 setup",
@@ -123,6 +125,21 @@ export default function InterviewPanelForm({
       : activeStep === "stage2_setup"
         ? stage2PanelLocked && rawIsPastStep
         : rawIsPastStep;
+
+  // Once HR opens a stage's panel forms, its setup fields (date, location,
+  // panel member list) lock — editing them mid-interview (or after
+  // members have started submitting) would silently invalidate whatever
+  // members already filled in. "Reschedule" is the deliberate escape
+  // hatch: it clears that stage's forms-opened flag plus any submissions
+  // collected so far, then hands editing back. It's only offered before
+  // the outcome that data feeds into is already on record — a Stage 1
+  // pass/reject decision, or the interview evaluation being finalized —
+  // so a reschedule can never orphan a decision from the data behind it.
+  const stage1FormsLocked = !!formData.setup?.stage1_forms_opened_at;
+  const stage2FormsLocked = !!formData.setup?.stage2_forms_opened_at;
+  const canRescheduleStage1 =
+    stage1FormsLocked && !formData.stage1_review?.reviewed_at;
+  const canRescheduleStage2 = stage2FormsLocked && !interviewSubmitted;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;
@@ -209,6 +226,21 @@ export default function InterviewPanelForm({
       }
       if (params.action === "open_stage2_panel_forms") {
         toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("stage2_setup");
+        refetch();
+        return;
+      }
+      // Same reasoning as the two "open panel forms" actions above —
+      // rescheduling should land HR back on the (now editable) setup
+      // screen to fix the date/panel, not close the whole application view.
+      if (params.action === "reschedule_stage1") {
+        toast.success("Stage 1 reset — update the details and resend invites when ready.");
+        setManualStep("panel");
+        refetch();
+        return;
+      }
+      if (params.action === "reschedule_stage2") {
+        toast.success("Stage 2 reset — update the details and resend invites when ready.");
         setManualStep("stage2_setup");
         refetch();
         return;
@@ -443,7 +475,7 @@ export default function InterviewPanelForm({
               }
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
-              readOnly={isPastStep}
+              readOnly={isPastStep || stage1FormsLocked}
               onOpenPanelForms={() =>
                 saveMutation.mutate({
                   action: "open_panel_forms",
@@ -452,6 +484,14 @@ export default function InterviewPanelForm({
               }
               isOpeningPanelForms={saveMutation.isPending}
               saveStatus={autosaveStatus}
+              canReschedule={canRescheduleStage1}
+              onReschedule={() =>
+                saveMutation.mutate({
+                  action: "reschedule_stage1",
+                  data: formData,
+                })
+              }
+              isRescheduling={saveMutation.isPending}
             />
           ) : activeStep === "stage1" &&
             !formData.setup?.stage1_forms_opened_at &&
@@ -524,7 +564,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
-              readOnly={isPastStep}
+              readOnly={isPastStep || stage2FormsLocked}
               onOpenPanelForms={() =>
                 saveMutation.mutate({
                   action: "open_stage2_panel_forms",
@@ -534,6 +574,14 @@ export default function InterviewPanelForm({
               isOpeningPanelForms={saveMutation.isPending}
               onContinueToStage2Form={() => setManualStep("stage2")}
               saveStatus={autosaveStatus}
+              canReschedule={canRescheduleStage2}
+              onReschedule={() =>
+                saveMutation.mutate({
+                  action: "reschedule_stage2",
+                  data: formData,
+                })
+              }
+              isRescheduling={saveMutation.isPending}
             />
           ) : activeStep === "stage2" &&
             !formData.setup?.stage2_forms_opened_at &&
