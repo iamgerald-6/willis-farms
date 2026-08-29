@@ -130,16 +130,17 @@ export default function InterviewPanelForm({
   // panel member list) lock — editing them mid-interview (or after
   // members have started submitting) would silently invalidate whatever
   // members already filled in. "Reschedule" is the deliberate escape
-  // hatch: it clears that stage's forms-opened flag plus any submissions
-  // collected so far, then hands editing back. It's only offered before
-  // the outcome that data feeds into is already on record — a Stage 1
-  // pass/reject decision, or the interview evaluation being finalized —
-  // so a reschedule can never orphan a decision from the data behind it.
+  // hatch: it clears that stage's forms-opened flag and un-submits any
+  // panel member/HR submissions already collected (their answers stay
+  // intact — they just become editable again rather than starting over),
+  // then hands editing back on the setup fields. Only available while at
+  // least one grader for that stage hasn't submitted yet — once everyone
+  // has (stage1PanelLocked / stage2PanelLocked), the stage is done and
+  // reschedule is no longer offered.
   const stage1FormsLocked = !!formData.setup?.stage1_forms_opened_at;
   const stage2FormsLocked = !!formData.setup?.stage2_forms_opened_at;
-  const canRescheduleStage1 =
-    stage1FormsLocked && !formData.stage1_review?.reviewed_at;
-  const canRescheduleStage2 = stage2FormsLocked && !interviewSubmitted;
+  const canRescheduleStage1 = stage1FormsLocked && !stage1PanelLocked;
+  const canRescheduleStage2 = stage2FormsLocked && !stage2PanelLocked;
 
   const combinedScore = useMemo(() => {
     if (!guide) return null;

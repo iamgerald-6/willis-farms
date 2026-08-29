@@ -113,7 +113,7 @@ export default function PanelSetupStep({
               onClick={() => {
                 if (
                   window.confirm(
-                    "Reschedule Stage 1? This clears the \"forms opened\" status and wipes any Stage 1 panel member or HR submissions/drafts already collected. Invite-sent status and the panel member list are kept so you can edit and resend. This cannot be undone.",
+                    "Reschedule Stage 1? Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted.",
                   )
                 ) {
                   onReschedule();

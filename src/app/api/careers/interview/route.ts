@@ -20,6 +20,8 @@ import {
   combinedInterviewAverage,
   ensureMemberTokens,
   scoreSubmission,
+  stage1ReadyForReview,
+  stage2ReadyForEvaluation,
   stageAverage,
 } from "@/lib/careers/panelInterview";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
@@ -420,19 +422,22 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Reschedule wipes that stage's forms-opened flag and any grading
-    // collected so far, so the stage can be redone cleanly once the new
-    // date/panel is set. Invite-sent status, the date fields, and the
-    // panel member list are left untouched — HR edits them as needed and
-    // reuses the existing resend-invites / open-forms actions. Blocked
-    // once the outcome that data feeds into is already on record, so a
-    // reschedule can never orphan a decision from the data behind it.
+    // Reschedule resets that stage's forms-opened flag and un-submits any
+    // panel member/HR submissions already collected for it — clearing
+    // just submitted_at, not the actual answers, so whoever already
+    // submitted gets an editable, pre-filled form back rather than a
+    // blank one. Invite-sent status, the date fields, and the panel
+    // member list are left untouched — HR edits them as needed and reuses
+    // the existing resend-invites / open-forms actions. Only available
+    // while the stage isn't fully done yet (at least one grader hasn't
+    // submitted) — once everyone has, the stage is complete and
+    // reschedule is blocked, both here and in the UI.
     if (action === "reschedule_stage1") {
-      if (merged.stage1_review?.reviewed_at) {
+      if (stage1ReadyForReview(merged)) {
         return NextResponse.json(
           {
             error:
-              "Stage 1 already has a pass/reject decision recorded — reschedule isn't available anymore.",
+              "Every Stage 1 grader has already submitted — reschedule isn't available anymore.",
           },
           { status: 400 },
         );
@@ -444,23 +449,24 @@ export async function POST(req: NextRequest) {
           ...setup,
           stage1_forms_opened_at: undefined,
         },
-        panel_submissions: (merged.panel_submissions ?? []).filter(
-          (s) => s.stage !== 1,
+        panel_submissions: (merged.panel_submissions ?? []).map((s) =>
+          s.stage === 1 ? { ...s, submitted_at: undefined } : s,
         ),
-        panel_drafts: (merged.panel_drafts ?? []).filter((s) => s.stage !== 1),
         hr_submission: {
           ...merged.hr_submission,
-          stage1: undefined,
+          stage1: merged.hr_submission?.stage1
+            ? { ...merged.hr_submission.stage1, submitted_at: undefined }
+            : merged.hr_submission?.stage1,
         },
       };
     }
 
     if (action === "reschedule_stage2") {
-      if (application.interview_submitted_at) {
+      if (stage2ReadyForEvaluation(merged)) {
         return NextResponse.json(
           {
             error:
-              "The interview evaluation has already been submitted — reschedule isn't available anymore.",
+              "Every Stage 2 grader has already submitted — reschedule isn't available anymore.",
           },
           { status: 400 },
         );
@@ -472,13 +478,14 @@ export async function POST(req: NextRequest) {
           ...setup,
           stage2_forms_opened_at: undefined,
         },
-        panel_submissions: (merged.panel_submissions ?? []).filter(
-          (s) => s.stage !== 2,
+        panel_submissions: (merged.panel_submissions ?? []).map((s) =>
+          s.stage === 2 ? { ...s, submitted_at: undefined } : s,
         ),
-        panel_drafts: (merged.panel_drafts ?? []).filter((s) => s.stage !== 2),
         hr_submission: {
           ...merged.hr_submission,
-          stage2: undefined,
+          stage2: merged.hr_submission?.stage2
+            ? { ...merged.hr_submission.stage2, submitted_at: undefined }
+            : merged.hr_submission?.stage2,
         },
       };
     }
