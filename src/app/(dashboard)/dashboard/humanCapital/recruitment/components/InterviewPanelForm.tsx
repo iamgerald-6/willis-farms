@@ -190,18 +190,31 @@ export default function InterviewPanelForm({
         toast.warning(`Saved, but: ${warnings.join("; ")}`);
       }
 
+      // "Open panel forms now" (Stage 1 and Stage 2) unlocks the actual
+      // fillable form for panel members and HR — it should land the user
+      // straight on that form, not close the window. onSaved() bubbles up
+      // to the parent's setSelected(null), which unmounts this whole
+      // component along with the application detail view it lives in, so
+      // these two actions deliberately skip it and just refetch instead.
+      if (params.action === "open_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("panel");
+        refetch();
+        return;
+      }
+      if (params.action === "open_stage2_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("stage2_setup");
+        refetch();
+        return;
+      }
+
       if (params.action === "send_panel_invites") {
         toast.success("Stage 1 panel invites sent.");
         setManualStep("stage1");
-      } else if (params.action === "open_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
-        setManualStep("panel");
       } else if (params.action === "send_stage2_invites") {
         toast.success("Stage 2 invites sent.");
         setManualStep("stage2");
-      } else if (params.action === "open_stage2_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
-        setManualStep("stage2_setup");
       } else if (params.action === "submit_hr_stage1") {
         toast.success("HR Stage 1 submitted.");
         setManualStep("stage1_review");
