@@ -12,9 +12,11 @@ import {
   UPLOADED_FILE_CATEGORIES,
   UPLOADED_FILE_CATEGORY_LABELS,
   effectiveMaxLength,
+  isNameFieldKey,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
+import { sanitizeNameInput } from "@/lib/validation";
 import {
   isRefereeFieldKey,
   resolveRequiredRefereeCount,
@@ -784,6 +786,8 @@ export default function JobApplicationWizard({
         ? MIN_APPLICANT_BIRTHDATE
         : undefined;
 
+    const isNameField = fieldType === "text" && isNameFieldKey(fieldKey);
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
@@ -792,7 +796,12 @@ export default function JobApplicationWizard({
           placeholder={placeholder}
           max={dateMax}
           value={String(value ?? "")}
-          onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          onChange={(e) =>
+            setFieldValue(
+              fieldKey,
+              isNameField ? sanitizeNameInput(e.target.value) : e.target.value,
+            )
+          }
         />
       </FieldBlock>
     );
