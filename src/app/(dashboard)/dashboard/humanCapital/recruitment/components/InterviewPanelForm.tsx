@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -142,14 +142,19 @@ export default function InterviewPanelForm({
     }));
   }, [combinedScore]);
 
-  const hrStage1: StageSubmissionData = formData.hr_submission?.stage1 ?? {
-    screening: {},
-    question_ratings: {},
-  };
+  // Memoized so the fallback object keeps a stable identity across
+  // unrelated re-renders — otherwise a fresh `{}` literal every render
+  // would look like a "change" to the autosave effect below and fire it
+  // even when HR hasn't typed anything yet.
+  const hrStage1: StageSubmissionData = useMemo(
+    () => formData.hr_submission?.stage1 ?? { screening: {}, question_ratings: {} },
+    [formData.hr_submission?.stage1],
+  );
 
-  const hrStage2: StageSubmissionData = formData.hr_submission?.stage2 ?? {
-    scenario_ratings: {},
-  };
+  const hrStage2: StageSubmissionData = useMemo(
+    () => formData.hr_submission?.stage2 ?? { scenario_ratings: {} },
+    [formData.hr_submission?.stage2],
+  );
 
   const setHrStage1 = (stage1: StageSubmissionData) => {
     setFormData((prev) => ({
@@ -244,6 +249,63 @@ export default function InterviewPanelForm({
       toast.error(error?.response?.data?.error ?? "Save failed.");
     },
   });
+
+  // Silently persists HR's in-progress Stage 1 / Stage 2 answers a couple
+  // seconds after they stop typing, so leaving the page or the tab closing
+  // doesn't erase progress the way it would if HR had to remember to click
+  // "Save draft" first. Deliberately its own mutation, separate from
+  // saveMutation — that one's onSuccess resets manualStep and calls
+  // onSaved(), which closes the whole application detail view (see the
+  // "open panel forms" fix above); an autosave firing mid-edit must never
+  // do that.
+  const [hrSaveStatus, setHrSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const autosaveMutation = useMutation({
+    mutationFn: (data: InterviewFormData) =>
+      api.post("/careers/interview", {
+        application_id: applicationId,
+        interview_form_data: data,
+        submitted_by: adminId,
+        action: "save_draft",
+      }),
+    onSuccess: () => setHrSaveStatus("saved"),
+    onError: () => setHrSaveStatus("idle"),
+  });
+
+  const skipHrStage1AutosaveRef = useRef(true);
+  useEffect(() => {
+    if (isLoading || hrStage1.submitted_at) return;
+    if (skipHrStage1AutosaveRef.current) {
+      skipHrStage1AutosaveRef.current = false;
+      return;
+    }
+    setHrSaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate({
+        ...formData,
+        hr_submission: { ...formData.hr_submission, stage1: hrStage1 },
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrStage1]);
+
+  const skipHrStage2AutosaveRef = useRef(true);
+  useEffect(() => {
+    if (isLoading || hrStage2.submitted_at) return;
+    if (skipHrStage2AutosaveRef.current) {
+      skipHrStage2AutosaveRef.current = false;
+      return;
+    }
+    setHrSaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate({
+        ...formData,
+        hr_submission: { ...formData.hr_submission, stage2: hrStage2 },
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrStage2]);
 
   const analysisMutation = useMutation({
     mutationFn: () =>
@@ -400,6 +462,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              saveStatus={hrSaveStatus}
             />
           ) : activeStep === "stage1_review" ? (
             <Stage1ReviewStep
@@ -487,6 +550,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              saveStatus={hrSaveStatus}
             />
           ) : (
             <Stage3Evaluation
