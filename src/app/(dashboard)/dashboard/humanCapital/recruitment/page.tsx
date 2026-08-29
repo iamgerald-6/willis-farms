@@ -24,6 +24,7 @@ import {
   canHrChangeStatus,
   getAllowedHrStatusOptions,
   isAwaitingAiScreening,
+  statusChangeRequiresHrNotes,
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
@@ -703,6 +704,21 @@ function ApplicationDetail({
               </div>
             )}
 
+            {!(application.status === "evaluation" && canConfirmOutcome) && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  HR notes (internal)
+                </label>
+                <textarea
+                  value={hrNotes}
+                  onChange={(e) => setHrNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Screening notes, interview scheduling, etc."
+                />
+              </div>
+            )}
+
             {application.status !== "evaluation" &&
               application.status !== "offer" &&
               !canReconsider && (
@@ -724,7 +740,11 @@ function ApplicationDetail({
                       <button
                         type="button"
                         onClick={() => applyQuickStatus("rejected")}
-                        disabled={quickStatusMutation.isPending}
+                        disabled={
+                          quickStatusMutation.isPending ||
+                          (statusChangeRequiresHrNotes(application.status, "rejected") &&
+                            !hrNotes.trim())
+                        }
                         className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                       >
                         Reject
@@ -732,7 +752,11 @@ function ApplicationDetail({
                       <button
                         type="button"
                         onClick={() => applyQuickStatus("interview")}
-                        disabled={quickStatusMutation.isPending}
+                        disabled={
+                          quickStatusMutation.isPending ||
+                          (statusChangeRequiresHrNotes(application.status, "interview") &&
+                            !hrNotes.trim())
+                        }
                         className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
                       >
                         Interview
@@ -742,7 +766,11 @@ function ApplicationDetail({
                     <button
                       type="button"
                       onClick={() => applyQuickStatus("rejected")}
-                      disabled={quickStatusMutation.isPending}
+                      disabled={
+                        quickStatusMutation.isPending ||
+                        (statusChangeRequiresHrNotes(application.status, "rejected") &&
+                          !hrNotes.trim())
+                      }
                       className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                     >
                       Reject
@@ -762,6 +790,14 @@ function ApplicationDetail({
                       ))}
                     </select>
                   )}
+                  {(application.status === "shortlisted" ||
+                    application.status === "interview") &&
+                    statusEditable &&
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Add HR notes above before you can change status.
+                      </p>
+                    )}
                   {application.status === "shortlisted" && statusEditable && (
                     <p className="text-xs text-gray-500 mt-2">
                       Reject to send this application to the Rejects tab, or
@@ -773,6 +809,24 @@ function ApplicationDetail({
                       <p className="text-xs text-gray-500 mt-2">
                         Shortlist to override the AI recommendation, or confirm
                         Rejected.
+                      </p>
+                    )}
+                  {application.status === "under_review" &&
+                    statusEditable &&
+                    status !== application.status &&
+                    statusChangeRequiresHrNotes(application.status, status) &&
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Add HR notes above before saving this status change.
+                      </p>
+                    )}
+                  {application.status === "rejected" &&
+                    statusEditable &&
+                    status !== application.status &&
+                    statusChangeRequiresHrNotes(application.status, status) &&
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Add HR notes above before saving this status change.
                       </p>
                     )}
                 </div>
@@ -1312,21 +1366,6 @@ function ApplicationDetail({
               </div>
             )}
 
-            {!(application.status === "evaluation" && canConfirmOutcome) && (
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  HR notes (internal)
-                </label>
-                <textarea
-                  value={hrNotes}
-                  onChange={(e) => setHrNotes(e.target.value)}
-                  rows={3}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Screening notes, interview scheduling, etc."
-                />
-              </div>
-            )}
-
             {application.status === "evaluation" && canConfirmOutcome && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
                 <p className="text-sm font-semibold text-amber-900">
@@ -1614,7 +1653,12 @@ function ApplicationDetail({
               <button
                 type="button"
                 onClick={save}
-                disabled={mutation.isPending}
+                disabled={
+                  mutation.isPending ||
+                  (status !== application.status &&
+                    statusChangeRequiresHrNotes(application.status, status) &&
+                    !hrNotes.trim())
+                }
                 className="flex-1 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
               >
                 {mutation.isPending ? "Saving…" : "Save changes"}
