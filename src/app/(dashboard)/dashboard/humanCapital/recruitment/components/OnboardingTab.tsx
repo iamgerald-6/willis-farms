@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Pagination, { PAGE_SIZE } from "./Pagination";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import {
@@ -457,6 +458,16 @@ export default function OnboardingTab() {
 
   const rows = useMemo(() => data ?? [], [data]);
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [rows, page],
+  );
+
   return (
     <>
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -484,7 +495,7 @@ export default function OnboardingTab() {
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              paginated.map((row) => (
                 <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/80">
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{row.job_applications.full_name}</p>
@@ -514,6 +525,12 @@ export default function OnboardingTab() {
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={rows.length}
+        />
       </div>
 
       {selected && (

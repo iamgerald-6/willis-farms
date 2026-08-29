@@ -31,6 +31,7 @@ import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import EmployeesTab from "./components/EmployeesTab";
 import CareersTab from "./components/CareersTab";
+import Pagination, { PAGE_SIZE } from "./components/Pagination";
 import GraderSubmissionModal from "./components/interview/GraderSubmissionModal";
 import {
   gradersForStage,
@@ -2371,6 +2372,19 @@ function ScreeningStageTab({
     [applications, nameFilters, roleFilters, statusFilters],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters, statusFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
   const hasActiveFilters =
     nameFilters.length + roleFilters.length + statusFilters.length > 0;
 
@@ -2520,10 +2534,16 @@ function ScreeningStageTab({
                 </td>
               </tr>
             ) : (
-              filtered.map(renderRow)
+              paginated.map(renderRow)
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
       </div>
     </div>
   );
@@ -2658,6 +2678,19 @@ function ApprovalsTab({
             roleFilters.includes(r.application.role_title)),
       ),
     [ranked, nameFilters, roleFilters],
+  );
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filteredRanked.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginatedRanked = useMemo(
+    () => filteredRanked.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredRanked, page],
   );
 
   const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
@@ -2842,7 +2875,7 @@ function ApprovalsTab({
                 </td>
               </tr>
             ) : (
-              filteredRanked.map(({ application: a, rank }) => (
+              paginatedRanked.map(({ application: a, rank }) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2881,6 +2914,12 @@ function ApprovalsTab({
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filteredRanked.length}
+        />
       </div>
     </div>
   );
@@ -2930,6 +2969,19 @@ function OfferTab({
           (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
       ),
     [applications, nameFilters, roleFilters],
+  );
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
   );
 
   const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
@@ -3032,7 +3084,7 @@ function OfferTab({
                 </td>
               </tr>
             ) : (
-              filtered.map((a) => (
+              paginated.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -3073,6 +3125,12 @@ function OfferTab({
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
       </div>
     </div>
   );
@@ -3120,6 +3178,19 @@ function InterviewTab({
           (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
       ),
     [applications, nameFilters, roleFilters],
+  );
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
   );
 
   const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
@@ -3221,7 +3292,7 @@ function InterviewTab({
                 </td>
               </tr>
             ) : (
-              filtered.map((a) => (
+              paginated.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -3258,6 +3329,12 @@ function InterviewTab({
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
       </div>
     </div>
   );
@@ -4194,6 +4271,19 @@ function RecruitmentPageContent() {
     [mainApplications, nameFilters, roleFilters, statusFilters],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters, statusFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
   const hasActiveFilters =
     nameFilters.length + roleFilters.length + statusFilters.length > 0;
 
@@ -4477,7 +4567,7 @@ function RecruitmentPageContent() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((a) => (
+                  paginated.map((a) => (
                     <tr
                       key={a.id}
                       className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -4517,6 +4607,12 @@ function RecruitmentPageContent() {
                 )}
               </tbody>
             </table>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              onPageChange={setPage}
+              totalItems={filtered.length}
+            />
           </div>
         </>
       )}
