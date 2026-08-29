@@ -3801,8 +3801,8 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div className="border border-gray-200 rounded-xl p-4">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+              <div className="border border-gray-200 rounded-xl p-4 space-y-5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block">
                   All applicants
                 </label>
                 {reportDraft.applicant_roster.length === 0 ? (
@@ -3810,80 +3810,202 @@ function RoleReportModal({
                     No applicants for this role.
                   </p>
                 ) : (
-                  <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
-                    <table className="w-full text-xs min-w-[640px]">
-                      <thead>
-                        <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
-                          <th className="text-left font-semibold px-3 py-2">
-                            Name
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Stage reached
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Panel
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Date
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Location
-                          </th>
-                          <th className="text-right font-semibold px-3 py-2">
-                            S1
-                          </th>
-                          <th className="text-right font-semibold px-3 py-2">
-                            S2
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reportDraft.applicant_roster.map((a) => (
-                          <tr
-                            key={a.application_id}
-                            className="border-t border-gray-100"
-                          >
-                            <td className="px-3 py-2 text-gray-900">
-                              {a.name}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.stage_reached}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.panel_names.length
-                                ? a.panel_names.join(", ")
-                                : "—"}
-                              {a.unavailable_panel_names?.length ? (
-                                <span className="text-amber-600">
-                                  {" "}
-                                  ({a.unavailable_panel_names.join(", ")} —
-                                  couldn&apos;t make it)
-                                </span>
-                              ) : null}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.interview_date
-                                ? formatDate(a.interview_date)
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.location ?? "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage1_rating != null
-                                ? a.stage1_rating.toFixed(2)
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage2_rating != null
-                                ? a.stage2_rating.toFixed(2)
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {(
+                      [
+                        {
+                          stage: "application" as const,
+                          title: "Application",
+                          dateLabel: "Date applied",
+                        },
+                        {
+                          stage: "screening" as const,
+                          title: "Screening",
+                          dateLabel: "Date shortlisted",
+                        },
+                      ]
+                    ).map(({ stage, title, dateLabel }) => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === stage,
+                      );
+                      return (
+                        <div key={stage}>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            {title}
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      {dateLabel}
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDate(a.date) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(
+                      [
+                        {
+                          stage: "interview_stage1" as const,
+                          title: "Interview — Stage 1",
+                        },
+                        {
+                          stage: "interview_stage2" as const,
+                          title: "Interview — Stage 2",
+                        },
+                      ]
+                    ).map(({ stage, title }) => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === stage,
+                      );
+                      return (
+                        <div key={stage}>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            {title}
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs min-w-[640px]">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Panel
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Location
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Date &amp; time
+                                    </th>
+                                    <th className="text-right font-semibold px-3 py-2">
+                                      Ranking
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.panel_names.length
+                                          ? a.panel_names.join(", ")
+                                          : "—"}
+                                        {a.unavailable_panel_names?.length ? (
+                                          <span className="text-amber-600">
+                                            {" "}
+                                            ({a.unavailable_panel_names.join(", ")}{" "}
+                                            — couldn&apos;t make it)
+                                          </span>
+                                        ) : null}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.location ?? "—"}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDateTime(a.date) : "—"}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700 text-right">
+                                        {a.rank != null ? `#${a.rank}` : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(() => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === "evaluation",
+                      );
+                      return (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            Evaluation
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Date reached evaluation
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDate(a.date) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
 

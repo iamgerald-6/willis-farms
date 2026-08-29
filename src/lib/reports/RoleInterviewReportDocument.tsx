@@ -47,14 +47,18 @@ const styles = StyleSheet.create({
   rosterRow: { flexDirection: "row", borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 5 },
   rosterHeaderCell: { fontSize: 7, fontWeight: 700, color: GRAY, textTransform: "uppercase" },
   rosterCell: { fontSize: 7.5, color: DARK, lineHeight: 1.3 },
-  colName: { flexBasis: "17%", paddingRight: 4 },
-  colRole: { flexBasis: "13%", paddingRight: 4 },
-  colStage: { flexBasis: "17%", paddingRight: 4 },
-  colPanel: { flexBasis: "16%", paddingRight: 4 },
-  colDate: { flexBasis: "11%", paddingRight: 4 },
-  colLocation: { flexBasis: "11%", paddingRight: 4 },
-  colS1: { flexBasis: "7%", paddingRight: 2 },
-  colS2: { flexBasis: "8%" },
+
+  rosterSubTable: { marginBottom: 14 },
+  rosterSubTitle: { fontSize: 9, fontWeight: 700, color: DARK, marginBottom: 4 },
+
+  colSimpleName: { flexBasis: "70%", paddingRight: 4 },
+  colSimpleDate: { flexBasis: "30%" },
+
+  colIntName: { flexBasis: "22%", paddingRight: 4 },
+  colIntPanel: { flexBasis: "26%", paddingRight: 4 },
+  colIntLocation: { flexBasis: "20%", paddingRight: 4 },
+  colIntDateTime: { flexBasis: "20%", paddingRight: 4 },
+  colIntRank: { flexBasis: "12%" },
 
   candidateBlock: { marginBottom: 10 },
   candidateBlockHeader: { fontSize: 9.5, fontWeight: 700, color: DARK, marginBottom: 4 },
@@ -73,6 +77,15 @@ const styles = StyleSheet.create({
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtDateTime(iso: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}, ${d.toLocaleTimeString(
+    "en-GB",
+    { hour: "numeric", minute: "2-digit", hour12: true },
+  )}`;
 }
 
 function Bullets({ items }: { items: string[] }) {
@@ -160,36 +173,92 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           )}
         </View>
 
-        {/* 4. Full applicant roster — every applicant, any status */}
+        {/* 4. Full applicant roster — every applicant, any status, grouped by
+        furthest funnel stage reached. Stages with no applicants are omitted
+        entirely rather than shown empty. */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>All Applicants</Text>
-          <View style={styles.rosterHeaderRow}>
-            <Text style={[styles.rosterHeaderCell, styles.colName]}>Name</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colRole]}>Role</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colStage]}>Stage reached</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colPanel]}>Panel</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colDate]}>Date</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colLocation]}>Location</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colS1]}>S1</Text>
-            <Text style={[styles.rosterHeaderCell, styles.colS2]}>S2</Text>
-          </View>
-          {report.applicant_roster.map((a) => (
-            <View key={a.application_id} style={styles.rosterRow} wrap={false}>
-              <Text style={[styles.rosterCell, styles.colName]}>{a.name}</Text>
-              <Text style={[styles.rosterCell, styles.colRole]}>{a.role_title}</Text>
-              <Text style={[styles.rosterCell, styles.colStage]}>{a.stage_reached}</Text>
-              <Text style={[styles.rosterCell, styles.colPanel]}>
-                {a.panel_names.length ? a.panel_names.join(", ") : "—"}
-                {a.unavailable_panel_names?.length
-                  ? ` (${a.unavailable_panel_names.join(", ")} — couldn't make it)`
-                  : ""}
-              </Text>
-              <Text style={[styles.rosterCell, styles.colDate]}>{fmtDate(a.interview_date)}</Text>
-              <Text style={[styles.rosterCell, styles.colLocation]}>{a.location ?? "—"}</Text>
-              <Text style={[styles.rosterCell, styles.colS1]}>{a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}</Text>
-              <Text style={[styles.rosterCell, styles.colS2]}>{a.stage2_rating != null ? a.stage2_rating.toFixed(2) : "—"}</Text>
-            </View>
-          ))}
+
+          {(
+            [
+              { stage: "application" as const, title: "Application", dateLabel: "Date applied" },
+              { stage: "screening" as const, title: "Screening", dateLabel: "Date shortlisted" },
+            ]
+          ).map(({ stage, title, dateLabel }) => {
+            const rows = report.applicant_roster.filter((a) => a.stage === stage);
+            if (rows.length === 0) return null;
+            return (
+              <View key={stage} style={styles.rosterSubTable}>
+                <Text style={styles.rosterSubTitle}>{title}</Text>
+                <View style={styles.rosterHeaderRow}>
+                  <Text style={[styles.rosterHeaderCell, styles.colSimpleName]}>Name</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colSimpleDate]}>{dateLabel}</Text>
+                </View>
+                {rows.map((a) => (
+                  <View key={a.application_id} style={styles.rosterRow} wrap={false}>
+                    <Text style={[styles.rosterCell, styles.colSimpleName]}>{a.name}</Text>
+                    <Text style={[styles.rosterCell, styles.colSimpleDate]}>{fmtDate(a.date)}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })}
+
+          {(
+            [
+              { stage: "interview_stage1" as const, title: "Interview — Stage 1" },
+              { stage: "interview_stage2" as const, title: "Interview — Stage 2" },
+            ]
+          ).map(({ stage, title }) => {
+            const rows = report.applicant_roster.filter((a) => a.stage === stage);
+            if (rows.length === 0) return null;
+            return (
+              <View key={stage} style={styles.rosterSubTable}>
+                <Text style={styles.rosterSubTitle}>{title}</Text>
+                <View style={styles.rosterHeaderRow}>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntName]}>Name</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntPanel]}>Panel</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntLocation]}>Location</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntDateTime]}>Date &amp; Time</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntRank]}>Ranking</Text>
+                </View>
+                {rows.map((a) => (
+                  <View key={a.application_id} style={styles.rosterRow} wrap={false}>
+                    <Text style={[styles.rosterCell, styles.colIntName]}>{a.name}</Text>
+                    <Text style={[styles.rosterCell, styles.colIntPanel]}>
+                      {a.panel_names.length ? a.panel_names.join(", ") : "—"}
+                      {a.unavailable_panel_names?.length
+                        ? ` (${a.unavailable_panel_names.join(", ")} — couldn't make it)`
+                        : ""}
+                    </Text>
+                    <Text style={[styles.rosterCell, styles.colIntLocation]}>{a.location ?? "—"}</Text>
+                    <Text style={[styles.rosterCell, styles.colIntDateTime]}>{fmtDateTime(a.date)}</Text>
+                    <Text style={[styles.rosterCell, styles.colIntRank]}>{a.rank != null ? `#${a.rank}` : "—"}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })}
+
+          {(() => {
+            const rows = report.applicant_roster.filter((a) => a.stage === "evaluation");
+            if (rows.length === 0) return null;
+            return (
+              <View style={styles.rosterSubTable}>
+                <Text style={styles.rosterSubTitle}>Evaluation</Text>
+                <View style={styles.rosterHeaderRow}>
+                  <Text style={[styles.rosterHeaderCell, styles.colSimpleName]}>Name</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colSimpleDate]}>Date reached evaluation</Text>
+                </View>
+                {rows.map((a) => (
+                  <View key={a.application_id} style={styles.rosterRow} wrap={false}>
+                    <Text style={[styles.rosterCell, styles.colSimpleName]}>{a.name}</Text>
+                    <Text style={[styles.rosterCell, styles.colSimpleDate]}>{fmtDate(a.date)}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
         </View>
 
         {/* 5. Core competencies (Evaluation status only) */}

@@ -309,25 +309,43 @@ export interface RoleInterviewReport {
     combined_score: number | null;
   }[];
 
-  // 4. Full applicant roster — every applicant for the role, regardless of status.
+  // 4. Full applicant roster — every applicant for the role, regardless of status,
+  // grouped by the furthest funnel stage they reached (used to render separate
+  // Application / Screening / Interview Stage 1 / Interview Stage 2 / Evaluation
+  // tables in the "All Applicants" section).
   applicant_roster: {
     application_id: string;
     name: string;
-    role_title: string;
-    /** Human-readable label for how far they got, e.g. "Never shortlisted", "Shortlisted — interview not started", "Reached Stage 1", "Completed — Evaluation" / "— Hold" / "— Rejected" / "— Hired". */
-    stage_reached: string;
+    /**
+     * Furthest funnel stage this applicant reached. "interview_stage1" and
+     * "interview_stage2" cover anyone whose interview process stalled or
+     * ended (including rejection) at that stage; "evaluation" covers anyone
+     * who completed both interview stages without being rejected there
+     * (Evaluation, Hold, Offer, or Onboarding status).
+     */
+    stage: "application" | "screening" | "interview_stage1" | "interview_stage2" | "evaluation";
+    /**
+     * Date reached this stage — date applied, date shortlisted, interview
+     * date & time (for the two interview stages), or date evaluation began.
+     */
+    date: string | null;
+    /** Only populated for interview_stage1/interview_stage2 rows. */
     panel_names: string[];
     /**
-     * Panel members marked as unable to attend for this candidate (any
-     * stage) — a plain factual list, computed directly from the panel
-     * setup rather than AI-narrated, so it can't be paraphrased or
-     * dropped from the report.
+     * Panel members marked as unable to attend for this candidate at this
+     * stage — a plain factual list, computed directly from the panel setup
+     * rather than AI-narrated, so it can't be paraphrased or dropped from
+     * the report. Only populated for interview_stage1/interview_stage2 rows.
      */
     unavailable_panel_names: string[];
-    interview_date: string | null;
+    /** Only populated for interview_stage1/interview_stage2 rows. */
     location: string | null;
-    stage1_rating: number | null;
-    stage2_rating: number | null;
+    /**
+     * Combined-score rank, joined from candidate_rankings. Ranking is only
+     * ever computed for Evaluation-status applicants, so this is usually
+     * null on interview_stage1/interview_stage2 rows.
+     */
+    rank: number | null;
   }[];
 
   // 5. Core competencies — narrative synthesis + per-candidate table, Evaluation status only.
@@ -415,10 +433,24 @@ export function normalizeRoleInterviewReport(report: RoleInterviewReport): RoleI
     ...report,
     constraints: report.constraints ?? [],
     candidate_rankings: report.candidate_rankings ?? [],
-    applicant_roster: (report.applicant_roster ?? []).map((r) => ({
-      ...r,
-      unavailable_panel_names: r.unavailable_panel_names ?? [],
-    })),
+    // Reports generated before the stage breakdown was added stored a
+    // different shape (stage_reached string, no `stage` key) — those rows
+    // are dropped here rather than guessed at; regenerating the report
+    // rebuilds the roster in the current shape.
+    applicant_roster: (report.applicant_roster ?? [])
+      .filter((r) =>
+        ["application", "screening", "interview_stage1", "interview_stage2", "evaluation"].includes(
+          (r as { stage?: string }).stage ?? "",
+        ),
+      )
+      .map((r) => ({
+        ...r,
+        date: r.date ?? null,
+        panel_names: r.panel_names ?? [],
+        unavailable_panel_names: r.unavailable_panel_names ?? [],
+        location: r.location ?? null,
+        rank: r.rank ?? null,
+      })),
     core_competencies_summary: report.core_competencies_summary ?? "",
     core_competencies_table: report.core_competencies_table ?? [],
     key_observations_summary: report.key_observations_summary ?? "",
