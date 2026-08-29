@@ -120,6 +120,14 @@ export interface PanelMember {
   email: string;
   stage: 1 | 2;
   access_token: string;
+  /**
+   * Marked when this member can't make the (rescheduled) interview and a
+   * decision was made to proceed without them for this stage — they stay
+   * on the panel list for the record, but are excluded from the "has
+   * everyone submitted" completion check and skipped when invites are
+   * sent, so they no longer block progress.
+   */
+  unavailable?: boolean;
 }
 
 export interface StageSubmissionData {
@@ -302,6 +310,13 @@ export interface RoleInterviewReport {
     /** Human-readable label for how far they got, e.g. "Never shortlisted", "Shortlisted — interview not started", "Reached Stage 1", "Completed — Evaluation" / "— Hold" / "— Rejected" / "— Hired". */
     stage_reached: string;
     panel_names: string[];
+    /**
+     * Panel members marked as unable to attend for this candidate (any
+     * stage) — a plain factual list, computed directly from the panel
+     * setup rather than AI-narrated, so it can't be paraphrased or
+     * dropped from the report.
+     */
+    unavailable_panel_names: string[];
     interview_date: string | null;
     location: string | null;
     stage1_rating: number | null;
@@ -393,7 +408,10 @@ export function normalizeRoleInterviewReport(report: RoleInterviewReport): RoleI
     ...report,
     constraints: report.constraints ?? [],
     candidate_rankings: report.candidate_rankings ?? [],
-    applicant_roster: report.applicant_roster ?? [],
+    applicant_roster: (report.applicant_roster ?? []).map((r) => ({
+      ...r,
+      unavailable_panel_names: r.unavailable_panel_names ?? [],
+    })),
     core_competencies_summary: report.core_competencies_summary ?? "",
     core_competencies_table: report.core_competencies_table ?? [],
     key_observations_summary: report.key_observations_summary ?? "",

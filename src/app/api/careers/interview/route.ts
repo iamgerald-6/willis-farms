@@ -242,9 +242,21 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      // Members marked "couldn't make it" stay on the roster (validMembers,
+      // saved below) but don't get emailed — they're sitting this round out.
+      const membersToEmail = validMembers.filter((m) => !m.unavailable);
+      if (membersToEmail.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 1 panel member is marked as unable to attend — mark at least one as available before sending invites.",
+          },
+          { status: 400 },
+        );
+      }
 
       const inviteResult = await sendAllPanelInvites({
-        members: validMembers.map((m) => ({
+        members: membersToEmail.map((m) => ({
           name: m.name,
           email: m.email,
           access_token: m.access_token,
@@ -356,9 +368,21 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      // Members marked "couldn't make it" stay on the roster (validMembers,
+      // saved below) but don't get emailed — they're sitting this round out.
+      const membersToEmail = validMembers.filter((m) => !m.unavailable);
+      if (membersToEmail.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 2 panel member is marked as unable to attend — mark at least one as available before sending invites.",
+          },
+          { status: 400 },
+        );
+      }
 
       const inviteResult = await sendAllPanelInvites({
-        members: validMembers.map((m) => ({
+        members: membersToEmail.map((m) => ({
           name: m.name,
           email: m.email,
           access_token: m.access_token,

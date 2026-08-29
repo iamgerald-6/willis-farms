@@ -178,7 +178,12 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
               <Text style={[styles.rosterCell, styles.colName]}>{a.name}</Text>
               <Text style={[styles.rosterCell, styles.colRole]}>{a.role_title}</Text>
               <Text style={[styles.rosterCell, styles.colStage]}>{a.stage_reached}</Text>
-              <Text style={[styles.rosterCell, styles.colPanel]}>{a.panel_names.length ? a.panel_names.join(", ") : "—"}</Text>
+              <Text style={[styles.rosterCell, styles.colPanel]}>
+                {a.panel_names.length ? a.panel_names.join(", ") : "—"}
+                {a.unavailable_panel_names?.length
+                  ? ` (${a.unavailable_panel_names.join(", ")} — couldn't make it)`
+                  : ""}
+              </Text>
               <Text style={[styles.rosterCell, styles.colDate]}>{fmtDate(a.interview_date)}</Text>
               <Text style={[styles.rosterCell, styles.colLocation]}>{a.location ?? "—"}</Text>
               <Text style={[styles.rosterCell, styles.colS1]}>{a.stage1_rating != null ? a.stage1_rating.toFixed(2) : "—"}</Text>

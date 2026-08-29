@@ -77,6 +77,14 @@ export default function PanelSetupStep({
     });
   };
 
+  const toggleUnavailable = (index: number, unavailable: boolean) => {
+    const next = members.map((m, i) => (i === index ? { ...m, unavailable } : m));
+    onChange({
+      ...formData,
+      setup: { ...setup, stage1_members: next },
+    });
+  };
+
   // Same date + IOSTimePicker split used when creating a job posting
   // (CareersTab.tsx) — Ghana has no DST and is always UTC+0, so the picker
   // values are stored as literal UTC ("...T HH:mm:00Z") rather than run
@@ -261,34 +269,48 @@ export default function PanelSetupStep({
           {members.map((member, index) => (
             <div
               key={member.id || index}
-              className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start border border-gray-100 rounded-xl p-3 bg-white"
+              className={`border rounded-xl p-3 bg-white space-y-2 ${
+                member.unavailable ? "border-amber-200 bg-amber-50/40" : "border-gray-100"
+              }`}
             >
-              <input
-                type="text"
-                placeholder="Full name *"
-                value={member.name}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              <input
-                type="email"
-                placeholder="Email *"
-                value={member.email}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => removeMember(index)}
-                  disabled={members.length <= 1}
-                  className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+              <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="Full name *"
+                  value={member.name}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "name", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                <input
+                  type="email"
+                  placeholder="Email *"
+                  value={member.email}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "email", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => removeMember(index)}
+                    disabled={members.length <= 1}
+                    className="p-2 text-gray-400 hover:text-red-600 disabled:opacity-30"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-xs text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={!!member.unavailable}
+                  disabled={readOnly}
+                  onChange={(e) => toggleUnavailable(index, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Couldn&apos;t make it — exclude from this round (stays on record, won&apos;t be sent invites or block progress)
+              </label>
             </div>
           ))}
         </div>

@@ -180,6 +180,15 @@ export async function POST(req: NextRequest) {
       const stage1Names = stageMembers(formData, 1).map((m) => m.name).filter(Boolean);
       const stage2Names = stageMembers(formData, 2).map((m) => m.name).filter(Boolean);
       const panelNames = Array.from(new Set([...stage1Names, ...stage2Names]));
+      // Factual, not AI-narrated — computed directly from the panel setup
+      // so it can't be paraphrased or dropped by the model.
+      const unavailablePanelNames = Array.from(
+        new Set(
+          [...stageMembers(formData, 1), ...stageMembers(formData, 2)]
+            .filter((m) => m.unavailable && m.name.trim())
+            .map((m) => m.name),
+        ),
+      );
       const location = formData.setup?.stage2_location ?? formData.setup?.location ?? null;
       const interviewDate = formData.setup?.stage2_scheduled_at ?? formData.setup?.interview_start_at ?? null;
 
@@ -204,6 +213,7 @@ export async function POST(req: NextRequest) {
         role_title: a.role_title,
         stage_reached: stageReached,
         panel_names: panelNames,
+        unavailable_panel_names: unavailablePanelNames,
         interview_date: interviewDate,
         location,
         stage1_rating: formData.summary?.stage1_average ?? null,

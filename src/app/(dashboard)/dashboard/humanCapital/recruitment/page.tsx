@@ -3418,6 +3418,13 @@ function RoleReportModal({
                               {a.panel_names.length
                                 ? a.panel_names.join(", ")
                                 : "—"}
+                              {a.unavailable_panel_names?.length ? (
+                                <span className="text-amber-600">
+                                  {" "}
+                                  ({a.unavailable_panel_names.join(", ")} —
+                                  couldn&apos;t make it)
+                                </span>
+                              ) : null}
                             </td>
                             <td className="px-3 py-2 text-gray-700">
                               {a.interview_date

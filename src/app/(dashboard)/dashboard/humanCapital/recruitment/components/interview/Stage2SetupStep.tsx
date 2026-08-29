@@ -114,6 +114,16 @@ export default function Stage2SetupStep({
     });
   };
 
+  const toggleUnavailable = (index: number, unavailable: boolean) => {
+    const next = stage2Members.map((m, i) =>
+      i === index ? { ...m, unavailable } : m,
+    );
+    onChange({
+      ...formData,
+      setup: { ...setup, stage2_members: next },
+    });
+  };
+
   const scheduledAt =
     setup.stage2_scheduled_at ??
     formData.stage2_scheduled_at ??
@@ -294,33 +304,47 @@ export default function Stage2SetupStep({
           {stage2Members.map((member, index) => (
             <div
               key={member.id || index}
-              className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start border border-gray-100 rounded-xl p-3"
+              className={`border rounded-xl p-3 space-y-2 ${
+                member.unavailable ? "border-amber-200 bg-amber-50/40" : "border-gray-100"
+              }`}
             >
-              <input
-                type="text"
-                placeholder="Full name *"
-                value={member.name}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              <input
-                type="email"
-                placeholder="Email *"
-                value={member.email}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => removeMember(index)}
-                  className="p-2 text-gray-400 hover:text-red-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+              <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="Full name *"
+                  value={member.name}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "name", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                <input
+                  type="email"
+                  placeholder="Email *"
+                  value={member.email}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "email", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => removeMember(index)}
+                    className="p-2 text-gray-400 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-xs text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={!!member.unavailable}
+                  disabled={readOnly}
+                  onChange={(e) => toggleUnavailable(index, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Couldn&apos;t make it — exclude from this round (stays on record, won&apos;t be sent invites or block progress)
+              </label>
             </div>
           ))}
         </div>

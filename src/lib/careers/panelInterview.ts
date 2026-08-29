@@ -81,7 +81,7 @@ export function isSubmissionComplete(sub?: StageSubmissionData): boolean {
 }
 
 export function allStage1PanelComplete(data: InterviewFormData): boolean {
-  const members = stageMembers(data, 1);
+  const members = stageMembers(data, 1).filter((m) => !m.unavailable);
   if (members.length === 0) return false;
   return members.every((m) =>
     isSubmissionComplete(getSubmission(data, m.id, 1)),
@@ -89,7 +89,7 @@ export function allStage1PanelComplete(data: InterviewFormData): boolean {
 }
 
 export function allStage2PanelComplete(data: InterviewFormData): boolean {
-  const members = stageMembers(data, 2);
+  const members = stageMembers(data, 2).filter((m) => !m.unavailable);
   if (members.length === 0) return false;
   return members.every((m) =>
     isSubmissionComplete(getSubmission(data, m.id, 2)),
@@ -122,6 +122,8 @@ export type GraderResult = {
   stage: 1 | 2;
   total: number | null;
   submitted_at?: string;
+  /** Marked unable to attend this round — excluded from the completion check, shown as such instead of "Pending". */
+  unavailable?: boolean;
 };
 
 export function gradersForStage(
@@ -141,6 +143,7 @@ export function gradersForStage(
       stage,
       total: scored.total,
       submitted_at: sub?.submitted_at,
+      unavailable: member.unavailable,
     });
   }
 

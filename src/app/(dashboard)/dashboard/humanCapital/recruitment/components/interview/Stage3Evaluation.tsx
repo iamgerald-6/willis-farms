@@ -91,7 +91,9 @@ function GraderMatrix({
               <td className="px-4 py-2 text-center text-xs text-gray-500">
                 {g.submitted_at
                   ? new Date(g.submitted_at).toLocaleDateString("en-GB")
-                  : "Pending"}
+                  : g.unavailable
+                    ? "Couldn't make it"
+                    : "Pending"}
               </td>
             </tr>
           ))}
