@@ -11,7 +11,6 @@ import {
   STATUS_LABELS,
   STATUS_STYLES,
   PANEL_DECISIONS,
-  isAiFlagged,
   normalizeRoleInterviewReport,
   type ApplicationStatus,
   type JobApplication,
@@ -2290,9 +2289,10 @@ function FilterChip({
   );
 }
 
-// Applications the AI screened below threshold (status "under_review"), plus
-// any HR has since confirmed "rejected" — kept here for the record.
-function RejectsTab({
+// Screening stage: shortlisted, under review, and rejected candidates —
+// whatever path got them to that status (AI screening or HR's own call).
+// Rows are pre-sorted by the caller into that exact status order.
+function ScreeningStageTab({
   applications,
   isLoading,
   onSelect,
@@ -2422,11 +2422,9 @@ function RejectsTab({
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
-        Applications the AI scored below the shortlist threshold land here for
-        HR review, along with applicants confirmed Hold/Reserve or Do not hire
-        after their full interview evaluation. Nothing here is deleted — open
-        one to review it, or reconsider a Hold/Reserve or Do-not-hire outcome
-        now that the process is complete.
+        Shortlisted, under review, and rejected applicants — in that order.
+        Open one to review its AI screening score and details, or to move it
+        forward.
       </div>
 
       <div>
@@ -2538,11 +2536,13 @@ function RejectsTab({
 // the same role.
 function ApprovalsTab({
   applications,
+  holdApplications,
   isLoading,
   onSelect,
   adminId,
 }: {
   applications: JobApplication[];
+  holdApplications: JobApplication[];
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
   adminId: string;
@@ -2804,6 +2804,75 @@ function ApprovalsTab({
           </tbody>
         </table>
       </div>
+
+      {holdApplications.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-sm font-semibold text-gray-900">Hold / Reserve</p>
+          <p className="text-xs text-gray-500">
+            Confirmed Hold/Reserve outcomes — kept for reconsideration, not
+            ranked and not part of role report rounds.
+          </p>
+          <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+            <table className="w-full text-left text-sm min-w-[800px]">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Candidate
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Role
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Ref
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdApplications.map((a) => (
+                  <tr
+                    key={a.id}
+                    className="border-b border-gray-100 hover:bg-gray-50/80"
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900">
+                        {a.full_name}
+                      </p>
+                      <p className="text-xs text-gray-400">{a.email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {a.role_title}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                      {a.reference_number}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                      >
+                        {STATUS_LABELS[a.status]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => onSelect(a)}
+                        className="text-xs font-medium text-red-600 hover:underline"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2973,6 +3042,191 @@ function OfferTab({
                           a.interview_form_data.summary.decision_confirmed_at,
                         )
                       : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                    >
+                      {STATUS_LABELS[a.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onSelect(a)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Applicants moved to the interview stage (status "interview") — panel
+// setup, stage 1/2 forms, and evaluation all happen from the detail modal.
+function InterviewTab({
+  applications,
+  isLoading,
+  onSelect,
+}: {
+  applications: JobApplication[];
+  isLoading: boolean;
+  onSelect: (application: JobApplication) => void;
+}) {
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+
+  // Cross-filtering, same pattern as the other tabs: each field's option
+  // list is scoped by the other active filter.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? applications.filter((a) => roleFilters.includes(a.role_title))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? applications.filter((a) => nameFilters.includes(a.full_name))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applications.filter(
+        (a) =>
+          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+      ),
+    [applications, nameFilters, roleFilters],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
+        Applicants in the interview stage. Open one to set up the panel,
+        share Stage 1/2 forms, and move through evaluation once forms are in.
+      </div>
+
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Candidate
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Applied
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-12 text-center text-gray-400"
+                >
+                  {applications.length === 0
+                    ? "No applicants in the interview stage right now."
+                    : "No applicants match the selected filters."}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((a) => (
+                <tr
+                  key={a.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/80"
+                >
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{a.full_name}</p>
+                    <p className="text-xs text-gray-400">{a.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    {a.reference_number}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {formatDate(a.created_at)}
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -3729,20 +3983,6 @@ function RoleReportModal({
   );
 }
 
-// True for applicants who completed the full interview evaluation and were
-// confirmed Hold/Reserve or Do not hire — these move into the Rejects tab
-// (rather than staying in the main Applications list) so HR can review and
-// reconsider them there. Mirrors the `canReconsider` check in ApplicationDetail.
-function isEvaluationOutcome(a: JobApplication): boolean {
-  const decision = a.interview_form_data?.summary?.decision;
-  const confirmedAt = a.interview_form_data?.summary?.decision_confirmed_at;
-  return (
-    !!confirmedAt &&
-    ((a.status === "hold" && decision === "hold") ||
-      (a.status === "rejected" && decision === "do_not_hire"))
-  );
-}
-
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
@@ -3753,7 +3993,8 @@ function RecruitmentPageContent() {
     | "onboarding"
     | "employees"
     | "careers"
-    | "ai_rejects"
+    | "screening"
+    | "interview"
     | "approvals"
   >(
     tabParam === "offer"
@@ -3764,11 +4005,15 @@ function RecruitmentPageContent() {
           ? "employees"
           : tabParam === "careers"
             ? "careers"
-            : tabParam === "ai_rejects" || tabParam === "rejects"
-            ? "ai_rejects"
-            : tabParam === "approvals"
-              ? "approvals"
-              : "applications",
+            : tabParam === "screening" ||
+                tabParam === "ai_rejects" ||
+                tabParam === "rejects"
+              ? "screening"
+              : tabParam === "interview"
+                ? "interview"
+                : tabParam === "approvals"
+                  ? "approvals"
+                  : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -3813,27 +4058,51 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  // AI soft-rejects, HR-confirmed rejects, and evaluation Hold/Reserve or
-  // Do-not-hire outcomes all live in the Rejects tab.
-  const nonAiApplications = useMemo(
-    () =>
-      (data ?? []).filter((a) => !isAiFlagged(a) && !isEvaluationOutcome(a)),
+  // Tabs are now partitioned purely by the application's current status,
+  // regardless of how it got there (AI screening vs. HR's own call).
+  const applicationsTabApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "applied"),
     [data],
   );
-  const aiRejectApplications = useMemo(
-    () => (data ?? []).filter((a) => isAiFlagged(a) || isEvaluationOutcome(a)),
+
+  // Screening stage: shortlisted, under review, rejected — rows sorted into
+  // exactly that order.
+  const SCREENING_STATUS_ORDER: ApplicationStatus[] = [
+    "shortlisted",
+    "under_review",
+    "rejected",
+  ];
+  const screeningApplications = useMemo(() => {
+    const rank = new Map(
+      SCREENING_STATUS_ORDER.map((s, i) => [s, i] as const),
+    );
+    return (data ?? [])
+      .filter((a) => rank.has(a.status))
+      .slice()
+      .sort((a, b) => rank.get(a.status)! - rank.get(b.status)!);
+  }, [data]);
+
+  const interviewApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "interview"),
     [data],
   );
-  const approvalApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status === "evaluation"),
-    [nonAiApplications],
+
+  const evaluationApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "evaluation"),
+    [data],
   );
+
+  const holdApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "hold"),
+    [data],
+  );
+
   // Every applicant with a confirmed Hire decision — status "offer" — moves
   // to the Offer tab. From there HR sends the congratulations email with
   // the onboarding link, which is what advances them to "onboarding".
   const offerApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status === "offer"),
-    [nonAiApplications],
+    () => (data ?? []).filter((a) => a.status === "offer"),
+    [data],
   );
 
   const { data: activeOnboardingRows = [] } = useQuery({
@@ -3846,18 +4115,8 @@ function RecruitmentPageContent() {
   });
 
   const activeOnboardingCount = activeOnboardingRows.length;
-  // Evaluation → Approvals; confirmed hire → Offer; onboarding link sent →
-  // Onboarding — none of these belong in the Applications tab.
-  const mainApplications = useMemo(
-    () =>
-      nonAiApplications.filter(
-        (a) =>
-          a.status !== "evaluation" &&
-          a.status !== "offer" &&
-          a.status !== "onboarding",
-      ),
-    [nonAiApplications],
-  );
+  // Applications tab now shows only status "applied".
+  const mainApplications = applicationsTabApplications;
 
   // Cross-filtering: each field's option list is scoped by the OTHER active
   // filters (never by itself) — so picking Status = Interview narrows what
@@ -3944,8 +4203,13 @@ function RecruitmentPageContent() {
     else if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "employees") setActiveTab("employees");
     else if (tabParam === "careers") setActiveTab("careers");
-    else if (tabParam === "ai_rejects" || tabParam === "rejects")
-      setActiveTab("ai_rejects");
+    else if (
+      tabParam === "screening" ||
+      tabParam === "ai_rejects" ||
+      tabParam === "rejects"
+    )
+      setActiveTab("screening");
+    else if (tabParam === "interview") setActiveTab("interview");
     else if (tabParam === "approvals") setActiveTab("approvals");
   }, [tabParam]);
 
@@ -4001,11 +4265,12 @@ function RecruitmentPageContent() {
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         {(
           [
+            "careers",
             "applications",
-            "ai_rejects",
+            "screening",
+            "interview",
             "approvals",
             "offer",
-            "careers",
             "onboarding",
             "employees",
           ] as const
@@ -4020,29 +4285,38 @@ function RecruitmentPageContent() {
                 : "border-transparent text-gray-500 hover:text-gray-800"
             }`}
           >
-            {tab === "applications"
-              ? "Applications"
-              : tab === "ai_rejects"
-                ? "Rejects"
-                : tab === "approvals"
-                  ? "Approvals"
-                  : tab === "offer"
-                    ? "Offer"
-                    : tab === "careers"
-                      ? "Careers"
-                      : tab === "employees"
-                        ? "Employees"
-                        : "Onboarding"}
-            {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
+            {tab === "careers"
+              ? "Job posting"
+              : tab === "applications"
+                ? "Applications"
+                : tab === "screening"
+                  ? "Screening stage"
+                  : tab === "interview"
+                    ? "Interview"
+                    : tab === "approvals"
+                      ? "Evaluation"
+                      : tab === "offer"
+                        ? "Offer"
+                        : tab === "employees"
+                          ? "Employees"
+                          : "Onboarding"}
+            {tab === "screening" && screeningApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {aiRejectApplications.length}
+                {screeningApplications.length}
               </span>
             )}
-            {tab === "approvals" && approvalApplications.length > 0 && (
+            {tab === "interview" && interviewApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {approvalApplications.length}
+                {interviewApplications.length}
               </span>
             )}
+            {tab === "approvals" &&
+              evaluationApplications.length + holdApplications.length >
+                0 && (
+                <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                  {evaluationApplications.length + holdApplications.length}
+                </span>
+              )}
             {tab === "offer" && offerApplications.length > 0 && (
               <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {offerApplications.length}
@@ -4059,15 +4333,22 @@ function RecruitmentPageContent() {
 
       {activeTab === "careers" ? (
         <CareersTab adminId={session?.user?.id ?? ""} />
-      ) : activeTab === "ai_rejects" ? (
-        <RejectsTab
-          applications={aiRejectApplications}
+      ) : activeTab === "screening" ? (
+        <ScreeningStageTab
+          applications={screeningApplications}
+          isLoading={isLoading}
+          onSelect={setSelected}
+        />
+      ) : activeTab === "interview" ? (
+        <InterviewTab
+          applications={interviewApplications}
           isLoading={isLoading}
           onSelect={setSelected}
         />
       ) : activeTab === "approvals" ? (
         <ApprovalsTab
-          applications={approvalApplications}
+          applications={evaluationApplications}
+          holdApplications={holdApplications}
           isLoading={isLoading}
           onSelect={setSelected}
           adminId={session?.user?.id ?? ""}
@@ -4233,7 +4514,8 @@ function RecruitmentPageContent() {
 
       {selected &&
         (activeTab === "applications" ||
-          activeTab === "ai_rejects" ||
+          activeTab === "screening" ||
+          activeTab === "interview" ||
           activeTab === "approvals" ||
           activeTab === "offer") && (
           <ApplicationDetail
