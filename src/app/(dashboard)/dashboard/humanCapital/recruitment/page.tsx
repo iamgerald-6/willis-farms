@@ -223,14 +223,12 @@ function ApplicationDetail({
   const reportEditLog =
     application.interview_form_data?.summary?.interview_report_edit_log ?? [];
   // True only for applicants who already went through the full interview
-  // evaluation and were confirmed Hold/Reserve or Do not hire — not for a
-  // plain "hold"/"rejected" reached some other way (e.g. directly from
-  // Shortlisted, or an early AI reject). These are the ones HR can take a
-  // second look at from the Rejects tab.
+  // evaluation and were confirmed Hold/Reserve — not for a plain "hold"
+  // reached some other way (e.g. directly from Shortlisted). Rejected is a
+  // terminal status: it's never reopened for reconsideration, no matter
+  // how the rejection came about.
   const canReconsider =
-    !!decisionConfirmed &&
-    ((application.status === "hold" && decision === "hold") ||
-      (application.status === "rejected" && decision === "do_not_hire"));
+    !!decisionConfirmed && application.status === "hold" && decision === "hold";
   // Once a decision has been confirmed, the report is read-only reference
   // material rather than something to keep editing — shown as links for
   // Hold/Rejected (where it doubles as reconsideration context), Offer, and
@@ -721,6 +719,7 @@ function ApplicationDetail({
 
             {application.status !== "evaluation" &&
               application.status !== "offer" &&
+              application.status !== "rejected" &&
               !canReconsider && (
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
@@ -812,15 +811,6 @@ function ApplicationDetail({
                       </p>
                     )}
                   {application.status === "under_review" &&
-                    statusEditable &&
-                    status !== application.status &&
-                    statusChangeRequiresHrNotes(application.status, status) &&
-                    !hrNotes.trim() && (
-                      <p className="text-[11px] text-amber-700 mt-2">
-                        Add HR notes above before saving this status change.
-                      </p>
-                    )}
-                  {application.status === "rejected" &&
                     statusEditable &&
                     status !== application.status &&
                     statusChangeRequiresHrNotes(application.status, status) &&
