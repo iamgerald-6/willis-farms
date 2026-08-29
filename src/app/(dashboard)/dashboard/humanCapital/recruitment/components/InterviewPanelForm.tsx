@@ -342,10 +342,17 @@ export default function InterviewPanelForm({
   });
 
   const finalAnalysisMutation = useMutation({
-    mutationFn: () =>
-      api.post("/careers/interview/final-analysis", {
+    // The AI reads the critical concerns checklist from the database, not
+    // from this component's local state — save the current checklist
+    // first so "Generate" (only enabled once every item is answered) is
+    // guaranteed to analyze exactly what's on screen, even if HR never
+    // clicked "Save draft" themselves.
+    mutationFn: async () => {
+      await autosaveMutation.mutateAsync(formData);
+      return api.post("/careers/interview/final-analysis", {
         application_id: applicationId,
-      }),
+      });
+    },
     onSuccess: (res) => {
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),

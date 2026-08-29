@@ -171,6 +171,14 @@ export default function Stage3Evaluation({
     guide.disqualifierItems ??
     guide.disqualifiers.map((label, i) => ({ id: `dq_${i}`, label }));
 
+  // The AI analysis has to account for every critical-concern item, so
+  // "Generate" stays disabled until HR has answered yes/no on all of them
+  // — a blank answer isn't a real "no", it's "not reviewed yet".
+  const allDisqualifiersAnswered = disqualifierRows.every((item) => {
+    const observed = formData.disqualifiers?.[item.id]?.observed;
+    return observed === "yes" || observed === "no";
+  });
+
   const [selected, setSelected] = useState<SelectedGrader | null>(null);
   const submissionForGrader = (g: GraderResult, stage: 1 | 2): StageSubmissionData | undefined => {
     if (g.role === "hr") {
@@ -295,55 +303,6 @@ export default function Stage3Evaluation({
         </details>
       </section>
 
-      <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            AI analysis & recommendation
-          </p>
-          {!readOnly && onGenerateAnalysis && (
-            <button
-              type="button"
-              onClick={onGenerateAnalysis}
-              disabled={isGeneratingAnalysis}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 hover:text-purple-900 disabled:opacity-60"
-            >
-              {isGeneratingAnalysis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {formData.summary?.ai_analysis ? "Regenerate" : "Generate"}
-            </button>
-          )}
-        </div>
-
-        {formData.summary?.ai_analysis ? (
-          <>
-            <p className="text-sm text-purple-950 leading-relaxed">
-              {formData.summary.ai_analysis}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span
-                className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  RECOMMENDATION_CLASSES[formData.summary.ai_recommendation ?? "hold"]
-                }`}
-              >
-                AI recommends: {RECOMMENDATION_LABELS[formData.summary.ai_recommendation ?? "hold"]}
-              </span>
-              {formData.summary.ai_generated_at && (
-                <span className="text-xs text-purple-500">
-                  Generated {new Date(formData.summary.ai_generated_at).toLocaleString("en-GB")}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-purple-500">
-              Advisory only — HR confirms the actual outcome from the application view.
-            </p>
-          </>
-        ) : (
-          <p className="text-xs text-purple-700">
-            Get a quick AI read of the full Stage 1 + Stage 2 record before deciding.
-          </p>
-        )}
-      </div>
-
       <section>
         <h3 className="text-sm font-bold text-gray-900 mb-1">
           Critical concerns checklist
@@ -391,6 +350,61 @@ export default function Stage3Evaluation({
           ))}
         </div>
       </section>
+
+      <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            AI analysis & recommendation
+          </p>
+          {!readOnly && onGenerateAnalysis && (
+            <button
+              type="button"
+              onClick={onGenerateAnalysis}
+              disabled={isGeneratingAnalysis || !allDisqualifiersAnswered}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 hover:text-purple-900 disabled:opacity-60"
+            >
+              {isGeneratingAnalysis && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {formData.summary?.ai_analysis ? "Regenerate" : "Generate"}
+            </button>
+          )}
+        </div>
+
+        {!readOnly && !allDisqualifiersAnswered && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            Answer every item in the critical concerns checklist above (yes or no) before generating the AI analysis.
+          </p>
+        )}
+
+        {formData.summary?.ai_analysis ? (
+          <>
+            <p className="text-sm text-purple-950 leading-relaxed">
+              {formData.summary.ai_analysis}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  RECOMMENDATION_CLASSES[formData.summary.ai_recommendation ?? "hold"]
+                }`}
+              >
+                AI recommends: {RECOMMENDATION_LABELS[formData.summary.ai_recommendation ?? "hold"]}
+              </span>
+              {formData.summary.ai_generated_at && (
+                <span className="text-xs text-purple-500">
+                  Generated {new Date(formData.summary.ai_generated_at).toLocaleString("en-GB")}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-purple-500">
+              Advisory only — HR confirms the actual outcome from the application view.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-purple-700">
+            Get a quick AI read of the full Stage 1 + Stage 2 record before deciding.
+          </p>
+        )}
+      </div>
 
       {selected && (
         <GraderSubmissionModal

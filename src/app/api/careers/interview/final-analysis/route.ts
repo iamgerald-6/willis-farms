@@ -14,7 +14,7 @@ import {
   stageMembers,
   getSubmission,
 } from "@/lib/careers/panelInterview";
-import { observedDisqualifiers, canConfirmHire } from "@/lib/careers/panelDecision";
+import { canConfirmHire } from "@/lib/careers/panelDecision";
 
 // Same idea as the Stage 1 analysis route, but for the final evaluation:
 // once Stage 2 is fully submitted, read the ENTIRE Stage 1 + Stage 2
@@ -34,13 +34,13 @@ const ANALYSIS_TOOL = {
       analysis: {
         type: "string",
         description:
-          "One paragraph (roughly 100-160 words) summarising the full Stage 1 + Stage 2 record: consistency across graders, standout strengths, any red flags or disagreement in the notes (especially on mandatory screening items, honesty/biosecurity questions, or critical-concern flags), and how the practical assessment compared to the interview. End with a clear rationale for the recommendation.",
+          "One paragraph (roughly 100-160 words) summarising the full Stage 1 + Stage 2 record: consistency across graders, standout strengths, any red flags or disagreement in the notes (especially on mandatory screening items, honesty/biosecurity questions, or critical-concern checklist items), and how the practical assessment compared to the interview. Explicitly weigh HR's critical-concern checklist — any item marked 'Yes — observed' is a material factor and must be addressed in the analysis, not just mentioned in passing. End with a clear rationale for the recommendation.",
       },
       recommendation: {
         type: "string",
         enum: ["hire", "hold", "do_not_hire"],
         description:
-          "hire only if the record clearly supports it (note: HR can only confirm 'hire' when the combined weighted score is at least 3.3/5 — if the score is below that, recommend hold or do_not_hire instead). hold if promising but reservations remain. do_not_hire if the record does not support appointment.",
+          "hire only if the record clearly supports it AND no critical-concern item was marked 'Yes — observed' (note: HR can only confirm 'hire' when the combined weighted score is at least 3.3/5 — if the score is below that, recommend hold or do_not_hire instead). hold if promising but reservations remain, including if a critical concern was flagged but may not be disqualifying on its own. do_not_hire if the record does not support appointment or a serious critical concern was flagged.",
       },
     },
     required: ["analysis", "recommendation"],
@@ -126,16 +126,26 @@ export async function POST(req: NextRequest) {
       sections.push(formatStage2Section("HR", "HR", guide, formData.hr_submission.stage2));
     }
 
-    const flaggedConcerns = observedDisqualifiers(
-      formData,
-      guide.disqualifiers,
-      guide.disqualifierItems,
-    );
-    const concernsText = flaggedConcerns.length
-      ? flaggedConcerns
-          .map((c) => `${c.label}${c.notes ? ` — ${c.notes}` : ""}`)
-          .join("; ")
-      : "None flagged by HR.";
+    // Every item HR was asked to check, not just the ones flagged "yes" —
+    // an explicit "No" is itself useful signal (a concern was actively
+    // ruled out), and "Generate" is only enabled once every item has an
+    // answer, so this always reflects a complete checklist.
+    const disqualifierRows =
+      guide.disqualifierItems ??
+      guide.disqualifiers.map((label, i) => ({ id: `dq_${i}`, label }));
+    const checklistText = disqualifierRows
+      .map((item) => {
+        const entry = formData.disqualifiers?.[item.id];
+        const status =
+          entry?.observed === "yes"
+            ? "Yes — observed"
+            : entry?.observed === "no"
+              ? "No — not observed"
+              : "Not answered";
+        const notes = entry?.notes?.trim() ? ` (notes: ${entry.notes.trim()})` : "";
+        return `- ${item.label}: ${status}${notes}`;
+      })
+      .join("\n");
 
     const stage1ScoreSummary = stage1Graders
       .map((g) => `${g.label} (${g.role}): ${g.total?.toFixed(2) ?? "—"}/5`)
@@ -149,7 +159,7 @@ export async function POST(req: NextRequest) {
       `Candidate: ${application.full_name}. Reference: ${application.reference_number}.`,
       `Interpretation guide for this role: ${guide.interpretation}`,
       `Known disqualifiers to watch for: ${guide.disqualifiers.join("; ")}`,
-      `HR's own critical-concern checklist for this candidate: ${concernsText}`,
+      `HR's critical-concern checklist for this candidate — every item, as answered by HR:\n${checklistText}`,
       `Stage 1 grader scores: ${stage1ScoreSummary}. Stage 1 average: ${stage1Avg?.toFixed(2) ?? "—"}/5.`,
       `Stage 2 grader scores: ${stage2ScoreSummary}. Stage 2 average: ${stage2Avg?.toFixed(2) ?? "—"}/5.`,
       `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. Note: HR can only confirm "hire" when this combined score is at least 3.3/5 (currently ${canConfirmHire(combined) ? "meets" : "does NOT meet"} that bar).`,
