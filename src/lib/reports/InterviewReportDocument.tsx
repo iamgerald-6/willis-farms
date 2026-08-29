@@ -1,6 +1,5 @@
 import { Document, Page, Text, View, StyleSheet, Link } from "@react-pdf/renderer";
-import type { InterviewReport } from "@/lib/careers/types";
-import { stageDateLabel } from "@/lib/careers/panelInterview";
+import type { InterviewLocationType, InterviewReport } from "@/lib/careers/types";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -37,6 +36,14 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 7.5, color: GRAY, textTransform: "uppercase", letterSpacing: 0.4 },
   detailValue: { fontSize: 10.5, fontWeight: 700, color: DARK, marginTop: 2 },
 
+  stageTableHeaderRow: { flexDirection: "row", borderBottom: `1pt solid ${DARK}`, paddingBottom: 4, marginTop: 12, marginBottom: 2 },
+  stageTableRow: { flexDirection: "row", borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  stageTableHeaderCell: { fontSize: 7, fontWeight: 700, color: GRAY, textTransform: "uppercase" },
+  stageTableCell: { fontSize: 9.5, color: DARK },
+  colStageNum: { flexBasis: "15%", paddingRight: 4 },
+  colStageLocation: { flexBasis: "40%", paddingRight: 4 },
+  colStageDateTime: { flexBasis: "45%" },
+
   competencyRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 8 },
   competencyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 },
   competencyArea: { fontSize: 10, fontWeight: 700, color: DARK },
@@ -64,6 +71,26 @@ const styles = StyleSheet.create({
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtDateTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function stageLocationText(
+  location: string | null,
+  locationType: InterviewLocationType | null | undefined,
+): string {
+  if (location) return location;
+  return locationType === "online" ? "Online" : "—";
 }
 
 function Bullets({ items }: { items: string[] }) {
@@ -118,28 +145,30 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <Text style={styles.detailValue}>{d.panel_names.length ? d.panel_names.join(", ") : "—"}</Text>
           </View>
           <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>{stageDateLabel(d.stage1_location_type)} (Stage 1)</Text>
-            <Text style={styles.detailValue}>{fmtDate(d.stage1_interview_date)}</Text>
-          </View>
-          {d.stage1_location && (
-            <View style={styles.detailCard}>
-              <Text style={styles.detailLabel}>Stage 1 location</Text>
-              <Text style={styles.detailValue}>{d.stage1_location}</Text>
-            </View>
-          )}
-          <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>{stageDateLabel(d.stage2_location_type)} (Stage 2)</Text>
-            <Text style={styles.detailValue}>{fmtDate(d.stage2_interview_date)}</Text>
-          </View>
-          {d.stage2_location && (
-            <View style={styles.detailCard}>
-              <Text style={styles.detailLabel}>Stage 2 location</Text>
-              <Text style={styles.detailValue}>{d.stage2_location}</Text>
-            </View>
-          )}
-          <View style={styles.detailCard}>
             <Text style={styles.detailLabel}>Overall rating</Text>
             <Text style={styles.detailValue}>{d.overall_rating != null ? `${d.overall_rating.toFixed(2)} / 5` : "—"}</Text>
+          </View>
+        </View>
+
+        <View wrap={false}>
+          <View style={styles.stageTableHeaderRow}>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageNum]}>Stage</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageLocation]}>Location</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageDateTime]}>Date &amp; Time</Text>
+          </View>
+          <View style={styles.stageTableRow}>
+            <Text style={[styles.stageTableCell, styles.colStageNum]}>1</Text>
+            <Text style={[styles.stageTableCell, styles.colStageLocation]}>
+              {stageLocationText(d.stage1_location, d.stage1_location_type)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageDateTime]}>{fmtDateTime(d.stage1_interview_date)}</Text>
+          </View>
+          <View style={styles.stageTableRow}>
+            <Text style={[styles.stageTableCell, styles.colStageNum]}>2</Text>
+            <Text style={[styles.stageTableCell, styles.colStageLocation]}>
+              {stageLocationText(d.stage2_location, d.stage2_location_type)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageDateTime]}>{fmtDateTime(d.stage2_interview_date)}</Text>
           </View>
         </View>
 

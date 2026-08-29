@@ -16,6 +16,7 @@ import {
   type JobApplication,
   type PanelDecision,
   type InterviewReport,
+  type InterviewLocationType,
   type RoleInterviewReport,
   type RoleInterviewReportRow,
 } from "@/lib/careers/types";
@@ -36,7 +37,6 @@ import GraderSubmissionModal from "./components/interview/GraderSubmissionModal"
 import {
   gradersForStage,
   getSubmission,
-  stageDateLabel,
   type GraderResult,
 } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -80,6 +80,25 @@ function formatDate(iso: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function stageLocationText(
+  location: string | null,
+  locationType: InterviewLocationType | null | undefined,
+): string {
+  if (location) return location;
+  return locationType === "online" ? "Online" : "—";
 }
 
 const INTERVIEW_GUIDE_STATUSES: ApplicationStatus[] = [
@@ -922,61 +941,78 @@ function ApplicationDetail({
                       <p className="text-[11px] text-gray-400 mb-2">
                         Pulled from the system — not editable here.
                       </p>
-                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-                        <div className="space-y-1.5">
-                          <p>
-                            <span className="text-gray-400">Candidate: </span>
-                            {reportDraft.applicant_details.name}
-                          </p>
-                          <p>
-                            <span className="text-gray-400">Role: </span>
-                            {reportDraft.applicant_details.role}
-                          </p>
-                          <p>
-                            <span className="text-gray-400">Panel: </span>
-                            {reportDraft.applicant_details.panel_names.length
-                              ? reportDraft.applicant_details.panel_names.join(", ")
-                              : "—"}
-                          </p>
-                        </div>
-                        <div className="space-y-1.5">
-                          <p>
-                            <span className="text-gray-400">
-                              {stageDateLabel(reportDraft.applicant_details.stage1_location_type)}
-                              {" (Stage 1): "}
-                            </span>
-                            {reportDraft.applicant_details.stage1_interview_date
-                              ? formatDate(reportDraft.applicant_details.stage1_interview_date)
-                              : "—"}
-                          </p>
-                          {reportDraft.applicant_details.stage1_location && (
-                            <p>
-                              <span className="text-gray-400">Stage 1 location: </span>
-                              {reportDraft.applicant_details.stage1_location}
-                            </p>
-                          )}
-                          <p>
-                            <span className="text-gray-400">
-                              {stageDateLabel(reportDraft.applicant_details.stage2_location_type)}
-                              {" (Stage 2): "}
-                            </span>
-                            {reportDraft.applicant_details.stage2_interview_date
-                              ? formatDate(reportDraft.applicant_details.stage2_interview_date)
-                              : "—"}
-                          </p>
-                          {reportDraft.applicant_details.stage2_location && (
-                            <p>
-                              <span className="text-gray-400">Stage 2 location: </span>
-                              {reportDraft.applicant_details.stage2_location}
-                            </p>
-                          )}
-                          <p>
-                            <span className="text-gray-400">Overall rating: </span>
-                            {reportDraft.applicant_details.overall_rating != null
-                              ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
-                              : "—"}
-                          </p>
-                        </div>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 mb-3">
+                        <p>
+                          <span className="text-gray-400">Candidate: </span>
+                          {reportDraft.applicant_details.name}
+                        </p>
+                        <p>
+                          <span className="text-gray-400">Role: </span>
+                          {reportDraft.applicant_details.role}
+                        </p>
+                        <p>
+                          <span className="text-gray-400">Panel: </span>
+                          {reportDraft.applicant_details.panel_names.length
+                            ? reportDraft.applicant_details.panel_names.join(", ")
+                            : "—"}
+                        </p>
+                        <p>
+                          <span className="text-gray-400">Overall rating: </span>
+                          {reportDraft.applicant_details.overall_rating != null
+                            ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Stage
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Location
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Date &amp; time
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-gray-100">
+                              <td className="px-3 py-2 text-gray-700">1</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stageLocationText(
+                                  reportDraft.applicant_details.stage1_location,
+                                  reportDraft.applicant_details.stage1_location_type,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {reportDraft.applicant_details.stage1_interview_date
+                                  ? formatDateTime(
+                                      reportDraft.applicant_details.stage1_interview_date,
+                                    )
+                                  : "—"}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-gray-700">2</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stageLocationText(
+                                  reportDraft.applicant_details.stage2_location,
+                                  reportDraft.applicant_details.stage2_location_type,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {reportDraft.applicant_details.stage2_interview_date
+                                  ? formatDateTime(
+                                      reportDraft.applicant_details.stage2_interview_date,
+                                    )
+                                  : "—"}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
 
@@ -2013,61 +2049,72 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
           Applicant &amp; interview details
         </p>
-        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700">
-          <div className="space-y-1.5">
-            <p>
-              <span className="text-gray-400">Candidate: </span>
-              {report.applicant_details.name}
-            </p>
-            <p>
-              <span className="text-gray-400">Role: </span>
-              {report.applicant_details.role}
-            </p>
-            <p>
-              <span className="text-gray-400">Panel: </span>
-              {report.applicant_details.panel_names.length
-                ? report.applicant_details.panel_names.join(", ")
-                : "—"}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <p>
-              <span className="text-gray-400">
-                {stageDateLabel(report.applicant_details.stage1_location_type)}
-                {" (Stage 1): "}
-              </span>
-              {report.applicant_details.stage1_interview_date
-                ? formatDate(report.applicant_details.stage1_interview_date)
-                : "—"}
-            </p>
-            {report.applicant_details.stage1_location && (
-              <p>
-                <span className="text-gray-400">Stage 1 location: </span>
-                {report.applicant_details.stage1_location}
-              </p>
-            )}
-            <p>
-              <span className="text-gray-400">
-                {stageDateLabel(report.applicant_details.stage2_location_type)}
-                {" (Stage 2): "}
-              </span>
-              {report.applicant_details.stage2_interview_date
-                ? formatDate(report.applicant_details.stage2_interview_date)
-                : "—"}
-            </p>
-            {report.applicant_details.stage2_location && (
-              <p>
-                <span className="text-gray-400">Stage 2 location: </span>
-                {report.applicant_details.stage2_location}
-              </p>
-            )}
-            <p>
-              <span className="text-gray-400">Overall rating: </span>
-              {report.applicant_details.overall_rating != null
-                ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
-                : "—"}
-            </p>
-          </div>
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 mb-3">
+          <p>
+            <span className="text-gray-400">Candidate: </span>
+            {report.applicant_details.name}
+          </p>
+          <p>
+            <span className="text-gray-400">Role: </span>
+            {report.applicant_details.role}
+          </p>
+          <p>
+            <span className="text-gray-400">Panel: </span>
+            {report.applicant_details.panel_names.length
+              ? report.applicant_details.panel_names.join(", ")
+              : "—"}
+          </p>
+          <p>
+            <span className="text-gray-400">Overall rating: </span>
+            {report.applicant_details.overall_rating != null
+              ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
+              : "—"}
+          </p>
+        </div>
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2 font-semibold text-gray-500">Stage</th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
+                  Location
+                </th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
+                  Date &amp; time
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-gray-100">
+                <td className="px-3 py-2 text-gray-700">1</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stageLocationText(
+                    report.applicant_details.stage1_location,
+                    report.applicant_details.stage1_location_type,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {report.applicant_details.stage1_interview_date
+                    ? formatDateTime(report.applicant_details.stage1_interview_date)
+                    : "—"}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2 text-gray-700">2</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stageLocationText(
+                    report.applicant_details.stage2_location,
+                    report.applicant_details.stage2_location_type,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {report.applicant_details.stage2_interview_date
+                    ? formatDateTime(report.applicant_details.stage2_interview_date)
+                    : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
