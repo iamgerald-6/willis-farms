@@ -19,6 +19,8 @@ type Props = {
   /** HR clicks this once the practical actually starts — unlocks the Stage 2 panel members' forms. */
   onOpenPanelForms?: () => void;
   isOpeningPanelForms?: boolean;
+  /** Takes HR straight to the Stage 2 form once panel forms are open — mirrors PanelSetupStep's Stage 1 equivalent. */
+  onContinueToStage2Form?: () => void;
 };
 
 // Same date + IOSTimePicker split used when creating a job posting
@@ -45,6 +47,7 @@ export default function Stage2SetupStep({
   readOnly = false,
   onOpenPanelForms,
   isOpeningPanelForms = false,
+  onContinueToStage2Form,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -325,6 +328,16 @@ export default function Stage2SetupStep({
             </>
           )}
         </section>
+      )}
+
+      {!readOnly && setup.stage2_invites_sent_at && (
+        <button
+          type="button"
+          onClick={() => onContinueToStage2Form?.()}
+          className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
+        >
+          Continue to HR Stage 2 form
+        </button>
       )}
 
       {!readOnly && (

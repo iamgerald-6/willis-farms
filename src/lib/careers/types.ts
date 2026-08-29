@@ -409,6 +409,16 @@ export interface InterviewFormData {
   setup?: InterviewSetup;
   /** Per-panel member submissions (via public link) */
   panel_submissions?: PanelSubmission[];
+  /**
+   * In-progress, not-yet-submitted answers for a panel member/HR's stage
+   * form — autosaved from the public link as they fill it in, so closing
+   * the tab and reopening the link resumes instead of starting over.
+   * Deliberately kept separate from panel_submissions (which everything
+   * else in the app treats as "this grader is done") so a draft can never
+   * be mistaken for a completed submission. Cleared once the real
+   * submission is recorded.
+   */
+  panel_drafts?: PanelSubmission[];
   /** HR's own stage scores */
   hr_submission?: {
     stage1?: StageSubmissionData;
@@ -472,6 +482,7 @@ export function normalizeInterviewFormData(
   const data: InterviewFormData = {
     setup: { stage1_members: [createPanelMember("", "", 1)] },
     panel_submissions: [],
+    panel_drafts: [],
     hr_submission: {},
     current_stage: 1,
     screening: {},

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import type { StageSubmissionData } from "@/lib/careers/types";
 import { FormShell } from "@/components/Forms/FormShell";
@@ -44,6 +44,11 @@ export default function PanelInterviewWizard({ token }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // Suppresses the autosave effect from firing for the state update that
+  // hydrates `submission` from a saved draft/submission — only real edits
+  // after that should trigger a new autosave.
+  const skipAutosaveRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +63,18 @@ export default function PanelInterviewWizard({ token }: Props) {
           throw new Error(json.error ?? "Failed to load interview.");
         }
         if (!cancelled) {
-          setData(json.data as PanelData);
+          const loaded = json.data as PanelData;
+          setData(loaded);
+          // Resume from where the panel member left off — whether that's a
+          // completed submission (read-only view) or an in-progress draft.
+          if (!loaded.locked && loaded.submission) {
+            skipAutosaveRef.current = true;
+            setSubmission({
+              screening: loaded.submission.screening ?? {},
+              question_ratings: loaded.submission.question_ratings ?? {},
+              scenario_ratings: loaded.submission.scenario_ratings ?? {},
+            });
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -76,6 +92,32 @@ export default function PanelInterviewWizard({ token }: Props) {
       cancelled = true;
     };
   }, [token]);
+
+  // Autosave the in-progress form a couple seconds after the panel member
+  // stops making changes, so leaving the tab and coming back (or a stray
+  // reload) resumes instead of starting over. Skipped while locked/loading
+  // and once the real submission has gone through.
+  useEffect(() => {
+    if (!data || data.locked || data.submitted || submitted) return;
+    if (skipAutosaveRef.current) {
+      skipAutosaveRef.current = false;
+      return;
+    }
+
+    setSaveStatus("saving");
+    const timer = setTimeout(() => {
+      fetch(`/api/careers/interview/panel/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submission, draft: true }),
+      })
+        .then((res) => setSaveStatus(res.ok ? "saved" : "idle"))
+        .catch(() => setSaveStatus("idle"));
+    }, 1500);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submission]);
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
@@ -284,6 +326,12 @@ export default function PanelInterviewWizard({ token }: Props) {
         {submitError && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
             {submitError}
+          </p>
+        )}
+
+        {saveStatus !== "idle" && (
+          <p className="text-xs text-gray-400 text-right -mb-4">
+            {saveStatus === "saving" ? "Saving…" : "Draft saved"}
           </p>
         )}
 

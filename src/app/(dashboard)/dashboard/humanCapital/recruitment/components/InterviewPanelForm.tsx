@@ -443,6 +443,7 @@ export default function InterviewPanelForm({
                 })
               }
               isOpeningPanelForms={saveMutation.isPending}
+              onContinueToStage2Form={() => setManualStep("stage2")}
             />
           ) : activeStep === "stage2" &&
             !formData.setup?.stage2_forms_opened_at &&
