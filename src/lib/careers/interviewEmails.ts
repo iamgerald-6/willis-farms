@@ -11,6 +11,11 @@ import {
   formatMedicalReportsHtml,
   formatMedicalReportsPlainText,
 } from "@/lib/systemDefinitions/onboardingMedicalReports";
+import {
+  buildIcsEvent,
+  googleCalendarLink,
+  outlookCalendarLink,
+} from "@/lib/email/calendarInvite";
 
 type SendResult = { sent: boolean; error?: string };
 
@@ -35,7 +40,7 @@ function formatDateTime(iso: string): string {
   });
 }
 
-type EmailAttachment = { filename: string; content: string };
+type EmailAttachment = { filename: string; content: string; contentType?: string };
 
 async function fetchUrlAsBase64Attachment(
   url: string,
@@ -150,6 +155,27 @@ export async function sendPanelInviteEmail(params: {
 
   const subject = `Interview panel invite (Stage ${params.stage}) — ${params.roleTitle} (${params.referenceNumber})`;
 
+  // Calendar event — plain (unprefixed) location text, distinct from the
+  // "Location:"/"Meeting link:" prose used in the email body above.
+  const calendarLocation =
+    params.locationType === "online" && params.meetingLink?.trim()
+      ? params.meetingLink.trim()
+      : (params.location?.trim() ?? "");
+  const calendarEvent = {
+    uid: `panel-invite-${params.accessToken}-stage${params.stage}@willsfarms.com`,
+    title: `Interview panel — ${params.candidateName} (Stage ${params.stage})`,
+    description: `Candidate: ${params.candidateName}\nRole: ${params.roleTitle}\nReference: ${params.referenceNumber}\n\nYour interview form: ${link}`,
+    location: calendarLocation,
+    startsAt: params.interviewStartAt,
+  };
+  const icsAttachment: EmailAttachment = {
+    filename: `interview-stage${params.stage}.ics`,
+    content: Buffer.from(buildIcsEvent(calendarEvent), "utf-8").toString("base64"),
+    contentType: "text/calendar; charset=utf-8; method=REQUEST",
+  };
+  const googleLink = googleCalendarLink(calendarEvent);
+  const outlookLink = outlookCalendarLink(calendarEvent);
+
   const text = [
     `Dear ${params.memberName},`,
     "",
@@ -165,6 +191,11 @@ export async function sendPanelInviteEmail(params: {
     openNote,
     "",
     "No WillsOne account is required — use the link above on any device.",
+    "",
+    "Add to calendar:",
+    `Google Calendar: ${googleLink}`,
+    `Outlook.com: ${outlookLink}`,
+    "(A calendar file is also attached to this email.)",
     "",
     "Kind regards,",
     "Human Capital Team",
@@ -196,11 +227,24 @@ export async function sendPanelInviteEmail(params: {
         <a href="${escapeHtml(link)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open interview form</a>
       </p>
       <p style="margin:0 0 12px;font-size:13px;color:#6b7280;">Or copy this link: ${escapeHtml(link)}</p>
-      ${openNote ? `<p style="margin:0;font-size:13px;color:#6b7280;">${escapeHtml(openNote)}</p>` : ""}
+      ${openNote ? `<p style="margin:0 0 20px;font-size:13px;color:#6b7280;">${escapeHtml(openNote)}</p>` : ""}
+      <p style="margin:0 0 8px;font-size:13px;color:#374151;"><strong>Add to calendar:</strong></p>
+      <p style="margin:0 0 4px;">
+        <a href="${escapeHtml(googleLink)}" style="color:#991b1b;font-size:13px;">Google Calendar</a>
+        &nbsp;·&nbsp;
+        <a href="${escapeHtml(outlookLink)}" style="color:#991b1b;font-size:13px;">Outlook.com</a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">A calendar file is also attached to this email.</p>
     `,
   );
 
-  return sendViaResend({ to: params.memberEmail, subject, html, text });
+  return sendViaResend({
+    to: params.memberEmail,
+    subject,
+    html,
+    text,
+    attachments: [icsAttachment],
+  });
 }
 
 /** Thank candidate and confirm Stage 1 interview date/time */
