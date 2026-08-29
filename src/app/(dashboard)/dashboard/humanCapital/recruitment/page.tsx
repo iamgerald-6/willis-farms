@@ -1016,6 +1016,25 @@ function ApplicationDetail({
                       </div>
                     </div>
 
+                    {reportDraft.decision_history_summary != null && (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                          Decision history
+                        </label>
+                        <textarea
+                          value={reportDraft.decision_history_summary}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              decision_history_summary: e.target.value,
+                            })
+                          }
+                          rows={4}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
+                        />
+                      </div>
+                    )}
+
                     <div>
                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                         Core competencies
@@ -2117,6 +2136,17 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
           </table>
         </div>
       </div>
+
+      {report.decision_history_summary != null && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Decision history
+          </p>
+          <p className="text-sm text-gray-800 text-justify leading-relaxed">
+            {report.decision_history_summary}
+          </p>
+        </div>
+      )}
 
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
