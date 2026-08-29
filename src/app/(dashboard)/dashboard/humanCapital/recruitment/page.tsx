@@ -2548,6 +2548,7 @@ function ApprovalsTab({
   adminId: string;
 }) {
   const [showRoleReport, setShowRoleReport] = useState(false);
+  const [showHoldList, setShowHoldList] = useState(false);
   const [nameFilters, setNameFilters] = useState<string[]>([]);
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
 
@@ -2682,15 +2683,89 @@ function ApprovalsTab({
             onChange={setRoleFilters}
           />
         </div>
-        <button
-          type="button"
-          onClick={() => setShowRoleReport(true)}
-          disabled={rounds.length === 0}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
-        >
-          Generate role report
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHoldList(true)}
+            disabled={holdApplications.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-200 hover:border-gray-400 disabled:opacity-60"
+          >
+            Hold / Reserve
+            {holdApplications.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {holdApplications.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRoleReport(true)}
+            disabled={rounds.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
+          >
+            Generate role report
+          </button>
+        </div>
       </div>
+
+      {showHoldList && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
+          onClick={() => setShowHoldList(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">
+                Hold / Reserve
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowHoldList(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto min-h-0">
+              {holdApplications.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-gray-400">
+                  No candidates on Hold / Reserve.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {holdApplications.map((a) => (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHoldList(false);
+                          onSelect(a);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between gap-3"
+                      >
+                        <span>
+                          <p className="text-sm font-medium text-gray-900">
+                            {a.full_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {a.role_title}
+                          </p>
+                        </span>
+                        <span className="text-xs font-medium text-red-600">
+                          View
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {hasActiveFilters && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -2804,75 +2879,6 @@ function ApprovalsTab({
           </tbody>
         </table>
       </div>
-
-      {holdApplications.length > 0 && (
-        <div className="space-y-2 pt-2">
-          <p className="text-sm font-semibold text-gray-900">Hold / Reserve</p>
-          <p className="text-xs text-gray-500">
-            Confirmed Hold/Reserve outcomes — kept for reconsideration, not
-            ranked and not part of role report rounds.
-          </p>
-          <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
-            <table className="w-full text-left text-sm min-w-[800px]">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-3 font-semibold text-gray-600">
-                    Candidate
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">
-                    Role
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">
-                    Ref
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-gray-600 text-right">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdApplications.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-b border-gray-100 hover:bg-gray-50/80"
-                  >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">
-                        {a.full_name}
-                      </p>
-                      <p className="text-xs text-gray-400">{a.email}</p>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {a.role_title}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {a.reference_number}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
-                      >
-                        {STATUS_LABELS[a.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => onSelect(a)}
-                        className="text-xs font-medium text-red-600 hover:underline"
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
