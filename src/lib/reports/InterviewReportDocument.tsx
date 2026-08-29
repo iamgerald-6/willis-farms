@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Link } from "@react-pdf/renderer";
 import type { InterviewReport } from "@/lib/careers/types";
 import { stageDateLabel } from "@/lib/careers/panelInterview";
 
@@ -55,9 +55,10 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 7, color: GRAY, textAlign: "center" },
   emptyNote: { fontSize: 8.5, color: GRAY, fontStyle: "italic" },
 
-  appendixStageHeader: { fontSize: 10.5, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 16, marginBottom: 8 },
-  appendixCard: { backgroundColor: LIGHT, borderRadius: 6, padding: 10, marginBottom: 8 },
-  appendixText: { fontSize: 8.5, color: DARK, lineHeight: 1.6 },
+  linkRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  linkName: { fontSize: 9.5, fontWeight: 700, color: DARK },
+  linkRef: { fontSize: 7.5, color: GRAY, fontFamily: "Courier", marginBottom: 3 },
+  linkText: { fontSize: 8.5, color: RED, textDecoration: "underline" },
 });
 
 function fmtDate(iso: string | null) {
@@ -191,24 +192,20 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
         </Text>
       </Page>
 
-      {report.panel_responses && report.panel_responses.length > 0 && (
+      {report.panel_forms_url && (
         <Page size="A4" style={styles.page}>
-          <Text style={styles.sectionTitle}>Appendix — Full Panel Responses</Text>
+          <Text style={styles.sectionTitle}>Appendix — Panel Forms &amp; Responses</Text>
           <Text style={[styles.paragraph, { marginBottom: 10 }]}>
-            Every panel member&apos;s and HR&apos;s full raw ratings and notes across both
-            interview stages, captured at the time this report was generated.
+            Every panel member&apos;s and HR&apos;s full ratings and notes across both
+            interview stages are recorded on the platform.
           </Text>
-          {report.panel_responses.map((block, i) =>
-            block.trim().toUpperCase().startsWith("STAGE") ? (
-              <Text key={i} style={styles.appendixStageHeader}>
-                {block.trim()}
-              </Text>
-            ) : (
-              <View key={i} style={styles.appendixCard}>
-                <Text style={styles.appendixText}>{block}</Text>
-              </View>
-            ),
-          )}
+          <View style={styles.linkRow} wrap={false}>
+            <Text style={styles.linkName}>{d.name}</Text>
+            <Text style={styles.linkRef}>{d.reference_number}</Text>
+            <Link src={report.panel_forms_url}>
+              <Text style={styles.linkText}>Panel forms / responses</Text>
+            </Link>
+          </View>
           <Text style={styles.footer} fixed>
             Wills Farms Ltd — Human Capital — Interview Report for {d.name}
           </Text>

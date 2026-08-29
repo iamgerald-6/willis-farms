@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
+import { recruitmentInterviewUrl } from "@/lib/appUrl";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
 import { normalizeInterviewFormData, type InterviewReport } from "@/lib/careers/types";
@@ -283,9 +284,12 @@ export async function POST(req: NextRequest) {
           typeof result.recommendation_rationale === "string" ? result.recommendation_rationale : "",
       },
       // Same per-grader text blocks (plus stage headers) already assembled
-      // above for the AI prompt — captured verbatim so the PDF/email report
-      // can show every panel member's full raw responses as an appendix.
+      // above for the AI prompt — kept for backward compatibility, no
+      // longer rendered in the PDF appendix (see panel_forms_url below).
       panel_responses: sections,
+      // PDF appendix links back to this applicant's panel forms/responses
+      // on the platform instead of embedding the raw text.
+      panel_forms_url: recruitmentInterviewUrl(application_id),
     };
 
     const updatedFormData = {

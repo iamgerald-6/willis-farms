@@ -205,10 +205,17 @@ export interface InterviewReport {
   /**
    * Every panel member's (and HR's) full raw responses across Stage 1 and
    * Stage 2 — one readable text block per grader, captured at generation
-   * time. Shown as an appendix in the downloaded/emailed PDF. Absent on
-   * reports generated before this field was added.
+   * time and fed to the AI as prompt context. No longer rendered in the
+   * PDF appendix (that now links out to the platform instead) — kept for
+   * backward compatibility with reports generated before that change.
    */
   panel_responses?: string[];
+  /**
+   * Link back to this applicant's panel forms/responses on the platform —
+   * shown as an appendix in the downloaded/emailed PDF instead of the raw
+   * responses. Absent on reports generated before this field was added.
+   */
+  panel_forms_url?: string;
 }
 
 /**
