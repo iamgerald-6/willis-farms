@@ -250,15 +250,17 @@ export default function InterviewPanelForm({
     },
   });
 
-  // Silently persists HR's in-progress Stage 1 / Stage 2 answers a couple
-  // seconds after they stop typing, so leaving the page or the tab closing
-  // doesn't erase progress the way it would if HR had to remember to click
-  // "Save draft" first. Deliberately its own mutation, separate from
+  // Silently persists HR's in-progress work — Stage 1 / Stage 2 evaluation
+  // answers, and the Panel setup / Stage 2 setup fields (interview date,
+  // location, panel member names/emails) — a couple seconds after they
+  // stop editing, so leaving the page or the tab closing doesn't erase
+  // progress the way it would if HR had to remember to click "Save draft"
+  // or "Send invites" first. Deliberately its own mutation, separate from
   // saveMutation — that one's onSuccess resets manualStep and calls
   // onSaved(), which closes the whole application detail view (see the
   // "open panel forms" fix above); an autosave firing mid-edit must never
   // do that.
-  const [hrSaveStatus, setHrSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const autosaveMutation = useMutation({
     mutationFn: (data: InterviewFormData) =>
       api.post("/careers/interview", {
@@ -267,8 +269,8 @@ export default function InterviewPanelForm({
         submitted_by: adminId,
         action: "save_draft",
       }),
-    onSuccess: () => setHrSaveStatus("saved"),
-    onError: () => setHrSaveStatus("idle"),
+    onSuccess: () => setAutosaveStatus("saved"),
+    onError: () => setAutosaveStatus("idle"),
   });
 
   const skipHrStage1AutosaveRef = useRef(true);
@@ -278,7 +280,7 @@ export default function InterviewPanelForm({
       skipHrStage1AutosaveRef.current = false;
       return;
     }
-    setHrSaveStatus("saving");
+    setAutosaveStatus("saving");
     const timer = setTimeout(() => {
       autosaveMutation.mutate({
         ...formData,
@@ -296,7 +298,7 @@ export default function InterviewPanelForm({
       skipHrStage2AutosaveRef.current = false;
       return;
     }
-    setHrSaveStatus("saving");
+    setAutosaveStatus("saving");
     const timer = setTimeout(() => {
       autosaveMutation.mutate({
         ...formData,
@@ -306,6 +308,22 @@ export default function InterviewPanelForm({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hrStage2]);
+
+  const skipSetupAutosaveRef = useRef(true);
+  useEffect(() => {
+    const isSetupStep = activeStep === "panel" || activeStep === "stage2_setup";
+    if (isLoading || !isSetupStep || isPastStep) return;
+    if (skipSetupAutosaveRef.current) {
+      skipSetupAutosaveRef.current = false;
+      return;
+    }
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate(formData);
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.setup]);
 
   const analysisMutation = useMutation({
     mutationFn: () =>
@@ -426,6 +444,7 @@ export default function InterviewPanelForm({
                 })
               }
               isOpeningPanelForms={saveMutation.isPending}
+              saveStatus={autosaveStatus}
             />
           ) : activeStep === "stage1" &&
             !formData.setup?.stage1_forms_opened_at &&
@@ -462,7 +481,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
-              saveStatus={hrSaveStatus}
+              saveStatus={autosaveStatus}
             />
           ) : activeStep === "stage1_review" ? (
             <Stage1ReviewStep
@@ -507,6 +526,7 @@ export default function InterviewPanelForm({
               }
               isOpeningPanelForms={saveMutation.isPending}
               onContinueToStage2Form={() => setManualStep("stage2")}
+              saveStatus={autosaveStatus}
             />
           ) : activeStep === "stage2" &&
             !formData.setup?.stage2_forms_opened_at &&
@@ -550,7 +570,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
-              saveStatus={hrSaveStatus}
+              saveStatus={autosaveStatus}
             />
           ) : (
             <Stage3Evaluation

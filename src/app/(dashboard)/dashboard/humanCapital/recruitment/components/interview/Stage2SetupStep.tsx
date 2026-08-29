@@ -21,6 +21,8 @@ type Props = {
   isOpeningPanelForms?: boolean;
   /** Takes HR straight to the Stage 2 form once panel forms are open — mirrors PanelSetupStep's Stage 1 equivalent. */
   onContinueToStage2Form?: () => void;
+  /** Background autosave status for the setup fields below. */
+  saveStatus?: "idle" | "saving" | "saved";
 };
 
 // Same date + IOSTimePicker split used when creating a job posting
@@ -48,6 +50,7 @@ export default function Stage2SetupStep({
   onOpenPanelForms,
   isOpeningPanelForms = false,
   onContinueToStage2Form,
+  saveStatus = "idle",
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -328,6 +331,12 @@ export default function Stage2SetupStep({
             </>
           )}
         </section>
+      )}
+
+      {!readOnly && saveStatus !== "idle" && (
+        <p className="text-xs text-gray-400 text-right">
+          {saveStatus === "saving" ? "Saving…" : "Draft saved"}
+        </p>
       )}
 
       {!readOnly && setup.stage2_invites_sent_at && (

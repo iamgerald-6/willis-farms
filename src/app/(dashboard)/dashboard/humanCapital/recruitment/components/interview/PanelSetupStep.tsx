@@ -18,6 +18,8 @@ type Props = {
   /** HR clicks this once the interview actually starts — unlocks the panel members' forms. */
   onOpenPanelForms?: () => void;
   isOpeningPanelForms?: boolean;
+  /** Background autosave status for the setup fields below. */
+  saveStatus?: "idle" | "saving" | "saved";
 };
 
 export default function PanelSetupStep({
@@ -30,6 +32,7 @@ export default function PanelSetupStep({
   readOnly = false,
   onOpenPanelForms,
   isOpeningPanelForms = false,
+  saveStatus = "idle",
 }: Props) {
   const setup = formData.setup ?? {};
   const members = setup.stage1_members?.length
@@ -299,6 +302,12 @@ export default function PanelSetupStep({
             </>
           )}
         </section>
+      )}
+
+      {!readOnly && saveStatus !== "idle" && (
+        <p className="text-xs text-gray-400 text-right">
+          {saveStatus === "saving" ? "Saving…" : "Draft saved"}
+        </p>
       )}
 
       {!readOnly && invitesSent && (
