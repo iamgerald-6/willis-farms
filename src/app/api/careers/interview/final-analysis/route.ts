@@ -27,20 +27,20 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const ANALYSIS_TOOL = {
   name: "record_final_recommendation",
   description:
-    "Records a one-paragraph analysis and a final hire/hold/do_not_hire recommendation based on the complete Stage 1 and Stage 2 interview panel record.",
+    "Records a one-paragraph analysis and a final hire/hold/do_not_hire recommendation, weighing the combined score, grader notes, AND HR's critical-concern checklist together as factors — not any single one in isolation.",
   input_schema: {
     type: "object" as const,
     properties: {
       analysis: {
         type: "string",
         description:
-          "One paragraph (roughly 100-160 words) summarising the full Stage 1 + Stage 2 record: consistency across graders, standout strengths, any red flags or disagreement in the notes (especially on mandatory screening items, honesty/biosecurity questions, or critical-concern checklist items), and how the practical assessment compared to the interview. Explicitly weigh HR's critical-concern checklist — any item marked 'Yes — observed' is a material factor and must be addressed in the analysis, not just mentioned in passing. End with a clear rationale for the recommendation.",
+          "One paragraph (roughly 100-160 words) summarising the full Stage 1 + Stage 2 record: consistency across graders, standout strengths, any red flags or disagreement in the notes (especially on mandatory screening items or honesty/biosecurity questions), and how the practical assessment compared to the interview. For any critical-concern checklist item marked 'Yes — observed', don't just note that it was checked — explain what it implies about the candidate's suitability, how serious it is given the notes/context, and how much weight it carries in your overall judgment (a minor, well-explained concern may matter less than a serious, unexplained one). Then tie all of this — score, notes, and checklist findings — together into a clear rationale for the recommendation.",
       },
       recommendation: {
         type: "string",
         enum: ["hire", "hold", "do_not_hire"],
         description:
-          "hire only if the record clearly supports it AND no critical-concern item was marked 'Yes — observed' (note: HR can only confirm 'hire' when the combined weighted score is at least 3.3/5 — if the score is below that, recommend hold or do_not_hire instead). hold if promising but reservations remain, including if a critical concern was flagged but may not be disqualifying on its own. do_not_hire if the record does not support appointment or a serious critical concern was flagged.",
+          "Your overall judgment, weighing three factors together: the combined score (HR can only confirm 'hire' when it's at least 3.3/5 — below that, don't recommend hire), the consistency/quality of grader notes, and the critical-concern checklist. A checklist item marked 'Yes — observed' is a real negative factor that should pull the recommendation toward hold or do_not_hire, proportional to how serious it is in context — it isn't an automatic veto on its own, but it also isn't just background information; weigh it the same way you'd weigh a serious concern raised in a grader's notes.",
       },
     },
     required: ["analysis", "recommendation"],
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. Note: HR can only confirm "hire" when this combined score is at least 3.3/5 (currently ${canConfirmHire(combined) ? "meets" : "does NOT meet"} that bar).`,
       "Detailed per-grader notes follow:",
       ...sections,
-      "Using the record_final_recommendation tool, give HR a one-paragraph analysis and a clear final recommendation: hire, hold, or do_not_hire.",
+      "Using the record_final_recommendation tool, give HR a one-paragraph analysis and a clear final recommendation: hire, hold, or do_not_hire. Treat the combined score, the grader notes, and the critical-concern checklist above as three factors to weigh together — don't just restate the checklist, reason about what any flagged item means for the candidate and let that genuinely inform whether you recommend hire, hold, or do_not_hire.",
     ].join("\n\n");
 
     const message = await anthropic.messages.create({
