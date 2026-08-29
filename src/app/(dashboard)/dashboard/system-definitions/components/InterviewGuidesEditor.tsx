@@ -181,7 +181,6 @@ export default function InterviewGuidesEditor({
     setEvaluationDraft({
       observedLabel: labels.observed,
       notObservedLabel: labels.notObserved,
-      neutralLabel: labels.neutral,
     });
   }, [businessLogic?.interviewEvaluationConfig]);
 
@@ -254,7 +253,6 @@ export default function InterviewGuidesEditor({
       interviewEvaluationConfig: {
         observedLabel: evaluationDraft.observedLabel?.trim(),
         notObservedLabel: evaluationDraft.notObservedLabel?.trim(),
-        neutralLabel: evaluationDraft.neutralLabel?.trim(),
       },
     });
   };
@@ -620,7 +618,7 @@ export default function InterviewGuidesEditor({
         <div className="space-y-6">
           <div className="rounded-lg border border-gray-200 p-4 space-y-3">
             <p className="text-sm font-medium text-gray-800">Observed / Not observed labels</p>
-            <div className="grid sm:grid-cols-3 gap-2">
+            <div className="grid sm:grid-cols-2 gap-2">
               <input
                 value={evaluationDraft.observedLabel ?? DEFAULT_INTERVIEW_EVALUATION_LABELS.observed}
                 onChange={(e) =>
@@ -639,15 +637,6 @@ export default function InterviewGuidesEditor({
                   setEvaluationDraft({ ...evaluationDraft, notObservedLabel: e.target.value })
                 }
                 placeholder="Not observed"
-                readOnly={!allowEdit}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
-              <input
-                value={evaluationDraft.neutralLabel ?? DEFAULT_INTERVIEW_EVALUATION_LABELS.neutral}
-                onChange={(e) =>
-                  setEvaluationDraft({ ...evaluationDraft, neutralLabel: e.target.value })
-                }
-                placeholder="Neutral"
                 readOnly={!allowEdit}
                 className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />

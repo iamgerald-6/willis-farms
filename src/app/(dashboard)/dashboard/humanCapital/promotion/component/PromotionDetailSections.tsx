@@ -130,7 +130,7 @@ export function PromotionFormSections({
                     ? "Yes"
                     : val.answer === "no"
                       ? "No"
-                      : "—"}
+                      : "Not answered"}
                 </span>
               </div>
             </div>

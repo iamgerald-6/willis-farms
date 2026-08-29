@@ -35,6 +35,14 @@ export function onboardingMagicLinkUrl(token: string): string {
   return `${getAppBaseUrl()}/onboarding/${token}`;
 }
 
+export function onboardingOfferAcceptUrl(token: string): string {
+  return `${getAppBaseUrl()}/onboarding/${token}/offer?response=accept`;
+}
+
+export function onboardingOfferDeclineUrl(token: string): string {
+  return `${getAppBaseUrl()}/onboarding/${token}/offer?response=decline`;
+}
+
 export function refereeReferenceUrl(token: string): string {
   return `${getAppBaseUrl()}/reference/${token}`;
 }

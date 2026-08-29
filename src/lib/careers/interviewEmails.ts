@@ -2,6 +2,8 @@ import {
   recruitmentInterviewUrl,
   panelInterviewUrl,
   refereeReferenceUrl,
+  onboardingOfferAcceptUrl,
+  onboardingOfferDeclineUrl,
 } from "@/lib/appUrl";
 import {
   getResendFromAddress,
@@ -442,6 +444,7 @@ export async function sendHireOnboardingEmail(params: {
   roleTitle: string;
   referenceNumber: string;
   onboardingLink: string;
+  onboardingToken: string;
   expiresAt: string;
   recommendedStartDate?: string;
   requiredMedicalReports?: string[];
@@ -454,6 +457,8 @@ export async function sendHireOnboardingEmail(params: {
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
   const expiry = formatDateTime(params.expiresAt);
+  const acceptLink = onboardingOfferAcceptUrl(params.onboardingToken);
+  const declineLink = onboardingOfferDeclineUrl(params.onboardingToken);
   const startLine = params.recommendedStartDate
     ? `<p style="margin:0 0 8px;"><strong>Proposed start date:</strong> ${escapeHtml(params.recommendedStartDate)}</p>`
     : "";
@@ -494,8 +499,12 @@ export async function sendHireOnboardingEmail(params: {
     offerLetterText,
     "",
     ...(medicalReportsText ? [medicalReportsText, ""] : []),
-    "Please complete your employee onboarding using the secure link below. This link is valid for 7 days:",
-    params.onboardingLink,
+    "Please let us know whether you accept this offer:",
+    `Accept offer: ${acceptLink}`,
+    `Decline offer: ${declineLink}`,
+    "",
+    "If you accept, please start your employee onboarding using the secure link below. This link is valid for 7 days:",
+    `${params.onboardingLink}?start=1`,
     "",
     `Link expires: ${expiry}`,
     "",
@@ -511,7 +520,7 @@ export async function sendHireOnboardingEmail(params: {
     .join("\n");
 
   const html = emailShell(
-    "Offer — complete onboarding",
+    "Offer — start onboarding",
     `
       <p style="margin:0 0 16px;font-size:15px;">Dear ${escapeHtml(firstName)},</p>
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
@@ -528,11 +537,18 @@ export async function sendHireOnboardingEmail(params: {
       ${offerLetterHtml}
       ${medicalReportsHtml}
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
-        Please complete your employee onboarding using the secure link below.
+        Please confirm whether you <strong>accept</strong> or <strong>decline</strong> this offer:
+      </p>
+      <p style="margin:0 0 16px;">
+        <a href="${escapeHtml(acceptLink)}" style="display:inline-block;background:#15803d;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;font-size:14px;margin-right:8px;">Accept offer</a>
+        <a href="${escapeHtml(declineLink)}" style="display:inline-block;background:#fff;color:#991b1b;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;font-size:14px;border:1px solid #991b1b;">Decline offer</a>
+      </p>
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        If you accept, start your employee onboarding using the link below.
         The link is valid for <strong>7 days</strong> (expires ${escapeHtml(expiry)}).
       </p>
       <p style="margin:0 0 24px;">
-        <a href="${escapeHtml(params.onboardingLink)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Complete onboarding</a>
+        <a href="${escapeHtml(params.onboardingLink)}?start=1" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Start onboarding</a>
       </p>
       <p style="margin:0;font-size:13px;color:#6b7280;">Or copy this link: ${escapeHtml(params.onboardingLink)}</p>
     `,
@@ -607,6 +623,60 @@ export async function sendRejectionEmail(params: {
   return sendViaResend({
     to: params.candidateEmail,
     cc: [hrEmail],
+    subject,
+    html,
+    text,
+  });
+}
+
+/** Notify HR when a candidate declines their job offer */
+export async function sendOfferDeclinedToHrEmail(params: {
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  applicationId: string;
+}): Promise<SendResult> {
+  const hrEmail = getReplyToEmail();
+  const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
+
+  const subject = `Offer declined — ${params.candidateName} (${params.referenceNumber})`;
+
+  const text = [
+    "A candidate has declined their job offer.",
+    "",
+    `Candidate: ${params.candidateName}`,
+    `Role: ${params.roleTitle}`,
+    `Reference: ${params.referenceNumber}`,
+    "",
+    "You can rescind the offer and move them to Rejects from Recruitment → Onboarding.",
+    "",
+    `Open Recruitment: ${dashboardLink}`,
+  ].join("\n");
+
+  const html = emailShell(
+    "Offer declined",
+    `
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        A candidate has <strong>declined</strong> their job offer.
+      </p>
+      <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
+        <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
+          <p style="margin:0 0 8px;"><strong>Candidate:</strong> ${escapeHtml(params.candidateName)}</p>
+          <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
+          <p style="margin:0;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+        Review in Recruitment → Onboarding. You can rescind the offer and move them to Rejects.
+      </p>
+      <p style="margin:0 0 24px;">
+        <a href="${escapeHtml(dashboardLink)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Open Recruitment — Onboarding</a>
+      </p>
+    `,
+  );
+
+  return sendViaResend({
+    to: hrEmail,
     subject,
     html,
     text,

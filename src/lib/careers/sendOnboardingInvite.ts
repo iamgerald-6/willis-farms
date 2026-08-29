@@ -50,7 +50,10 @@ export async function sendOnboardingInvite(
       application_id: application.id,
       token_id: tokenRecord.id,
       form_data: formData,
-      hr_data: hr,
+      hr_data: {
+        ...hr,
+        offer_response: hr.offer_response ?? "pending",
+      },
     },
     { onConflict: "application_id" },
   );
@@ -76,6 +79,7 @@ export async function sendOnboardingInvite(
     roleTitle: application.role_title,
     referenceNumber: application.reference_number,
     onboardingLink,
+    onboardingToken: tokenRecord.token,
     expiresAt: tokenRecord.expiresAt,
     recommendedStartDate: options?.recommendedStartDate,
     requiredMedicalReports: await fetchRequiredMedicalReports(supabase),

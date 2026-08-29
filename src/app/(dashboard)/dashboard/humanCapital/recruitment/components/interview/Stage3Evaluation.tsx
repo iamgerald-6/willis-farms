@@ -121,7 +121,6 @@ type Props = {
   evaluationLabels?: {
     observed: string;
     notObserved: string;
-    neutral: string;
   };
 };
 
@@ -359,9 +358,9 @@ export default function Stage3Evaluation({
             >
               <p className="text-sm text-gray-800 flex-1">{item.label}</p>
               <div className="flex gap-1">
-                {(["yes", "no", ""] as const).map((v) => (
+                {(["yes", "no"] as const).map((v) => (
                   <button
-                    key={v || "blank"}
+                    key={v}
                     type="button"
                     disabled={readOnly}
                     onClick={() =>
@@ -381,9 +380,7 @@ export default function Stage3Evaluation({
                   >
                     {v === "yes"
                       ? evaluationLabels.observed
-                      : v === "no"
-                        ? evaluationLabels.notObserved
-                        : evaluationLabels.neutral}
+                      : evaluationLabels.notObserved}
                   </button>
                 ))}
               </div>

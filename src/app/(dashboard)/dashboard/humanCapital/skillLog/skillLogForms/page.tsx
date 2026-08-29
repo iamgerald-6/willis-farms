@@ -186,7 +186,9 @@ function YesNoDropdown({
               : ({ borderColor: "#e5e7eb", "--tw-ring-color": BRAND } as any)
         }
       >
-        <option value="">—</option>
+        <option value="" disabled hidden>
+          Select
+        </option>
         <option value="yes">Yes</option>
         <option value="no">No</option>
       </select>

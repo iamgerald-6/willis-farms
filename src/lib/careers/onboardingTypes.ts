@@ -200,6 +200,9 @@ export interface OnboardingHrData {
     original_name?: string;
   };
   offer_letter_uploaded_at?: string;
+  /** Candidate response to the job offer (before / instead of completing onboarding). */
+  offer_response?: "pending" | "accepted" | "declined";
+  offer_response_at?: string;
   /** Set when HR sends the WillsOne platform invite (User Management). */
   platform_invited_at?: string;
   /** Set when HR completes Section O and sends the WillsOne invite from Recruitment. */

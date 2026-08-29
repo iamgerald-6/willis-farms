@@ -83,7 +83,7 @@ export default function GraderSubmissionModal({
                                   : "bg-gray-50 text-gray-400 border-gray-200"
                             }`}
                           >
-                            {answer?.pass === "yes" ? "Yes" : answer?.pass === "no" ? "No" : "—"}
+                            {answer?.pass === "yes" ? "Yes" : answer?.pass === "no" ? "No" : "Not answered"}
                           </span>
                           {answer?.notes && (
                             <span className="text-xs text-gray-500">{answer.notes}</span>

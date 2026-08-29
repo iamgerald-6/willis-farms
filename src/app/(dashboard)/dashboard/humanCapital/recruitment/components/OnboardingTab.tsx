@@ -51,14 +51,28 @@ function formatDate(iso: string | null | undefined) {
   });
 }
 
+function offerResponseLabel(response: OnboardingHrData["offer_response"]): string {
+  if (response === "accepted") return "Accepted";
+  if (response === "declined") return "Declined";
+  return "Awaiting response";
+}
+
+function offerResponseStyles(response: OnboardingHrData["offer_response"]): string {
+  if (response === "accepted") return "bg-green-50 text-green-800 border-green-200";
+  if (response === "declined") return "bg-red-50 text-red-800 border-red-200";
+  return "bg-amber-50 text-amber-800 border-amber-200";
+}
+
 function OnboardingDetail({
   row,
   onClose,
   onUpdated,
+  adminId,
 }: {
   row: SubmissionRow;
   onClose: () => void;
   onUpdated: () => void;
+  adminId: string;
 }) {
   const app = row.job_applications;
   const form = applyApplicationPrefill(mergeOnboardingForm(row.form_data), {
@@ -169,6 +183,8 @@ function OnboardingDetail({
     row.hr_data?.platform_invited_at?.trim() || row.hr_data?.hr_finished_at?.trim(),
   );
 
+  const offerResponse = row.hr_data?.offer_response ?? "pending";
+
   const finishHr = useMutation({
     mutationFn: async () => {
       await api.patch("/careers/onboarding", {
@@ -196,6 +212,26 @@ function OnboardingDetail({
     },
     onError: (e: { response?: { data?: { error?: string } } }) => {
       toast.error(e?.response?.data?.error ?? "Could not finish onboarding.");
+    },
+  });
+
+  const rescindOffer = useMutation({
+    mutationFn: () =>
+      api.post("/careers/onboarding/rescind", {
+        application_id: row.application_id,
+        rescinded_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.data.email_warning) {
+        toast.warning(`Offer rescinded, but: ${res.data.email_warning}`);
+      } else {
+        toast.success("Offer rescinded — applicant moved to Rejects.");
+      }
+      onUpdated();
+      onClose();
+    },
+    onError: (e: { response?: { data?: { error?: string } } }) => {
+      toast.error(e?.response?.data?.error ?? "Failed to rescind offer.");
     },
   });
 
@@ -275,6 +311,19 @@ function OnboardingDetail({
                 </div>
               )}
               <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Offer response</p>
+                <span
+                  className={`inline-flex mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${offerResponseStyles(offerResponse)}`}
+                >
+                  {offerResponseLabel(offerResponse)}
+                </span>
+                {row.hr_data?.offer_response_at && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {formatDate(row.hr_data.offer_response_at)}
+                  </p>
+                )}
+              </div>
+              <div>
                 <p className="text-xs text-gray-400 uppercase tracking-wide">
                   Onboarding submitted
                 </p>
@@ -294,6 +343,32 @@ function OnboardingDetail({
                 View employee profile
               </button>
             </div>
+
+            {offerResponse === "declined" && app.status === "onboarding" && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+                <p className="text-sm text-red-800">
+                  This candidate declined the offer. You can rescind and move them to Rejects.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
+                      )
+                    ) {
+                      return;
+                    }
+                    rescindOffer.mutate();
+                  }}
+                  disabled={rescindOffer.isPending}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-red-700 bg-white border border-red-200 px-3 py-2 rounded-lg hover:bg-red-100 disabled:opacity-60"
+                >
+                  {rescindOffer.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Rescind offer & move to Rejects
+                </button>
+              </div>
+            )}
 
             {app.status === "onboarding" && !row.submitted_at && (
               <button
@@ -443,7 +518,7 @@ function OnboardingDetail({
   );
 }
 
-export default function OnboardingTab() {
+export default function OnboardingTab({ adminId }: { adminId: string }) {
   const [selected, setSelected] = useState<SubmissionRow | null>(null);
   const queryClient = useQueryClient();
 
@@ -465,6 +540,7 @@ export default function OnboardingTab() {
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Offer</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Submitted</th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">Action</th>
@@ -473,13 +549,13 @@ export default function OnboardingTab() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                   Loading…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
                   No onboarding records yet. Send the onboarding link from the Offer tab.
                 </td>
               </tr>
@@ -491,6 +567,13 @@ export default function OnboardingTab() {
                     <p className="text-xs text-gray-400">{row.job_applications.email}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{row.job_applications.role_title}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${offerResponseStyles(row.hr_data?.offer_response)}`}
+                    >
+                      {offerResponseLabel(row.hr_data?.offer_response)}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[(row.job_applications.status as ApplicationStatus) ?? "onboarding"]}`}
@@ -519,6 +602,7 @@ export default function OnboardingTab() {
       {selected && (
         <OnboardingDetail
           row={selected}
+          adminId={adminId}
           onClose={() => setSelected(null)}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });

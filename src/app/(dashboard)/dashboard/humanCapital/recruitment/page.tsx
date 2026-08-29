@@ -4028,7 +4028,7 @@ function RecruitmentPageContent() {
           onSelect={setSelected}
         />
       ) : activeTab === "onboarding" ? (
-        <OnboardingTab />
+        <OnboardingTab adminId={session?.user?.id ?? ""} />
       ) : activeTab === "employees" ? (
         <EmployeesTab />
       ) : (
