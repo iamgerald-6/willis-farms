@@ -344,7 +344,11 @@ export default function PanelSetupStep({
         </p>
       )}
 
-      {!readOnly && invitesSent && (
+      {/* Always available once invited, even while the setup fields are
+          locked (forms opened, or the stage fully done) — this only
+          navigates to HR's own grading form, it doesn't edit anything
+          here. */}
+      {invitesSent && (
         <button
           type="button"
           onClick={() => onContinueWithoutResend?.()}

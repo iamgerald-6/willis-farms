@@ -373,7 +373,11 @@ export default function Stage2SetupStep({
         </p>
       )}
 
-      {!readOnly && setup.stage2_invites_sent_at && (
+      {/* Always available once invited, even while the setup fields are
+          locked (forms opened, or the stage fully done) — this only
+          navigates to HR's own grading form, it doesn't edit anything
+          here. */}
+      {setup.stage2_invites_sent_at && (
         <button
           type="button"
           onClick={() => onContinueToStage2Form?.()}
