@@ -6,7 +6,9 @@ import {
   sendInterviewInvitationEmail,
   sendStage2ScheduleEmail,
   sendRejectionEmail,
+  sendHrCalendarInviteEmail,
 } from "@/lib/careers/interviewEmails";
+import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   validatePanelDecision,
   statusForDecision,
@@ -304,6 +306,27 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const hrActor1 = await resolvePostingActor(supabaseAdmin, submitted_by);
+      if (hrActor1.email) {
+        const hrInviteResult = await sendHrCalendarInviteEmail({
+          hrName: hrActor1.name ?? "",
+          hrEmail: hrActor1.email,
+          candidateName: application.full_name,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+          stage: 1,
+          interviewStartAt: setup.interview_start_at,
+          locationType: setup.location_type,
+          location: setup.location,
+          meetingLink: setup.meeting_link,
+        });
+        if (!hrInviteResult.sent) {
+          emailWarnings.push(
+            hrInviteResult.error ?? "HR calendar invite email not sent",
+          );
+        }
+      }
+
       merged = {
         ...merged,
         setup: {
@@ -417,6 +440,27 @@ export async function POST(req: NextRequest) {
         emailWarnings.push(
           scheduleResult.error ?? "Stage 2 schedule email not sent",
         );
+      }
+
+      const hrActor2 = await resolvePostingActor(supabaseAdmin, submitted_by);
+      if (hrActor2.email) {
+        const hrInviteResult = await sendHrCalendarInviteEmail({
+          hrName: hrActor2.name ?? "",
+          hrEmail: hrActor2.email,
+          candidateName: application.full_name,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+          stage: 2,
+          interviewStartAt: scheduled,
+          locationType: setup.stage2_location_type,
+          location: setup.stage2_location,
+          meetingLink: setup.stage2_meeting_link,
+        });
+        if (!hrInviteResult.sent) {
+          emailWarnings.push(
+            hrInviteResult.error ?? "HR calendar invite email not sent",
+          );
+        }
       }
 
       merged = {

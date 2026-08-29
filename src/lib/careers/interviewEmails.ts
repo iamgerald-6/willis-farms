@@ -247,6 +247,105 @@ export async function sendPanelInviteEmail(params: {
   });
 }
 
+/**
+ * Calendar invite for the HR admin who sent Stage 1/Stage 2 panel invites —
+ * they already know the details (they set them up), so this is just the
+ * same event on their own calendar, not a form/action to complete.
+ */
+export async function sendHrCalendarInviteEmail(params: {
+  hrName: string;
+  hrEmail: string;
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  stage: 1 | 2;
+  interviewStartAt: string;
+  locationType?: "onsite" | "online";
+  location?: string;
+  meetingLink?: string;
+}): Promise<SendResult> {
+  const when = formatDateTime(params.interviewStartAt);
+  const loc = locationLines(params);
+
+  const calendarLocation =
+    params.locationType === "online" && params.meetingLink?.trim()
+      ? params.meetingLink.trim()
+      : (params.location?.trim() ?? "");
+  const calendarEvent = {
+    uid: `hr-interview-${params.referenceNumber}-stage${params.stage}@willsfarms.com`,
+    title: `Interview panel — ${params.candidateName} (Stage ${params.stage})`,
+    description: `Candidate: ${params.candidateName}\nRole: ${params.roleTitle}\nReference: ${params.referenceNumber}`,
+    location: calendarLocation,
+    startsAt: params.interviewStartAt,
+  };
+  const icsAttachment: EmailAttachment = {
+    filename: `interview-stage${params.stage}.ics`,
+    content: Buffer.from(buildIcsEvent(calendarEvent), "utf-8").toString("base64"),
+    contentType: "text/calendar; charset=utf-8; method=REQUEST",
+  };
+  const googleLink = googleCalendarLink(calendarEvent);
+  const outlookLink = outlookCalendarLink(calendarEvent);
+
+  const subject = `Interview scheduled (Stage ${params.stage}) — ${params.candidateName} (${params.referenceNumber})`;
+  const greeting = params.hrName.trim() || "there";
+
+  const text = [
+    `Hi ${greeting},`,
+    "",
+    `Stage ${params.stage} interview invites have just been sent for the following candidate:`,
+    "",
+    `Candidate: ${params.candidateName}`,
+    `Role: ${params.roleTitle}`,
+    `Reference: ${params.referenceNumber}`,
+    `Interview start: ${when}`,
+    loc.text,
+    "",
+    "Add to calendar:",
+    `Google Calendar: ${googleLink}`,
+    `Outlook.com: ${outlookLink}`,
+    "(A calendar file is also attached to this email.)",
+    "",
+    "Human Capital Team",
+    "Wills Farms Ltd.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = emailShell(
+    "Interview scheduled",
+    `
+      <p style="margin:0 0 16px;font-size:15px;">Hi ${escapeHtml(greeting)},</p>
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        Stage ${params.stage} interview invites have just been sent for the following candidate:
+      </p>
+      <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
+        <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
+          <p style="margin:0 0 8px;"><strong>Candidate:</strong> ${escapeHtml(params.candidateName)}</p>
+          <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
+          <p style="margin:0 0 8px;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
+          <p style="margin:0 0 8px;"><strong>Interview start:</strong> ${escapeHtml(when)}</p>
+          ${loc.html}
+        </td></tr>
+      </table>
+      <p style="margin:0 0 8px;font-size:13px;color:#374151;"><strong>Add to calendar:</strong></p>
+      <p style="margin:0 0 4px;">
+        <a href="${escapeHtml(googleLink)}" style="color:#991b1b;font-size:13px;">Google Calendar</a>
+        &nbsp;·&nbsp;
+        <a href="${escapeHtml(outlookLink)}" style="color:#991b1b;font-size:13px;">Outlook.com</a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">A calendar file is also attached to this email.</p>
+    `,
+  );
+
+  return sendViaResend({
+    to: params.hrEmail,
+    subject,
+    html,
+    text,
+    attachments: [icsAttachment],
+  });
+}
+
 /** Thank candidate and confirm Stage 1 interview date/time */
 export async function sendInterviewInvitationEmail(params: {
   candidateName: string;
