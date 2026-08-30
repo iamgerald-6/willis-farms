@@ -7,11 +7,16 @@ import {
   type ApplicationFormField,
   type EducationEntry,
   type UploadedFile,
+  type UploadedFileCategory,
   type WorkHistoryEntry,
+  UPLOADED_FILE_CATEGORIES,
+  UPLOADED_FILE_CATEGORY_LABELS,
   effectiveMaxLength,
+  isNameFieldKey,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
+import { sanitizeNameInput } from "@/lib/validation";
 import {
   isRefereeFieldKey,
   resolveRequiredRefereeCount,
@@ -94,6 +99,13 @@ export default function JobApplicationWizard({
   const [values, setValues] = useState<ApplicationFormData>(() => ({ ...initialValues }));
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  // The document-type dropdown for a multi-file field must be answered
+  // before each individual upload — keyed by fieldKey since a form could
+  // in principle have more than one multi-file field. Reset back to ""
+  // after each successful upload so the next file needs a fresh choice.
+  const [pendingFileCategory, setPendingFileCategory] = useState<
+    Record<string, UploadedFileCategory | "">
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [draftSavedMessage, setDraftSavedMessage] = useState<string | null>(null);
   const [activeDraftToken, setActiveDraftToken] = useState(draftToken);
@@ -441,6 +453,7 @@ export default function JobApplicationWizard({
     file: File,
     multiple: boolean,
     accept?: string,
+    category?: UploadedFileCategory,
   ) => {
     setUploadingKey(fieldKey);
     setError(null);
@@ -451,12 +464,16 @@ export default function JobApplicationWizard({
         accept,
         fieldKey,
       );
+      if (category) {
+        (uploaded as UploadedFile).category = category;
+      }
       if (multiple) {
         setValues((prev) => {
           const existing = Array.isArray(prev[fieldKey]) ? (prev[fieldKey] as UploadedFile[]) : [];
           return { ...prev, [fieldKey]: [...existing, uploaded] };
         });
         setDraftSavedMessage(null);
+        setPendingFileCategory((prev) => ({ ...prev, [fieldKey]: "" }));
       } else {
         setFieldValue(fieldKey, uploaded);
       }
@@ -550,6 +567,7 @@ export default function JobApplicationWizard({
 
     if (fieldType === "file" && field.rules.multiple) {
       const files = Array.isArray(value) ? (value as UploadedFile[]) : [];
+      const selectedCategory = pendingFileCategory[fieldKey] ?? "";
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <div className="space-y-2">
@@ -558,7 +576,14 @@ export default function JobApplicationWizard({
                 key={f.public_id ?? `${f.original_name}-${i}`}
                 className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2"
               >
-                <span className="text-sm text-gray-700 truncate">{f.original_name}</span>
+                <span className="text-sm text-gray-700 truncate">
+                  {f.original_name}
+                  {f.category && (
+                    <span className="ml-2 inline-block text-[11px] font-medium text-red-600 bg-red-50 rounded-full px-2 py-0.5 align-middle">
+                      {UPLOADED_FILE_CATEGORY_LABELS[f.category]}
+                    </span>
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(fieldKey, i)}
@@ -569,7 +594,32 @@ export default function JobApplicationWizard({
                 </button>
               </div>
             ))}
-            <label className="flex items-center gap-3 cursor-pointer border border-dashed border-gray-300 rounded-lg px-4 py-3 hover:border-red-300 hover:bg-red-50/30">
+            <select
+              className={inputClass}
+              value={selectedCategory}
+              onChange={(e) =>
+                setPendingFileCategory((prev) => ({
+                  ...prev,
+                  [fieldKey]: e.target.value as UploadedFileCategory,
+                }))
+              }
+            >
+              <option value="">
+                What is this document? Select before uploading…
+              </option>
+              {UPLOADED_FILE_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <label
+              className={`flex items-center gap-3 border border-dashed rounded-lg px-4 py-3 ${
+                selectedCategory
+                  ? "cursor-pointer border-gray-300 hover:border-red-300 hover:bg-red-50/30"
+                  : "cursor-not-allowed border-gray-200 bg-gray-50 opacity-60"
+              }`}
+            >
               {uploadingKey === fieldKey ? (
                 <Loader2 className="w-5 h-5 animate-spin text-red-600" />
               ) : (
@@ -582,16 +632,26 @@ export default function JobApplicationWizard({
                 type="file"
                 className="sr-only"
                 accept={accept}
-                disabled={uploadingKey === fieldKey}
+                disabled={uploadingKey === fieldKey || !selectedCategory}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) void handleFileUpload(fieldKey, file, true, accept);
+                  if (file && selectedCategory) {
+                    void handleFileUpload(
+                      fieldKey,
+                      file,
+                      true,
+                      accept,
+                      selectedCategory as UploadedFileCategory,
+                    );
+                  }
                   e.target.value = "";
                 }}
               />
             </label>
             <p className="text-[11px] text-gray-400">
-              {uploadHintForField(fieldKey, accept)}
+              {selectedCategory
+                ? uploadHintForField(fieldKey, accept)
+                : "Select what this document is above before choosing a file."}
             </p>
           </div>
         </FieldBlock>
@@ -726,6 +786,8 @@ export default function JobApplicationWizard({
         ? MIN_APPLICANT_BIRTHDATE
         : undefined;
 
+    const isNameField = fieldType === "text" && isNameFieldKey(fieldKey);
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
@@ -734,7 +796,12 @@ export default function JobApplicationWizard({
           placeholder={placeholder}
           max={dateMax}
           value={String(value ?? "")}
-          onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          onChange={(e) =>
+            setFieldValue(
+              fieldKey,
+              isNameField ? sanitizeNameInput(e.target.value) : e.target.value,
+            )
+          }
         />
       </FieldBlock>
     );

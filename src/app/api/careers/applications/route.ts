@@ -62,13 +62,11 @@ export async function PATCH(req: NextRequest) {
       updates.status = status;
     }
 
-    if (hr_notes !== undefined) {
-      updates.hr_notes = hr_notes?.trim() || null;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
-    }
+    // Whether this save archives hr_notes onto the status_history entry
+    // instead of persisting it as-is — set below once we know whether
+    // status is actually changing (not just being resubmitted) and
+    // whether a note was actually written.
+    let noteArchived = false;
 
     if (status !== undefined) {
       const { data: existing, error: existingErr } = await supabaseAdmin
@@ -89,7 +87,34 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: validationError }, { status: 400 });
       }
 
-      updates.status_history = appendStatusHistory(existing.status_history, status, changed_by);
+      const isRealTransition = status !== existing.status;
+      const noteToArchive =
+        isRealTransition && typeof hr_notes === "string" && hr_notes.trim() ? hr_notes.trim() : null;
+
+      updates.status_history = appendStatusHistory(
+        existing.status_history,
+        status,
+        changed_by,
+        noteToArchive,
+      );
+
+      // The note just archived above is this transition's permanent
+      // record — clear the applicant's working hr_notes back to empty so
+      // it's ready to capture the justification for whatever the *next*
+      // status change turns out to be, rather than lingering as stale
+      // text from a decision that's already been made and logged.
+      if (noteToArchive) {
+        updates.hr_notes = null;
+        noteArchived = true;
+      }
+    }
+
+    if (hr_notes !== undefined && !noteArchived) {
+      updates.hr_notes = hr_notes?.trim() || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
     const { data, error } = await supabaseAdmin

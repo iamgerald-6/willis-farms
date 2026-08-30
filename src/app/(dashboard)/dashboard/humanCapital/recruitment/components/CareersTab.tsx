@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { JobPosting, JobPostingStatus } from "@/lib/careers/jobPostings";
@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import PostingHistoryDrawer from "./PostingHistoryDrawer";
+import Pagination, { PAGE_SIZE } from "./Pagination";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
@@ -317,6 +318,16 @@ export default function CareersTab({ adminId }: { adminId: string }) {
     [postings],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [sorted, page],
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -356,7 +367,7 @@ export default function CareersTab({ adminId }: { adminId: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((posting) => (
+              {paginated.map((posting) => (
                 <tr key={posting.id} className="hover:bg-gray-50/50">
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">
@@ -412,6 +423,12 @@ export default function CareersTab({ adminId }: { adminId: string }) {
               ))}
             </tbody>
           </table>
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onPageChange={setPage}
+            totalItems={sorted.length}
+          />
         </div>
       )}
 

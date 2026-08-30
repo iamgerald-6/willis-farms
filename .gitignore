@@ -38,3 +38,7 @@ Thumbs.db
 
 # Optional: coverage reports
 coverage/
+
+# TypeScript build cache
+*.tsbuildinfo
+next-env.d.ts

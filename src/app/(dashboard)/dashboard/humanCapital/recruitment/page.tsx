@@ -11,12 +11,12 @@ import {
   STATUS_LABELS,
   STATUS_STYLES,
   PANEL_DECISIONS,
-  isAiFlagged,
   normalizeRoleInterviewReport,
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
   type InterviewReport,
+  type InterviewLocationType,
   type RoleInterviewReport,
   type RoleInterviewReportRow,
 } from "@/lib/careers/types";
@@ -24,6 +24,7 @@ import {
   canHrChangeStatus,
   getAllowedHrStatusOptions,
   isAwaitingAiScreening,
+  statusChangeRequiresHrNotes,
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
@@ -31,11 +32,11 @@ import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import EmployeesTab from "./components/EmployeesTab";
 import CareersTab from "./components/CareersTab";
+import Pagination, { PAGE_SIZE } from "./components/Pagination";
 import GraderSubmissionModal from "./components/interview/GraderSubmissionModal";
 import {
   gradersForStage,
   getSubmission,
-  stageDateLabel,
   type GraderResult,
 } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -81,6 +82,35 @@ function formatDate(iso: string) {
   });
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function stageLocationText(
+  location: string | null,
+  locationType: InterviewLocationType | null | undefined,
+): string {
+  if (location) return location;
+  return locationType === "online" ? "Online" : "—";
+}
+
+// Stage-specific panel names, falling back to the combined list for
+// reports generated before per-stage tracking was added.
+function stagePanelText(
+  stageNames: string[] | undefined,
+  combinedNames: string[],
+): string {
+  const names = stageNames ?? combinedNames;
+  return names.length ? names.join(", ") : "—";
+}
+
 const INTERVIEW_GUIDE_STATUSES: ApplicationStatus[] = [
   "interview",
   "evaluation",
@@ -118,6 +148,7 @@ function ApplicationDetail({
     useState(false);
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showEditedReportModal, setShowEditedReportModal] = useState(false);
+  const [showRoleReportModal, setShowRoleReportModal] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
   const [showEvaluationResultsModal, setShowEvaluationResultsModal] =
     useState(false);
@@ -222,14 +253,12 @@ function ApplicationDetail({
   const reportEditLog =
     application.interview_form_data?.summary?.interview_report_edit_log ?? [];
   // True only for applicants who already went through the full interview
-  // evaluation and were confirmed Hold/Reserve or Do not hire — not for a
-  // plain "hold"/"rejected" reached some other way (e.g. directly from
-  // Shortlisted, or an early AI reject). These are the ones HR can take a
-  // second look at from the Rejects tab.
+  // evaluation and were confirmed Hold/Reserve — not for a plain "hold"
+  // reached some other way (e.g. directly from Shortlisted). Rejected is a
+  // terminal status: it's never reopened for reconsideration, no matter
+  // how the rejection came about.
   const canReconsider =
-    !!decisionConfirmed &&
-    ((application.status === "hold" && decision === "hold") ||
-      (application.status === "rejected" && decision === "do_not_hire"));
+    !!decisionConfirmed && application.status === "hold" && decision === "hold";
   // Once a decision has been confirmed, the report is read-only reference
   // material rather than something to keep editing — shown as links for
   // Hold/Rejected (where it doubles as reconsideration context), Offer, and
@@ -657,8 +686,18 @@ function ApplicationDetail({
               application.status !== "evaluation" &&
               application.status !== "offer" && (
                 <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                  {application.ai_screening.certificate_validation_summary && (
+                    <div className="mb-3 pb-3 border-b border-purple-200">
+                      <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                        Certificate validation summary
+                      </p>
+                      <p className="text-sm text-purple-900 whitespace-pre-wrap">
+                        {application.ai_screening.certificate_validation_summary}
+                      </p>
+                    </div>
+                  )}
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                    AI screening — {application.ai_screening.score}% match
+                    AI job posting screening — {application.ai_screening.score}% match
                   </p>
                   <p className="text-sm text-purple-900">
                     {application.ai_screening.summary}
@@ -693,8 +732,24 @@ function ApplicationDetail({
               </div>
             )}
 
+            {!(application.status === "evaluation" && canConfirmOutcome) && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+                  HR notes (internal)
+                </label>
+                <textarea
+                  value={hrNotes}
+                  onChange={(e) => setHrNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  placeholder="Screening notes, interview scheduling, etc."
+                />
+              </div>
+            )}
+
             {application.status !== "evaluation" &&
               application.status !== "offer" &&
+              application.status !== "rejected" &&
               !canReconsider && (
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
@@ -714,7 +769,11 @@ function ApplicationDetail({
                       <button
                         type="button"
                         onClick={() => applyQuickStatus("rejected")}
-                        disabled={quickStatusMutation.isPending}
+                        disabled={
+                          quickStatusMutation.isPending ||
+                          (statusChangeRequiresHrNotes(application.status, "rejected") &&
+                            !hrNotes.trim())
+                        }
                         className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                       >
                         Reject
@@ -722,7 +781,11 @@ function ApplicationDetail({
                       <button
                         type="button"
                         onClick={() => applyQuickStatus("interview")}
-                        disabled={quickStatusMutation.isPending}
+                        disabled={
+                          quickStatusMutation.isPending ||
+                          (statusChangeRequiresHrNotes(application.status, "interview") &&
+                            !hrNotes.trim())
+                        }
                         className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
                       >
                         Interview
@@ -732,7 +795,11 @@ function ApplicationDetail({
                     <button
                       type="button"
                       onClick={() => applyQuickStatus("rejected")}
-                      disabled={quickStatusMutation.isPending}
+                      disabled={
+                        quickStatusMutation.isPending ||
+                        (statusChangeRequiresHrNotes(application.status, "rejected") &&
+                          !hrNotes.trim())
+                      }
                       className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                     >
                       Reject
@@ -752,6 +819,14 @@ function ApplicationDetail({
                       ))}
                     </select>
                   )}
+                  {(application.status === "shortlisted" ||
+                    application.status === "interview") &&
+                    statusEditable &&
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Add HR notes above before you can change status.
+                      </p>
+                    )}
                   {application.status === "shortlisted" && statusEditable && (
                     <p className="text-xs text-gray-500 mt-2">
                       Reject to send this application to the Rejects tab, or
@@ -763,6 +838,15 @@ function ApplicationDetail({
                       <p className="text-xs text-gray-500 mt-2">
                         Shortlist to override the AI recommendation, or confirm
                         Rejected.
+                      </p>
+                    )}
+                  {application.status === "under_review" &&
+                    statusEditable &&
+                    status !== application.status &&
+                    statusChangeRequiresHrNotes(application.status, status) &&
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-2">
+                        Add HR notes above before saving this status change.
                       </p>
                     )}
                 </div>
@@ -868,63 +952,108 @@ function ApplicationDetail({
                       <p className="text-[11px] text-gray-400 mb-2">
                         Pulled from the system — not editable here.
                       </p>
-                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3">
-                        <div className="space-y-1.5">
-                          <p>
-                            <span className="text-gray-400">Candidate: </span>
-                            {reportDraft.applicant_details.name}
-                          </p>
-                          <p>
-                            <span className="text-gray-400">Role: </span>
-                            {reportDraft.applicant_details.role}
-                          </p>
-                          <p>
-                            <span className="text-gray-400">Panel: </span>
-                            {reportDraft.applicant_details.panel_names.length
-                              ? reportDraft.applicant_details.panel_names.join(", ")
-                              : "—"}
-                          </p>
-                        </div>
-                        <div className="space-y-1.5">
-                          <p>
-                            <span className="text-gray-400">
-                              {stageDateLabel(reportDraft.applicant_details.stage1_location_type)}
-                              {" (Stage 1): "}
-                            </span>
-                            {reportDraft.applicant_details.stage1_interview_date
-                              ? formatDate(reportDraft.applicant_details.stage1_interview_date)
-                              : "—"}
-                          </p>
-                          {reportDraft.applicant_details.stage1_location && (
-                            <p>
-                              <span className="text-gray-400">Stage 1 location: </span>
-                              {reportDraft.applicant_details.stage1_location}
-                            </p>
-                          )}
-                          <p>
-                            <span className="text-gray-400">
-                              {stageDateLabel(reportDraft.applicant_details.stage2_location_type)}
-                              {" (Stage 2): "}
-                            </span>
-                            {reportDraft.applicant_details.stage2_interview_date
-                              ? formatDate(reportDraft.applicant_details.stage2_interview_date)
-                              : "—"}
-                          </p>
-                          {reportDraft.applicant_details.stage2_location && (
-                            <p>
-                              <span className="text-gray-400">Stage 2 location: </span>
-                              {reportDraft.applicant_details.stage2_location}
-                            </p>
-                          )}
-                          <p>
-                            <span className="text-gray-400">Overall rating: </span>
-                            {reportDraft.applicant_details.overall_rating != null
-                              ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
-                              : "—"}
-                          </p>
-                        </div>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 mb-3">
+                        <p>
+                          <span className="text-gray-400">Candidate: </span>
+                          {reportDraft.applicant_details.name}
+                        </p>
+                        <p>
+                          <span className="text-gray-400">Role: </span>
+                          {reportDraft.applicant_details.role}
+                        </p>
+                        <p>
+                          <span className="text-gray-400">Overall rating: </span>
+                          {reportDraft.applicant_details.overall_rating != null
+                            ? `${reportDraft.applicant_details.overall_rating.toFixed(2)}/5`
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Stage
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Panel
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Location
+                              </th>
+                              <th className="px-3 py-2 font-semibold text-gray-500">
+                                Date &amp; time
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-gray-100">
+                              <td className="px-3 py-2 text-gray-700">1</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stagePanelText(
+                                  reportDraft.applicant_details.stage1_panel_names,
+                                  reportDraft.applicant_details.panel_names,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stageLocationText(
+                                  reportDraft.applicant_details.stage1_location,
+                                  reportDraft.applicant_details.stage1_location_type,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {reportDraft.applicant_details.stage1_interview_date
+                                  ? formatDateTime(
+                                      reportDraft.applicant_details.stage1_interview_date,
+                                    )
+                                  : "—"}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-gray-700">2</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stagePanelText(
+                                  reportDraft.applicant_details.stage2_panel_names,
+                                  reportDraft.applicant_details.panel_names,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {stageLocationText(
+                                  reportDraft.applicant_details.stage2_location,
+                                  reportDraft.applicant_details.stage2_location_type,
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {reportDraft.applicant_details.stage2_interview_date
+                                  ? formatDateTime(
+                                      reportDraft.applicant_details.stage2_interview_date,
+                                    )
+                                  : "—"}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
+
+                    {reportDraft.decision_history_summary != null && (
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                          Decision history
+                        </label>
+                        <textarea
+                          value={reportDraft.decision_history_summary}
+                          onChange={(e) =>
+                            setReportDraft({
+                              ...reportDraft,
+                              decision_history_summary: e.target.value,
+                            })
+                          }
+                          rows={4}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-justify"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
@@ -1280,40 +1409,36 @@ function ApplicationDetail({
                 )}
                 {roleReportRow && (
                   <div className="pt-2 mt-2 border-t border-gray-100">
-                    <a
-                      href={`/api/careers/interview/role-report/pdf?${
-                        application.job_posting_id
-                          ? `job_posting_id=${application.job_posting_id}`
-                          : `role_slug=${application.role_slug}`
-                      }`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Download role hiring summary ({application.role_title})
-                    </a>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {roleReportRow.report && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRoleReportModal(true)}
+                          className="text-xs font-medium text-gray-600 hover:underline"
+                        >
+                          View AI-generated role hiring summary
+                        </button>
+                      )}
+                      <a
+                        href={`/api/careers/interview/role-report/pdf?${
+                          application.job_posting_id
+                            ? `job_posting_id=${application.job_posting_id}`
+                            : `role_slug=${application.role_slug}`
+                        }`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download role hiring summary ({application.role_title})
+                      </a>
+                    </div>
                     <p className="text-xs text-gray-400 mt-1">
                       The consolidated report covering every applicant for this
                       role.
                     </p>
                   </div>
                 )}
-              </div>
-            )}
-
-            {!(application.status === "evaluation" && canConfirmOutcome) && (
-              <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  HR notes (internal)
-                </label>
-                <textarea
-                  value={hrNotes}
-                  onChange={(e) => setHrNotes(e.target.value)}
-                  rows={3}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Screening notes, interview scheduling, etc."
-                />
               </div>
             )}
 
@@ -1604,7 +1729,12 @@ function ApplicationDetail({
               <button
                 type="button"
                 onClick={save}
-                disabled={mutation.isPending}
+                disabled={
+                  mutation.isPending ||
+                  (status !== application.status &&
+                    statusChangeRequiresHrNotes(application.status, status) &&
+                    !hrNotes.trim())
+                }
                 className="flex-1 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
               >
                 {mutation.isPending ? "Saving…" : "Save changes"}
@@ -1844,6 +1974,41 @@ function ApplicationDetail({
           </div>
         )}
 
+      {showRoleReportModal && roleReportRow?.report && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowRoleReportModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">
+                Role hiring summary — AI-generated
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowRoleReportModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto min-h-0">
+              <p className="text-xs text-gray-400 mb-4">
+                The consolidated report covering every applicant for{" "}
+                {application.role_title}, exactly as AI generated it —
+                unaffected by any HR edits.
+              </p>
+              <RoleInterviewReportReadOnly
+                report={normalizeRoleInterviewReport(roleReportRow.report)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPanelResponses && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
@@ -1969,63 +2134,94 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
           Applicant &amp; interview details
         </p>
-        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700">
-          <div className="space-y-1.5">
-            <p>
-              <span className="text-gray-400">Candidate: </span>
-              {report.applicant_details.name}
-            </p>
-            <p>
-              <span className="text-gray-400">Role: </span>
-              {report.applicant_details.role}
-            </p>
-            <p>
-              <span className="text-gray-400">Panel: </span>
-              {report.applicant_details.panel_names.length
-                ? report.applicant_details.panel_names.join(", ")
-                : "—"}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <p>
-              <span className="text-gray-400">
-                {stageDateLabel(report.applicant_details.stage1_location_type)}
-                {" (Stage 1): "}
-              </span>
-              {report.applicant_details.stage1_interview_date
-                ? formatDate(report.applicant_details.stage1_interview_date)
-                : "—"}
-            </p>
-            {report.applicant_details.stage1_location && (
-              <p>
-                <span className="text-gray-400">Stage 1 location: </span>
-                {report.applicant_details.stage1_location}
-              </p>
-            )}
-            <p>
-              <span className="text-gray-400">
-                {stageDateLabel(report.applicant_details.stage2_location_type)}
-                {" (Stage 2): "}
-              </span>
-              {report.applicant_details.stage2_interview_date
-                ? formatDate(report.applicant_details.stage2_interview_date)
-                : "—"}
-            </p>
-            {report.applicant_details.stage2_location && (
-              <p>
-                <span className="text-gray-400">Stage 2 location: </span>
-                {report.applicant_details.stage2_location}
-              </p>
-            )}
-            <p>
-              <span className="text-gray-400">Overall rating: </span>
-              {report.applicant_details.overall_rating != null
-                ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
-                : "—"}
-            </p>
-          </div>
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-gray-700 mb-3">
+          <p>
+            <span className="text-gray-400">Candidate: </span>
+            {report.applicant_details.name}
+          </p>
+          <p>
+            <span className="text-gray-400">Role: </span>
+            {report.applicant_details.role}
+          </p>
+          <p>
+            <span className="text-gray-400">Overall rating: </span>
+            {report.applicant_details.overall_rating != null
+              ? `${report.applicant_details.overall_rating.toFixed(2)}/5`
+              : "—"}
+          </p>
+        </div>
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-2 font-semibold text-gray-500">Stage</th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
+                  Panel
+                </th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
+                  Location
+                </th>
+                <th className="px-3 py-2 font-semibold text-gray-500">
+                  Date &amp; time
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-gray-100">
+                <td className="px-3 py-2 text-gray-700">1</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stagePanelText(
+                    report.applicant_details.stage1_panel_names,
+                    report.applicant_details.panel_names,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stageLocationText(
+                    report.applicant_details.stage1_location,
+                    report.applicant_details.stage1_location_type,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {report.applicant_details.stage1_interview_date
+                    ? formatDateTime(report.applicant_details.stage1_interview_date)
+                    : "—"}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2 text-gray-700">2</td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stagePanelText(
+                    report.applicant_details.stage2_panel_names,
+                    report.applicant_details.panel_names,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {stageLocationText(
+                    report.applicant_details.stage2_location,
+                    report.applicant_details.stage2_location_type,
+                  )}
+                </td>
+                <td className="px-3 py-2 text-gray-700">
+                  {report.applicant_details.stage2_interview_date
+                    ? formatDateTime(report.applicant_details.stage2_interview_date)
+                    : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {report.decision_history_summary != null && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Decision history
+          </p>
+          <p className="text-sm text-gray-800 text-justify leading-relaxed">
+            {report.decision_history_summary}
+          </p>
+        </div>
+      )}
 
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
@@ -2094,6 +2290,424 @@ function InterviewReportReadOnly({ report }: { report: InterviewReport }) {
         <p className="text-sm text-gray-800 text-justify leading-relaxed mt-1">
           {report.final_recommendation.rationale}
         </p>
+      </div>
+    </div>
+  );
+}
+
+// Read-only rendering of a RoleInterviewReport — used to show the AI-generated
+// role hiring summary from within a single applicant's page once their
+// outcome is confirmed (hire/hold/reject), alongside the existing per-
+// candidate report. Mirrors the section layout of RoleReportModal but with
+// no inputs/mutations — this always renders report.report (the immutable AI
+// version), never report_edit.
+function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }) {
+  return (
+    <div className="space-y-5">
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+          Executive summary
+        </label>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">
+          {report.executive_summary}
+        </p>
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+          Applicant funnel
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            ["Total applicants", report.funnel.total_applicants],
+            ["Never shortlisted", report.funnel.never_shortlisted],
+            ["Shortlisted (total)", report.funnel.shortlisted_total],
+            ["Never started interview", report.funnel.never_started_interview],
+            ["Reached Stage 1 only", report.funnel.reached_stage1_only],
+            ["Completed full interview", report.funnel.completed_full_interview],
+          ].map(([label, value]) => (
+            <div
+              key={label as string}
+              className="bg-gray-50 border border-gray-100 rounded-lg p-3"
+            >
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide">
+                {label}
+              </p>
+              <p className="text-lg font-bold text-gray-900 mt-0.5">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+          Constraints noted
+        </label>
+        {report.constraints.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">None noted.</p>
+        ) : (
+          <ul className="space-y-1">
+            {report.constraints.map((c, i) => (
+              <li key={i} className="flex gap-1.5 text-xs text-gray-700">
+                <span className="text-gray-400">—</span>
+                <span className="text-justify">{c}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+          Candidate ranking
+        </label>
+        <p className="text-xs text-gray-500 mb-2">
+          Below are the rankings of the candidates.
+        </p>
+        {report.candidate_rankings.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">
+            No candidate is currently awaiting a decision for this role.
+          </p>
+        ) : (
+          <div className="border border-gray-100 rounded-lg overflow-hidden">
+            {report.candidate_rankings.map((c) => (
+              <div
+                key={c.application_id}
+                className="flex items-center gap-3 px-3 py-2 text-sm border-b border-gray-100 last:border-b-0"
+              >
+                <span className="font-bold text-red-600 w-5">{c.rank}</span>
+                <span className="flex-1 text-gray-900">{c.name}</span>
+                <span className="text-xs text-gray-400 w-28">
+                  {c.reference_number}
+                </span>
+                <span className="font-semibold text-gray-900 w-16 text-right">
+                  {c.combined_score != null ? c.combined_score.toFixed(2) : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4 space-y-5">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block">
+          All applicants
+        </label>
+        {report.applicant_roster.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">
+            No applicants for this role.
+          </p>
+        ) : (
+          <>
+            {(
+              [
+                { stage: "application" as const, title: "Application", dateLabel: "Date applied" },
+                { stage: "screening" as const, title: "Screening", dateLabel: "Date shortlisted" },
+              ]
+            ).map(({ stage, title, dateLabel }) => {
+              const rows = report.applicant_roster.filter((a) => a.stage === stage);
+              return (
+                <div key={stage}>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">{title}</p>
+                  {rows.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">
+                      No applicants at this stage.
+                    </p>
+                  ) : (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                            <th className="text-left font-semibold px-3 py-2">Name</th>
+                            <th className="text-left font-semibold px-3 py-2">{dateLabel}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((a) => (
+                            <tr key={a.application_id} className="border-t border-gray-100">
+                              <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {a.date ? formatDate(a.date) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {(
+              [
+                { stage: "interview_stage1" as const, title: "Interview — Stage 1" },
+                { stage: "interview_stage2" as const, title: "Interview — Stage 2" },
+              ]
+            ).map(({ stage, title }) => {
+              const rows = report.applicant_roster.filter((a) => a.stage === stage);
+              return (
+                <div key={stage}>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">{title}</p>
+                  {rows.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">
+                      No applicants at this stage.
+                    </p>
+                  ) : (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                      <table className="w-full text-xs min-w-[640px]">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                            <th className="text-left font-semibold px-3 py-2">Name</th>
+                            <th className="text-left font-semibold px-3 py-2">Panel</th>
+                            <th className="text-left font-semibold px-3 py-2">Location</th>
+                            <th className="text-left font-semibold px-3 py-2">Date &amp; time</th>
+                            <th className="text-right font-semibold px-3 py-2">Ranking</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((a) => (
+                            <tr key={a.application_id} className="border-t border-gray-100">
+                              <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {a.panel_names.length ? a.panel_names.join(", ") : "—"}
+                                {a.unavailable_panel_names?.length ? (
+                                  <span className="text-amber-600">
+                                    {" "}
+                                    ({a.unavailable_panel_names.join(", ")} — couldn&apos;t
+                                    make it)
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">{a.location ?? "—"}</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {a.date ? formatDateTime(a.date) : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-gray-700 text-right">
+                                {a.rank != null ? `#${a.rank}` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {(() => {
+              const rows = report.applicant_roster.filter((a) => a.stage === "evaluation");
+              return (
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">Evaluation</p>
+                  {rows.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">
+                      No applicants at this stage.
+                    </p>
+                  ) : (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                            <th className="text-left font-semibold px-3 py-2">Name</th>
+                            <th className="text-left font-semibold px-3 py-2">
+                              Date reached evaluation
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((a) => (
+                            <tr key={a.application_id} className="border-t border-gray-100">
+                              <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {a.date ? formatDate(a.date) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </>
+        )}
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+          Core competencies
+        </label>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed mb-3">
+          {report.core_competencies_summary}
+        </p>
+        {report.core_competencies_table.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">
+            No candidate is currently awaiting a decision for this role.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {report.core_competencies_table.map((c) => (
+              <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                {c.competencies.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No competency data available.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {c.competencies.map((comp, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs">
+                        <span className="font-semibold text-gray-900 w-32 flex-shrink-0">
+                          {comp.area}
+                        </span>
+                        <span className="font-semibold text-red-600 w-14 flex-shrink-0">
+                          {comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}
+                        </span>
+                        <span className="text-gray-600">{comp.assessment || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+          Key observations
+        </label>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed mb-3">
+          {report.key_observations_summary}
+        </p>
+        {report.key_observations_table.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">
+            No candidate is currently awaiting a decision for this role.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {report.key_observations_table.map((c) => (
+              <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-900 mb-2">{c.name}</p>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <p className="font-semibold text-green-700 uppercase tracking-wide mb-1">
+                      Strengths
+                    </p>
+                    {c.strengths.length ? (
+                      <ul className="space-y-1">
+                        {c.strengths.map((s, i) => (
+                          <li key={i} className="text-gray-700">
+                            — {s}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-gray-400 italic">None noted.</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-amber-700 uppercase tracking-wide mb-1">
+                      Weaknesses
+                    </p>
+                    {c.weaknesses.length ? (
+                      <ul className="space-y-1">
+                        {c.weaknesses.map((s, i) => (
+                          <li key={i} className="text-gray-700">
+                            — {s}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-gray-400 italic">None noted.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {report.decision_history_table && report.decision_history_table.length > 0 && (
+        <div className="border border-gray-200 rounded-xl p-4">
+          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+            Decision history
+          </label>
+          <div className="space-y-3">
+            {report.decision_history_table.map((c) => (
+              <div key={c.application_id} className="border border-gray-100 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-900 mb-1">{c.name}</p>
+                <p className="text-xs text-gray-700 text-justify leading-relaxed">
+                  {c.summary}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+          Final recommendation
+        </label>
+        <p className="text-sm font-semibold text-gray-900 mb-2">
+          {report.final_recommendation.candidate_name
+            ? `${report.final_recommendation.candidate_name} (${report.final_recommendation.reference_number})`
+            : "No candidate currently recommendable"}
+        </p>
+        <p className="text-sm text-gray-800 text-justify leading-relaxed">
+          {report.final_recommendation.rationale}
+        </p>
+      </div>
+
+      <div className="border border-gray-200 rounded-xl p-4">
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+          Appendix — panel forms &amp; individual reports
+        </label>
+        {report.candidate_links.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">
+            No applicant has started the interview process yet.
+          </p>
+        ) : (
+          <div className="border border-gray-100 rounded-lg overflow-hidden">
+            {report.candidate_links.map((c) => (
+              <div
+                key={c.application_id}
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-xs border-b border-gray-100 last:border-b-0"
+              >
+                <span className="font-semibold text-gray-900">{c.name}</span>
+                <span className="text-gray-400">{c.reference_number}</span>
+                <a
+                  href={c.panel_forms_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-red-600 hover:underline"
+                >
+                  Panel forms
+                </a>
+                {c.individual_report_url ? (
+                  <a
+                    href={c.individual_report_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-red-600 hover:underline"
+                  >
+                    Individual report
+                  </a>
+                ) : (
+                  <span className="text-gray-400 italic">
+                    No individual report generated.
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2246,9 +2860,10 @@ function FilterChip({
   );
 }
 
-// Applications the AI screened below threshold (status "under_review"), plus
-// any HR has since confirmed "rejected" — kept here for the record.
-function RejectsTab({
+// Screening stage: shortlisted, under review, and rejected candidates —
+// whatever path got them to that status (AI screening or HR's own call).
+// Rows are pre-sorted by the caller into that exact status order.
+function ScreeningStageTab({
   applications,
   isLoading,
   onSelect,
@@ -2327,6 +2942,19 @@ function RejectsTab({
     [applications, nameFilters, roleFilters, statusFilters],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters, statusFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
   const hasActiveFilters =
     nameFilters.length + roleFilters.length + statusFilters.length > 0;
 
@@ -2378,11 +3006,9 @@ function RejectsTab({
   return (
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
-        Applications the AI scored below the shortlist threshold land here for
-        HR review, along with applicants confirmed Hold/Reserve or Do not hire
-        after their full interview evaluation. Nothing here is deleted — open
-        one to review it, or reconsider a Hold/Reserve or Do-not-hire outcome
-        now that the process is complete.
+        Shortlisted, under review, and rejected applicants — in that order.
+        Open one to review its AI screening score and details, or to move it
+        forward.
       </div>
 
       <div>
@@ -2478,10 +3104,16 @@ function RejectsTab({
                 </td>
               </tr>
             ) : (
-              filtered.map(renderRow)
+              paginated.map(renderRow)
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
       </div>
     </div>
   );
@@ -2494,16 +3126,19 @@ function RejectsTab({
 // the same role.
 function ApprovalsTab({
   applications,
+  holdApplications,
   isLoading,
   onSelect,
   adminId,
 }: {
   applications: JobApplication[];
+  holdApplications: JobApplication[];
   isLoading: boolean;
   onSelect: (application: JobApplication) => void;
   adminId: string;
 }) {
   const [showRoleReport, setShowRoleReport] = useState(false);
+  const [showHoldList, setShowHoldList] = useState(false);
   const [nameFilters, setNameFilters] = useState<string[]>([]);
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
 
@@ -2615,6 +3250,19 @@ function ApprovalsTab({
     [ranked, nameFilters, roleFilters],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filteredRanked.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginatedRanked = useMemo(
+    () => filteredRanked.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredRanked, page],
+  );
+
   const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
   const clearAllFilters = () => {
     setNameFilters([]);
@@ -2638,15 +3286,92 @@ function ApprovalsTab({
             onChange={setRoleFilters}
           />
         </div>
-        <button
-          type="button"
-          onClick={() => setShowRoleReport(true)}
-          disabled={rounds.length === 0}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
-        >
-          Generate role report
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHoldList(true)}
+            disabled={holdApplications.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-200 hover:border-gray-400 disabled:opacity-60"
+          >
+            Hold / Reserve
+            {holdApplications.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {holdApplications.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRoleReport(true)}
+            disabled={rounds.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:opacity-60"
+          >
+            Generate role report
+          </button>
+        </div>
       </div>
+
+      {showHoldList && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
+          onClick={() => setShowHoldList(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-900">
+                Hold / Reserve
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowHoldList(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto min-h-0">
+              {holdApplications.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-gray-400">
+                  No candidates on Hold / Reserve.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {holdApplications.map((a) => (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowHoldList(false);
+                          onSelect(a);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between gap-3"
+                      >
+                        <span>
+                          <p className="text-sm font-medium text-gray-900">
+                            {a.full_name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {a.role_title}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Applied {formatDate(a.created_at)}
+                          </p>
+                        </span>
+                        <span className="text-xs font-medium text-red-600">
+                          View
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {hasActiveFilters && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -2720,7 +3445,7 @@ function ApprovalsTab({
                 </td>
               </tr>
             ) : (
-              filteredRanked.map(({ application: a, rank }) => (
+              paginatedRanked.map(({ application: a, rank }) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2759,6 +3484,12 @@ function ApprovalsTab({
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filteredRanked.length}
+        />
       </div>
     </div>
   );
@@ -2808,6 +3539,19 @@ function OfferTab({
           (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
       ),
     [applications, nameFilters, roleFilters],
+  );
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
   );
 
   const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
@@ -2910,7 +3654,7 @@ function OfferTab({
                 </td>
               </tr>
             ) : (
-              filtered.map((a) => (
+              paginated.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -2951,6 +3695,216 @@ function OfferTab({
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Applicants moved to the interview stage (status "interview") — panel
+// setup, stage 1/2 forms, and evaluation all happen from the detail modal.
+function InterviewTab({
+  applications,
+  isLoading,
+  onSelect,
+}: {
+  applications: JobApplication[];
+  isLoading: boolean;
+  onSelect: (application: JobApplication) => void;
+}) {
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+
+  // Cross-filtering, same pattern as the other tabs: each field's option
+  // list is scoped by the other active filter.
+  const nameOptions = useMemo(() => {
+    const scoped = roleFilters.length
+      ? applications.filter((a) => roleFilters.includes(a.role_title))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.full_name)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => ({ value: n, label: n }));
+  }, [applications, roleFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = nameFilters.length
+      ? applications.filter((a) => nameFilters.includes(a.full_name))
+      : applications;
+    return Array.from(new Set(scoped.map((a) => a.role_title)))
+      .sort((a, b) => a.localeCompare(b))
+      .map((r) => ({ value: r, label: r }));
+  }, [applications, nameFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applications.filter(
+        (a) =>
+          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+      ),
+    [applications, nameFilters, roleFilters],
+  );
+
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
+  const hasActiveFilters = nameFilters.length + roleFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
+        Applicants in the interview stage. Open one to set up the panel,
+        share Stage 1/2 forms, and move through evaluation once forms are in.
+      </div>
+
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Name"
+            options={nameOptions}
+            selected={nameFilters}
+            onChange={setNameFilters}
+          />
+          <MultiSelectFilter
+            label="Role"
+            options={roleOptions}
+            selected={roleFilters}
+            onChange={setRoleFilters}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {nameFilters.map((n) => (
+              <FilterChip
+                key={`name-${n}`}
+                label={n}
+                onRemove={() =>
+                  setNameFilters(nameFilters.filter((v) => v !== n))
+                }
+              />
+            ))}
+            {roleFilters.map((r) => (
+              <FilterChip
+                key={`role-${r}`}
+                label={r}
+                onRemove={() =>
+                  setRoleFilters(roleFilters.filter((v) => v !== r))
+                }
+              />
+            ))}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-xs font-semibold text-gray-400 hover:text-red-600 px-2"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
+        <table className="w-full text-left text-sm min-w-[800px]">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Candidate
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Ref</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Applied
+              </th>
+              <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 text-right">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td colSpan={6} className="px-4 py-3">
+                    <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
+                  </td>
+                </tr>
+              ))
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-12 text-center text-gray-400"
+                >
+                  {applications.length === 0
+                    ? "No applicants in the interview stage right now."
+                    : "No applicants match the selected filters."}
+                </td>
+              </tr>
+            ) : (
+              paginated.map((a) => (
+                <tr
+                  key={a.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/80"
+                >
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-gray-900">{a.full_name}</p>
+                    <p className="text-xs text-gray-400">{a.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{a.role_title}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                    {a.reference_number}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {formatDate(a.created_at)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                    >
+                      {STATUS_LABELS[a.status]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onSelect(a)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={filtered.length}
+        />
       </div>
     </div>
   );
@@ -3312,8 +4266,8 @@ function RoleReportModal({
                 )}
               </div>
 
-              <div className="border border-gray-200 rounded-xl p-4">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
+              <div className="border border-gray-200 rounded-xl p-4 space-y-5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block">
                   All applicants
                 </label>
                 {reportDraft.applicant_roster.length === 0 ? (
@@ -3321,73 +4275,202 @@ function RoleReportModal({
                     No applicants for this role.
                   </p>
                 ) : (
-                  <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
-                    <table className="w-full text-xs min-w-[640px]">
-                      <thead>
-                        <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
-                          <th className="text-left font-semibold px-3 py-2">
-                            Name
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Stage reached
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Panel
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Date
-                          </th>
-                          <th className="text-left font-semibold px-3 py-2">
-                            Location
-                          </th>
-                          <th className="text-right font-semibold px-3 py-2">
-                            S1
-                          </th>
-                          <th className="text-right font-semibold px-3 py-2">
-                            S2
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reportDraft.applicant_roster.map((a) => (
-                          <tr
-                            key={a.application_id}
-                            className="border-t border-gray-100"
-                          >
-                            <td className="px-3 py-2 text-gray-900">
-                              {a.name}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.stage_reached}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.panel_names.length
-                                ? a.panel_names.join(", ")
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.interview_date
-                                ? formatDate(a.interview_date)
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.location ?? "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage1_rating != null
-                                ? a.stage1_rating.toFixed(2)
-                                : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-gray-700 text-right">
-                              {a.stage2_rating != null
-                                ? a.stage2_rating.toFixed(2)
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <>
+                    {(
+                      [
+                        {
+                          stage: "application" as const,
+                          title: "Application",
+                          dateLabel: "Date applied",
+                        },
+                        {
+                          stage: "screening" as const,
+                          title: "Screening",
+                          dateLabel: "Date shortlisted",
+                        },
+                      ]
+                    ).map(({ stage, title, dateLabel }) => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === stage,
+                      );
+                      return (
+                        <div key={stage}>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            {title}
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      {dateLabel}
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDate(a.date) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(
+                      [
+                        {
+                          stage: "interview_stage1" as const,
+                          title: "Interview — Stage 1",
+                        },
+                        {
+                          stage: "interview_stage2" as const,
+                          title: "Interview — Stage 2",
+                        },
+                      ]
+                    ).map(({ stage, title }) => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === stage,
+                      );
+                      return (
+                        <div key={stage}>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            {title}
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs min-w-[640px]">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Panel
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Location
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Date &amp; time
+                                    </th>
+                                    <th className="text-right font-semibold px-3 py-2">
+                                      Ranking
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.panel_names.length
+                                          ? a.panel_names.join(", ")
+                                          : "—"}
+                                        {a.unavailable_panel_names?.length ? (
+                                          <span className="text-amber-600">
+                                            {" "}
+                                            ({a.unavailable_panel_names.join(", ")}{" "}
+                                            — couldn&apos;t make it)
+                                          </span>
+                                        ) : null}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.location ?? "—"}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDateTime(a.date) : "—"}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700 text-right">
+                                        {a.rank != null ? `#${a.rank}` : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {(() => {
+                      const rows = reportDraft.applicant_roster.filter(
+                        (a) => a.stage === "evaluation",
+                      );
+                      return (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">
+                            Evaluation
+                          </p>
+                          {rows.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">
+                              No applicants at this stage.
+                            </p>
+                          ) : (
+                            <div className="border border-gray-100 rounded-lg overflow-hidden overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-400 uppercase tracking-wide">
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Name
+                                    </th>
+                                    <th className="text-left font-semibold px-3 py-2">
+                                      Date reached evaluation
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((a) => (
+                                    <tr
+                                      key={a.application_id}
+                                      className="border-t border-gray-100"
+                                    >
+                                      <td className="px-3 py-2 text-gray-900">
+                                        {a.name}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-700">
+                                        {a.date ? formatDate(a.date) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
 
@@ -3678,20 +4761,6 @@ function RoleReportModal({
   );
 }
 
-// True for applicants who completed the full interview evaluation and were
-// confirmed Hold/Reserve or Do not hire — these move into the Rejects tab
-// (rather than staying in the main Applications list) so HR can review and
-// reconsider them there. Mirrors the `canReconsider` check in ApplicationDetail.
-function isEvaluationOutcome(a: JobApplication): boolean {
-  const decision = a.interview_form_data?.summary?.decision;
-  const confirmedAt = a.interview_form_data?.summary?.decision_confirmed_at;
-  return (
-    !!confirmedAt &&
-    ((a.status === "hold" && decision === "hold") ||
-      (a.status === "rejected" && decision === "do_not_hire"))
-  );
-}
-
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
@@ -3702,7 +4771,8 @@ function RecruitmentPageContent() {
     | "onboarding"
     | "employees"
     | "careers"
-    | "ai_rejects"
+    | "screening"
+    | "interview"
     | "approvals"
   >(
     tabParam === "offer"
@@ -3713,11 +4783,15 @@ function RecruitmentPageContent() {
           ? "employees"
           : tabParam === "careers"
             ? "careers"
-            : tabParam === "ai_rejects" || tabParam === "rejects"
-            ? "ai_rejects"
-            : tabParam === "approvals"
-              ? "approvals"
-              : "applications",
+            : tabParam === "screening" ||
+                tabParam === "ai_rejects" ||
+                tabParam === "rejects"
+              ? "screening"
+              : tabParam === "interview"
+                ? "interview"
+                : tabParam === "approvals"
+                  ? "approvals"
+                  : "applications",
   );
 
   const [nameFilters, setNameFilters] = useState<string[]>([]);
@@ -3762,27 +4836,51 @@ function RecruitmentPageContent() {
     enabled: isHr,
   });
 
-  // AI soft-rejects, HR-confirmed rejects, and evaluation Hold/Reserve or
-  // Do-not-hire outcomes all live in the Rejects tab.
-  const nonAiApplications = useMemo(
-    () =>
-      (data ?? []).filter((a) => !isAiFlagged(a) && !isEvaluationOutcome(a)),
+  // Tabs are now partitioned purely by the application's current status,
+  // regardless of how it got there (AI screening vs. HR's own call).
+  const applicationsTabApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "applied"),
     [data],
   );
-  const aiRejectApplications = useMemo(
-    () => (data ?? []).filter((a) => isAiFlagged(a) || isEvaluationOutcome(a)),
+
+  // Screening stage: shortlisted, under review, rejected — rows sorted into
+  // exactly that order.
+  const SCREENING_STATUS_ORDER: ApplicationStatus[] = [
+    "shortlisted",
+    "under_review",
+    "rejected",
+  ];
+  const screeningApplications = useMemo(() => {
+    const rank = new Map(
+      SCREENING_STATUS_ORDER.map((s, i) => [s, i] as const),
+    );
+    return (data ?? [])
+      .filter((a) => rank.has(a.status))
+      .slice()
+      .sort((a, b) => rank.get(a.status)! - rank.get(b.status)!);
+  }, [data]);
+
+  const interviewApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "interview"),
     [data],
   );
-  const approvalApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status === "evaluation"),
-    [nonAiApplications],
+
+  const evaluationApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "evaluation"),
+    [data],
   );
+
+  const holdApplications = useMemo(
+    () => (data ?? []).filter((a) => a.status === "hold"),
+    [data],
+  );
+
   // Every applicant with a confirmed Hire decision — status "offer" — moves
   // to the Offer tab. From there HR sends the congratulations email with
   // the onboarding link, which is what advances them to "onboarding".
   const offerApplications = useMemo(
-    () => nonAiApplications.filter((a) => a.status === "offer"),
-    [nonAiApplications],
+    () => (data ?? []).filter((a) => a.status === "offer"),
+    [data],
   );
 
   const { data: activeOnboardingRows = [] } = useQuery({
@@ -3795,18 +4893,8 @@ function RecruitmentPageContent() {
   });
 
   const activeOnboardingCount = activeOnboardingRows.length;
-  // Evaluation → Approvals; confirmed hire → Offer; onboarding link sent →
-  // Onboarding — none of these belong in the Applications tab.
-  const mainApplications = useMemo(
-    () =>
-      nonAiApplications.filter(
-        (a) =>
-          a.status !== "evaluation" &&
-          a.status !== "offer" &&
-          a.status !== "onboarding",
-      ),
-    [nonAiApplications],
-  );
+  // Applications tab now shows only status "applied".
+  const mainApplications = applicationsTabApplications;
 
   // Cross-filtering: each field's option list is scoped by the OTHER active
   // filters (never by itself) — so picking Status = Interview narrows what
@@ -3875,6 +4963,19 @@ function RecruitmentPageContent() {
     [mainApplications, nameFilters, roleFilters, statusFilters],
   );
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilters, roleFilters, statusFilters]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
+
   const hasActiveFilters =
     nameFilters.length + roleFilters.length + statusFilters.length > 0;
 
@@ -3893,8 +4994,13 @@ function RecruitmentPageContent() {
     else if (tabParam === "onboarding") setActiveTab("onboarding");
     else if (tabParam === "employees") setActiveTab("employees");
     else if (tabParam === "careers") setActiveTab("careers");
-    else if (tabParam === "ai_rejects" || tabParam === "rejects")
-      setActiveTab("ai_rejects");
+    else if (
+      tabParam === "screening" ||
+      tabParam === "ai_rejects" ||
+      tabParam === "rejects"
+    )
+      setActiveTab("screening");
+    else if (tabParam === "interview") setActiveTab("interview");
     else if (tabParam === "approvals") setActiveTab("approvals");
   }, [tabParam]);
 
@@ -3950,11 +5056,12 @@ function RecruitmentPageContent() {
       <div className="flex gap-1 mb-5 border-b border-gray-200">
         {(
           [
+            "careers",
             "applications",
-            "ai_rejects",
+            "screening",
+            "interview",
             "approvals",
             "offer",
-            "careers",
             "onboarding",
             "employees",
           ] as const
@@ -3969,29 +5076,38 @@ function RecruitmentPageContent() {
                 : "border-transparent text-gray-500 hover:text-gray-800"
             }`}
           >
-            {tab === "applications"
-              ? "Applications"
-              : tab === "ai_rejects"
-                ? "Rejects"
-                : tab === "approvals"
-                  ? "Approvals"
-                  : tab === "offer"
-                    ? "Offer"
-                    : tab === "careers"
-                      ? "Careers"
-                      : tab === "employees"
-                        ? "Employees"
-                        : "Onboarding"}
-            {tab === "ai_rejects" && aiRejectApplications.length > 0 && (
+            {tab === "careers"
+              ? "Job posting"
+              : tab === "applications"
+                ? "Applications"
+                : tab === "screening"
+                  ? "Screening stage"
+                  : tab === "interview"
+                    ? "Interview"
+                    : tab === "approvals"
+                      ? "Evaluation"
+                      : tab === "offer"
+                        ? "Offer"
+                        : tab === "employees"
+                          ? "Employees"
+                          : "Onboarding"}
+            {tab === "screening" && screeningApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {aiRejectApplications.length}
+                {screeningApplications.length}
               </span>
             )}
-            {tab === "approvals" && approvalApplications.length > 0 && (
+            {tab === "interview" && interviewApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                {approvalApplications.length}
+                {interviewApplications.length}
               </span>
             )}
+            {tab === "approvals" &&
+              evaluationApplications.length + holdApplications.length >
+                0 && (
+                <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                  {evaluationApplications.length + holdApplications.length}
+                </span>
+              )}
             {tab === "offer" && offerApplications.length > 0 && (
               <span className="bg-green-100 text-green-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {offerApplications.length}
@@ -4008,15 +5124,22 @@ function RecruitmentPageContent() {
 
       {activeTab === "careers" ? (
         <CareersTab adminId={session?.user?.id ?? ""} />
-      ) : activeTab === "ai_rejects" ? (
-        <RejectsTab
-          applications={aiRejectApplications}
+      ) : activeTab === "screening" ? (
+        <ScreeningStageTab
+          applications={screeningApplications}
+          isLoading={isLoading}
+          onSelect={setSelected}
+        />
+      ) : activeTab === "interview" ? (
+        <InterviewTab
+          applications={interviewApplications}
           isLoading={isLoading}
           onSelect={setSelected}
         />
       ) : activeTab === "approvals" ? (
         <ApprovalsTab
-          applications={approvalApplications}
+          applications={evaluationApplications}
+          holdApplications={holdApplications}
           isLoading={isLoading}
           onSelect={setSelected}
           adminId={session?.user?.id ?? ""}
@@ -4136,7 +5259,7 @@ function RecruitmentPageContent() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((a) => (
+                  paginated.map((a) => (
                     <tr
                       key={a.id}
                       className="border-b border-gray-100 hover:bg-gray-50/80"
@@ -4176,13 +5299,20 @@ function RecruitmentPageContent() {
                 )}
               </tbody>
             </table>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              onPageChange={setPage}
+              totalItems={filtered.length}
+            />
           </div>
         </>
       )}
 
       {selected &&
         (activeTab === "applications" ||
-          activeTab === "ai_rejects" ||
+          activeTab === "screening" ||
+          activeTab === "interview" ||
           activeTab === "approvals" ||
           activeTab === "offer") && (
           <ApplicationDetail

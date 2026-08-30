@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Pagination, { PAGE_SIZE } from "./Pagination";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { RecruitmentEmployeeRow } from "@/lib/careers/employeeStatus";
@@ -339,6 +340,16 @@ export default function EmployeesTab() {
     (r) => r.employment_status === "probation" && !r.is_disabled,
   ).length;
 
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginated = useMemo(
+    () => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [rows, page],
+  );
+
   return (
     <>
       <div className="overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -369,7 +380,7 @@ export default function EmployeesTab() {
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              paginated.map((row) => (
                 <tr
                   key={row.user_id}
                   className={`border-b border-gray-100 hover:bg-gray-50/80 ${row.is_disabled ? "opacity-75" : ""}`}
@@ -410,6 +421,12 @@ export default function EmployeesTab() {
             )}
           </tbody>
         </table>
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          totalItems={rows.length}
+        />
       </div>
 
       {probationCount > 0 && (

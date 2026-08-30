@@ -92,6 +92,12 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     const existing = match.application.interview_form_data.panel_submissions?.find(
       (s) => s.member_id === match.member.id && s.stage === match.member.stage,
     );
+    // A draft never counts as "submitted" — it's just in-progress answers
+    // autosaved so the form can resume after a reload, and only ever used
+    // as a fallback when there's no final submission yet.
+    const draft = match.application.interview_form_data.panel_drafts?.find(
+      (s) => s.member_id === match.member.id && s.stage === match.member.stage,
+    );
 
     return NextResponse.json({
       success: true,
@@ -102,7 +108,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
         memberName: match.member.name,
         stage: match.member.stage,
         guide,
-        submission: existing ?? null,
+        submission: existing ?? draft ?? null,
         submitted: !!existing?.submitted_at,
       },
     });
@@ -117,6 +123,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const { token } = await context.params;
     const body = await req.json();
     const submission = body.submission as StageSubmissionData;
+    const isDraft = body.draft === true;
 
     if (!submission) {
       return NextResponse.json({ error: "submission is required." }, { status: 400 });
@@ -130,6 +137,44 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const match = findPanelByToken(loaded.applications, token);
     if (!match) {
       return NextResponse.json({ error: "Invalid or expired interview link." }, { status: 404 });
+    }
+
+    const formData = normalizeInterviewFormData(match.application.interview_form_data);
+
+    // Autosave path: stash the in-progress answers in panel_drafts, which
+    // nothing else in the app reads as "this grader is done" — no scoring,
+    // no submitted_at, no touching panel_submissions.
+    if (isDraft) {
+      const draftEntry: PanelSubmission = {
+        member_id: match.member.id,
+        member_name: match.member.name,
+        stage: match.member.stage,
+        screening: submission.screening,
+        question_ratings: submission.question_ratings,
+        scenario_ratings: submission.scenario_ratings,
+      };
+
+      const otherDrafts =
+        formData.panel_drafts?.filter(
+          (s) =>
+            !(s.member_id === match.member.id && s.stage === match.member.stage),
+        ) ?? [];
+
+      const merged = normalizeInterviewFormData({
+        ...formData,
+        panel_drafts: [...otherDrafts, draftEntry],
+      });
+
+      const { error } = await loaded.supabaseAdmin
+        .from("job_applications")
+        .update({ interview_form_data: merged })
+        .eq("id", match.application.id);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, data: { draft: true } });
     }
 
     const guideKey = await resolveInterviewGuideKey(
@@ -160,9 +205,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
       submitted_at: new Date().toISOString(),
     };
 
-    const formData = normalizeInterviewFormData(match.application.interview_form_data);
     const others =
       formData.panel_submissions?.filter(
+        (s) =>
+          !(s.member_id === match.member.id && s.stage === match.member.stage),
+      ) ?? [];
+    // The final submission supersedes any in-progress draft for this
+    // member/stage — clear it so a stale draft can never resurface.
+    const remainingDrafts =
+      formData.panel_drafts?.filter(
         (s) =>
           !(s.member_id === match.member.id && s.stage === match.member.stage),
       ) ?? [];
@@ -170,6 +221,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const merged = normalizeInterviewFormData({
       ...formData,
       panel_submissions: [...others, panelSubmission],
+      panel_drafts: remainingDrafts,
     });
 
     const { data, error } = await loaded.supabaseAdmin

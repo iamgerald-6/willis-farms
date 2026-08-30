@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
 
     const { data: application, error: fetchError } = await supabaseAdmin
       .from("job_applications")
-      .select("id, status, submission_status, ai_screening, role_title, job_posting_id, cv_url")
+      .select(
+        "id, status, submission_status, ai_screening, role_title, job_posting_id, cv_url, application_form_data",
+      )
       .eq("id", application_id)
       .single();
 
@@ -72,6 +74,7 @@ export async function POST(req: NextRequest) {
         status: result.status,
         score: result.score,
         summary: result.summary,
+        certificate_validation_summary: result.certificate_validation_summary,
       },
     });
   } catch (err) {
