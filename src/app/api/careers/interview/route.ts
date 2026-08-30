@@ -6,7 +6,9 @@ import {
   sendInterviewInvitationEmail,
   sendStage2ScheduleEmail,
   sendRejectionEmail,
+  sendHrCalendarInviteEmail,
 } from "@/lib/careers/interviewEmails";
+import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   validatePanelDecision,
   statusForDecision,
@@ -20,6 +22,8 @@ import {
   combinedInterviewAverage,
   ensureMemberTokens,
   scoreSubmission,
+  stage1ReadyForReview,
+  stage2ReadyForEvaluation,
   stageAverage,
 } from "@/lib/careers/panelInterview";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
@@ -47,7 +51,9 @@ type InterviewAction =
   | "complete_stage2"
   | "finalize"
   | "confirm_decision"
-  | "reconsider_decision";
+  | "reconsider_decision"
+  | "reschedule_stage1"
+  | "reschedule_stage2";
 
 // confirm_decision runs while status is "evaluation" and reconsider_decision
 // runs while status is "hold" or "rejected" — neither is in INTERVIEW_STATUSES
@@ -238,9 +244,21 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      // Members marked "couldn't make it" stay on the roster (validMembers,
+      // saved below) but don't get emailed — they're sitting this round out.
+      const membersToEmail = validMembers.filter((m) => !m.unavailable);
+      if (membersToEmail.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 1 panel member is marked as unable to attend — mark at least one as available before sending invites.",
+          },
+          { status: 400 },
+        );
+      }
 
       const inviteResult = await sendAllPanelInvites({
-        members: validMembers.map((m) => ({
+        members: membersToEmail.map((m) => ({
           name: m.name,
           email: m.email,
           access_token: m.access_token,
@@ -286,6 +304,27 @@ export async function POST(req: NextRequest) {
           candidateInviteResult.error ??
             "Candidate interview invitation email not sent",
         );
+      }
+
+      const hrActor1 = await resolvePostingActor(supabaseAdmin, submitted_by);
+      if (hrActor1.email) {
+        const hrInviteResult = await sendHrCalendarInviteEmail({
+          hrName: hrActor1.name ?? "",
+          hrEmail: hrActor1.email,
+          candidateName: application.full_name,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+          stage: 1,
+          interviewStartAt: setup.interview_start_at,
+          locationType: setup.location_type,
+          location: setup.location,
+          meetingLink: setup.meeting_link,
+        });
+        if (!hrInviteResult.sent) {
+          emailWarnings.push(
+            hrInviteResult.error ?? "HR calendar invite email not sent",
+          );
+        }
       }
 
       merged = {
@@ -352,9 +391,21 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      // Members marked "couldn't make it" stay on the roster (validMembers,
+      // saved below) but don't get emailed — they're sitting this round out.
+      const membersToEmail = validMembers.filter((m) => !m.unavailable);
+      if (membersToEmail.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 2 panel member is marked as unable to attend — mark at least one as available before sending invites.",
+          },
+          { status: 400 },
+        );
+      }
 
       const inviteResult = await sendAllPanelInvites({
-        members: validMembers.map((m) => ({
+        members: membersToEmail.map((m) => ({
           name: m.name,
           email: m.email,
           access_token: m.access_token,
@@ -391,6 +442,27 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const hrActor2 = await resolvePostingActor(supabaseAdmin, submitted_by);
+      if (hrActor2.email) {
+        const hrInviteResult = await sendHrCalendarInviteEmail({
+          hrName: hrActor2.name ?? "",
+          hrEmail: hrActor2.email,
+          candidateName: application.full_name,
+          roleTitle: application.role_title,
+          referenceNumber: application.reference_number,
+          stage: 2,
+          interviewStartAt: scheduled,
+          locationType: setup.stage2_location_type,
+          location: setup.stage2_location,
+          meetingLink: setup.stage2_meeting_link,
+        });
+        if (!hrInviteResult.sent) {
+          emailWarnings.push(
+            hrInviteResult.error ?? "HR calendar invite email not sent",
+          );
+        }
+      }
+
       merged = {
         ...merged,
         setup: {
@@ -414,6 +486,74 @@ export async function POST(req: NextRequest) {
         setup: {
           ...setup,
           stage2_forms_opened_at: new Date().toISOString(),
+        },
+      };
+    }
+
+    // Reschedule resets that stage's forms-opened flag and un-submits any
+    // panel member/HR submissions already collected for it — clearing
+    // just submitted_at, not the actual answers, so whoever already
+    // submitted gets an editable, pre-filled form back rather than a
+    // blank one. Invite-sent status, the date fields, and the panel
+    // member list are left untouched — HR edits them as needed and reuses
+    // the existing resend-invites / open-forms actions. Only available
+    // while the stage isn't fully done yet (at least one grader hasn't
+    // submitted) — once everyone has, the stage is complete and
+    // reschedule is blocked, both here and in the UI.
+    if (action === "reschedule_stage1") {
+      if (stage1ReadyForReview(merged)) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 1 grader has already submitted — reschedule isn't available anymore.",
+          },
+          { status: 400 },
+        );
+      }
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage1_forms_opened_at: undefined,
+        },
+        panel_submissions: (merged.panel_submissions ?? []).map((s) =>
+          s.stage === 1 ? { ...s, submitted_at: undefined } : s,
+        ),
+        hr_submission: {
+          ...merged.hr_submission,
+          stage1: merged.hr_submission?.stage1
+            ? { ...merged.hr_submission.stage1, submitted_at: undefined }
+            : merged.hr_submission?.stage1,
+        },
+      };
+    }
+
+    if (action === "reschedule_stage2") {
+      if (stage2ReadyForEvaluation(merged)) {
+        return NextResponse.json(
+          {
+            error:
+              "Every Stage 2 grader has already submitted — reschedule isn't available anymore.",
+          },
+          { status: 400 },
+        );
+      }
+      const setup = merged.setup ?? {};
+      merged = {
+        ...merged,
+        setup: {
+          ...setup,
+          stage2_forms_opened_at: undefined,
+        },
+        panel_submissions: (merged.panel_submissions ?? []).map((s) =>
+          s.stage === 2 ? { ...s, submitted_at: undefined } : s,
+        ),
+        hr_submission: {
+          ...merged.hr_submission,
+          stage2: merged.hr_submission?.stage2
+            ? { ...merged.hr_submission.stage2, submitted_at: undefined }
+            : merged.hr_submission?.stage2,
         },
       };
     }

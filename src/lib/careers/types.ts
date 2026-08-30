@@ -51,6 +51,16 @@ export interface StatusHistoryEntry {
   status: ApplicationStatus;
   changed_at: string;
   changed_by: string | null;
+  /**
+   * The HR note that justified this specific transition, archived here at
+   * the moment the status actually changed — see the PATCH handler in
+   * src/app/api/careers/applications/route.ts, which clears the
+   * applicant's hr_notes field back to null right after archiving it here,
+   * so hr_notes always holds only the draft note for the *next* change.
+   * Null when the transition had no note attached (e.g. a system/AI
+   * change, or HR changed status without writing anything).
+   */
+  note?: string | null;
 }
 
 export interface JobApplication {
@@ -88,6 +98,15 @@ export interface AiScreening {
   summary: string;
   model: string;
   screened_at: string;
+  /**
+   * Cross-checks each document the applicant tagged and uploaded on the
+   * Experience & qualifications step (work experience / educational
+   * qualifications / other) against the corresponding entries they typed
+   * in. Names each certificate and states any discrepancy found (or that
+   * none was found). Absent when the applicant uploaded no certificates,
+   * or on reports generated before this field was added.
+   */
+  certificate_validation_summary?: string;
 }
 
 /** Applications the AI screening has flagged — shown in the Rejects tab. */
@@ -101,6 +120,14 @@ export interface PanelMember {
   email: string;
   stage: 1 | 2;
   access_token: string;
+  /**
+   * Marked when this member can't make the (rescheduled) interview and a
+   * decision was made to proceed without them for this stage — they stay
+   * on the panel list for the record, but are excluded from the "has
+   * everyone submitted" completion check and skipped when invites are
+   * sent, so they no longer block progress.
+   */
+  unavailable?: boolean;
 }
 
 export interface StageSubmissionData {
@@ -181,7 +208,14 @@ export interface InterviewReport {
     name: string;
     role: string;
     reference_number: string;
+    /** Combined, deduplicated across both stages — kept for backward
+     * compatibility with reports generated before per-stage panel names
+     * were tracked. Prefer stage1_panel_names/stage2_panel_names. */
     panel_names: string[];
+    /** Absent on reports generated before per-stage tracking — fall back
+     * to panel_names (combined) when rendering those older reports. */
+    stage1_panel_names?: string[];
+    stage2_panel_names?: string[];
     stage1_interview_date: string | null;
     /** Only set when Stage 1 was onsite — no location to show for an online stage. */
     stage1_location: string | null;
@@ -205,10 +239,26 @@ export interface InterviewReport {
   /**
    * Every panel member's (and HR's) full raw responses across Stage 1 and
    * Stage 2 — one readable text block per grader, captured at generation
-   * time. Shown as an appendix in the downloaded/emailed PDF. Absent on
-   * reports generated before this field was added.
+   * time and fed to the AI as prompt context. No longer rendered in the
+   * PDF appendix (that now links out to the platform instead) — kept for
+   * backward compatibility with reports generated before that change.
    */
   panel_responses?: string[];
+  /**
+   * Link back to this applicant's panel forms/responses on the platform —
+   * shown as an appendix in the downloaded/emailed PDF instead of the raw
+   * responses. Absent on reports generated before this field was added.
+   */
+  panel_forms_url?: string;
+  /**
+   * AI-narrated story of this applicant's status changes and the HR notes
+   * recorded against them (e.g. an AI hold overturned by management, a
+   * later rejection after underperforming at interview) — built from
+   * status_history at generation time. Absent when no status change in
+   * their history had a note attached, or on reports generated before
+   * this field was added.
+   */
+  decision_history_summary?: string;
 }
 
 /**
@@ -259,18 +309,43 @@ export interface RoleInterviewReport {
     combined_score: number | null;
   }[];
 
-  // 4. Full applicant roster — every applicant for the role, regardless of status.
+  // 4. Full applicant roster — every applicant for the role, regardless of status,
+  // grouped by the furthest funnel stage they reached (used to render separate
+  // Application / Screening / Interview Stage 1 / Interview Stage 2 / Evaluation
+  // tables in the "All Applicants" section).
   applicant_roster: {
     application_id: string;
     name: string;
-    role_title: string;
-    /** Human-readable label for how far they got, e.g. "Never shortlisted", "Shortlisted — interview not started", "Reached Stage 1", "Completed — Evaluation" / "— Hold" / "— Rejected" / "— Hired". */
-    stage_reached: string;
+    /**
+     * Furthest funnel stage this applicant reached. "interview_stage1" and
+     * "interview_stage2" cover anyone whose interview process stalled or
+     * ended (including rejection) at that stage; "evaluation" covers anyone
+     * who completed both interview stages without being rejected there
+     * (Evaluation, Hold, Offer, or Onboarding status).
+     */
+    stage: "application" | "screening" | "interview_stage1" | "interview_stage2" | "evaluation";
+    /**
+     * Date reached this stage — date applied, date shortlisted, interview
+     * date & time (for the two interview stages), or date evaluation began.
+     */
+    date: string | null;
+    /** Only populated for interview_stage1/interview_stage2 rows. */
     panel_names: string[];
-    interview_date: string | null;
+    /**
+     * Panel members marked as unable to attend for this candidate at this
+     * stage — a plain factual list, computed directly from the panel setup
+     * rather than AI-narrated, so it can't be paraphrased or dropped from
+     * the report. Only populated for interview_stage1/interview_stage2 rows.
+     */
+    unavailable_panel_names: string[];
+    /** Only populated for interview_stage1/interview_stage2 rows. */
     location: string | null;
-    stage1_rating: number | null;
-    stage2_rating: number | null;
+    /**
+     * Combined-score rank, joined from candidate_rankings. Ranking is only
+     * ever computed for Evaluation-status applicants, so this is usually
+     * null on interview_stage1/interview_stage2 rows.
+     */
+    rank: number | null;
   }[];
 
   // 5. Core competencies — narrative synthesis + per-candidate table, Evaluation status only.
@@ -316,6 +391,21 @@ export interface RoleInterviewReport {
     /** Their individual interview report PDF (includes the full panel-responses appendix) — null if none was generated. */
     individual_report_url: string | null;
   }[];
+
+  /**
+   * AI-narrated decision history — one entry per applicant for this role
+   * (any status, not just Evaluation) who has at least one status change
+   * with an HR note attached, telling the story of how they moved through
+   * the pipeline (AI screening outcomes, management interventions,
+   * eventual result). Applicants with no noted status change are omitted
+   * entirely rather than included with an empty story. Absent on reports
+   * generated before this field was added.
+   */
+  decision_history_table?: {
+    application_id: string;
+    name: string;
+    summary: string;
+  }[];
 }
 
 export interface RoleInterviewReportRow {
@@ -343,7 +433,24 @@ export function normalizeRoleInterviewReport(report: RoleInterviewReport): RoleI
     ...report,
     constraints: report.constraints ?? [],
     candidate_rankings: report.candidate_rankings ?? [],
-    applicant_roster: report.applicant_roster ?? [],
+    // Reports generated before the stage breakdown was added stored a
+    // different shape (stage_reached string, no `stage` key) — those rows
+    // are dropped here rather than guessed at; regenerating the report
+    // rebuilds the roster in the current shape.
+    applicant_roster: (report.applicant_roster ?? [])
+      .filter((r) =>
+        ["application", "screening", "interview_stage1", "interview_stage2", "evaluation"].includes(
+          (r as { stage?: string }).stage ?? "",
+        ),
+      )
+      .map((r) => ({
+        ...r,
+        date: r.date ?? null,
+        panel_names: r.panel_names ?? [],
+        unavailable_panel_names: r.unavailable_panel_names ?? [],
+        location: r.location ?? null,
+        rank: r.rank ?? null,
+      })),
     core_competencies_summary: report.core_competencies_summary ?? "",
     core_competencies_table: report.core_competencies_table ?? [],
     key_observations_summary: report.key_observations_summary ?? "",
@@ -359,6 +466,16 @@ export interface InterviewFormData {
   setup?: InterviewSetup;
   /** Per-panel member submissions (via public link) */
   panel_submissions?: PanelSubmission[];
+  /**
+   * In-progress, not-yet-submitted answers for a panel member/HR's stage
+   * form — autosaved from the public link as they fill it in, so closing
+   * the tab and reopening the link resumes instead of starting over.
+   * Deliberately kept separate from panel_submissions (which everything
+   * else in the app treats as "this grader is done") so a draft can never
+   * be mistaken for a completed submission. Cleared once the real
+   * submission is recorded.
+   */
+  panel_drafts?: PanelSubmission[];
   /** HR's own stage scores */
   hr_submission?: {
     stage1?: StageSubmissionData;
@@ -422,6 +539,7 @@ export function normalizeInterviewFormData(
   const data: InterviewFormData = {
     setup: { stage1_members: [createPanelMember("", "", 1)] },
     panel_submissions: [],
+    panel_drafts: [],
     hr_submission: {},
     current_stage: 1,
     screening: {},

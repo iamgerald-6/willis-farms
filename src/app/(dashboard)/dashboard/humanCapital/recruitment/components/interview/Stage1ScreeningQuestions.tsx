@@ -13,6 +13,8 @@ type Props = {
   onSubmit: () => void;
   isPending: boolean;
   submitted?: boolean;
+  /** Background autosave status — distinct from the manual "Save draft" button's isPending. */
+  saveStatus?: "idle" | "saving" | "saved";
 };
 
 export default function Stage1ScreeningQuestions({
@@ -23,6 +25,7 @@ export default function Stage1ScreeningQuestions({
   onSubmit,
   isPending,
   submitted = false,
+  saveStatus = "idle",
 }: Props) {
   const updateScreening = (
     id: string,
@@ -125,6 +128,12 @@ export default function Stage1ScreeningQuestions({
           ))}
         </div>
       </section>
+
+      {!submitted && saveStatus !== "idle" && (
+        <p className="text-xs text-gray-400 text-right">
+          {saveStatus === "saving" ? "Saving…" : "Draft saved"}
+        </p>
+      )}
 
       {!submitted && (
         <div className="flex flex-col sm:flex-row gap-2">

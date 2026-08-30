@@ -3,17 +3,27 @@ import mammoth from "mammoth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
+import type {
+  EducationEntry,
+  UploadedFile,
+  WorkHistoryEntry,
+} from "@/lib/careers/applicationFormSchema";
+import { UPLOADED_FILE_CATEGORY_LABELS } from "@/lib/careers/applicationFormSchema";
 
 export const SHORTLIST_THRESHOLD = 60;
 
 const MAX_BYTES = 20 * 1024 * 1024;
+// Combined cap across the CV plus every certificate sent in one screening
+// call — keeps well under Anthropic's request-size limits even when an
+// applicant has uploaded several large documents.
+const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const SCREENING_TOOL = {
   name: "record_application_screening",
   description:
-    "Records how well an applicant's CV matches a job's requirements, for automatic shortlisting.",
+    "Records how well an applicant's CV matches a job's requirements, for automatic shortlisting, and (when supporting documents were uploaded) whether those documents check out against what the applicant entered on the form.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -26,6 +36,11 @@ const SCREENING_TOOL = {
         type: "string",
         description:
           "A brief 1-3 sentence rationale for the score: the strongest matches and the clearest gaps, so a human reviewer can quickly sanity-check the call.",
+      },
+      certificate_validation_summary: {
+        type: "string",
+        description:
+          "Only include when supporting documents were provided below. Name every uploaded document and its tagged category, and for each one: if it's tagged Work Experience or Educational Qualifications, state whether it plausibly matches one of the applicant's corresponding entries (institution/employer, role/qualification, dates — broad consistency, not exact wording) or state the specific discrepancy/mismatch found; if it's tagged Other, just state that it was uploaded and does not correspond to any specific field on the form. Keep it factual and concise — a couple of sentences per document.",
       },
     },
     required: ["score", "summary"],
@@ -45,6 +60,10 @@ export type ScreenApplicationInput = {
   role_title: string | null;
   job_posting_id: string | null;
   cv_url: string | null;
+  /** Where the applicant's uploaded certificates and typed work/education
+   * entries live — used to build the certificate validation pass. Absent
+   * (or missing the relevant keys) simply skips that pass. */
+  application_form_data?: Record<string, unknown> | null;
 };
 
 export type ScreenApplicationResult =
@@ -53,6 +72,7 @@ export type ScreenApplicationResult =
       status: "shortlisted" | "under_review";
       score: number;
       summary: string;
+      certificate_validation_summary?: string;
     }
   | { ok: false; error: string };
 
@@ -78,6 +98,87 @@ function imageMediaType(fileName: string, contentType: string | null): string | 
   if (contentType && Object.values(IMAGE_MEDIA_TYPES).includes(contentType)) return contentType;
   const ext = fileName.toLowerCase().split(".").pop() ?? "";
   return IMAGE_MEDIA_TYPES[ext] ?? null;
+}
+
+type FetchedDoc =
+  | { ok: true; content: Array<Record<string, unknown>>; bytes: number }
+  | { ok: false; error: string };
+
+/** Fetches and converts one document into Claude-ready content block(s) —
+ * shared by the CV read and each certificate read below. `remainingBudget`
+ * is what's left of MAX_TOTAL_BYTES; a file that would blow that combined
+ * cap is skipped (not fetched at all) rather than erroring the whole run. */
+async function fetchDocumentContent(url: string, remainingBudget: number): Promise<FetchedDoc> {
+  const fileRes = await fetch(url);
+  if (!fileRes.ok) return { ok: false, error: `Could not download (HTTP ${fileRes.status})` };
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  if (buffer.byteLength > MAX_BYTES) return { ok: false, error: "File too large to read" };
+  if (buffer.byteLength > remainingBudget) {
+    return { ok: false, error: "Skipped — combined document size limit for this screening pass was reached" };
+  }
+
+  const fileName = decodeURIComponent(url.split("/").pop() ?? "file");
+  const contentType = fileRes.headers.get("content-type");
+  const wordDoc = isWordDoc(fileName, contentType);
+  const imgMediaType = imageMediaType(fileName, contentType);
+
+  if (wordDoc) {
+    const { value: text } = await mammoth.extractRawText({ buffer });
+    if (!text.trim()) return { ok: false, error: "Couldn't read text from document" };
+    return { ok: true, content: [{ type: "text", text }], bytes: buffer.byteLength };
+  }
+  if (imgMediaType) {
+    return {
+      ok: true,
+      content: [
+        { type: "image", source: { type: "base64", media_type: imgMediaType, data: buffer.toString("base64") } },
+      ],
+      bytes: buffer.byteLength,
+    };
+  }
+  return {
+    ok: true,
+    content: [
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") } },
+    ],
+    bytes: buffer.byteLength,
+  };
+}
+
+function formatWorkExperience(entries: WorkHistoryEntry[]): string {
+  if (!entries.length) return "None entered.";
+  return entries
+    .map(
+      (e, i) =>
+        `${i + 1}. ${e.title || "Role"} at ${e.company || "Company"} (${e.start || "?"} – ${
+          e.current ? "Present" : e.end || "?"
+        })`,
+    )
+    .join("\n");
+}
+
+function formatEducation(entries: EducationEntry[]): string {
+  if (!entries.length) return "None entered.";
+  return entries
+    .map((e, i) => {
+      const degree = e.degree?.trim() ? `, ${e.degree.trim()}` : "";
+      return `${i + 1}. ${e.institutionType || "Institution"}: ${e.institutionName || "—"} (${
+        e.yearStarted || "?"
+      }–${e.yearCompleted || "?"}${degree})`;
+    })
+    .join("\n");
+}
+
+function buildCertificateSectionIntro(
+  workExperience: WorkHistoryEntry[],
+  education: EducationEntry[],
+): string {
+  return [
+    "The applicant also uploaded supporting documents on the Experience & Qualifications step of the application, each tagged by the applicant with what it's supposed to be. Cross-check each one against what the applicant typed in below, and record your findings in the certificate_validation_summary field of the record_application_screening tool.",
+    `Work experience the applicant entered:\n${formatWorkExperience(workExperience)}`,
+    `Educational qualifications the applicant entered:\n${formatEducation(education)}`,
+    "Each uploaded document follows below, labeled with its filename and tagged category.",
+  ].join("\n\n");
 }
 
 function buildInstructions(posting: JobPostingSnippet | null, roleTitle: string): string {
@@ -129,45 +230,52 @@ export async function screenApplication(
     posting = postingRow ?? null;
   }
 
-  const fileUrl = application.cv_url;
-  const fileName = decodeURIComponent(fileUrl.split("/").pop() ?? "cv");
+  let remainingBudget = MAX_TOTAL_BYTES;
 
-  const fileRes = await fetch(fileUrl);
-  if (!fileRes.ok) {
-    return { ok: false, error: `Could not download CV (HTTP ${fileRes.status})` };
+  const cv = await fetchDocumentContent(application.cv_url, remainingBudget);
+  if (!cv.ok) {
+    return { ok: false, error: `Could not read CV: ${cv.error}` };
   }
-  const buffer = Buffer.from(await fileRes.arrayBuffer());
-  if (buffer.byteLength > MAX_BYTES) {
-    return { ok: false, error: "CV too large to read" };
-  }
-  const contentType = fileRes.headers.get("content-type");
-  const wordDoc = isWordDoc(fileName, contentType);
-  const imgMediaType = imageMediaType(fileName, contentType);
+  remainingBudget -= cv.bytes;
+
+  const formData = application.application_form_data ?? {};
+  const certificates = Array.isArray(formData.certificates)
+    ? (formData.certificates as UploadedFile[]).filter((f) => f?.secure_url)
+    : [];
+  const workExperience = Array.isArray(formData.work_experience)
+    ? (formData.work_experience as WorkHistoryEntry[])
+    : [];
+  const education = Array.isArray(formData.education)
+    ? (formData.education as EducationEntry[])
+    : [];
 
   const instructions = buildInstructions(posting, application.role_title ?? "this role");
-  const content: Array<Record<string, unknown>> = [{ type: "text", text: instructions }];
+  const content: Array<Record<string, unknown>> = [
+    { type: "text", text: instructions },
+    ...cv.content,
+  ];
 
-  if (wordDoc) {
-    const { value: text } = await mammoth.extractRawText({ buffer });
-    if (!text.trim()) {
-      return { ok: false, error: "Couldn't read text from CV" };
+  if (certificates.length > 0) {
+    content.push({ type: "text", text: buildCertificateSectionIntro(workExperience, education) });
+    for (const cert of certificates) {
+      const categoryLabel = cert.category ? UPLOADED_FILE_CATEGORY_LABELS[cert.category] : "Uncategorized";
+      const doc = await fetchDocumentContent(cert.secure_url, remainingBudget);
+      if (!doc.ok) {
+        content.push({
+          type: "text",
+          text: `Document: "${cert.original_name}" (tagged ${categoryLabel}) — could not be reviewed: ${doc.error}.`,
+        });
+        continue;
+      }
+      remainingBudget -= doc.bytes;
+      content.push({ type: "text", text: `Document: "${cert.original_name}" (tagged ${categoryLabel}):` });
+      content.push(...doc.content);
     }
-    content.push({ type: "text", text });
-  } else if (imgMediaType) {
-    content.push({
-      type: "image",
-      source: { type: "base64", media_type: imgMediaType, data: buffer.toString("base64") },
-    });
-  } else {
-    content.push({
-      type: "document",
-      source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") },
-    });
   }
 
   const message = await anthropic.messages.create({
     model: TASK_MANAGER_AI_MODEL,
-    max_tokens: 1024,
+    max_tokens: 1536,
     tools: [SCREENING_TOOL],
     tool_choice: { type: "tool", name: "record_application_screening" },
     messages: [{ role: "user", content: content as never }],
@@ -178,6 +286,10 @@ export async function screenApplication(
   const rawScore = Number(result.score);
   const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
   const scoreSummary = typeof result.summary === "string" ? result.summary : "";
+  const certificateValidationSummary =
+    certificates.length > 0 && typeof result.certificate_validation_summary === "string"
+      ? result.certificate_validation_summary
+      : undefined;
 
   const newStatus: "shortlisted" | "under_review" =
     score >= SHORTLIST_THRESHOLD ? "shortlisted" : "under_review";
@@ -194,11 +306,20 @@ export async function screenApplication(
         summary: scoreSummary,
         model: TASK_MANAGER_AI_MODEL,
         screened_at: new Date().toISOString(),
+        ...(certificateValidationSummary
+          ? { certificate_validation_summary: certificateValidationSummary }
+          : {}),
       },
     })
     .eq("id", application.id);
 
   if (updateErr) return { ok: false, error: updateErr.message };
 
-  return { ok: true, status: newStatus, score, summary: scoreSummary };
+  return {
+    ok: true,
+    status: newStatus,
+    score,
+    summary: scoreSummary,
+    ...(certificateValidationSummary ? { certificate_validation_summary: certificateValidationSummary } : {}),
+  };
 }

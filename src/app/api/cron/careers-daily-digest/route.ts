@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 
     const { data: rows, error } = await supabaseAdmin
       .from("job_applications")
-      .select("id, status, role_title, job_posting_id, cv_url, ai_screening")
+      .select("id, status, role_title, job_posting_id, cv_url, ai_screening, application_form_data")
       .eq("submission_status", "submitted")
       .gte("created_at", yesterdayStart.toISOString())
       .lt("created_at", todayUtcMidnight.toISOString());

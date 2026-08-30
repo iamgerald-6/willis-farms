@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -47,10 +47,12 @@ type InterviewAction =
   | "submit_hr_stage2"
   | "stage1_review_pass"
   | "stage1_review_reject"
-  | "finalize";
+  | "finalize"
+  | "reschedule_stage1"
+  | "reschedule_stage2";
 
 const STEP_LABELS: Record<WorkflowStep, string> = {
-  panel: "Panel",
+  panel: "Stage 1 setup",
   stage1: "Stage 1",
   stage1_review: "Review",
   stage2_setup: "Stage 2 setup",
@@ -124,6 +126,22 @@ export default function InterviewPanelForm({
         ? stage2PanelLocked && rawIsPastStep
         : rawIsPastStep;
 
+  // Once HR opens a stage's panel forms, its setup fields (date, location,
+  // panel member list) lock — editing them mid-interview (or after
+  // members have started submitting) would silently invalidate whatever
+  // members already filled in. "Reschedule" is the deliberate escape
+  // hatch: it clears that stage's forms-opened flag and un-submits any
+  // panel member/HR submissions already collected (their answers stay
+  // intact — they just become editable again rather than starting over),
+  // then hands editing back on the setup fields. Only available while at
+  // least one grader for that stage hasn't submitted yet — once everyone
+  // has (stage1PanelLocked / stage2PanelLocked), the stage is done and
+  // reschedule is no longer offered.
+  const stage1FormsLocked = !!formData.setup?.stage1_forms_opened_at;
+  const stage2FormsLocked = !!formData.setup?.stage2_forms_opened_at;
+  const canRescheduleStage1 = stage1FormsLocked && !stage1PanelLocked;
+  const canRescheduleStage2 = stage2FormsLocked && !stage2PanelLocked;
+
   const combinedScore = useMemo(() => {
     if (!guide) return null;
     return combinedInterviewAverage(formData, guide);
@@ -142,14 +160,19 @@ export default function InterviewPanelForm({
     }));
   }, [combinedScore]);
 
-  const hrStage1: StageSubmissionData = formData.hr_submission?.stage1 ?? {
-    screening: {},
-    question_ratings: {},
-  };
+  // Memoized so the fallback object keeps a stable identity across
+  // unrelated re-renders — otherwise a fresh `{}` literal every render
+  // would look like a "change" to the autosave effect below and fire it
+  // even when HR hasn't typed anything yet.
+  const hrStage1: StageSubmissionData = useMemo(
+    () => formData.hr_submission?.stage1 ?? { screening: {}, question_ratings: {} },
+    [formData.hr_submission?.stage1],
+  );
 
-  const hrStage2: StageSubmissionData = formData.hr_submission?.stage2 ?? {
-    scenario_ratings: {},
-  };
+  const hrStage2: StageSubmissionData = useMemo(
+    () => formData.hr_submission?.stage2 ?? { scenario_ratings: {} },
+    [formData.hr_submission?.stage2],
+  );
 
   const setHrStage1 = (stage1: StageSubmissionData) => {
     setFormData((prev) => ({
@@ -190,18 +213,46 @@ export default function InterviewPanelForm({
         toast.warning(`Saved, but: ${warnings.join("; ")}`);
       }
 
+      // "Open panel forms now" (Stage 1 and Stage 2) unlocks the actual
+      // fillable form for panel members and HR — it should land the user
+      // straight on that form, not close the window. onSaved() bubbles up
+      // to the parent's setSelected(null), which unmounts this whole
+      // component along with the application detail view it lives in, so
+      // these two actions deliberately skip it and just refetch instead.
+      if (params.action === "open_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("panel");
+        refetch();
+        return;
+      }
+      if (params.action === "open_stage2_panel_forms") {
+        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        setManualStep("stage2_setup");
+        refetch();
+        return;
+      }
+      // Same reasoning as the two "open panel forms" actions above —
+      // rescheduling should land HR back on the (now editable) setup
+      // screen to fix the date/panel, not close the whole application view.
+      if (params.action === "reschedule_stage1") {
+        toast.success("Stage 1 reset — update the details and resend invites when ready.");
+        setManualStep("panel");
+        refetch();
+        return;
+      }
+      if (params.action === "reschedule_stage2") {
+        toast.success("Stage 2 reset — update the details and resend invites when ready.");
+        setManualStep("stage2_setup");
+        refetch();
+        return;
+      }
+
       if (params.action === "send_panel_invites") {
         toast.success("Stage 1 panel invites sent.");
         setManualStep("stage1");
-      } else if (params.action === "open_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
-        setManualStep("panel");
       } else if (params.action === "send_stage2_invites") {
         toast.success("Stage 2 invites sent.");
         setManualStep("stage2");
-      } else if (params.action === "open_stage2_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
-        setManualStep("stage2_setup");
       } else if (params.action === "submit_hr_stage1") {
         toast.success("HR Stage 1 submitted.");
         setManualStep("stage1_review");
@@ -232,6 +283,81 @@ export default function InterviewPanelForm({
     },
   });
 
+  // Silently persists HR's in-progress work — Stage 1 / Stage 2 evaluation
+  // answers, and the Panel setup / Stage 2 setup fields (interview date,
+  // location, panel member names/emails) — a couple seconds after they
+  // stop editing, so leaving the page or the tab closing doesn't erase
+  // progress the way it would if HR had to remember to click "Save draft"
+  // or "Send invites" first. Deliberately its own mutation, separate from
+  // saveMutation — that one's onSuccess resets manualStep and calls
+  // onSaved(), which closes the whole application detail view (see the
+  // "open panel forms" fix above); an autosave firing mid-edit must never
+  // do that.
+  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const autosaveMutation = useMutation({
+    mutationFn: (data: InterviewFormData) =>
+      api.post("/careers/interview", {
+        application_id: applicationId,
+        interview_form_data: data,
+        submitted_by: adminId,
+        action: "save_draft",
+      }),
+    onSuccess: () => setAutosaveStatus("saved"),
+    onError: () => setAutosaveStatus("idle"),
+  });
+
+  const skipHrStage1AutosaveRef = useRef(true);
+  useEffect(() => {
+    if (isLoading || hrStage1.submitted_at) return;
+    if (skipHrStage1AutosaveRef.current) {
+      skipHrStage1AutosaveRef.current = false;
+      return;
+    }
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate({
+        ...formData,
+        hr_submission: { ...formData.hr_submission, stage1: hrStage1 },
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrStage1]);
+
+  const skipHrStage2AutosaveRef = useRef(true);
+  useEffect(() => {
+    if (isLoading || hrStage2.submitted_at) return;
+    if (skipHrStage2AutosaveRef.current) {
+      skipHrStage2AutosaveRef.current = false;
+      return;
+    }
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate({
+        ...formData,
+        hr_submission: { ...formData.hr_submission, stage2: hrStage2 },
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrStage2]);
+
+  const skipSetupAutosaveRef = useRef(true);
+  useEffect(() => {
+    const isSetupStep = activeStep === "panel" || activeStep === "stage2_setup";
+    if (isLoading || !isSetupStep || isPastStep) return;
+    if (skipSetupAutosaveRef.current) {
+      skipSetupAutosaveRef.current = false;
+      return;
+    }
+    setAutosaveStatus("saving");
+    const timer = setTimeout(() => {
+      autosaveMutation.mutate(formData);
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.setup]);
+
   const analysisMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/interview/stage1-analysis", {
@@ -249,10 +375,17 @@ export default function InterviewPanelForm({
   });
 
   const finalAnalysisMutation = useMutation({
-    mutationFn: () =>
-      api.post("/careers/interview/final-analysis", {
+    // The AI reads the critical concerns checklist from the database, not
+    // from this component's local state — save the current checklist
+    // first so "Generate" (only enabled once every item is answered) is
+    // guaranteed to analyze exactly what's on screen, even if HR never
+    // clicked "Save draft" themselves.
+    mutationFn: async () => {
+      await autosaveMutation.mutateAsync(formData);
+      return api.post("/careers/interview/final-analysis", {
         application_id: applicationId,
-      }),
+      });
+    },
     onSuccess: (res) => {
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
@@ -343,7 +476,7 @@ export default function InterviewPanelForm({
               }
               onContinueWithoutResend={() => setManualStep("stage1")}
               isPending={saveMutation.isPending}
-              readOnly={isPastStep}
+              readOnly={isPastStep || stage1FormsLocked}
               onOpenPanelForms={() =>
                 saveMutation.mutate({
                   action: "open_panel_forms",
@@ -351,6 +484,15 @@ export default function InterviewPanelForm({
                 })
               }
               isOpeningPanelForms={saveMutation.isPending}
+              saveStatus={autosaveStatus}
+              canReschedule={canRescheduleStage1}
+              onReschedule={() =>
+                saveMutation.mutate({
+                  action: "reschedule_stage1",
+                  data: formData,
+                })
+              }
+              isRescheduling={saveMutation.isPending}
             />
           ) : activeStep === "stage1" &&
             !formData.setup?.stage1_forms_opened_at &&
@@ -387,6 +529,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              saveStatus={autosaveStatus}
             />
           ) : activeStep === "stage1_review" ? (
             <Stage1ReviewStep
@@ -422,7 +565,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
-              readOnly={isPastStep}
+              readOnly={isPastStep || stage2FormsLocked}
               onOpenPanelForms={() =>
                 saveMutation.mutate({
                   action: "open_stage2_panel_forms",
@@ -430,6 +573,16 @@ export default function InterviewPanelForm({
                 })
               }
               isOpeningPanelForms={saveMutation.isPending}
+              onContinueToStage2Form={() => setManualStep("stage2")}
+              saveStatus={autosaveStatus}
+              canReschedule={canRescheduleStage2}
+              onReschedule={() =>
+                saveMutation.mutate({
+                  action: "reschedule_stage2",
+                  data: formData,
+                })
+              }
+              isRescheduling={saveMutation.isPending}
             />
           ) : activeStep === "stage2" &&
             !formData.setup?.stage2_forms_opened_at &&
@@ -473,6 +626,7 @@ export default function InterviewPanelForm({
                 })
               }
               isPending={saveMutation.isPending}
+              saveStatus={autosaveStatus}
             />
           ) : (
             <Stage3Evaluation
@@ -489,28 +643,37 @@ export default function InterviewPanelForm({
         </div>
 
         {activeStep === "evaluation" && !interviewSubmitted && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col sm:flex-row gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() =>
-                saveMutation.mutate({ action: "save_draft", data: formData })
-              }
-              disabled={saveMutation.isPending || isLoading}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-            >
-              <Save className="w-4 h-4" />
-              Save draft
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                saveMutation.mutate({ action: "finalize", data: formData })
-              }
-              disabled={saveMutation.isPending || isLoading}
-              className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-            >
-              {saveMutation.isPending ? "Submitting…" : "Finish"}
-            </button>
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col gap-2 shrink-0">
+            {!formData.summary?.ai_analysis && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                Generate the AI analysis above before finishing.
+              </p>
+            )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  saveMutation.mutate({ action: "save_draft", data: formData })
+                }
+                disabled={saveMutation.isPending || isLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+              >
+                <Save className="w-4 h-4" />
+                Save draft
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  saveMutation.mutate({ action: "finalize", data: formData })
+                }
+                disabled={
+                  saveMutation.isPending || isLoading || !formData.summary?.ai_analysis
+                }
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+              >
+                {saveMutation.isPending ? "Submitting…" : "Finish"}
+              </button>
+            </div>
           </div>
         )}
 

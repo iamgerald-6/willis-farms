@@ -1,6 +1,5 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
-import type { InterviewReport } from "@/lib/careers/types";
-import { stageDateLabel } from "@/lib/careers/panelInterview";
+import { Document, Page, Text, View, StyleSheet, Link } from "@react-pdf/renderer";
+import type { InterviewLocationType, InterviewReport } from "@/lib/careers/types";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -37,6 +36,15 @@ const styles = StyleSheet.create({
   detailLabel: { fontSize: 7.5, color: GRAY, textTransform: "uppercase", letterSpacing: 0.4 },
   detailValue: { fontSize: 10.5, fontWeight: 700, color: DARK, marginTop: 2 },
 
+  stageTableHeaderRow: { flexDirection: "row", borderBottom: `1pt solid ${DARK}`, paddingBottom: 4, marginTop: 12, marginBottom: 2 },
+  stageTableRow: { flexDirection: "row", borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  stageTableHeaderCell: { fontSize: 7, fontWeight: 700, color: GRAY, textTransform: "uppercase" },
+  stageTableCell: { fontSize: 9.5, color: DARK },
+  colStageNum: { flexBasis: "10%", paddingRight: 4 },
+  colStagePanel: { flexBasis: "30%", paddingRight: 4 },
+  colStageLocation: { flexBasis: "28%", paddingRight: 4 },
+  colStageDateTime: { flexBasis: "32%" },
+
   competencyRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 8 },
   competencyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 3 },
   competencyArea: { fontSize: 10, fontWeight: 700, color: DARK },
@@ -55,14 +63,45 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 7, color: GRAY, textAlign: "center" },
   emptyNote: { fontSize: 8.5, color: GRAY, fontStyle: "italic" },
 
-  appendixStageHeader: { fontSize: 10.5, fontWeight: 700, color: DARK, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 16, marginBottom: 8 },
-  appendixCard: { backgroundColor: LIGHT, borderRadius: 6, padding: 10, marginBottom: 8 },
-  appendixText: { fontSize: 8.5, color: DARK, lineHeight: 1.6 },
+  linkRow: { borderBottom: `0.5pt solid ${BORDER}`, paddingVertical: 6 },
+  linkName: { fontSize: 9.5, fontWeight: 700, color: DARK },
+  linkRef: { fontSize: 7.5, color: GRAY, fontFamily: "Courier", marginBottom: 3 },
+  linkText: { fontSize: 8.5, color: RED, textDecoration: "underline" },
 });
 
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtDateTime(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function stageLocationText(
+  location: string | null,
+  locationType: InterviewLocationType | null | undefined,
+): string {
+  if (location) return location;
+  return locationType === "online" ? "Online" : "—";
+}
+
+// Stage-specific panel names, falling back to the combined list for
+// reports generated before per-stage tracking was added.
+function stagePanelText(
+  stageNames: string[] | undefined,
+  combinedNames: string[],
+): string {
+  const names = stageNames ?? combinedNames;
+  return names.length ? names.join(", ") : "—";
 }
 
 function Bullets({ items }: { items: string[] }) {
@@ -113,34 +152,46 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <Text style={styles.detailValue}>{d.role}</Text>
           </View>
           <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>Interview panel</Text>
-            <Text style={styles.detailValue}>{d.panel_names.length ? d.panel_names.join(", ") : "—"}</Text>
-          </View>
-          <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>{stageDateLabel(d.stage1_location_type)} (Stage 1)</Text>
-            <Text style={styles.detailValue}>{fmtDate(d.stage1_interview_date)}</Text>
-          </View>
-          {d.stage1_location && (
-            <View style={styles.detailCard}>
-              <Text style={styles.detailLabel}>Stage 1 location</Text>
-              <Text style={styles.detailValue}>{d.stage1_location}</Text>
-            </View>
-          )}
-          <View style={styles.detailCard}>
-            <Text style={styles.detailLabel}>{stageDateLabel(d.stage2_location_type)} (Stage 2)</Text>
-            <Text style={styles.detailValue}>{fmtDate(d.stage2_interview_date)}</Text>
-          </View>
-          {d.stage2_location && (
-            <View style={styles.detailCard}>
-              <Text style={styles.detailLabel}>Stage 2 location</Text>
-              <Text style={styles.detailValue}>{d.stage2_location}</Text>
-            </View>
-          )}
-          <View style={styles.detailCard}>
             <Text style={styles.detailLabel}>Overall rating</Text>
             <Text style={styles.detailValue}>{d.overall_rating != null ? `${d.overall_rating.toFixed(2)} / 5` : "—"}</Text>
           </View>
         </View>
+
+        <View wrap={false}>
+          <View style={styles.stageTableHeaderRow}>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageNum]}>Stage</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStagePanel]}>Panel</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageLocation]}>Location</Text>
+            <Text style={[styles.stageTableHeaderCell, styles.colStageDateTime]}>Date &amp; Time</Text>
+          </View>
+          <View style={styles.stageTableRow}>
+            <Text style={[styles.stageTableCell, styles.colStageNum]}>1</Text>
+            <Text style={[styles.stageTableCell, styles.colStagePanel]}>
+              {stagePanelText(d.stage1_panel_names, d.panel_names)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageLocation]}>
+              {stageLocationText(d.stage1_location, d.stage1_location_type)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageDateTime]}>{fmtDateTime(d.stage1_interview_date)}</Text>
+          </View>
+          <View style={styles.stageTableRow}>
+            <Text style={[styles.stageTableCell, styles.colStageNum]}>2</Text>
+            <Text style={[styles.stageTableCell, styles.colStagePanel]}>
+              {stagePanelText(d.stage2_panel_names, d.panel_names)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageLocation]}>
+              {stageLocationText(d.stage2_location, d.stage2_location_type)}
+            </Text>
+            <Text style={[styles.stageTableCell, styles.colStageDateTime]}>{fmtDateTime(d.stage2_interview_date)}</Text>
+          </View>
+        </View>
+
+        {report.decision_history_summary && (
+          <View wrap={false}>
+            <Text style={styles.sectionTitle}>Decision History</Text>
+            <Text style={styles.paragraph}>{report.decision_history_summary}</Text>
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>Core Competencies</Text>
         {report.core_competencies.length === 0 ? (
@@ -191,24 +242,20 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
         </Text>
       </Page>
 
-      {report.panel_responses && report.panel_responses.length > 0 && (
+      {report.panel_forms_url && (
         <Page size="A4" style={styles.page}>
-          <Text style={styles.sectionTitle}>Appendix — Full Panel Responses</Text>
+          <Text style={styles.sectionTitle}>Appendix — Panel Forms &amp; Responses</Text>
           <Text style={[styles.paragraph, { marginBottom: 10 }]}>
-            Every panel member&apos;s and HR&apos;s full raw ratings and notes across both
-            interview stages, captured at the time this report was generated.
+            Every panel member&apos;s and HR&apos;s full ratings and notes across both
+            interview stages are recorded on the platform.
           </Text>
-          {report.panel_responses.map((block, i) =>
-            block.trim().toUpperCase().startsWith("STAGE") ? (
-              <Text key={i} style={styles.appendixStageHeader}>
-                {block.trim()}
-              </Text>
-            ) : (
-              <View key={i} style={styles.appendixCard}>
-                <Text style={styles.appendixText}>{block}</Text>
-              </View>
-            ),
-          )}
+          <View style={styles.linkRow} wrap={false}>
+            <Text style={styles.linkName}>{d.name}</Text>
+            <Text style={styles.linkRef}>{d.reference_number}</Text>
+            <Link src={report.panel_forms_url}>
+              <Text style={styles.linkText}>Panel forms / responses</Text>
+            </Link>
+          </View>
           <Text style={styles.footer} fixed>
             Wills Farms Ltd — Human Capital — Interview Report for {d.name}
           </Text>

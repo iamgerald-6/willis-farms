@@ -14,6 +14,8 @@ import {
   type ApplicationFormConfig,
 } from "@/lib/systemDefinitions/applicationFormConfig";
 import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
+import { isValidPhoneNumber } from "libphonenumber-js";
+import { isValidEmail, isValidName } from "@/lib/validation";
 
 export type ApplicationFieldStep = string;
 
@@ -55,6 +57,16 @@ export const INSTITUTION_TYPES = [
   "Other",
 ];
 
+// The application form has no dedicated "name" fieldType (name fields are
+// plain fieldType: "text") — this matches the fieldKeys that actually hold
+// a person's name, so name-specific validation and input filtering can be
+// targeted without touching other free-text fields like the cover letter.
+const NAME_FIELD_KEY_PATTERN = /^(first_name|last_name|reference_\d+_name)$/;
+
+export function isNameFieldKey(fieldKey: string): boolean {
+  return NAME_FIELD_KEY_PATTERN.test(fieldKey);
+}
+
 export interface ApplicationFieldShowWhen {
   field: string;
   equals?: string;
@@ -76,10 +88,37 @@ export interface ApplicationFieldRules {
   maxLength?: number;
 }
 
+// Which part of the "Experience & qualifications" step a supporting
+// document backs up — chosen by the applicant before each individual
+// upload (see JobApplicationWizard.tsx), and used by the AI screening
+// step to know which structured entries (education vs. work history) to
+// cross-check a given document against. "other" has nothing to cross-check
+// against, so it's just noted as uploaded.
+export type UploadedFileCategory = "work_experience" | "education" | "other";
+
+export const UPLOADED_FILE_CATEGORIES: {
+  value: UploadedFileCategory;
+  label: string;
+}[] = [
+  { value: "work_experience", label: "Work Experience" },
+  { value: "education", label: "Educational Qualifications" },
+  { value: "other", label: "Other" },
+];
+
+export const UPLOADED_FILE_CATEGORY_LABELS: Record<
+  UploadedFileCategory,
+  string
+> = Object.fromEntries(
+  UPLOADED_FILE_CATEGORIES.map((c) => [c.value, c.label]),
+) as Record<UploadedFileCategory, string>;
+
 export interface UploadedFile {
   secure_url: string;
   public_id: string;
   original_name: string;
+  /** Absent on files uploaded before this field existed, and on
+   * single-file fields (e.g. the CV) that don't ask for a category. */
+  category?: UploadedFileCategory;
 }
 
 export interface ApplicationFormField {
@@ -339,10 +378,13 @@ export function validateStep(
       continue;
     }
 
-    // Phone fields store "<country code><9 digits>" as one string (see
+    // Phone fields store "<country code><digits>" as one string (see
     // PhoneNumberInput) — checked here, not just presence, whenever a
     // value has been entered (even for an optional field like a second
-    // reference's phone), so a half-typed number can't slip through.
+    // reference's phone), so a half-typed or wrong-format number can't
+    // slip through. Validated against the real format for whichever
+    // country the applicant selected (via libphonenumber-js), not a flat
+    // digit count applied to every country alike.
     if (field.rules.fieldType === "phone" && !isEmpty) {
       const raw = String(value).trim();
       // Longest matching code wins (see PhoneNumberInput.tsx) — e.g.
@@ -351,11 +393,28 @@ export function validateStep(
       const matchedCode = COUNTRY_CODES.filter((c) =>
         raw.startsWith(c.code),
       ).sort((a, b) => b.code.length - a.code.length)[0];
-      const digits = matchedCode ? raw.slice(matchedCode.code.length) : "";
-      if (!matchedCode || !/^\d{9}$/.test(digits)) {
+      if (!matchedCode || !isValidPhoneNumber(raw)) {
         errors.push(
-          `${field.label} needs a country code and exactly 9 digits.`,
+          `${field.label} needs a valid phone number for the selected country.`,
         );
+      }
+    }
+
+    // Email fields — a real format check, not just "something was typed".
+    if (field.rules.fieldType === "email" && !isEmpty) {
+      if (!isValidEmail(String(value))) {
+        errors.push(`${field.label} must be a valid email address.`);
+      }
+    }
+
+    // Name fields (first/last name, referee full names) — letters, spaces,
+    // hyphens, and apostrophes only. The wizard's text input already
+    // filters keystrokes to this same set (see JobApplicationWizard.tsx),
+    // so this is mainly a backstop for pasted text or draft data saved
+    // before that filtering existed.
+    if (field.rules.fieldType === "text" && isNameFieldKey(field.rules.fieldKey) && !isEmpty) {
+      if (!isValidName(String(value))) {
+        errors.push(`${field.label} can only contain letters.`);
       }
     }
 

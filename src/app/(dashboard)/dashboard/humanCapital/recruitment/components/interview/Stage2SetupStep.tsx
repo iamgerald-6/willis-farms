@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
+import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -19,6 +19,14 @@ type Props = {
   /** HR clicks this once the practical actually starts — unlocks the Stage 2 panel members' forms. */
   onOpenPanelForms?: () => void;
   isOpeningPanelForms?: boolean;
+  /** Takes HR straight to the Stage 2 form once panel forms are open — mirrors PanelSetupStep's Stage 1 equivalent. */
+  onContinueToStage2Form?: () => void;
+  /** Background autosave status for the setup fields below. */
+  saveStatus?: "idle" | "saving" | "saved";
+  /** Shown once forms are opened, before the interview evaluation is finalized. */
+  canReschedule?: boolean;
+  onReschedule?: () => void;
+  isRescheduling?: boolean;
 };
 
 // Same date + IOSTimePicker split used when creating a job posting
@@ -45,6 +53,11 @@ export default function Stage2SetupStep({
   readOnly = false,
   onOpenPanelForms,
   isOpeningPanelForms = false,
+  onContinueToStage2Form,
+  saveStatus = "idle",
+  canReschedule = false,
+  onReschedule,
+  isRescheduling = false,
 }: Props) {
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
@@ -101,6 +114,16 @@ export default function Stage2SetupStep({
     });
   };
 
+  const toggleUnavailable = (index: number, unavailable: boolean) => {
+    const next = stage2Members.map((m, i) =>
+      i === index ? { ...m, unavailable } : m,
+    );
+    onChange({
+      ...formData,
+      setup: { ...setup, stage2_members: next },
+    });
+  };
+
   const scheduledAt =
     setup.stage2_scheduled_at ??
     formData.stage2_scheduled_at ??
@@ -115,9 +138,36 @@ export default function Stage2SetupStep({
       />
 
       {readOnly && (
-        <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-          Stage 2 is complete and all panel members have submitted — this panel setup is now locked.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+          <p className="text-xs text-gray-500">
+            {canReschedule
+              ? "Panel forms are open, so the date, location, and panel list are locked to protect what's already been submitted."
+              : "Stage 2 is complete and all panel members have submitted — this panel setup is now locked."}
+          </p>
+          {canReschedule && onReschedule && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Reschedule Stage 2? Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted.",
+                  )
+                ) {
+                  onReschedule();
+                }
+              }}
+              disabled={isRescheduling}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-60 shrink-0"
+            >
+              {isRescheduling ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CalendarClock className="w-3.5 h-3.5" />
+              )}
+              Reschedule
+            </button>
+          )}
+        </div>
       )}
 
       <section className="border border-gray-200 rounded-xl p-4">
@@ -254,33 +304,47 @@ export default function Stage2SetupStep({
           {stage2Members.map((member, index) => (
             <div
               key={member.id || index}
-              className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start border border-gray-100 rounded-xl p-3"
+              className={`border rounded-xl p-3 space-y-2 ${
+                member.unavailable ? "border-amber-200 bg-amber-50/40" : "border-gray-100"
+              }`}
             >
-              <input
-                type="text"
-                placeholder="Full name *"
-                value={member.name}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "name", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              <input
-                type="email"
-                placeholder="Email *"
-                value={member.email}
-                disabled={readOnly}
-                onChange={(e) => updateMember(index, "email", e.target.value)}
-                className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={() => removeMember(index)}
-                  className="p-2 text-gray-400 hover:text-red-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+              <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+                <input
+                  type="text"
+                  placeholder="Full name *"
+                  value={member.name}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "name", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                <input
+                  type="email"
+                  placeholder="Email *"
+                  value={member.email}
+                  disabled={readOnly}
+                  onChange={(e) => updateMember(index, "email", e.target.value)}
+                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => removeMember(index)}
+                    className="p-2 text-gray-400 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-xs text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={!!member.unavailable}
+                  disabled={readOnly}
+                  onChange={(e) => toggleUnavailable(index, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Couldn&apos;t make it — exclude from this round (stays on record, won&apos;t be sent invites or block progress)
+              </label>
             </div>
           ))}
         </div>
@@ -325,6 +389,26 @@ export default function Stage2SetupStep({
             </>
           )}
         </section>
+      )}
+
+      {!readOnly && saveStatus !== "idle" && (
+        <p className="text-xs text-gray-400 text-right">
+          {saveStatus === "saving" ? "Saving…" : "Draft saved"}
+        </p>
+      )}
+
+      {/* Always available once invited, even while the setup fields are
+          locked (forms opened, or the stage fully done) — this only
+          navigates to HR's own grading form, it doesn't edit anything
+          here. */}
+      {setup.stage2_invites_sent_at && (
+        <button
+          type="button"
+          onClick={() => onContinueToStage2Form?.()}
+          className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
+        >
+          Continue to HR Stage 2 form
+        </button>
       )}
 
       {!readOnly && (
