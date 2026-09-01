@@ -292,7 +292,7 @@ export async function sendHrCalendarInviteEmail(params: {
   const text = [
     `Hi ${greeting},`,
     "",
-    `Stage ${params.stage} interview invites have just been sent for the following candidate:`,
+    `Kindly see the Stage ${params.stage} interview invite details for the following candidate:`,
     "",
     `Candidate: ${params.candidateName}`,
     `Role: ${params.roleTitle}`,
@@ -305,7 +305,7 @@ export async function sendHrCalendarInviteEmail(params: {
     `Outlook.com: ${outlookLink}`,
     "(A calendar file is also attached to this email.)",
     "",
-    "Human Capital Team",
+    "Human Resource Team",
     "Wills Farms Ltd.",
   ]
     .filter(Boolean)
@@ -316,7 +316,7 @@ export async function sendHrCalendarInviteEmail(params: {
     `
       <p style="margin:0 0 16px;font-size:15px;">Hi ${escapeHtml(greeting)},</p>
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
-        Stage ${params.stage} interview invites have just been sent for the following candidate:
+        Kindly see below the Stage ${params.stage} interview invite details for the following candidate:
       </p>
       <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
         <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
@@ -392,7 +392,7 @@ export async function sendInterviewInvitationEmail(params: {
     "We look forward to meeting you.",
     "",
     "Kind regards,",
-    "Human Capital Team",
+    "Human Resource Team",
     "Wills Farms Ltd.",
   ].join("\n");
 
