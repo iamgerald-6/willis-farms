@@ -697,7 +697,7 @@ function ApplicationDetail({
                     </div>
                   )}
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                    AI job posting screening — {application.ai_screening.score}% match
+                    Job Match Analysis — {application.ai_screening.score}% match
                   </p>
                   <p className="text-sm text-purple-900">
                     {application.ai_screening.summary}
@@ -2401,8 +2401,8 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
           <>
             {(
               [
-                { stage: "application" as const, title: "Application", dateLabel: "Date applied" },
-                { stage: "screening" as const, title: "Screening", dateLabel: "Date shortlisted" },
+                { stage: "application" as const, title: "Application", dateLabel: "Date rejected" },
+                { stage: "screening" as const, title: "Screening", dateLabel: "Date rejected" },
               ]
             ).map(({ stage, title, dateLabel }) => {
               const rows = report.applicant_roster.filter((a) => a.stage === stage);
@@ -2461,7 +2461,7 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
                             <th className="text-left font-semibold px-3 py-2">Name</th>
                             <th className="text-left font-semibold px-3 py-2">Panel</th>
                             <th className="text-left font-semibold px-3 py-2">Location</th>
-                            <th className="text-left font-semibold px-3 py-2">Date &amp; time</th>
+                            <th className="text-left font-semibold px-3 py-2">Date rejected</th>
                             <th className="text-right font-semibold px-3 py-2">Ranking</th>
                           </tr>
                         </thead>
@@ -2481,7 +2481,7 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
                               </td>
                               <td className="px-3 py-2 text-gray-700">{a.location ?? "—"}</td>
                               <td className="px-3 py-2 text-gray-700">
-                                {a.date ? formatDateTime(a.date) : "—"}
+                                {a.date ? formatDate(a.date) : "—"}
                               </td>
                               <td className="px-3 py-2 text-gray-700 text-right">
                                 {a.rank != null ? `#${a.rank}` : "—"}
@@ -4281,12 +4281,12 @@ function RoleReportModal({
                         {
                           stage: "application" as const,
                           title: "Application",
-                          dateLabel: "Date applied",
+                          dateLabel: "Date rejected",
                         },
                         {
                           stage: "screening" as const,
                           title: "Screening",
-                          dateLabel: "Date shortlisted",
+                          dateLabel: "Date rejected",
                         },
                       ]
                     ).map(({ stage, title, dateLabel }) => {
@@ -4376,7 +4376,7 @@ function RoleReportModal({
                                       Location
                                     </th>
                                     <th className="text-left font-semibold px-3 py-2">
-                                      Date &amp; time
+                                      Date rejected
                                     </th>
                                     <th className="text-right font-semibold px-3 py-2">
                                       Ranking
@@ -4408,7 +4408,7 @@ function RoleReportModal({
                                         {a.location ?? "—"}
                                       </td>
                                       <td className="px-3 py-2 text-gray-700">
-                                        {a.date ? formatDateTime(a.date) : "—"}
+                                        {a.date ? formatDate(a.date) : "—"}
                                       </td>
                                       <td className="px-3 py-2 text-gray-700 text-right">
                                         {a.rank != null ? `#${a.rank}` : "—"}

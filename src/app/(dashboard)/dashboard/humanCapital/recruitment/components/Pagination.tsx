@@ -1,7 +1,7 @@
 "use client";
 
 // Shared page size for every paginated list in the Recruitment tabs.
-export const PAGE_SIZE = 20;
+export const PAGE_SIZE = 10;
 
 export default function Pagination({
   page,
