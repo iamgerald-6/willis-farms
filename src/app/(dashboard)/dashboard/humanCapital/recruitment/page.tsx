@@ -12,6 +12,7 @@ import {
   STATUS_STYLES,
   PANEL_DECISIONS,
   normalizeRoleInterviewReport,
+  normalizeInterviewFormData,
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
@@ -3747,13 +3748,28 @@ function InterviewTab({
       .map((r) => ({ value: r, label: r }));
   }, [applications, nameFilters]);
 
+  // Which of the 3 interview sub-stages each applicant is currently at.
+  // 1 = Stage 1 in progress, 2 = Stage 2 in progress, 3 = Stage 2 complete
+  // and awaiting HR to finalize (i.e. ready for evaluation).
+  const stageOf = (a: JobApplication) =>
+    normalizeInterviewFormData(a.interview_form_data).current_stage ?? 1;
+
+  const STAGE_LABELS: Record<number, string> = {
+    1: "Stage 1",
+    2: "Stage 2",
+    3: "Evaluation",
+  };
+
   const filtered = useMemo(
     () =>
-      applications.filter(
-        (a) =>
-          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
-          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
-      ),
+      applications
+        .filter(
+          (a) =>
+            (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+            (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+        )
+        // Evaluation-ready at the top, Stage 1 at the bottom.
+        .sort((a, b) => stageOf(b) - stageOf(a)),
     [applications, nameFilters, roleFilters],
   );
 
@@ -3843,6 +3859,9 @@ function InterviewTab({
                 Applied
               </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Interview stage
+              </th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">
                 Action
               </th>
@@ -3852,7 +3871,7 @@ function InterviewTab({
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-100">
-                  <td colSpan={6} className="px-4 py-3">
+                  <td colSpan={7} className="px-4 py-3">
                     <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
                   </td>
                 </tr>
@@ -3860,7 +3879,7 @@ function InterviewTab({
             ) : filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   {applications.length === 0
@@ -3891,6 +3910,9 @@ function InterviewTab({
                     >
                       {STATUS_LABELS[a.status]}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {STAGE_LABELS[stageOf(a)]}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button

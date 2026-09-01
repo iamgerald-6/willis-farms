@@ -396,7 +396,7 @@ export default function PanelSetupStep({
       <ConfirmDialog
         open={showRescheduleConfirm}
         title="Reschedule Stage 1?"
-        message="Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted."
+        message="Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers and can edit and resubmit — nothing is deleted."
         confirmLabel={isRescheduling ? "Rescheduling…" : "Reschedule"}
         destructive
         confirming={isRescheduling}
