@@ -28,6 +28,7 @@ import {
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import EmployeesTab from "./components/EmployeesTab";
@@ -149,6 +150,7 @@ function ApplicationDetail({
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showEditedReportModal, setShowEditedReportModal] = useState(false);
   const [showRoleReportModal, setShowRoleReportModal] = useState(false);
+  const [showRescindConfirm, setShowRescindConfirm] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
   const [showEvaluationResultsModal, setShowEvaluationResultsModal] =
     useState(false);
@@ -1693,16 +1695,7 @@ function ApplicationDetail({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
-                        )
-                      ) {
-                        return;
-                      }
-                      rescindOffer.mutate();
-                    }}
+                    onClick={() => setShowRescindConfirm(true)}
                     disabled={rescindOffer.isPending || startOnboarding.isPending}
                     className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                   >
@@ -2008,6 +2001,20 @@ function ApplicationDetail({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showRescindConfirm}
+        title="Rescind offer?"
+        message="The applicant will be moved to Rejects and sent a decline email."
+        confirmLabel={rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
+        destructive
+        confirming={rescindOffer.isPending}
+        onConfirm={() => {
+          rescindOffer.mutate();
+          setShowRescindConfirm(false);
+        }}
+        onCancel={() => setShowRescindConfirm(false)}
+      />
 
       {showPanelResponses && (
         <div
@@ -3930,6 +3937,7 @@ function RoleReportModal({
   );
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
 
   const selectedRound = rounds.find((r) => r.jobPostingId === selectedPostingId);
 
@@ -4101,16 +4109,7 @@ function RoleReportModal({
                 </a>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Regenerate this report from the current applicant pool? Any edits you've made will be discarded.",
-                      )
-                    ) {
-                      return;
-                    }
-                    generateMutation.mutate();
-                  }}
+                  onClick={() => setShowRegenerateConfirm(true)}
                   disabled={generateMutation.isPending}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:underline disabled:opacity-60"
                 >
@@ -4757,6 +4756,20 @@ function RoleReportModal({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showRegenerateConfirm}
+        title="Regenerate this report?"
+        message="This rebuilds it from the current applicant pool. Any edits you've made will be discarded."
+        confirmLabel={generateMutation.isPending ? "Regenerating…" : "Regenerate"}
+        destructive
+        confirming={generateMutation.isPending}
+        onConfirm={() => {
+          generateMutation.mutate();
+          setShowRegenerateConfirm(false);
+        }}
+        onCancel={() => setShowRegenerateConfirm(false)}
+      />
     </div>
   );
 }

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { StageInfoBanner } from "./shared";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type Props = {
   guide: InterviewGuideConfig;
@@ -41,6 +43,7 @@ export default function PanelSetupStep({
   onReschedule,
   isRescheduling = false,
 }: Props) {
+  const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const setup = formData.setup ?? {};
   const members = setup.stage1_members?.length
     ? setup.stage1_members
@@ -118,15 +121,7 @@ export default function PanelSetupStep({
           {canReschedule && onReschedule && (
             <button
               type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Reschedule Stage 1? Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted.",
-                  )
-                ) {
-                  onReschedule();
-                }
-              }}
+              onClick={() => setShowRescheduleConfirm(true)}
               disabled={isRescheduling}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-60 shrink-0"
             >
@@ -397,6 +392,20 @@ export default function PanelSetupStep({
             : "Send Stage 1 invites & notify candidate"}
         </button>
       )}
+
+      <ConfirmDialog
+        open={showRescheduleConfirm}
+        title="Reschedule Stage 1?"
+        message="Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted."
+        confirmLabel={isRescheduling ? "Rescheduling…" : "Reschedule"}
+        destructive
+        confirming={isRescheduling}
+        onConfirm={() => {
+          onReschedule?.();
+          setShowRescheduleConfirm(false);
+        }}
+        onCancel={() => setShowRescheduleConfirm(false)}
+      />
     </div>
   );
 }
