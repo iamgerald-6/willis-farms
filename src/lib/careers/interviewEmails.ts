@@ -559,7 +559,12 @@ export async function sendAllPanelInvites(params: {
   let sent = 0;
 
   for (const member of params.members) {
-    if (!member.name.trim() || !member.email.trim()) continue;
+    if (!member.name.trim() || !member.email.trim()) {
+      failed.push(
+        `${member.email?.trim() || member.name?.trim() || "panel member"}: missing name or email`,
+      );
+      continue;
+    }
     const result = await sendPanelInviteEmail({
       memberName: member.name.trim(),
       memberEmail: member.email.trim(),

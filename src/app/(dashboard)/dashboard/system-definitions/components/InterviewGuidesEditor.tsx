@@ -24,6 +24,13 @@ import {
   resolveInterviewEvaluationLabels,
   type InterviewEvaluationConfig,
 } from "@/lib/systemDefinitions/interviewEvaluationConfig";
+import {
+  formatInterviewBenchmarksForPrompt,
+  INTERVIEW_BENCHMARK_FIELD_DEFS,
+  resolveInterviewBenchmarks,
+  validateInterviewBenchmarks,
+  type ResolvedInterviewBenchmarks,
+} from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { resolveInterviewGuideKeys } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
@@ -34,6 +41,7 @@ type TabId =
   | "scenarios"
   | "evaluation"
   | "ratings"
+  | "benchmarks"
   | "extra_stages";
 
 const TAB_LABELS: Record<TabId, string> = {
@@ -43,6 +51,7 @@ const TAB_LABELS: Record<TabId, string> = {
   scenarios: "Stage 2 — Practical",
   evaluation: "Evaluation checklist",
   ratings: "Rating scale",
+  benchmarks: "Score benchmarks",
   extra_stages: "Extra stages",
 };
 
@@ -115,6 +124,9 @@ export default function InterviewGuidesEditor({
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [guideDraft, setGuideDraft] = useState<InterviewGuideOverride | null>(null);
   const [evaluationDraft, setEvaluationDraft] = useState<InterviewEvaluationConfig>({});
+  const [benchmarksDraft, setBenchmarksDraft] = useState<ResolvedInterviewBenchmarks>(
+    resolveInterviewBenchmarks(),
+  );
   const [extraStagesDraft, setExtraStagesDraft] = useState<ExtraInterviewStageDef[]>([]);
   const [savedGuides, setSavedGuides] = useState<InterviewGuideOverride[]>([]);
   const [showNewGuide, setShowNewGuide] = useState(false);
@@ -185,6 +197,12 @@ export default function InterviewGuidesEditor({
   }, [businessLogic?.interviewEvaluationConfig]);
 
   useEffect(() => {
+    setBenchmarksDraft(
+      resolveInterviewBenchmarks(businessLogic?.interviewBenchmarksConfig),
+    );
+  }, [businessLogic?.interviewBenchmarksConfig]);
+
+  useEffect(() => {
     if (!selectedKey || prevSelectedKeyRef.current === selectedKey) return;
     prevSelectedKeyRef.current = selectedKey;
     setGuideDraft(draftForKey(selectedKey, savedGuidesRef.current));
@@ -197,6 +215,7 @@ export default function InterviewGuidesEditor({
     mutationFn: async (payload: {
       interviewGuidesConfig: InterviewGuidesConfig;
       interviewEvaluationConfig: InterviewEvaluationConfig;
+      interviewBenchmarksConfig: ResolvedInterviewBenchmarks;
     }) => {
       const res = await api.get(
         `/system-definitions/modules/${encodeURIComponent(moduleId)}`,
@@ -209,12 +228,13 @@ export default function InterviewGuidesEditor({
             ...current,
             interviewGuidesConfig: payload.interviewGuidesConfig,
             interviewEvaluationConfig: payload.interviewEvaluationConfig,
+            interviewBenchmarksConfig: payload.interviewBenchmarksConfig,
           },
         },
       );
     },
     onSuccess: () => {
-      toast.success("Interview guide settings saved.");
+      toast.success("Interview settings saved.");
       queryClient.invalidateQueries({ queryKey });
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
@@ -240,6 +260,12 @@ export default function InterviewGuidesEditor({
       return;
     }
 
+    const benchmarkError = validateInterviewBenchmarks(benchmarksDraft);
+    if (benchmarkError) {
+      toast.error(benchmarkError);
+      return;
+    }
+
     const nextGuides = [
       ...savedGuides.filter((g) => g.key !== cleanedGuide.key),
       cleanedGuide,
@@ -254,6 +280,7 @@ export default function InterviewGuidesEditor({
         observedLabel: evaluationDraft.observedLabel?.trim(),
         notObservedLabel: evaluationDraft.notObservedLabel?.trim(),
       },
+      interviewBenchmarksConfig: { ...benchmarksDraft },
     });
   };
 
@@ -702,6 +729,63 @@ export default function InterviewGuidesEditor({
         </div>
       )}
 
+      {activeTab === "benchmarks" && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Weighted interview scores use a 1–5 scale. These thresholds apply to all
+            roles and are fed to AI stage analysis, final recommendations, and hire
+            validation — not hardcoded in the app.
+          </p>
+
+          <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 font-semibold text-gray-600">Benchmark</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600 w-28">Minimum (/5)</th>
+                  <th className="px-4 py-3 font-semibold text-gray-600">Business meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INTERVIEW_BENCHMARK_FIELD_DEFS.map((field) => (
+                  <tr key={field.key} className="border-b border-gray-100 align-top">
+                    <td className="px-4 py-3 font-medium text-gray-900">{field.label}</td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        step={0.1}
+                        value={benchmarksDraft[field.key]}
+                        onChange={(e) => {
+                          const parsed = Number.parseFloat(e.target.value);
+                          setBenchmarksDraft((prev) => ({
+                            ...prev,
+                            [field.key]: Number.isFinite(parsed) ? parsed : prev[field.key],
+                          }));
+                        }}
+                        readOnly={!allowEdit}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm tabular-nums"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{field.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              AI prompt preview
+            </p>
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
+              {formatInterviewBenchmarksForPrompt(benchmarksDraft)}
+            </pre>
+          </div>
+        </div>
+      )}
+
       {activeTab === "extra_stages" && (
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
@@ -783,7 +867,7 @@ export default function InterviewGuidesEditor({
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg disabled:opacity-60"
           >
             {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save interview guide
+            Save interview settings
           </button>
         </div>
       )}

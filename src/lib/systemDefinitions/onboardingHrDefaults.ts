@@ -3,6 +3,7 @@ import { RECRUITMENT_MODULE_ID } from "./recruitmentDefaults";
 
 export const ONBOARDING_HR_FIELDS_LIST = "careers.onboardingHrFields";
 export const ONBOARDING_EMPLOYMENT_TYPES_LIST = "careers.onboardingEmploymentTypes";
+export const ONBOARDING_PAY_FREQUENCIES_LIST = "careers.payFrequencies";
 
 export type OnboardingHrFieldGroup = "placement" | "hr" | "notes";
 
@@ -17,7 +18,8 @@ export type OnboardingHrFieldType =
   | "work_location"
   | "supervisor"
   | "salary_tier"
-  | "salary_range";
+  | "salary_range"
+  | "pay_frequency";
 
 function hrField(
   id: string,
@@ -109,7 +111,6 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldKey: "salary_tier",
         fieldType: "salary_tier",
         group: "hr",
-        hint: "Low, mid, or high band for this grade — set under System Definitions → Grade levels.",
       },
     ),
     hrField(
@@ -126,14 +127,13 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
     ),
     hrField(
       "opt:recruitment:hr:salary_ghs",
-      "Salary / wage (GHS)",
+      "Gross salary (GHS)",
       "salary_ghs",
       15,
       {
         fieldKey: "salary_ghs",
         fieldType: "text",
         group: "hr",
-        hint: "Auto-filled from grade level and salary tier — edit only if an exception applies.",
       },
     ),
     hrField(
@@ -141,7 +141,11 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "Pay frequency",
       "pay_frequency",
       16,
-      { fieldKey: "pay_frequency", fieldType: "text", group: "hr" },
+      {
+        fieldKey: "pay_frequency",
+        fieldType: "pay_frequency",
+        group: "hr",
+      },
     ),
     hrField(
       "opt:recruitment:hr:fitness_determination",
@@ -173,7 +177,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
     ),
     hrField(
       "opt:recruitment:hr:salary_range",
-      "Salary range (system)",
+      "Salary band",
       "salary_range",
       29,
       {
@@ -181,7 +185,6 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldType: "salary_range",
         group: "notes",
         colSpan: "full",
-        hint: "Filled from grade level and tier configured in System Definitions.",
       },
     ),
     hrField(
@@ -189,7 +192,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "HR notes",
       "hr_notes",
       31,
-      { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full" },
+      { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full", required: true },
     ),
   ];
 }
@@ -214,5 +217,26 @@ export function getDefaultOnboardingEmploymentTypes(): SystemOption[] {
     employmentTypeOption("opt:recruitment:emp:casual", "Casual", 2),
     employmentTypeOption("opt:recruitment:emp:contract", "Fixed-term contract", 3),
     employmentTypeOption("opt:recruitment:emp:intern", "Intern / attachment", 4),
+  ];
+}
+
+function payFrequencyOption(id: string, label: string, sortOrder: number): SystemOption {
+  return {
+    id,
+    module_id: RECRUITMENT_MODULE_ID,
+    option_list: ONBOARDING_PAY_FREQUENCIES_LIST,
+    label,
+    legacy_value: label,
+    sort_order: sortOrder,
+    is_active: true,
+    rules: {},
+  };
+}
+
+export function getDefaultPayFrequencies(): SystemOption[] {
+  return [
+    payFrequencyOption("opt:recruitment:pay:weekly", "Weekly", 0),
+    payFrequencyOption("opt:recruitment:pay:monthly", "Monthly", 1),
+    payFrequencyOption("opt:recruitment:pay:hourly", "Hourly", 2),
   ];
 }

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const { data: application, error: fetchError } = await supabaseAdmin
       .from("job_applications")
       .select(
-        "id, status, submission_status, ai_screening, role_title, job_posting_id, cv_url, application_form_data",
+        "id, status, submission_status, ai_screening, role_title, role_slug, job_posting_id, cv_url, application_form_data",
       )
       .eq("id", application_id)
       .single();

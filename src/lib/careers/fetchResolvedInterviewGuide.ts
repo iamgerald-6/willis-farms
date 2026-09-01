@@ -9,13 +9,20 @@ import {
   resolveInterviewEvaluationLabels,
   type InterviewEvaluationConfig,
 } from "@/lib/systemDefinitions/interviewEvaluationConfig";
+import {
+  resolveInterviewBenchmarks,
+  type InterviewBenchmarksConfig,
+  type ResolvedInterviewBenchmarks,
+} from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 export type ResolvedInterviewContext = {
   guide: InterviewGuideConfig | null;
   evaluationLabels: ReturnType<typeof resolveInterviewEvaluationLabels>;
+  benchmarks: ResolvedInterviewBenchmarks;
   guidesConfig?: InterviewGuidesConfig;
   evaluationConfig?: InterviewEvaluationConfig;
+  benchmarksConfig?: InterviewBenchmarksConfig;
 };
 
 export async function fetchResolvedInterviewContext(
@@ -28,22 +35,28 @@ export async function fetchResolvedInterviewContext(
   );
   const guidesConfig = businessLogic.interviewGuidesConfig;
   const evaluationConfig = businessLogic.interviewEvaluationConfig;
+  const benchmarksConfig = businessLogic.interviewBenchmarksConfig;
   const evaluationLabels = resolveInterviewEvaluationLabels(evaluationConfig);
+  const benchmarks = resolveInterviewBenchmarks(benchmarksConfig);
 
   if (!guideKey?.trim()) {
     return {
       guide: null,
       evaluationLabels,
+      benchmarks,
       guidesConfig,
       evaluationConfig,
+      benchmarksConfig,
     };
   }
 
   return {
     guide: resolveInterviewGuideFromConfig(guideKey.trim(), guidesConfig),
     evaluationLabels,
+    benchmarks,
     guidesConfig,
     evaluationConfig,
+    benchmarksConfig,
   };
 }
 

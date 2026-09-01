@@ -59,6 +59,18 @@ export function stageMembers(
   return setup?.stage2_members ?? [];
 }
 
+/** Stage 2 panel for invite send — uses saved stage2_members, or copies Stage 1 when unset. */
+export function resolveStage2MembersForInvite(
+  setup: NonNullable<InterviewFormData["setup"]>,
+): PanelMember[] {
+  const stage2 = ensureMemberTokens(setup.stage2_members ?? []);
+  if (stage2.some((m) => m.name.trim() && m.email.trim())) {
+    return stage2;
+  }
+  const stage1 = ensureMemberTokens(setup.stage1_members ?? setup.members ?? []);
+  return stage1.map((m) => createPanelMember(m.name, m.email, 2));
+}
+
 export function findMemberByToken(
   data: InterviewFormData,
   token: string,

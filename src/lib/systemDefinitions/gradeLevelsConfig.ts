@@ -12,6 +12,9 @@ export type GradeLevelDef = {
   builtIn?: boolean;
   /** Low / mid / high salary bands (GHS) for HR Section O. */
   salaryTiers?: GradeSalaryTiers;
+  /** Internal HR age band for shortlisting — not shown to applicants. */
+  ageMin?: number;
+  ageMax?: number;
 };
 
 export type GradeLevelsConfig = {
@@ -32,14 +35,46 @@ export const JUNIOR_BAND_MAX_RANK = 3;
 export const SPECIALIST_INTERVIEW_GUIDE_KEYS = ["data_analyst", "veterinarian"] as const;
 
 export const DEFAULT_GRADE_LEVELS: GradeLevelDef[] = [
-  { id: "L1", rank: 1, label: "Junior (1)", builtIn: true },
-  { id: "L2", rank: 2, label: "Technician (2)", builtIn: true },
-  { id: "L3", rank: 3, label: "Senior (3)", builtIn: true },
-  { id: "L4", rank: 4, label: "Supervisor (4)", builtIn: true },
-  { id: "L5", rank: 5, label: "Asst. Manager (5)", builtIn: true },
-  { id: "L6", rank: 6, label: "Farm Manager (6)", builtIn: true },
-  { id: "L7", rank: 7, label: "Operations (7)", builtIn: true },
+  { id: "L1", rank: 1, label: "Junior (1)", builtIn: true, ageMin: 22, ageMax: 33 },
+  { id: "L2", rank: 2, label: "Technician (2)", builtIn: true, ageMin: 22, ageMax: 33 },
+  { id: "L3", rank: 3, label: "Senior (3)", builtIn: true, ageMin: 25, ageMax: 40 },
+  { id: "L4", rank: 4, label: "Supervisor (4)", builtIn: true, ageMin: 25, ageMax: 40 },
+  { id: "L5", rank: 5, label: "Asst. Manager (5)", builtIn: true, ageMin: 25, ageMax: 40 },
+  { id: "L6", rank: 6, label: "Farm Manager (6)", builtIn: true, ageMin: 33, ageMax: 55 },
+  { id: "L7", rank: 7, label: "Operations (7)", builtIn: true, ageMin: 33, ageMax: 55 },
 ];
+
+function parseAgeLimit(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 16 || n > 80) return undefined;
+  return Math.round(n);
+}
+
+/** Default age band by grade rank when not explicitly configured. */
+export function defaultAgeRangeForRank(rank: number): { ageMin: number; ageMax: number } {
+  if (rank <= 2) return { ageMin: 22, ageMax: 33 };
+  if (rank <= 5) return { ageMin: 25, ageMax: 40 };
+  return { ageMin: 33, ageMax: 55 };
+}
+
+export function mergeAgeIntoLevels(
+  levels: GradeLevelDef[],
+  ageByGrade: Record<string, { min?: string; max?: string } | undefined>,
+): GradeLevelDef[] {
+  return levels.map((level) => {
+    const raw = ageByGrade[level.id];
+    const parsedMin = parseAgeLimit(raw?.min);
+    const parsedMax = parseAgeLimit(raw?.max);
+    const fallback = defaultAgeRangeForRank(level.rank);
+    const ageMin = parsedMin ?? level.ageMin ?? fallback.ageMin;
+    const ageMax = parsedMax ?? level.ageMax ?? fallback.ageMax;
+    if (ageMin > ageMax) {
+      return { ...level, ageMin: fallback.ageMin, ageMax: fallback.ageMax };
+    }
+    return { ...level, ageMin, ageMax };
+  });
+}
 
 export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
   if (!raw || typeof raw !== "object") return {};
@@ -61,6 +96,8 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (usedIds.has(id)) continue;
     usedIds.add(id);
     const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
+    const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
+    const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
     levels.push({
       id,
       rank: Math.round(rank),
@@ -68,6 +105,8 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
       roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
       builtIn: row.builtIn === true,
       ...(salaryTiers ? { salaryTiers } : {}),
+      ...(ageMin != null ? { ageMin } : {}),
+      ...(ageMax != null ? { ageMax } : {}),
     });
   }
 
@@ -86,6 +125,39 @@ export function resolveGradeLevels(config?: GradeLevelsConfig): GradeLevelDef[] 
   }
 
   return [...byId.values()].sort((a, b) => a.rank - b.rank);
+}
+
+export function resolveAgeRangeForGrade(
+  gradeId: string | null | undefined,
+  config?: GradeLevelsConfig,
+): { ageMin: number; ageMax: number; gradeId: string } | null {
+  const id = gradeId?.trim().toUpperCase();
+  if (!id || !/^L\d+$/.test(id)) return null;
+  const level = resolveGradeLevels(config).find((l) => l.id === id);
+  if (!level) return null;
+  const fallback = defaultAgeRangeForRank(level.rank);
+  return {
+    gradeId: id,
+    ageMin: level.ageMin ?? fallback.ageMin,
+    ageMax: level.ageMax ?? fallback.ageMax,
+  };
+}
+
+/** Age band for a job posting guide key (L1–L7 or specialist roles). */
+export function resolveAgeRangeForGuideKey(
+  guideKey: string | null | undefined,
+  config?: GradeLevelsConfig,
+): { ageMin: number; ageMax: number; gradeId: string } | null {
+  const id = guideKey?.trim();
+  if (!id) return null;
+  const upper = id.toUpperCase();
+  if (/^L\d+$/.test(upper)) {
+    return resolveAgeRangeForGrade(upper, config);
+  }
+  if (id === "data_analyst" || id === "veterinarian") {
+    return { gradeId: id, ageMin: 25, ageMax: 40 };
+  }
+  return null;
 }
 
 export function resolveGradeLevelOptions(

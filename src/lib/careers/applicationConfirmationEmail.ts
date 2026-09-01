@@ -52,7 +52,7 @@ export function buildApplicationConfirmationEmail(
     "For enquiries, contact info@willsfarms.com and quote your reference number.",
     "",
     "Kind regards,",
-    "Human Resource Team",
+    "Hiring Manager",
     "Wills Farms Ltd.",
   ].join("\n");
 
@@ -95,7 +95,7 @@ export function buildApplicationConfirmationEmail(
               </table>
 
               <p style="margin:0 0 16px;font-size:15px;color:#374151;">
-                Our Human Capital team will review your application against the role requirements. If you are shortlisted, we will contact you directly to arrange the next stage of the recruitment process.
+                Our hiring manager will review your application against the role requirements. If you are shortlisted, we will contact you directly to arrange the next stage of the recruitment process.
               </p>
               <p style="margin:0 0 16px;font-size:15px;color:#374151;">
                 Please retain this email and quote your reference number in any follow-up correspondence.
@@ -107,7 +107,7 @@ export function buildApplicationConfirmationEmail(
 
               <p style="margin:24px 0 0;font-size:15px;color:#374151;">
                 Kind regards,<br />
-                <strong>Human Capital Team</strong><br />
+                <strong>Hiring Manager</strong><br />
                 Wills Farms Ltd.
               </p>
             </td>

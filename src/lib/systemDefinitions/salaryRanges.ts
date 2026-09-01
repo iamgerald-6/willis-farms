@@ -57,6 +57,39 @@ export function formatSalaryTierBand(band?: SalaryTierBand | null): string {
   return "";
 }
 
+export function parseGhsAmount(value: string | undefined | null): number | null {
+  if (!value?.trim()) return null;
+  const n = Number(value.replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+export function formatGrossSalaryAmount(
+  salaryGhs: string | null | undefined,
+): string | null {
+  const amount = salaryGhs?.trim();
+  if (!amount) return null;
+  const n = parseGhsAmount(amount);
+  if (n == null) return `GHS ${amount}`;
+  const formatted = n.toLocaleString("en-GH", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  return `GHS ${formatted}`;
+}
+
+/** Midpoint of band when both bounds exist; otherwise the single bound. */
+export function defaultSalaryForTierBand(band: SalaryTierBand | null | undefined): string {
+  if (!band) return "";
+  const min = parseGhsAmount(band.min);
+  const max = parseGhsAmount(band.max);
+  if (min != null && max != null) {
+    return String(Math.round((min + max) / 2));
+  }
+  if (min != null) return String(min);
+  if (max != null) return String(max);
+  return "";
+}
+
 export function normalizeSalaryTierId(value: string | undefined | null): SalaryTierId | null {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "low" || normalized === "mid" || normalized === "high") {
@@ -76,6 +109,42 @@ export function resolveSalaryTierBandForGrade(
   return level?.salaryTiers?.[tier] ?? null;
 }
 
+export function validateGrossSalaryInBand(
+  salaryGhs: string | undefined | null,
+  gradeId: string | undefined | null,
+  tierInput: string | undefined | null,
+  config?: GradeLevelsConfig,
+): { valid: boolean; message: string | null } {
+  const amount = parseGhsAmount(salaryGhs);
+  if (amount == null) {
+    return { valid: false, message: "Enter a valid gross salary amount." };
+  }
+
+  const tier = normalizeSalaryTierId(tierInput);
+  const band = resolveSalaryTierBandForGrade(gradeId, tier, config);
+  if (!band) {
+    return { valid: true, message: null };
+  }
+
+  const min = parseGhsAmount(band.min);
+  const max = parseGhsAmount(band.max);
+
+  if (min != null && amount < min) {
+    return {
+      valid: false,
+      message: `Gross salary cannot be below GHS ${formatGhsAmount(String(min))} for this band.`,
+    };
+  }
+  if (max != null && amount > max) {
+    return {
+      valid: false,
+      message: `Gross salary cannot exceed GHS ${formatGhsAmount(String(max))} for this band.`,
+    };
+  }
+
+  return { valid: true, message: null };
+}
+
 export function resolveSalaryForGradeTier(
   gradeId: string | undefined | null,
   tierInput: string | undefined | null,
@@ -93,7 +162,7 @@ export function resolveSalaryForGradeTier(
     tier,
     band,
     formatted,
-    salaryGhs: formatted,
+    salaryGhs: defaultSalaryForTierBand(band),
   };
 }
 

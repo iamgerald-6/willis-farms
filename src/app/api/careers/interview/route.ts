@@ -21,6 +21,7 @@ import {
 import {
   combinedInterviewAverage,
   ensureMemberTokens,
+  resolveStage2MembersForInvite,
   scoreSubmission,
   stage1ReadyForReview,
   stage2ReadyForEvaluation,
@@ -191,7 +192,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { guide } = await fetchResolvedInterviewContext(
+    const { guide, benchmarks } = await fetchResolvedInterviewContext(
       supabaseAdmin,
       guideKey,
     );
@@ -380,8 +381,14 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      if (!setup.stage2_location_type) {
+        return NextResponse.json(
+          { error: "Select onsite or online for the Stage 2 practical format." },
+          { status: 400 },
+        );
+      }
 
-      const stage2Members = ensureMemberTokens(setup.stage2_members ?? []);
+      const stage2Members = resolveStage2MembersForInvite(setup);
       const validMembers = stage2Members.filter(
         (m) => m.name.trim() && m.email.trim(),
       );
@@ -419,6 +426,17 @@ export async function POST(req: NextRequest) {
         location: setup.stage2_location,
         meetingLink: setup.stage2_meeting_link,
       });
+
+      if (inviteResult.sent === 0) {
+        return NextResponse.json(
+          {
+            error:
+              inviteResult.failed[0] ??
+              "Failed to send Stage 2 panel invites. Check RESEND_API_KEY and RESEND_FROM_EMAIL.",
+          },
+          { status: 502 },
+        );
+      }
 
       if (inviteResult.failed.length) {
         emailWarnings.push(...inviteResult.failed);
@@ -757,6 +775,7 @@ export async function POST(req: NextRequest) {
       const validationError = validatePanelDecision(
         decision,
         merged.summary?.total_weighted ?? combined,
+        benchmarks,
       );
       if (validationError || !decision) {
         return NextResponse.json(

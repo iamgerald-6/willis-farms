@@ -209,9 +209,6 @@ export default function InterviewPanelForm({
       setManualStep(null);
 
       const warnings = res.data.email_warnings as string[] | undefined;
-      if (warnings?.length) {
-        toast.warning(`Saved, but: ${warnings.join("; ")}`);
-      }
 
       // "Open panel forms now" (Stage 1 and Stage 2) unlocks the actual
       // fillable form for panel members and HR — it should land the user
@@ -230,6 +227,20 @@ export default function InterviewPanelForm({
         setManualStep("stage2_setup");
         refetch();
         return;
+      }
+      if (params.action === "send_stage2_invites") {
+        if (warnings?.length) {
+          toast.warning(`Invites sent, but: ${warnings.join("; ")}`);
+        } else {
+          toast.success("Stage 2 panel invites sent.");
+        }
+        setManualStep("stage2_setup");
+        refetch();
+        return;
+      }
+
+      if (warnings?.length) {
+        toast.warning(`Saved, but: ${warnings.join("; ")}`);
       }
       // Same reasoning as the two "open panel forms" actions above —
       // rescheduling should land HR back on the (now editable) setup
@@ -250,9 +261,6 @@ export default function InterviewPanelForm({
       if (params.action === "send_panel_invites") {
         toast.success("Stage 1 panel invites sent.");
         setManualStep("stage1");
-      } else if (params.action === "send_stage2_invites") {
-        toast.success("Stage 2 invites sent.");
-        setManualStep("stage2");
       } else if (params.action === "submit_hr_stage1") {
         toast.success("HR Stage 1 submitted.");
         setManualStep("stage1_review");
@@ -557,10 +565,10 @@ export default function InterviewPanelForm({
               guide={guide}
               formData={formData}
               onChange={setFormData}
-              onSendStage2Invites={(scheduledAt) =>
+              onSendStage2Invites={(scheduledAt, data) =>
                 saveMutation.mutate({
                   action: "send_stage2_invites",
-                  data: formData,
+                  data,
                   stage2_scheduled_at: scheduledAt,
                 })
               }

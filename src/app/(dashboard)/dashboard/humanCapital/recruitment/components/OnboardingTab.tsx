@@ -13,6 +13,7 @@ import {
 } from "@/lib/careers/onboardingTypes";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
+import { OFFER_TERMS_LOCKED_FIELD_KEYS } from "@/lib/careers/offerTerms";
 import {
   STATUS_LABELS,
   STATUS_STYLES,
@@ -185,6 +186,8 @@ function OnboardingDetail({
   );
 
   const offerResponse = row.hr_data?.offer_response ?? "pending";
+  const offerTermsLocked = Boolean(row.hr_data?.offer_terms_saved_at?.trim());
+  const lockedOfferFields = offerTermsLocked ? [...OFFER_TERMS_LOCKED_FIELD_KEYS] : [];
 
   const finishHr = useMutation({
     mutationFn: async () => {
@@ -408,12 +411,19 @@ function OnboardingDetail({
                 Employee ID is a company-wide number (WF-00001, WF-00042 — no grade in the ID).
                 Company email uses first initial, optional middle initial, then surname @
                 {companyEmailDomain} — e.g. l.akoto@ or m.oofuso@. Edit the name part if
-                needed. Employment placement is HR-only — candidates do not fill these on the
-                form.
+                needed. Role, salary, and employment placement were set at offer and cannot
+                be changed here.
               </p>
+              {offerTermsLocked && (
+                <p className="text-xs text-green-800 bg-green-50 border border-green-100 rounded-lg px-3 py-2 mb-3">
+                  Offer terms (role, compensation, and placement) are locked from the Offer
+                  stage.
+                </p>
+              )}
               <OnboardingHrFieldsForm
                 hrData={hrData}
                 setHrData={setHrData}
+                readOnlyFields={lockedOfferFields}
                 onGradeChange={() => {
                   employeeIdTouched.current = false;
                 }}

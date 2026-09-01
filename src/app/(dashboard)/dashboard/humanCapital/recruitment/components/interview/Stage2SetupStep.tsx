@@ -13,7 +13,7 @@ type Props = {
   guide: InterviewGuideConfig;
   formData: InterviewFormData;
   onChange: (data: InterviewFormData) => void;
-  onSendStage2Invites: (scheduledAt: string) => void;
+  onSendStage2Invites: (scheduledAt: string, data: InterviewFormData) => void;
   isPending: boolean;
   readOnly?: boolean;
   /** HR clicks this once the practical actually starts — unlocks the Stage 2 panel members' forms. */
@@ -62,6 +62,10 @@ export default function Stage2SetupStep({
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
 
+  const stage1MemberKey = stage1Members
+    .map((m) => `${m.id}:${m.email}:${m.name}`)
+    .join("|");
+
   useEffect(() => {
     if (setup.stage2_members?.length) return;
     if (stage1Members.length === 0) return;
@@ -75,11 +79,21 @@ export default function Stage2SetupStep({
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.stage1_review?.passed]);
+  }, [stage1MemberKey, setup.stage2_members?.length]);
 
   const stage2Members = setup.stage2_members?.length
     ? setup.stage2_members
     : stage1Members.map((m) => createPanelMember(m.name, m.email, 2));
+
+  const buildSendPayload = (scheduledAt: string): InterviewFormData => ({
+    ...formData,
+    stage2_scheduled_at: scheduledAt,
+    setup: {
+      ...setup,
+      stage2_scheduled_at: scheduledAt,
+      stage2_members: stage2Members,
+    },
+  });
 
   const updateMember = (index: number, field: keyof PanelMember, value: string) => {
     const next = stage2Members.map((m, i) =>
@@ -237,6 +251,7 @@ export default function Stage2SetupStep({
                     ...setup,
                     stage2_location_type:
                       (e.target.value as "onsite" | "online") || undefined,
+                    stage2_members: stage2Members,
                   },
                 })
               }
@@ -258,7 +273,11 @@ export default function Stage2SetupStep({
                 onChange={(e) =>
                   onChange({
                     ...formData,
-                    setup: { ...setup, stage2_meeting_link: e.target.value },
+                    setup: {
+                      ...setup,
+                      stage2_meeting_link: e.target.value,
+                      stage2_members: stage2Members,
+                    },
                   })
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
@@ -275,7 +294,11 @@ export default function Stage2SetupStep({
                 onChange={(e) =>
                   onChange({
                     ...formData,
-                    setup: { ...setup, stage2_location: e.target.value },
+                    setup: {
+                      ...setup,
+                      stage2_location: e.target.value,
+                      stage2_members: stage2Members,
+                    },
                   })
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
@@ -414,8 +437,19 @@ export default function Stage2SetupStep({
       {!readOnly && (
         <button
           type="button"
-          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
-          disabled={isPending || !scheduledAt}
+          onClick={() =>
+            scheduledAt && onSendStage2Invites(scheduledAt, buildSendPayload(scheduledAt))
+          }
+          disabled={
+            isPending ||
+            !scheduledAt ||
+            !setup.stage2_location_type ||
+            (setup.stage2_location_type === "online" &&
+              !setup.stage2_meeting_link?.trim()) ||
+            (setup.stage2_location_type === "onsite" &&
+              !setup.stage2_location?.trim()) ||
+            !stage2Members.some((m) => m.name.trim() && m.email.trim() && !m.unavailable)
+          }
           className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
         >
           {isPending ? (
@@ -425,7 +459,7 @@ export default function Stage2SetupStep({
           )}
           {setup.stage2_invites_sent_at
             ? "Resend Stage 2 invites"
-            : "Send Stage 2 invites & open practical"}
+            : "Send Stage 2 invites"}
         </button>
       )}
     </div>

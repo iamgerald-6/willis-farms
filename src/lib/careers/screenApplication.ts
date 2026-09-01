@@ -1,8 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getInterviewGuideKeyForRoleSlug } from "@/lib/careers/openings";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { resolveAgeRangeForGuideKey } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import type {
   EducationEntry,
   UploadedFile,
@@ -20,35 +23,59 @@ const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const SCREENING_TOOL = {
-  name: "record_application_screening",
-  description:
-    "Records how well an applicant's CV matches a job's requirements, for automatic shortlisting, and (when supporting documents were uploaded) whether those documents check out against what the applicant entered on the form.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      score: {
-        type: "number",
-        description:
-          "Overall match score from 0 to 100 reflecting how well the CV matches the job's key responsibilities, minimum qualifications, experience requirements, and required skills/attributes. Be realistic and discriminating — most CVs are not a perfect match.",
-      },
-      summary: {
-        type: "string",
-        description:
-          "A brief 1-3 sentence rationale for the score: the strongest matches and the clearest gaps, so a human reviewer can quickly sanity-check the call.",
-      },
-      certificate_validation_summary: {
-        type: "string",
-        description:
-          "Only include when supporting documents were provided below. Name every uploaded document and its tagged category, and for each one: if it's tagged Work Experience or Educational Qualifications, state whether it plausibly matches one of the applicant's corresponding entries (institution/employer, role/qualification, dates — broad consistency, not exact wording) or state the specific discrepancy/mismatch found; if it's tagged Other, just state that it was uploaded and does not correspond to any specific field on the form. Keep it factual and concise — a couple of sentences per document.",
-      },
-    },
-    required: ["score", "summary"],
-  },
+type AgeScreeningContext = {
+  gradeId: string;
+  ageMin: number;
+  ageMax: number;
+  applicantAge: number | null;
+  ageWithinRange: boolean | null;
 };
+
+function buildScreeningTool(ageContext: AgeScreeningContext | null) {
+  const properties: Record<string, Record<string, unknown>> = {
+    score: {
+      type: "number",
+      description:
+        "Overall match score from 0 to 100 reflecting how well the CV matches the job's key responsibilities, minimum qualifications, experience requirements, and required skills/attributes. Be realistic and discriminating — most CVs are not a perfect match.",
+    },
+    summary: {
+      type: "string",
+      description:
+        "A brief 1-3 sentence rationale for the score: the strongest matches and the clearest gaps, so a human reviewer can quickly sanity-check the call.",
+    },
+    certificate_validation_summary: {
+      type: "string",
+      description:
+        "Only include when supporting documents were provided below. Name every uploaded document and its tagged category, and for each one: if it's tagged Work Experience or Educational Qualifications, state whether it plausibly matches one of the applicant's corresponding entries (institution/employer, role/qualification, dates — broad consistency, not exact wording) or state the specific discrepancy/mismatch found; if it's tagged Other, just state that it was uploaded and does not correspond to any specific field on the form. Keep it factual and concise — a couple of sentences per document.",
+    },
+  };
+
+  const required = ["score", "summary"];
+
+  if (ageContext) {
+    properties.age_assessment = {
+      type: "string",
+      description:
+        "Age eligibility analysis for HR (internal only — not shown to applicants). State the applicant's age (or that date of birth was missing), the configured age band for this grade level, whether they fall within the band, and how age affects shortlisting. Be factual and concise.",
+    };
+    required.push("age_assessment");
+  }
+
+  return {
+    name: "record_application_screening",
+    description:
+      "Records how well an applicant's CV matches a job's requirements, for automatic shortlisting, and (when supporting documents were uploaded) whether those documents check out against what the applicant entered on the form.",
+    input_schema: {
+      type: "object" as const,
+      properties,
+      required,
+    },
+  };
+}
 
 type JobPostingSnippet = {
   title: string | null;
+  interview_guide_key: string | null;
   key_responsibilities: string | null;
   minimum_qualifications: string | null;
   experience: string | null;
@@ -58,6 +85,7 @@ type JobPostingSnippet = {
 export type ScreenApplicationInput = {
   id: string;
   role_title: string | null;
+  role_slug?: string | null;
   job_posting_id: string | null;
   cv_url: string | null;
   /** Where the applicant's uploaded certificates and typed work/education
@@ -181,7 +209,55 @@ function buildCertificateSectionIntro(
   ].join("\n\n");
 }
 
-function buildInstructions(posting: JobPostingSnippet | null, roleTitle: string): string {
+function computeAgeFromDob(dob: string | null | undefined, asOf = new Date()): number | null {
+  const trimmed = dob?.trim();
+  if (!trimmed) return null;
+  const born = new Date(trimmed);
+  if (Number.isNaN(born.getTime())) return null;
+  let age = asOf.getFullYear() - born.getFullYear();
+  const monthDiff = asOf.getMonth() - born.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && asOf.getDate() < born.getDate())) age -= 1;
+  if (age < 0 || age > 120) return null;
+  return age;
+}
+
+function resolveGuideKey(
+  posting: JobPostingSnippet | null,
+  roleSlug: string | null | undefined,
+): string | null {
+  const fromPosting = posting?.interview_guide_key?.trim();
+  if (fromPosting) return fromPosting;
+  const slug = roleSlug?.trim();
+  if (!slug) return null;
+  return getInterviewGuideKeyForRoleSlug(slug) ?? null;
+}
+
+function buildAgeContext(
+  guideKey: string | null,
+  gradeConfig: Awaited<ReturnType<typeof fetchGradeLevelsConfig>>,
+  dateOfBirth: string | null,
+): AgeScreeningContext | null {
+  const ageRange = resolveAgeRangeForGuideKey(guideKey, gradeConfig);
+  if (!ageRange) return null;
+  const applicantAge = computeAgeFromDob(dateOfBirth);
+  const ageWithinRange =
+    applicantAge == null
+      ? null
+      : applicantAge >= ageRange.ageMin && applicantAge <= ageRange.ageMax;
+  return {
+    gradeId: ageRange.gradeId,
+    ageMin: ageRange.ageMin,
+    ageMax: ageRange.ageMax,
+    applicantAge,
+    ageWithinRange,
+  };
+}
+
+function buildInstructions(
+  posting: JobPostingSnippet | null,
+  roleTitle: string,
+  ageContext: AgeScreeningContext | null,
+): string {
   const sections = posting
     ? [
         posting.key_responsibilities?.trim() &&
@@ -196,13 +272,32 @@ function buildInstructions(posting: JobPostingSnippet | null, roleTitle: string)
         .join("\n\n")
     : "";
 
+  const ageSection = ageContext
+    ? [
+        `Internal age eligibility (HR only — not disclosed to applicants): this role is grade ${ageContext.gradeId} with an age band of ${ageContext.ageMin}–${ageContext.ageMax} years.`,
+        ageContext.applicantAge != null
+          ? `The applicant's date of birth indicates they are ${ageContext.applicantAge} years old${
+              ageContext.ageWithinRange === true
+                ? " — within the configured band."
+                : ageContext.ageWithinRange === false
+                  ? " — outside the configured band. Treat this as a shortlisting cutoff: they should not be auto-shortlisted even if the CV otherwise scores well."
+                  : "."
+            }`
+          : "Date of birth was not provided on the application — note this in age_assessment; they cannot be verified against the age band for auto-shortlisting.",
+        "Include a clear age_assessment in your tool response covering age vs. the band and shortlisting impact.",
+      ].join("\n")
+    : "";
+
   return [
     `You are screening a CV against a job at Wills Farms, a farm operation in Ghana. The role is "${roleTitle}".`,
     sections
       ? `Here are the role's requirements:\n\n${sections}`
       : "No detailed job description is on file for this role — use the role title alone as the basis for judgment.",
+    ageSection,
     "Read the attached CV and record a match score using the record_application_screening tool. Score realistically: a CV that clearly meets the minimum qualifications, has relevant experience, and shows the required skills should score highly; a CV missing several of these should score low. Don't be generous by default.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** Grade one submitted application against its job posting CV requirements. */
@@ -218,17 +313,25 @@ export async function screenApplication(
     return { ok: false, error: "No CV on file for this application." };
   }
 
+  const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+
   let posting: JobPostingSnippet | null = null;
   if (application.job_posting_id) {
     const { data: postingRow } = await supabaseAdmin
       .from("job_postings")
       .select(
-        "title, key_responsibilities, minimum_qualifications, experience, required_skills_attributes",
+        "title, interview_guide_key, key_responsibilities, minimum_qualifications, experience, required_skills_attributes",
       )
       .eq("id", application.job_posting_id)
       .maybeSingle();
     posting = postingRow ?? null;
   }
+
+  const formData = application.application_form_data ?? {};
+  const dateOfBirth =
+    typeof formData.date_of_birth === "string" ? formData.date_of_birth.trim() : null;
+  const guideKey = resolveGuideKey(posting, application.role_slug);
+  const ageContext = buildAgeContext(guideKey, gradeConfig, dateOfBirth);
 
   let remainingBudget = MAX_TOTAL_BYTES;
 
@@ -238,7 +341,6 @@ export async function screenApplication(
   }
   remainingBudget -= cv.bytes;
 
-  const formData = application.application_form_data ?? {};
   const certificates = Array.isArray(formData.certificates)
     ? (formData.certificates as UploadedFile[]).filter((f) => f?.secure_url)
     : [];
@@ -249,7 +351,12 @@ export async function screenApplication(
     ? (formData.education as EducationEntry[])
     : [];
 
-  const instructions = buildInstructions(posting, application.role_title ?? "this role");
+  const instructions = buildInstructions(
+    posting,
+    application.role_title ?? "this role",
+    ageContext,
+  );
+  const screeningTool = buildScreeningTool(ageContext);
   const content: Array<Record<string, unknown>> = [
     { type: "text", text: instructions },
     ...cv.content,
@@ -276,7 +383,7 @@ export async function screenApplication(
   const message = await anthropic.messages.create({
     model: TASK_MANAGER_AI_MODEL,
     max_tokens: 1536,
-    tools: [SCREENING_TOOL],
+    tools: [screeningTool],
     tool_choice: { type: "tool", name: "record_application_screening" },
     messages: [{ role: "user", content: content as never }],
   });
@@ -286,13 +393,19 @@ export async function screenApplication(
   const rawScore = Number(result.score);
   const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
   const scoreSummary = typeof result.summary === "string" ? result.summary : "";
+  const ageAssessment =
+    ageContext && typeof result.age_assessment === "string" ? result.age_assessment : undefined;
   const certificateValidationSummary =
     certificates.length > 0 && typeof result.certificate_validation_summary === "string"
       ? result.certificate_validation_summary
       : undefined;
 
+  const ageBlocksShortlist =
+    ageContext != null &&
+    (ageContext.ageWithinRange === false || ageContext.applicantAge == null);
+
   const newStatus: "shortlisted" | "under_review" =
-    score >= SHORTLIST_THRESHOLD ? "shortlisted" : "under_review";
+    score >= SHORTLIST_THRESHOLD && !ageBlocksShortlist ? "shortlisted" : "under_review";
 
   const statusHistory = await fetchAndAppendStatusHistory(supabaseAdmin, application.id, newStatus, null);
 
@@ -306,6 +419,16 @@ export async function screenApplication(
         summary: scoreSummary,
         model: TASK_MANAGER_AI_MODEL,
         screened_at: new Date().toISOString(),
+        ...(ageContext
+          ? {
+              grade_level: ageContext.gradeId,
+              age_min: ageContext.ageMin,
+              age_max: ageContext.ageMax,
+              applicant_age: ageContext.applicantAge,
+              age_within_range: ageContext.ageWithinRange,
+              ...(ageAssessment ? { age_assessment: ageAssessment } : {}),
+            }
+          : {}),
         ...(certificateValidationSummary
           ? { certificate_validation_summary: certificateValidationSummary }
           : {}),

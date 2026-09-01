@@ -7,6 +7,9 @@ import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingM
 import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/types";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
+import { validateOfferTerms } from "@/lib/careers/offerTerms";
+import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 // Moves a hired applicant from "offer" to "onboarding" — creates their
 // onboarding magic-link token, an onboarding_submissions row, and sends the
@@ -62,11 +65,27 @@ export async function POST(req: NextRequest) {
 
     const hr = (submission?.hr_data ?? {}) as OnboardingHrData;
 
+    const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
+    const termsValidation = validateOfferTerms(
+      hr,
+      moduleConfig.businessLogic.gradeLevelsConfig,
+    );
+    if (!hr.offer_terms_saved_at || !termsValidation.valid) {
+      return NextResponse.json(
+        {
+          error:
+            termsValidation.message ??
+            "Save offer terms before sending the onboarding link.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (!hr.offer_letter?.secure_url) {
       return NextResponse.json(
         {
           error:
-            "Upload the signed offer letter before sending the onboarding link.",
+            "Create and save the offer letter before sending the onboarding link.",
         },
         { status: 400 },
       );

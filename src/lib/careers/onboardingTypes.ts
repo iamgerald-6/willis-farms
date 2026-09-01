@@ -199,7 +199,12 @@ export interface OnboardingHrData {
     public_id?: string;
     original_name?: string;
   };
+  /** Editable plain-text draft used to generate the PDF offer letter. */
+  offer_letter_draft?: string;
+  offer_letter_generated_at?: string;
   offer_letter_uploaded_at?: string;
+  /** Set when HR saves compensation & placement on the Offer tab. */
+  offer_terms_saved_at?: string;
   /** Candidate response to the job offer (before / instead of completing onboarding). */
   offer_response?: "pending" | "accepted" | "declined";
   offer_response_at?: string;

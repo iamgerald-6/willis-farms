@@ -62,9 +62,14 @@ export const INSTITUTION_TYPES = [
 // a person's name, so name-specific validation and input filtering can be
 // targeted without touching other free-text fields like the cover letter.
 const NAME_FIELD_KEY_PATTERN = /^(first_name|last_name|reference_\d+_name)$/;
+const REFEREE_EMAIL_FIELD_KEY_PATTERN = /^reference_\d+_email$/;
 
 export function isNameFieldKey(fieldKey: string): boolean {
   return NAME_FIELD_KEY_PATTERN.test(fieldKey);
+}
+
+export function isRefereeEmailFieldKey(fieldKey: string): boolean {
+  return REFEREE_EMAIL_FIELD_KEY_PATTERN.test(fieldKey);
 }
 
 export interface ApplicationFieldShowWhen {
@@ -158,7 +163,10 @@ export function parseApplicationFieldRules(
   raw: Record<string, unknown> | null | undefined,
 ): ApplicationFieldRules {
   const fieldKey = String(raw?.fieldKey ?? "");
-  const fieldType = (raw?.fieldType as ApplicationFieldType) ?? "text";
+  let fieldType = (raw?.fieldType as ApplicationFieldType) ?? "text";
+  if (isRefereeEmailFieldKey(fieldKey)) {
+    fieldType = "email";
+  }
   const showWhenRaw = raw?.showWhen as ApplicationFieldShowWhen | undefined;
   const stepRaw = String(raw?.step ?? "personal").trim();
 
@@ -226,9 +234,52 @@ export function normalizeApplicationFields(
 
   const refereeFields = generateRefereeFormFields(refereeCount, refereeStepId);
 
-  return [...baseFields, ...refereeFields].sort(
-    (a, b) => a.sort_order - b.sort_order,
+  return patchIdDocumentFormFields(
+    [...baseFields, ...refereeFields].sort((a, b) => a.sort_order - b.sort_order),
   );
+}
+
+const ID_DOCUMENT_PATCH_KEYS = new Set([
+  "id_document_type",
+  "ghana_card_no",
+  "passport_number",
+  "passport_bio_page",
+]);
+
+/** Keep ID document showWhen / ordering in sync with git defaults when DB rows are stale. */
+function patchIdDocumentFormFields(fields: ApplicationFormField[]): ApplicationFormField[] {
+  const defaultsByKey = new Map<string, ApplicationFormField>();
+  for (const option of getDefaultApplicationFormFields()) {
+    if (!option.is_active) continue;
+    const field = systemOptionToApplicationField(option);
+    if (ID_DOCUMENT_PATCH_KEYS.has(field.rules.fieldKey)) {
+      defaultsByKey.set(field.rules.fieldKey, field);
+    }
+  }
+
+  const patched = fields.map((field) => {
+    if (!ID_DOCUMENT_PATCH_KEYS.has(field.rules.fieldKey)) return field;
+    const fallback = defaultsByKey.get(field.rules.fieldKey);
+    if (!fallback) return field;
+    return {
+      ...field,
+      rules: {
+        ...field.rules,
+        showWhen: fallback.rules.showWhen,
+        required: fallback.rules.required,
+        placeholder: fallback.rules.placeholder ?? field.rules.placeholder,
+        fieldType: fallback.rules.fieldType,
+      },
+      sort_order: fallback.sort_order,
+    };
+  });
+
+  if (!patched.some((f) => f.rules.fieldKey === "id_document_type")) {
+    const idField = defaultsByKey.get("id_document_type");
+    if (idField) patched.push(idField);
+  }
+
+  return patched.sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export function resolveApplicationSteps(
@@ -401,7 +452,11 @@ export function validateStep(
     }
 
     // Email fields — a real format check, not just "something was typed".
-    if (field.rules.fieldType === "email" && !isEmpty) {
+    // Referee email keys are always treated as email even if misconfigured in DB.
+    if (
+      (field.rules.fieldType === "email" || isRefereeEmailFieldKey(field.rules.fieldKey)) &&
+      !isEmpty
+    ) {
       if (!isValidEmail(String(value))) {
         errors.push(`${field.label} must be a valid email address.`);
       }

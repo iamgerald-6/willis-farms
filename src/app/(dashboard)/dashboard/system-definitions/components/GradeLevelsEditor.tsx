@@ -7,6 +7,9 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import {
   DEFAULT_GRADE_LEVELS,
+  defaultAgeRangeForRank,
+  mergeAgeIntoLevels,
+  resolveAgeRangeForGrade,
   resolveGradeLevels,
   type GradeLevelDef,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
@@ -43,6 +46,45 @@ function slugifyKey(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
+}
+
+function AgeLimitFields({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: { min: string; max: string };
+  onChange: (field: "min" | "max", nextValue: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex gap-2 max-w-xs">
+      <label className="flex-1 text-xs">
+        <span className="text-gray-500">Min age</span>
+        <input
+          type="number"
+          min={16}
+          max={80}
+          disabled={disabled}
+          className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-xs"
+          value={value.min}
+          onChange={(e) => onChange("min", e.target.value)}
+        />
+      </label>
+      <label className="flex-1 text-xs">
+        <span className="text-gray-500">Max age</span>
+        <input
+          type="number"
+          min={16}
+          max={80}
+          disabled={disabled}
+          className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-xs"
+          value={value.max}
+          onChange={(e) => onChange("max", e.target.value)}
+        />
+      </label>
+    </div>
+  );
 }
 
 /** Compact low/mid/high salary inputs — wraps on small screens, never forces horizontal scroll. */
@@ -100,10 +142,13 @@ export default function GradeLevelsEditor({
   const [newLabel, setNewLabel] = useState("");
   const [newRoleTitle, setNewRoleTitle] = useState("");
   const [newSalaryTiers, setNewSalaryTiers] = useState<GradeSalaryTiers>({});
+  const [newAgeMin, setNewAgeMin] = useState("");
+  const [newAgeMax, setNewAgeMax] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editRank, setEditRank] = useState("");
   const [salaryByGrade, setSalaryByGrade] = useState<Record<string, GradeSalaryTiers>>({});
+  const [ageByGrade, setAgeByGrade] = useState<Record<string, { min: string; max: string }>>({});
 
   const { data: moduleConfig, isLoading: loadingConfig } = useQuery({
     queryKey: configKey,
@@ -141,12 +186,19 @@ export default function GradeLevelsEditor({
   );
 
   useEffect(() => {
-    const next: Record<string, GradeSalaryTiers> = {};
+    const nextSalary: Record<string, GradeSalaryTiers> = {};
+    const nextAge: Record<string, { min: string; max: string }> = {};
     for (const level of levels) {
-      if (level.salaryTiers) next[level.id] = { ...level.salaryTiers };
+      if (level.salaryTiers) nextSalary[level.id] = { ...level.salaryTiers };
+      const fallback = defaultAgeRangeForRank(level.rank);
+      nextAge[level.id] = {
+        min: String(level.ageMin ?? fallback.ageMin),
+        max: String(level.ageMax ?? fallback.ageMax),
+      };
     }
-    setSalaryByGrade(next);
-  }, [moduleConfig]);
+    setSalaryByGrade(nextSalary);
+    setAgeByGrade(nextAge);
+  }, [moduleConfig, levels]);
 
   const rolesByGrade = useMemo(() => {
     const map = new Map<string, JobPostingRow[]>();
@@ -204,12 +256,25 @@ export default function GradeLevelsEditor({
   const persistLevels = (
     nextLevels: GradeLevelDef[],
     salaryOverrides?: Record<string, GradeSalaryTiers>,
+    ageOverrides?: Record<string, { min: string; max: string }>,
   ) => {
     const salaryMap = salaryOverrides
       ? { ...salaryByGrade, ...salaryOverrides }
       : salaryByGrade;
+    const ageMap = ageOverrides ? { ...ageByGrade, ...ageOverrides } : ageByGrade;
     const withSalary = mergeSalaryTiersIntoLevels(nextLevels, salaryMap);
-    saveConfigMutation.mutate(withSalary);
+    const withAge = mergeAgeIntoLevels(withSalary, ageMap);
+    saveConfigMutation.mutate(withAge);
+  };
+
+  const patchAgeCell = (gradeId: string, field: "min" | "max", value: string) => {
+    setAgeByGrade((prev) => ({
+      ...prev,
+      [gradeId]: {
+        min: field === "min" ? value : prev[gradeId]?.min ?? "",
+        max: field === "max" ? value : prev[gradeId]?.max ?? "",
+      },
+    }));
   };
 
   const patchSalaryCell = (
@@ -286,7 +351,13 @@ export default function GradeLevelsEditor({
         ? [...moduleConfig.businessLogic.gradeLevelsConfig.levels, newLevel]
         : [...DEFAULT_GRADE_LEVELS.map((l) => ({ ...l })), newLevel];
 
-      persistLevels(nextLevels, { [id]: newSalaryTiers });
+      const ageDefaults = defaultAgeRangeForRank(rank);
+      persistLevels(nextLevels, { [id]: newSalaryTiers }, {
+        [id]: {
+          min: newAgeMin.trim() || String(ageDefaults.ageMin),
+          max: newAgeMax.trim() || String(ageDefaults.ageMax),
+        },
+      });
 
       setShowAdd(false);
       setNewId("");
@@ -294,6 +365,8 @@ export default function GradeLevelsEditor({
       setNewLabel("");
       setNewRoleTitle("");
       setNewSalaryTiers({});
+      setNewAgeMin("");
+      setNewAgeMax("");
     } catch {
       toast.error("Could not create linked role for this grade.");
     }
@@ -346,9 +419,9 @@ export default function GradeLevelsEditor({
     <div className="space-y-4 min-w-0">
       <p className="text-xs text-gray-500">
         L1–L7 are built in. Add L8 or higher with a linked job posting role (e.g. L1 → Junior
-        Swine Technician). Each grade also has low / mid / high salary bands (GHS) — set them
-        when adding or editing a grade. HR onboarding auto-fills salary from the employee&apos;s
-        grade and tier.
+        Swine Technician). Each grade also has low / mid / high salary bands (GHS) and an
+        internal age band for AI shortlisting (not shown to applicants). Set them when adding
+        or editing a grade.
       </p>
 
       <div className="w-full max-w-full overflow-x-auto rounded-xl border border-gray-200">
@@ -368,6 +441,10 @@ export default function GradeLevelsEditor({
               const isEditing = editingId === level.id;
               const isBuiltIn = DEFAULT_GRADE_LEVELS.some((d) => d.id === level.id);
               const midSummary = formatSalaryTierBand(level.salaryTiers?.mid);
+              const ageBand = resolveAgeRangeForGrade(
+                level.id,
+                moduleConfig?.businessLogic?.gradeLevelsConfig,
+              );
               const colSpan = canEdit ? 5 : 4;
 
               return (
@@ -386,6 +463,11 @@ export default function GradeLevelsEditor({
                           <p>{level.label}</p>
                           {midSummary && (
                             <p className="text-[11px] text-gray-400 mt-0.5">Mid: {midSummary}</p>
+                          )}
+                          {ageBand && (
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              Age: {ageBand.ageMin}–{ageBand.ageMax}
+                            </p>
                           )}
                         </div>
                       )}
@@ -465,6 +547,19 @@ export default function GradeLevelsEditor({
                           }
                           disabled={!canEdit}
                         />
+                        <p className="text-[11px] font-semibold text-gray-600 mt-4 mb-2">
+                          Age band (shortlisting cutoff)
+                        </p>
+                        <AgeLimitFields
+                          value={
+                            ageByGrade[level.id] ?? {
+                              min: String(defaultAgeRangeForRank(level.rank).ageMin),
+                              max: String(defaultAgeRangeForRank(level.rank).ageMax),
+                            }
+                          }
+                          onChange={(field, value) => patchAgeCell(level.id, field, value)}
+                          disabled={!canEdit}
+                        />
                       </td>
                     </tr>
                   )}
@@ -535,6 +630,21 @@ export default function GradeLevelsEditor({
                 <SalaryTierFields
                   value={newSalaryTiers}
                   onChange={patchNewSalaryTier}
+                  disabled={!canAdd}
+                />
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Age band (optional)</p>
+                <AgeLimitFields
+                  value={{
+                    min: newAgeMin || (newRank ? String(defaultAgeRangeForRank(Number(newRank)).ageMin) : ""),
+                    max: newAgeMax || (newRank ? String(defaultAgeRangeForRank(Number(newRank)).ageMax) : ""),
+                  }}
+                  onChange={(field, value) => {
+                    if (field === "min") setNewAgeMin(value);
+                    else setNewAgeMax(value);
+                  }}
                   disabled={!canAdd}
                 />
               </div>

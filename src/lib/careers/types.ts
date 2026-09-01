@@ -107,6 +107,13 @@ export interface AiScreening {
    * or on reports generated before this field was added.
    */
   certificate_validation_summary?: string;
+  /** Internal HR age band used for shortlisting — not shown to applicants. */
+  grade_level?: string;
+  age_min?: number;
+  age_max?: number;
+  applicant_age?: number | null;
+  age_within_range?: boolean | null;
+  age_assessment?: string;
 }
 
 /** Applications the AI screening has flagged — shown in the Rejects tab. */

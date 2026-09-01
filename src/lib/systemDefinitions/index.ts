@@ -136,6 +136,19 @@ export {
 } from "./interviewEvaluationConfig";
 
 export {
+  DEFAULT_INTERVIEW_BENCHMARKS,
+  INTERVIEW_BENCHMARK_FIELD_DEFS,
+  formatInterviewBenchmarksForPrompt,
+  getGitInterviewBenchmarksConfig,
+  normalizeInterviewBenchmarksConfig,
+  resolveInterviewBenchmarks,
+  validateInterviewBenchmarks,
+  type InterviewBenchmarkFieldKey,
+  type InterviewBenchmarksConfig,
+  type ResolvedInterviewBenchmarks,
+} from "./interviewBenchmarksConfig";
+
+export {
   DEFAULT_APPRAISAL_SCOPE,
   gitTemplateKeyForFormKey,
   isAppraisalFormKeyShape,

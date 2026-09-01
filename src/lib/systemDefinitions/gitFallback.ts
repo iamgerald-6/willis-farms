@@ -24,8 +24,10 @@ import {
 import {
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
+  ONBOARDING_PAY_FREQUENCIES_LIST,
   getDefaultOnboardingEmploymentTypes,
   getDefaultOnboardingHrFields,
+  getDefaultPayFrequencies,
 } from "./onboardingHrDefaults";
 import {
   SKILL_LOG_MODULE_ID,
@@ -116,6 +118,13 @@ export function getGitFallbackOptions(
     optionList === ONBOARDING_EMPLOYMENT_TYPES_LIST
   ) {
     return getDefaultOnboardingEmploymentTypes();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_PAY_FREQUENCIES_LIST
+  ) {
+    return getDefaultPayFrequencies();
   }
 
   if (

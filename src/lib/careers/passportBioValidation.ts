@@ -82,10 +82,60 @@ export function passportNumbersMatch(
   return Boolean(a && b && a === b);
 }
 
+function normalizeNationalityToken(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Passport demonyms / codes mapped to form country names (e.g. Ghana, not Ghanaian). */
+const NATIONALITY_ALIASES: Record<string, string[]> = {
+  Ghana: ["ghana", "ghanaian", "gha"],
+  "United Kingdom": ["british", "united kingdom", "uk", "gbr", "great britain"],
+  "United States": ["american", "united states", "usa", "us", "u s a"],
+  Nigeria: ["nigeria", "nigerian", "nga"],
+  France: ["france", "french", "fra"],
+  Germany: ["germany", "german", "deu", "deutsch"],
+};
+
+/** True when the nationality printed on the passport matches the form country name. */
+export function nationalitiesMatch(
+  formCountry: string | undefined | null,
+  extractedRaw: string | undefined | null,
+): boolean {
+  const form = String(formCountry ?? "").trim();
+  const extracted = String(extractedRaw ?? "").trim();
+  if (!form || !extracted) return false;
+
+  const formNorm = normalizeNationalityToken(form);
+  const extNorm = normalizeNationalityToken(extracted);
+
+  if (formNorm === extNorm) return true;
+  if (extNorm.includes(formNorm) || formNorm.includes(extNorm)) return true;
+
+  const aliases = NATIONALITY_ALIASES[form] ?? [];
+  if (aliases.some((alias) => extNorm === alias || extNorm.includes(alias) || alias.includes(extNorm))) {
+    return true;
+  }
+
+  const formWords = formNorm.split(/\s+/).filter((w) => w.length >= 3);
+  if (formWords.length > 0 && formWords.every((word) => extNorm.includes(word))) {
+    return true;
+  }
+
+  return false;
+}
+
 export type PassportBioMatchResult = {
   matches: boolean;
+  identityMatches: boolean;
   nameMatches: boolean;
   dobMatches: boolean;
+  nationalityMatches: boolean;
   passportNumberMatches: boolean;
   message: string | null;
 };
@@ -97,20 +147,14 @@ function joinFieldNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
-export function evaluatePassportBioMatch(
-  applicant: {
-    firstName: string;
-    lastName: string;
-    dateOfBirth: string;
-    passportNumber: string;
-  },
-  extracted: ExtractedPassportBio,
-): PassportBioMatchResult {
+function baseExtractedChecks(extracted: ExtractedPassportBio): PassportBioMatchResult | null {
   if (!extracted.isPassportBioPage) {
     return {
       matches: false,
+      identityMatches: false,
       nameMatches: false,
       dobMatches: false,
+      nationalityMatches: false,
       passportNumberMatches: false,
       message: INVALID_PASSPORT_BIO_PAGE_MESSAGE,
     };
@@ -119,38 +163,55 @@ export function evaluatePassportBioMatch(
   if (
     !extracted.fullName.trim() &&
     !extracted.dateOfBirth.trim() &&
+    !extracted.nationality.trim() &&
     !extracted.passportNumber.trim()
   ) {
     return {
       matches: false,
+      identityMatches: false,
       nameMatches: false,
       dobMatches: false,
+      nationalityMatches: false,
       passportNumberMatches: false,
       message:
         "We couldn't read anything clearly enough on that photo — please upload a clearer, well-lit photo of your passport bio page.",
     };
   }
 
+  return null;
+}
+
+/** Name, date of birth, and nationality vs the form — used before pre-filling passport number. */
+export function evaluatePassportIdentityMatch(
+  applicant: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    nationality: string;
+  },
+  extracted: ExtractedPassportBio,
+): PassportBioMatchResult {
+  const baseFail = baseExtractedChecks(extracted);
+  if (baseFail) return baseFail;
+
   const nameMatches = namesLikelyMatch(
     applicant.firstName,
     applicant.lastName,
     extracted.fullName,
   );
-  const dobMatches = datesOfBirthMatch(
-    applicant.dateOfBirth,
-    extracted.dateOfBirth,
-  );
-  const passportNumberMatches = passportNumbersMatch(
-    applicant.passportNumber,
-    extracted.passportNumber,
-  );
+  const dobMatches = datesOfBirthMatch(applicant.dateOfBirth, extracted.dateOfBirth);
+  const nationalityMatches = nationalitiesMatch(applicant.nationality, extracted.nationality);
 
-  if (nameMatches && dobMatches && passportNumberMatches) {
+  const identityMatches = nameMatches && dobMatches && nationalityMatches;
+
+  if (identityMatches) {
     return {
       matches: true,
+      identityMatches: true,
       nameMatches,
       dobMatches,
-      passportNumberMatches,
+      nationalityMatches,
+      passportNumberMatches: false,
       message: null,
     };
   }
@@ -158,7 +219,13 @@ export function evaluatePassportBioMatch(
   const failedFields: string[] = [];
   if (!nameMatches) failedFields.push("name");
   if (!dobMatches) failedFields.push("date of birth");
-  if (!passportNumberMatches) failedFields.push("passport number");
+  if (!nationalityMatches) {
+    failedFields.push(
+      extracted.nationality.trim()
+        ? "nationality"
+        : "nationality (we couldn't read it clearly on the passport)",
+    );
+  }
 
   const message = `The ${joinFieldNames(failedFields)} on this photo ${
     failedFields.length === 1 ? "doesn't" : "don't"
@@ -166,9 +233,65 @@ export function evaluatePassportBioMatch(
 
   return {
     matches: false,
+    identityMatches: false,
     nameMatches,
     dobMatches,
-    passportNumberMatches,
+    nationalityMatches,
+    passportNumberMatches: false,
     message,
+  };
+}
+
+/** Full check including passport number — run after identity matches and number is known. */
+export function evaluatePassportBioMatch(
+  applicant: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    nationality: string;
+    passportNumber: string;
+  },
+  extracted: ExtractedPassportBio,
+): PassportBioMatchResult {
+  const identity = evaluatePassportIdentityMatch(applicant, extracted);
+  if (!identity.identityMatches) {
+    return identity;
+  }
+
+  if (!extracted.passportNumber.trim()) {
+    return {
+      ...identity,
+      matches: false,
+      message:
+        "We couldn't read a passport number on that photo — please upload a clearer photo of your passport bio page.",
+    };
+  }
+
+  const passportNumberMatches = passportNumbersMatch(
+    applicant.passportNumber,
+    extracted.passportNumber,
+  );
+
+  if (passportNumberMatches) {
+    return {
+      matches: true,
+      identityMatches: true,
+      nameMatches: identity.nameMatches,
+      dobMatches: identity.dobMatches,
+      nationalityMatches: identity.nationalityMatches,
+      passportNumberMatches: true,
+      message: null,
+    };
+  }
+
+  return {
+    matches: false,
+    identityMatches: true,
+    nameMatches: identity.nameMatches,
+    dobMatches: identity.dobMatches,
+    nationalityMatches: identity.nationalityMatches,
+    passportNumberMatches: false,
+    message:
+      "The passport number on this photo doesn't match what we read — please upload a clearer photo of your passport bio page.",
   };
 }

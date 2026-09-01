@@ -99,6 +99,7 @@ export const ONBOARDING_HR_FIELD_TYPES: OnboardingHrFieldType[] = [
   "supervisor",
   "salary_tier",
   "salary_range",
+  "pay_frequency",
 ];
 
 export const ONBOARDING_HR_FIELD_GROUPS: { value: OnboardingHrFieldGroup; label: string }[] = [

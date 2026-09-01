@@ -4,7 +4,8 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { formatInterviewBenchmarksForPrompt } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 import {
   gradersForStage,
@@ -80,7 +81,10 @@ export async function POST(req: NextRequest) {
     if (!guideKey) {
       return NextResponse.json({ error: "Unknown role on application." }, { status: 400 });
     }
-    const guide = await fetchResolvedInterviewGuide(supabaseAdmin, guideKey);
+    const { guide, benchmarks } = await fetchResolvedInterviewContext(
+      supabaseAdmin,
+      guideKey,
+    );
     if (!guide) {
       return NextResponse.json(
         { error: "Interview guide not configured for this role." },
@@ -122,9 +126,11 @@ export async function POST(req: NextRequest) {
     const prompt = [
       `You are assisting Wills Farms' Human Capital team in reviewing a Stage 1 interview panel for the role "${guide.title}".`,
       `Candidate: ${application.full_name}. Reference: ${application.reference_number}.`,
+      formatInterviewBenchmarksForPrompt(benchmarks),
       `Interpretation guide for this role: ${guide.interpretation}`,
       `Known disqualifiers to watch for in the notes: ${guide.disqualifiers.join("; ")}`,
       `Grader scores (weighted 1-5): ${scoreSummary}. Average across all graders: ${average?.toFixed(2) ?? "—"}/5.`,
+      `Stage 1 advance bar: recommend advance_to_stage2 when average is at least ${benchmarks.stage1AdvanceMin}/5 unless disqualifiers or notes clearly override; below ${benchmarks.holdMin} strongly favours reject.`,
       "Detailed per-grader screening and question notes follow:",
       ...sections,
       "Using the record_stage1_recommendation tool, give HR a one-paragraph analysis and a clear recommendation: advance_to_stage2 or reject.",

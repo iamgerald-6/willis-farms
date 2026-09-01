@@ -18,7 +18,7 @@ type Props = {
 export default function OnboardingOfferPageClient({ token, application }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const response = searchParams.get("response");
+  const response = searchParams?.get("response") ?? null;
   const [status, setStatus] = useState<
     "confirm_decline" | "loading" | "accepted" | "declined" | "error"
   >(() => {

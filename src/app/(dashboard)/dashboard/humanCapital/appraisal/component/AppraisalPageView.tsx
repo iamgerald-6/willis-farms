@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -17,6 +17,7 @@ import {
   isSuperAdmin,
 } from "@/lib/accessControl";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
+import Pagination, { PAGE_SIZE } from "@/app/(dashboard)/dashboard/humanCapital/recruitment/components/Pagination";
 import { StatusBadge } from "./AppraisalStatusBadge";
 import {
   formatDate,
@@ -209,6 +210,25 @@ export default function AppraisalLandingPage({
   });
 
   const appraisals = data ?? [];
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(appraisals.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [
+    quarterFilter,
+    viewingArchived,
+    viewingAllPeriods,
+    activePeriod.quarter,
+    activePeriod.year,
+  ]);
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount));
+  }, [pageCount]);
+  const paginatedAppraisals = useMemo(
+    () => appraisals.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [appraisals, page],
+  );
+
   // L4+ can also appraise people below them; everyone else only ever fills
   // their own self-assessment.
   const viewerCanAppraiseOthers =
@@ -338,9 +358,19 @@ export default function AppraisalLandingPage({
                   : "No appraisals found."}
               </div>
             ) : (
-              appraisals.map((a) => <AppraisalCard key={a.id} appraisal={a} />)
+              paginatedAppraisals.map((a) => <AppraisalCard key={a.id} appraisal={a} />)
             )}
           </div>
+          {appraisals.length > 0 && (
+            <div className="md:hidden bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                onPageChange={setPage}
+                totalItems={appraisals.length}
+              />
+            </div>
+          )}
 
           {/* Desktop: table */}
           <div className="hidden md:block overflow-x-auto bg-white shadow-sm rounded-2xl border border-gray-200">
@@ -391,7 +421,7 @@ export default function AppraisalLandingPage({
                     </td>
                   </tr>
                 ) : (
-                  appraisals.map((a) => (
+                  paginatedAppraisals.map((a) => (
                     <tr
                       key={a.id}
                       className="border-b border-gray-100 hover:bg-gray-50"
@@ -455,6 +485,12 @@ export default function AppraisalLandingPage({
                 )}
               </tbody>
             </table>
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              onPageChange={setPage}
+              totalItems={appraisals.length}
+            />
           </div>
         </>
       )}

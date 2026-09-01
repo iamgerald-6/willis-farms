@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
+import { validateGrossSalaryInBand } from "@/lib/systemDefinitions/salaryRanges";
+import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 const ONBOARDING_LIST_STATUSES = ["onboarding"] as const;
 
@@ -121,10 +124,11 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
+  const body = await req.json();
   const {
     application_id,
     hr_data,
-  }: { application_id: string; hr_data: OnboardingHrData } = await req.json();
+  }: { application_id?: string; hr_data?: OnboardingHrData } = body;
 
   if (!application_id) {
     return NextResponse.json(
@@ -133,10 +137,59 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
+  const { data: application, error: appError } = await supabaseAdmin
+    .from("job_applications")
+    .select("id, status")
+    .eq("id", application_id)
+    .single();
+
+  if (appError || !application) {
+    return NextResponse.json({ error: "Application not found." }, { status: 404 });
+  }
+
+  if (application.status !== "offer" && application.status !== "onboarding") {
+    return NextResponse.json(
+      { error: "HR data can only be updated during Offer or Onboarding." },
+      { status: 400 },
+    );
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("onboarding_submissions")
+    .select("hr_data")
+    .eq("application_id", application_id)
+    .maybeSingle();
+
+  const mergedHr: OnboardingHrData = {
+    ...((existing?.hr_data ?? {}) as OnboardingHrData),
+    ...(hr_data ?? {}),
+  };
+
+  const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
+  const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+
+  if (mergedHr.salary_ghs?.trim()) {
+    const bandCheck = validateGrossSalaryInBand(
+      mergedHr.salary_ghs,
+      mergedHr.grade_level,
+      mergedHr.salary_tier,
+      gradeConfig,
+    );
+    if (!bandCheck.valid) {
+      return NextResponse.json({ error: bandCheck.message }, { status: 400 });
+    }
+  }
+
   const { data, error } = await supabaseAdmin
     .from("onboarding_submissions")
-    .update({ hr_data: hr_data ?? {} })
-    .eq("application_id", application_id)
+    .upsert(
+      {
+        application_id,
+        form_data: {},
+        hr_data: mergedHr,
+      },
+      { onConflict: "application_id" },
+    )
     .select()
     .single();
 

@@ -1,5 +1,6 @@
 import type { SystemOption } from "./types";
 import { COUNTRY_NAMES } from "@/lib/careers/countryNames";
+import { ID_DOCUMENT_TYPE_OPTIONS } from "@/lib/careers/idDocumentType";
 import {
   ACCEPT_CV,
   ACCEPT_PASSPORT_BIO,
@@ -118,7 +119,8 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     // is_citizen is never rendered (is_active: false below) — its value is
     // auto-filled from Nationality on the client (JobApplicationWizard's
     // setFieldValue) instead of being asked directly. Ghana Card/Passport
-    // visibility still keys off it, same as the original design.
+    // visibility keys off id_document_type for Ghanaians, or passport for
+    // all other nationalities.
     {
       ...field("opt:recruitment:field:citizen", "Ghana citizen?", "is_citizen", 8, {
         step: "personal",
@@ -129,34 +131,48 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       }),
       is_active: false,
     },
+    field(
+      "opt:recruitment:field:id_doc_type",
+      "ID document type",
+      "id_document_type",
+      8.5,
+      {
+        step: "personal",
+        fieldKey: "id_document_type",
+        fieldType: "select",
+        required: true,
+        options: [...ID_DOCUMENT_TYPE_OPTIONS],
+        showWhen: { field: "nationality", equals: "Ghana" },
+      },
+    ),
     field("opt:recruitment:field:ghana_card", "Ghana Card number", "ghana_card_no", 9, {
       step: "personal",
       fieldKey: "ghana_card_no",
       fieldType: "ghana_card",
       required: true,
-      showWhen: { field: "is_citizen", equals: "Yes" },
-    }),
-    field("opt:recruitment:field:passport_no", "Passport number", "passport_number", 10, {
-      step: "personal",
-      fieldKey: "passport_number",
-      fieldType: "text",
-      required: true,
-      showWhen: { field: "is_citizen", equals: "No" },
+      showWhen: { field: "id_document_type", equals: "Ghana Card" },
     }),
     field(
       "opt:recruitment:field:passport_bio",
       "Passport bio page (photo or PDF)",
       "passport_bio_page",
-      11,
+      10,
       {
         step: "personal",
         fieldKey: "passport_bio_page",
         fieldType: "file",
         required: true,
         accept: ACCEPT_PASSPORT_BIO,
-        showWhen: { field: "is_citizen", equals: "No" },
+        showWhen: { field: "id_document_type", equals: "Passport" },
       },
     ),
+    field("opt:recruitment:field:passport_no", "Passport number", "passport_number", 11, {
+      step: "personal",
+      fieldKey: "passport_number",
+      fieldType: "text",
+      required: false,
+      showWhen: { field: "id_document_type", equals: "Passport" },
+    }),
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {
       step: "experience",
       fieldKey: "work_experience",

@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import {
   evaluatePassportBioMatch,
+  evaluatePassportIdentityMatch,
   INVALID_PASSPORT_BIO_PAGE_MESSAGE,
   isUnprocessablePassportImageError,
   type ExtractedPassportBio,
@@ -64,7 +65,7 @@ const PASSPORT_BIO_TOOL = {
       nationality: {
         type: "string",
         description:
-          "Nationality as printed, if legible — regardless of which language it's printed in (e.g. 'Nationality', 'Nationalité').",
+          "Nationality as printed on the passport (required when legible) — e.g. GHANAIAN, BRITISH CITIZEN, or a 3-letter code from the MRZ. Read from the printed nationality field or MRZ, not guessed.",
       },
       passport_number: {
         type: "string",
@@ -77,8 +78,8 @@ const PASSPORT_BIO_TOOL = {
 };
 
 const INSTRUCTIONS =
-  "This upload is meant to be the bio (data) page of a passport — as a photo (JPEG/PNG) or a PDF scan — uploaded by someone applying for a job at Wills Farms so their identity can be checked against the name, date of birth, and passport number they typed into the application form. Passports from any country may be printed in a different language than English (French, Spanish, Portuguese, Arabic, etc.) — don't rely on a field being labeled in English; match fields by their position/layout on the standard passport bio page, not by an English word. " +
-  "Read surname, given names, date of birth, nationality, and passport number from the large printed text first — it's far more reliable to read than the tiny Machine Readable Zone (MRZ) text at the bottom of the page. Only use the MRZ as a fallback when a printed field is missing, smudged, or otherwise illegible, and if you do, parse it carefully: the MRZ has two lines. Line 1 starts with 'P<' plus a 3-letter country code, then the surname, then a double filler '<<', then the given names (each separate given name is divided by a single '<'), then '<' padding to the end — do not confuse the double '<<' separator (which marks the end of the surname) with the single '<' separators between given names, and do not drop the surname. Line 2 starts with the passport number as exactly the first 9 characters (padded with trailing '<' if shorter) followed by a single check-digit character — the passport number is ONLY those first 9 characters, never include the check digit or the 3-letter nationality code that comes right after it. " +
+  "This upload is meant to be the bio (data) page of a passport — as a photo (JPEG/PNG) or a PDF scan — uploaded by someone applying for a job at Wills Farms so their identity can be checked against the name, date of birth, nationality, and passport number they typed into the application form. Passports from any country may be printed in a different language than English (French, Spanish, Portuguese, Arabic, etc.) — don't rely on a field being labeled in English; match fields by their position/layout on the standard passport bio page, not by an English word. " +
+  "Read surname, given names, date of birth, nationality, and passport number from the large printed text first — it's far more reliable to read than the tiny Machine Readable Zone (MRZ) text at the bottom of the page. Nationality is required — read it from the printed nationality field when present. Only use the MRZ as a fallback when a printed field is missing, smudged, or otherwise illegible, and if you do, parse it carefully: the MRZ has two lines. Line 1 starts with 'P<' plus a 3-letter country code, then the surname, then a double filler '<<', then the given names (each separate given name is divided by a single '<'), then '<' padding to the end — do not confuse the double '<<' separator (which marks the end of the surname) with the single '<' separators between given names, and do not drop the surname. Line 2 starts with the passport number as exactly the first 9 characters (padded with trailing '<' if shorter) followed by a single check-digit character — the passport number is ONLY those first 9 characters, never include the check digit or the 3-letter nationality code that comes right after it. " +
   "Leave any field empty rather than guessing if it isn't clearly legible. Set is_passport_bio_page to false if this is a national ID card, Ghana Card, driver's licence, or any document that is not a passport bio page.";
 
 function isValidIsoDate(raw: string | undefined): boolean {
@@ -100,6 +101,7 @@ export async function POST(req: NextRequest) {
       first_name?: string;
       last_name?: string;
       date_of_birth?: string;
+      nationality?: string;
       passport_number?: string;
     };
 
@@ -107,16 +109,17 @@ export async function POST(req: NextRequest) {
     const firstName = String(body.first_name ?? "").trim();
     const lastName = String(body.last_name ?? "").trim();
     const dateOfBirth = String(body.date_of_birth ?? "").trim();
+    const nationality = String(body.nationality ?? "").trim();
     const passportNumber = String(body.passport_number ?? "").trim();
 
     if (!fileUrl) {
       return NextResponse.json({ error: "file_url is required" }, { status: 400 });
     }
-    if (!firstName || !lastName || !dateOfBirth || !passportNumber) {
+    if (!firstName || !lastName || !dateOfBirth || !nationality) {
       return NextResponse.json(
         {
           error:
-            "first_name, last_name, date_of_birth, and passport_number are required to verify against.",
+            "first_name, last_name, date_of_birth, and nationality are required to verify against.",
         },
         { status: 400 },
       );
@@ -153,8 +156,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Same content-block typing gap as the CV extraction route — PDFs use
-    // "document", photos use "image".
     const content: any[] = [{ type: "text", text: INSTRUCTIONS }];
 
     if (imgMediaType) {
@@ -196,21 +197,53 @@ export async function POST(req: NextRequest) {
       passportNumber: String(raw.passport_number ?? "").trim(),
     };
 
+    const extractedPayload = {
+      full_name: extracted.fullName,
+      date_of_birth: extracted.dateOfBirth,
+      nationality: extracted.nationality,
+      passport_number: extracted.passportNumber,
+    };
+
+    if (!passportNumber) {
+      const identityResult = evaluatePassportIdentityMatch(
+        { firstName, lastName, dateOfBirth, nationality },
+        extracted,
+      );
+      if (identityResult.identityMatches && !extracted.passportNumber.trim()) {
+        return NextResponse.json({
+          data: {
+            matches: false,
+            identity_verified: true,
+            full_match: false,
+            message:
+              "We couldn't read a passport number on that photo — please upload a clearer photo of your passport bio page.",
+            extracted: extractedPayload,
+          },
+        });
+      }
+      return NextResponse.json({
+        data: {
+          matches: identityResult.identityMatches,
+          identity_verified: identityResult.identityMatches,
+          full_match: false,
+          message: identityResult.message,
+          extracted: extractedPayload,
+        },
+      });
+    }
+
     const result = evaluatePassportBioMatch(
-      { firstName, lastName, dateOfBirth, passportNumber },
+      { firstName, lastName, dateOfBirth, nationality, passportNumber },
       extracted,
     );
 
     return NextResponse.json({
       data: {
         matches: result.matches,
+        identity_verified: result.identityMatches,
+        full_match: result.matches,
         message: result.message,
-        extracted: {
-          full_name: extracted.fullName,
-          date_of_birth: extracted.dateOfBirth,
-          nationality: extracted.nationality,
-          passport_number: extracted.passportNumber,
-        },
+        extracted: extractedPayload,
       },
     });
   } catch (err: unknown) {
@@ -220,6 +253,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         data: {
           matches: false,
+          identity_verified: false,
+          full_match: false,
           message: INVALID_PASSPORT_BIO_PAGE_MESSAGE,
           extracted: {
             full_name: "",
@@ -231,7 +266,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const message = err instanceof Error ? err.message : "Verification failed";
     return NextResponse.json(
       {
         error:
