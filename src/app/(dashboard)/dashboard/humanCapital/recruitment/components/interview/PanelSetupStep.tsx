@@ -321,6 +321,24 @@ export default function PanelSetupStep({
         </p>
       )}
 
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={onSendStage1Invites}
+          disabled={isPending}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mail className="w-4 h-4" />
+          )}
+          {invitesSent
+            ? "Resend Stage 1 invites"
+            : "Send Stage 1 invites & notify candidate"}
+        </button>
+      )}
+
       {invitesSent && (
         <section className="border border-amber-200 bg-amber-50 rounded-xl p-4">
           <h3 className="text-sm font-bold text-amber-900 mb-1">Panel forms</h3>
@@ -372,24 +390,6 @@ export default function PanelSetupStep({
           className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
         >
           Continue to HR Stage 1 form
-        </button>
-      )}
-
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={onSendStage1Invites}
-          disabled={isPending}
-          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-        >
-          {isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Mail className="w-4 h-4" />
-          )}
-          {invitesSent
-            ? "Resend Stage 1 invites"
-            : "Send Stage 1 invites & notify candidate"}
         </button>
       )}
 

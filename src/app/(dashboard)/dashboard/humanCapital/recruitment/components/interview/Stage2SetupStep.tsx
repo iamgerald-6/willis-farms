@@ -351,6 +351,24 @@ export default function Stage2SetupStep({
         </p>
       )}
 
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+          disabled={isPending || !scheduledAt}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mail className="w-4 h-4" />
+          )}
+          {setup.stage2_invites_sent_at
+            ? "Resend Stage 2 invites"
+            : "Send Stage 2 invites & open practical"}
+        </button>
+      )}
+
       {setup.stage2_invites_sent_at && (
         <section className="border border-amber-200 bg-amber-50 rounded-xl p-4">
           <h3 className="text-sm font-bold text-amber-900 mb-1">Panel forms</h3>
@@ -402,24 +420,6 @@ export default function Stage2SetupStep({
           className="w-full py-2.5 border border-red-200 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50"
         >
           Continue to HR Stage 2 form
-        </button>
-      )}
-
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
-          disabled={isPending || !scheduledAt}
-          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-        >
-          {isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Mail className="w-4 h-4" />
-          )}
-          {setup.stage2_invites_sent_at
-            ? "Resend Stage 2 invites"
-            : "Send Stage 2 invites & open practical"}
         </button>
       )}
 
