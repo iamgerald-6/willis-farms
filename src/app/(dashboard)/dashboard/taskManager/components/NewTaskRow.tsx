@@ -210,11 +210,10 @@ export default function NewTaskRow({
             placeholder="Indicator (e.g. Air Quality)"
             className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
           />
-          <input
+          <FrequencySelect
             value={frequency}
-            onChange={(e) => setFrequency(e.target.value)}
-            placeholder="Frequency (e.g. Quarterly)"
-            className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+            onChange={setFrequency}
+            className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
           />
           <input
             value={methodProvider}
@@ -238,11 +237,10 @@ export default function NewTaskRow({
             Recurring
           </label>
           {isRecurring ? (
-            <input
+            <FrequencySelect
               value={frequency}
-              onChange={(e) => setFrequency(e.target.value)}
-              placeholder="Frequency (e.g. Annual, Quarterly)"
-              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none"
+              onChange={setFrequency}
+              className="border border-red-300 rounded-md px-2 py-1.5 text-xs focus:outline-none bg-white"
             />
           ) : (
             <div />

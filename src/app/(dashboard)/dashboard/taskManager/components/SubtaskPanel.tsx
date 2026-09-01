@@ -9,6 +9,7 @@ import { TMSubtask, TMTask } from "@/types/taskManager";
 import { User } from "@/types";
 import { evenSplitWeights, isDateWithin, computeNodeCompletion } from "@/lib/subtaskProgress";
 import { STATUS_STYLES } from "../statusStyles";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 // Dates are kept as "" (not null) in draft state so the native <input
 // type="date"> stays a controlled component; converted to null right before
@@ -445,6 +446,7 @@ export default function SubtaskPanel({
   // (null = the task's own top-level group). undefined = nothing open.
   const [editingParentId, setEditingParentId] = useState<string | null | undefined>(undefined);
   const [savingGroup, setSavingGroup] = useState(false);
+  const [showRemoveAllConfirm, setShowRemoveAllConfirm] = useState(false);
   // True while any leaf tick is in flight — see toggleLeaf below.
   const [leafSaving, setLeafSaving] = useState(false);
   // Every leaf toggle recomputes the WHOLE task's rollup from a fresh DB read
@@ -542,8 +544,8 @@ export default function SubtaskPanel({
   };
 
   const deleteAll = async () => {
-    if (!confirm("Remove all subtasks from this task? Progress will switch back to manual updates.")) return;
     await saveGroup(null, []);
+    setShowRemoveAllConfirm(false);
   };
 
   if (isLoading) return <p className="text-xs text-gray-400 italic px-1 py-2">Loading subtasks…</p>;
@@ -557,7 +559,7 @@ export default function SubtaskPanel({
             <button onClick={() => setEditingParentId(null)} className="text-[11px] font-semibold text-red-600 hover:text-red-700 flex items-center gap-1">
               <Pencil className="w-3 h-3" /> Edit
             </button>
-            <button onClick={deleteAll} className="text-[11px] text-gray-400 hover:text-red-600 flex items-center gap-1">
+            <button onClick={() => setShowRemoveAllConfirm(true)} className="text-[11px] text-gray-400 hover:text-red-600 flex items-center gap-1">
               <Trash2 className="w-3 h-3" /> Remove all
             </button>
           </div>
@@ -625,6 +627,17 @@ export default function SubtaskPanel({
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={showRemoveAllConfirm}
+        title="Remove all subtasks?"
+        message="Progress will switch back to manual updates."
+        confirmLabel="Remove all"
+        destructive
+        confirming={savingGroup}
+        onConfirm={deleteAll}
+        onCancel={() => setShowRemoveAllConfirm(false)}
+      />
     </div>
   );
 }

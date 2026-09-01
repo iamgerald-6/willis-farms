@@ -212,6 +212,18 @@ export async function POST(req: NextRequest) {
         neverStartedInterview++;
       }
 
+      // Most recent "rejected" status change, if any. By the time this report
+      // is generated, interviews for the round are done and management is
+      // deliberating — so anyone still sitting in Application/Screening/
+      // Stage 1/Stage 2 (rather than Evaluation) has effectively been passed
+      // over, and that table's date column shows when they were rejected
+      // rather than when they merely reached that stage. Falls back to the
+      // original "reached this stage" date for the rare case a candidate
+      // ended up in one of these buckets without a formal rejection entry.
+      const rejectedAt = [...(a.status_history ?? [])]
+        .reverse()
+        .find((h) => h.status === "rejected")?.changed_at;
+
       // Furthest-stage-reached bucket for the "All Applicants" breakdown —
       // a separate classification from the funnel counters above. Stage 2
       // covers anyone who reached Stage 2 and either hasn't finished yet or
@@ -225,10 +237,11 @@ export async function POST(req: NextRequest) {
 
       if (!everShortlisted) {
         stage = "application";
-        date = a.created_at ?? null;
+        date = rejectedAt ?? a.created_at ?? null;
       } else if (!stage1InvitesSent) {
         stage = "screening";
         date =
+          rejectedAt ??
           (a.status_history ?? []).find((h) => h.status === "shortlisted")?.changed_at ??
           a.created_at ??
           null;
@@ -240,13 +253,13 @@ export async function POST(req: NextRequest) {
         panelNames = stage2Names;
         unavailableNames = stage2Unavailable;
         location = stage2Location;
-        date = formData.setup?.stage2_scheduled_at ?? null;
+        date = rejectedAt ?? formData.setup?.stage2_scheduled_at ?? null;
       } else {
         stage = "interview_stage1";
         panelNames = stage1Names;
         unavailableNames = stage1Unavailable;
         location = stage1Location;
-        date = formData.setup?.interview_start_at ?? null;
+        date = rejectedAt ?? formData.setup?.interview_start_at ?? null;
       }
 
       applicantRoster.push({
