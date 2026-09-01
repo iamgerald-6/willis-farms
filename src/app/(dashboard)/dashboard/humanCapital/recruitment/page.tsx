@@ -12,6 +12,7 @@ import {
   STATUS_STYLES,
   PANEL_DECISIONS,
   normalizeRoleInterviewReport,
+  normalizeInterviewFormData,
   type ApplicationStatus,
   type JobApplication,
   type PanelDecision,
@@ -28,6 +29,7 @@ import {
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ApplicationFormReview from "./components/ApplicationFormReview";
 import OnboardingTab from "./components/OnboardingTab";
 import EmployeesTab from "./components/EmployeesTab";
@@ -149,6 +151,7 @@ function ApplicationDetail({
   const [showOriginalReportModal, setShowOriginalReportModal] = useState(false);
   const [showEditedReportModal, setShowEditedReportModal] = useState(false);
   const [showRoleReportModal, setShowRoleReportModal] = useState(false);
+  const [showRescindConfirm, setShowRescindConfirm] = useState(false);
   const [showPanelResponses, setShowPanelResponses] = useState(false);
   const [showEvaluationResultsModal, setShowEvaluationResultsModal] =
     useState(false);
@@ -697,7 +700,7 @@ function ApplicationDetail({
                     </div>
                   )}
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
-                    AI job posting screening — {application.ai_screening.score}% match
+                    Job Match Analysis — {application.ai_screening.score}% match
                   </p>
                   <p className="text-sm text-purple-900">
                     {application.ai_screening.summary}
@@ -1693,16 +1696,7 @@ function ApplicationDetail({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          "Rescind this offer? The applicant will be moved to Rejects and sent a decline email.",
-                        )
-                      ) {
-                        return;
-                      }
-                      rescindOffer.mutate();
-                    }}
+                    onClick={() => setShowRescindConfirm(true)}
                     disabled={rescindOffer.isPending || startOnboarding.isPending}
                     className="flex-1 py-2 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                   >
@@ -2008,6 +2002,20 @@ function ApplicationDetail({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showRescindConfirm}
+        title="Rescind offer?"
+        message="The applicant will be moved to Rejects and sent a decline email."
+        confirmLabel={rescindOffer.isPending ? "Rescinding…" : "Rescind offer"}
+        destructive
+        confirming={rescindOffer.isPending}
+        onConfirm={() => {
+          rescindOffer.mutate();
+          setShowRescindConfirm(false);
+        }}
+        onCancel={() => setShowRescindConfirm(false)}
+      />
 
       {showPanelResponses && (
         <div
@@ -2401,8 +2409,8 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
           <>
             {(
               [
-                { stage: "application" as const, title: "Application", dateLabel: "Date applied" },
-                { stage: "screening" as const, title: "Screening", dateLabel: "Date shortlisted" },
+                { stage: "application" as const, title: "Application", dateLabel: "Date rejected" },
+                { stage: "screening" as const, title: "Screening", dateLabel: "Date rejected" },
               ]
             ).map(({ stage, title, dateLabel }) => {
               const rows = report.applicant_roster.filter((a) => a.stage === stage);
@@ -2461,7 +2469,7 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
                             <th className="text-left font-semibold px-3 py-2">Name</th>
                             <th className="text-left font-semibold px-3 py-2">Panel</th>
                             <th className="text-left font-semibold px-3 py-2">Location</th>
-                            <th className="text-left font-semibold px-3 py-2">Date &amp; time</th>
+                            <th className="text-left font-semibold px-3 py-2">Date rejected</th>
                             <th className="text-right font-semibold px-3 py-2">Ranking</th>
                           </tr>
                         </thead>
@@ -2481,7 +2489,7 @@ function RoleInterviewReportReadOnly({ report }: { report: RoleInterviewReport }
                               </td>
                               <td className="px-3 py-2 text-gray-700">{a.location ?? "—"}</td>
                               <td className="px-3 py-2 text-gray-700">
-                                {a.date ? formatDateTime(a.date) : "—"}
+                                {a.date ? formatDate(a.date) : "—"}
                               </td>
                               <td className="px-3 py-2 text-gray-700 text-right">
                                 {a.rank != null ? `#${a.rank}` : "—"}
@@ -3740,13 +3748,28 @@ function InterviewTab({
       .map((r) => ({ value: r, label: r }));
   }, [applications, nameFilters]);
 
+  // Which of the 3 interview sub-stages each applicant is currently at.
+  // 1 = Stage 1 in progress, 2 = Stage 2 in progress, 3 = Stage 2 complete
+  // and awaiting HR to finalize (i.e. ready for evaluation).
+  const stageOf = (a: JobApplication) =>
+    normalizeInterviewFormData(a.interview_form_data).current_stage ?? 1;
+
+  const STAGE_LABELS: Record<number, string> = {
+    1: "Stage 1",
+    2: "Stage 2",
+    3: "Evaluation",
+  };
+
   const filtered = useMemo(
     () =>
-      applications.filter(
-        (a) =>
-          (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
-          (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
-      ),
+      applications
+        .filter(
+          (a) =>
+            (nameFilters.length === 0 || nameFilters.includes(a.full_name)) &&
+            (roleFilters.length === 0 || roleFilters.includes(a.role_title)),
+        )
+        // Evaluation-ready at the top, Stage 1 at the bottom.
+        .sort((a, b) => stageOf(b) - stageOf(a)),
     [applications, nameFilters, roleFilters],
   );
 
@@ -3836,6 +3859,9 @@ function InterviewTab({
                 Applied
               </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 font-semibold text-gray-600">
+                Interview stage
+              </th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">
                 Action
               </th>
@@ -3845,7 +3871,7 @@ function InterviewTab({
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-100">
-                  <td colSpan={6} className="px-4 py-3">
+                  <td colSpan={7} className="px-4 py-3">
                     <div className="h-4 bg-gray-100 animate-pulse rounded w-full" />
                   </td>
                 </tr>
@@ -3853,7 +3879,7 @@ function InterviewTab({
             ) : filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-12 text-center text-gray-400"
                 >
                   {applications.length === 0
@@ -3884,6 +3910,9 @@ function InterviewTab({
                     >
                       {STATUS_LABELS[a.status]}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {STAGE_LABELS[stageOf(a)]}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
@@ -3930,6 +3959,7 @@ function RoleReportModal({
   );
   const [emailTo, setEmailTo] = useState("info@willsfarms.com");
   const [showOriginal, setShowOriginal] = useState(false);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
 
   const selectedRound = rounds.find((r) => r.jobPostingId === selectedPostingId);
 
@@ -4101,16 +4131,7 @@ function RoleReportModal({
                 </a>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (
-                      !confirm(
-                        "Regenerate this report from the current applicant pool? Any edits you've made will be discarded.",
-                      )
-                    ) {
-                      return;
-                    }
-                    generateMutation.mutate();
-                  }}
+                  onClick={() => setShowRegenerateConfirm(true)}
                   disabled={generateMutation.isPending}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:underline disabled:opacity-60"
                 >
@@ -4281,12 +4302,12 @@ function RoleReportModal({
                         {
                           stage: "application" as const,
                           title: "Application",
-                          dateLabel: "Date applied",
+                          dateLabel: "Date rejected",
                         },
                         {
                           stage: "screening" as const,
                           title: "Screening",
-                          dateLabel: "Date shortlisted",
+                          dateLabel: "Date rejected",
                         },
                       ]
                     ).map(({ stage, title, dateLabel }) => {
@@ -4376,7 +4397,7 @@ function RoleReportModal({
                                       Location
                                     </th>
                                     <th className="text-left font-semibold px-3 py-2">
-                                      Date &amp; time
+                                      Date rejected
                                     </th>
                                     <th className="text-right font-semibold px-3 py-2">
                                       Ranking
@@ -4408,7 +4429,7 @@ function RoleReportModal({
                                         {a.location ?? "—"}
                                       </td>
                                       <td className="px-3 py-2 text-gray-700">
-                                        {a.date ? formatDateTime(a.date) : "—"}
+                                        {a.date ? formatDate(a.date) : "—"}
                                       </td>
                                       <td className="px-3 py-2 text-gray-700 text-right">
                                         {a.rank != null ? `#${a.rank}` : "—"}
@@ -4757,6 +4778,20 @@ function RoleReportModal({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showRegenerateConfirm}
+        title="Regenerate this report?"
+        message="This rebuilds it from the current applicant pool. Any edits you've made will be discarded."
+        confirmLabel={generateMutation.isPending ? "Regenerating…" : "Regenerate"}
+        destructive
+        confirming={generateMutation.isPending}
+        onConfirm={() => {
+          generateMutation.mutate();
+          setShowRegenerateConfirm(false);
+        }}
+        onCancel={() => setShowRegenerateConfirm(false)}
+      />
     </div>
   );
 }

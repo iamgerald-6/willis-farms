@@ -181,8 +181,8 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
 
           {(
             [
-              { stage: "application" as const, title: "Application", dateLabel: "Date applied" },
-              { stage: "screening" as const, title: "Screening", dateLabel: "Date shortlisted" },
+              { stage: "application" as const, title: "Application", dateLabel: "Date rejected" },
+              { stage: "screening" as const, title: "Screening", dateLabel: "Date rejected" },
             ]
           ).map(({ stage, title, dateLabel }) => {
             const rows = report.applicant_roster.filter((a) => a.stage === stage);
@@ -219,7 +219,7 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
                   <Text style={[styles.rosterHeaderCell, styles.colIntName]}>Name</Text>
                   <Text style={[styles.rosterHeaderCell, styles.colIntPanel]}>Panel</Text>
                   <Text style={[styles.rosterHeaderCell, styles.colIntLocation]}>Location</Text>
-                  <Text style={[styles.rosterHeaderCell, styles.colIntDateTime]}>Date &amp; Time</Text>
+                  <Text style={[styles.rosterHeaderCell, styles.colIntDateTime]}>Date rejected</Text>
                   <Text style={[styles.rosterHeaderCell, styles.colIntRank]}>Ranking</Text>
                 </View>
                 {rows.map((a) => (
@@ -232,7 +232,7 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
                         : ""}
                     </Text>
                     <Text style={[styles.rosterCell, styles.colIntLocation]}>{a.location ?? "—"}</Text>
-                    <Text style={[styles.rosterCell, styles.colIntDateTime]}>{fmtDateTime(a.date)}</Text>
+                    <Text style={[styles.rosterCell, styles.colIntDateTime]}>{fmtDate(a.date)}</Text>
                     <Text style={[styles.rosterCell, styles.colIntRank]}>{a.rank != null ? `#${a.rank}` : "—"}</Text>
                   </View>
                 ))}

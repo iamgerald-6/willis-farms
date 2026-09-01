@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
@@ -8,6 +8,7 @@ import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { stageMembers } from "@/lib/careers/panelInterview";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { StageInfoBanner } from "./shared";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type Props = {
   guide: InterviewGuideConfig;
@@ -59,6 +60,7 @@ export default function Stage2SetupStep({
   onReschedule,
   isRescheduling = false,
 }: Props) {
+  const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
 
@@ -147,15 +149,7 @@ export default function Stage2SetupStep({
           {canReschedule && onReschedule && (
             <button
               type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Reschedule Stage 2? Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted.",
-                  )
-                ) {
-                  onReschedule();
-                }
-              }}
+              onClick={() => setShowRescheduleConfirm(true)}
               disabled={isRescheduling}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-60 shrink-0"
             >
@@ -263,6 +257,13 @@ export default function Stage2SetupStep({
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
+              <p className="text-xs text-gray-400 mt-1">
+                Generate a link from any calendar/meeting provider (Google
+                Meet, Zoom, Teams, etc.) and paste it here. Use only the
+                &quot;generate link&quot; option — do not schedule or send an
+                actual calendar invite from that provider, as it can create a
+                scheduling clashes.
+              </p>
             </div>
           ) : setup.stage2_location_type === "onsite" ? (
             <div>
@@ -357,6 +358,24 @@ export default function Stage2SetupStep({
         </p>
       )}
 
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+          disabled={isPending || !scheduledAt}
+          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+        >
+          {isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mail className="w-4 h-4" />
+          )}
+          {setup.stage2_invites_sent_at
+            ? "Resend Stage 2 invites"
+            : "Send Stage 2 invites & open practical"}
+        </button>
+      )}
+
       {setup.stage2_invites_sent_at && (
         <section className="border border-amber-200 bg-amber-50 rounded-xl p-4">
           <h3 className="text-sm font-bold text-amber-900 mb-1">Panel forms</h3>
@@ -411,23 +430,19 @@ export default function Stage2SetupStep({
         </button>
       )}
 
-      {!readOnly && (
-        <button
-          type="button"
-          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
-          disabled={isPending || !scheduledAt}
-          className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-        >
-          {isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Mail className="w-4 h-4" />
-          )}
-          {setup.stage2_invites_sent_at
-            ? "Resend Stage 2 invites"
-            : "Send Stage 2 invites & open practical"}
-        </button>
-      )}
+      <ConfirmDialog
+        open={showRescheduleConfirm}
+        title="Reschedule Stage 2?"
+        message="Panel forms will lock again until you reopen them. Anyone who already submitted keeps their answers but can edit and resubmit — nothing is deleted."
+        confirmLabel={isRescheduling ? "Rescheduling…" : "Reschedule"}
+        destructive
+        confirming={isRescheduling}
+        onConfirm={() => {
+          onReschedule?.();
+          setShowRescheduleConfirm(false);
+        }}
+        onCancel={() => setShowRescheduleConfirm(false)}
+      />
     </div>
   );
 }

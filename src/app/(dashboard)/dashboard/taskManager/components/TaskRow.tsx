@@ -14,6 +14,7 @@ import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 import OwnerSelect from "./OwnerSelect";
 import FrequencySelect from "./FrequencySelect";
 import SubtaskPanel from "./SubtaskPanel";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 export default function TaskRow({
   task,
@@ -66,6 +67,8 @@ export default function TaskRow({
   // round-trip before the box visibly flips — see handleToggleTaskDone and
   // the effect below that hands control back to the real data once it lands.
   const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (optimisticDone !== null && (task.progress_percent >= 100) === optimisticDone) {
       setOptimisticDone(null);
@@ -156,13 +159,16 @@ export default function TaskRow({
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete "${task.title}"? This can be restored later from the Archived/Deleted view.`)) return;
+    setDeleting(true);
     try {
       await api.post(`/task-manager/tasks/${task.id}/delete`);
       toast.success("Task deleted");
       onChanged();
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? "Failed to delete task");
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -478,7 +484,7 @@ export default function TaskRow({
           <button onClick={handleArchive} title="Archive" className="p-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
             <Archive className="w-3.5 h-3.5" />
           </button>
-          <button onClick={handleDelete} title="Delete" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200">
+          <button onClick={() => setShowDeleteConfirm(true)} title="Delete" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200">
             <X className="w-3.5 h-3.5" />
           </button>
         </>
@@ -612,6 +618,17 @@ export default function TaskRow({
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete task?"
+        message={`Delete "${task.title}"? This can be restored later from the Archived/Deleted view.`}
+        confirmLabel="Delete"
+        destructive
+        confirming={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }
