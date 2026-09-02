@@ -283,13 +283,6 @@ export default function PanelSetupStep({
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white ${readOnly ? "opacity-60" : ""}`}
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Generate a link from any calendar/meeting provider (Google
-                Meet, Zoom, Teams, etc.) and paste it here. Use only the
-                &quot;generate link&quot; option — do not schedule or send an
-                actual calendar invite from that provider, as it can create a
-                scheduling clashes.
-              </p>
             </div>
           ) : setup.location_type === "onsite" ? (
             <div>
