@@ -467,6 +467,8 @@ export default function InterviewPanelForm({
             <PanelSetupStep
               guide={guide}
               formData={formData}
+              candidateName={candidateName}
+              referenceNumber={referenceNumber}
               onChange={setFormData}
               onSendStage1Invites={() =>
                 saveMutation.mutate({
@@ -556,6 +558,8 @@ export default function InterviewPanelForm({
             <Stage2SetupStep
               guide={guide}
               formData={formData}
+              candidateName={candidateName}
+              referenceNumber={referenceNumber}
               onChange={setFormData}
               onSendStage2Invites={(scheduledAt) =>
                 saveMutation.mutate({
