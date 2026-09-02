@@ -11,6 +11,7 @@ export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const RECRUITMENT_APPLICATION_FIELDS_LIST = "careers.applicationFields";
 /** System Definitions list key for selectable job posting roles (HR + public careers). */
 export const RECRUITMENT_JOB_POSTINGS_LIST = "careers.jobPostings";
+export const RECRUITMENT_INSTITUTION_TYPES_LIST = "careers.institutionTypes";
 
 /** @deprecated use RECRUITMENT_JOB_POSTINGS_LIST */
 export const RECRUITMENT_JOB_TITLES_LIST = RECRUITMENT_JOB_POSTINGS_LIST;
@@ -176,13 +177,13 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
     field("opt:recruitment:field:experience", "Work experience", "work_experience", 20, {
       step: "experience",
       fieldKey: "work_experience",
-      fieldType: "work_history",
+      fieldType: "work_fields",
       required: true,
     }),
     field("opt:recruitment:field:education", "Educational qualifications", "education", 21, {
       step: "experience",
       fieldKey: "education",
-      fieldType: "education_history",
+      fieldType: "education_fields",
       required: true,
     }),
     field(
@@ -306,4 +307,33 @@ export function getDefaultApplicationFormFields(): SystemOption[] {
       ];
     }),
   ];
+}
+
+export const DEFAULT_INSTITUTION_TYPE_LABELS = [
+  "High School",
+  "College",
+  "Diploma Institution",
+  "University",
+  "Other",
+] as const;
+
+export function getDefaultInstitutionTypes(): SystemOption[] {
+  return DEFAULT_INSTITUTION_TYPE_LABELS.map((label, sortOrder) => ({
+    id: `opt:recruitment:inst:${label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+    module_id: RECRUITMENT_MODULE_ID,
+    option_list: RECRUITMENT_INSTITUTION_TYPES_LIST,
+    label,
+    legacy_value: label,
+    sort_order: sortOrder,
+    is_active: true,
+    rules: {},
+  }));
+}
+
+export function resolveInstitutionTypeLabels(options: SystemOption[]): string[] {
+  return [...options]
+    .filter((row) => row.is_active !== false)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map((row) => row.label.trim())
+    .filter(Boolean);
 }

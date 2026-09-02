@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const { data: submission } = await supabaseAdmin
     .from("onboarding_submissions")
-    .select("hr_data, submitted_at")
+    .select("hr_data, form_data, submitted_at")
     .eq("application_id", validation.applicationId)
     .maybeSingle();
 
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const { error: updateError } = await supabaseAdmin.from("onboarding_submissions").upsert(
     {
       application_id: validation.applicationId,
+      form_data: submission?.form_data ?? {},
       hr_data: nextHr,
     },
     { onConflict: "application_id" },

@@ -3,7 +3,7 @@ import {
   buildMergedCandidateProfile,
   type ProfileReviewGroup,
 } from "@/lib/careers/buildMergedCandidateProfile";
-import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 export type EmployeeProfileExportHeader = {
   fullName: string;
@@ -35,7 +35,7 @@ export async function loadEmployeeProfileExportData(
 
   const { data: submission } = await supabaseAdmin
     .from("onboarding_submissions")
-    .select("form_data, submitted_at")
+    .select("form_data, hr_data, submitted_at")
     .eq("application_id", applicationId)
     .maybeSingle();
 
@@ -45,6 +45,7 @@ export async function loadEmployeeProfileExportData(
       unknown
     > | null,
     onboardingFormData: (submission?.form_data ?? {}) as OnboardingFormData,
+    onboardingHrData: (submission?.hr_data ?? {}) as OnboardingHrData,
   });
 
   if (groups.length === 0) return null;

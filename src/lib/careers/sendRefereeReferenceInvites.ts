@@ -133,6 +133,7 @@ export type OnboardingHrReferenceContext = {
     medical_report_uploaded: boolean;
     medical_report_url: string | null;
     medical_step_completed_at: string | null;
+    medical_report_received: string | null;
   };
 };
 
@@ -180,7 +181,7 @@ export async function fetchOnboardingHrReferenceContext(
 
   const { data: onboardingRow } = await supabase
     .from("onboarding_submissions")
-    .select("form_data, medical_completed_at")
+    .select("form_data, hr_data, medical_completed_at")
     .eq("application_id", applicationId)
     .maybeSingle();
 
@@ -190,7 +191,11 @@ export async function fetchOnboardingHrReferenceContext(
       medical_report?: { secure_url?: string };
     };
   };
-  const medicalReport = formData.medical?.medical_report;
+  const hrData = (onboardingRow?.hr_data ?? {}) as {
+    medical_report?: { secure_url?: string };
+    medical_report_received?: string;
+  };
+  const medicalReport = hrData.medical_report ?? formData.medical?.medical_report;
 
   return {
     application_submitted_at,
@@ -200,6 +205,7 @@ export async function fetchOnboardingHrReferenceContext(
       medical_report_uploaded: Boolean(medicalReport?.secure_url),
       medical_report_url: medicalReport?.secure_url ?? null,
       medical_step_completed_at: onboardingRow?.medical_completed_at ?? null,
+      medical_report_received: hrData.medical_report_received ?? null,
     },
   };
 }

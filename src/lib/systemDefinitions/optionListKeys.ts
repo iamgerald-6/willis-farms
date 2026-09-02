@@ -28,6 +28,7 @@ export const EDITABLE_OPTION_LISTS: Partial<Record<string, readonly string[]>> =
       "careers.onboardingDepartmentsL7",
       "careers.onboardingEmploymentTypes",
       "careers.onboardingMedicalReports",
+      "careers.institutionTypes",
     ],
   };
 

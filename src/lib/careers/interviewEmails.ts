@@ -880,6 +880,111 @@ export async function sendOnboardingSubmittedEmail(params: {
   });
 }
 
+/** Notify senior HR when an HR officer submits onboarding for sign-off. */
+export async function sendOnboardingHrReviewSubmittedEmail(params: {
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  applicationId: string;
+  reviewedBy: string;
+}): Promise<SendResult> {
+  const hrEmail = getReplyToEmail();
+  const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
+
+  const subject = `Onboarding ready for senior approval — ${params.candidateName} (${params.referenceNumber})`;
+
+  const text = [
+    "An HR officer has submitted an onboarding package for senior HR approval.",
+    "",
+    `Candidate: ${params.candidateName}`,
+    `Role: ${params.roleTitle}`,
+    `Reference: ${params.referenceNumber}`,
+    `Reviewed by: ${params.reviewedBy}`,
+    "",
+    `Approve in Recruitment → Onboarding: ${dashboardLink}`,
+  ].join("\n");
+
+  const html = emailShell(
+    "Ready for senior HR approval",
+    `
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        An HR officer has submitted an onboarding package for <strong>senior HR sign-off</strong>
+        before the WillsOne invite is sent.
+      </p>
+      <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
+        <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
+          <p style="margin:0 0 8px;"><strong>Candidate:</strong> ${escapeHtml(params.candidateName)}</p>
+          <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
+          <p style="margin:0 0 8px;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
+          <p style="margin:0;"><strong>Review submitted by:</strong> ${escapeHtml(params.reviewedBy)}</p>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 24px;">
+        <a href="${escapeHtml(dashboardLink)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Review &amp; approve</a>
+      </p>
+    `,
+  );
+
+  return sendViaResend({
+    to: hrEmail,
+    subject,
+    html,
+    text,
+  });
+}
+
+/** Notify a consultant supervisor when their report submits onboarding for approval. */
+export async function sendConsultantOnboardingApprovalEmail(params: {
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  applicationId: string;
+  reviewedBy: string;
+  supervisorEmail: string;
+  supervisorName: string;
+}): Promise<SendResult> {
+  const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
+
+  const subject = `Onboarding approval needed — ${params.candidateName} (${params.referenceNumber})`;
+
+  const text = [
+    `${params.reviewedBy} submitted an onboarding package for your approval.`,
+    "",
+    `Candidate: ${params.candidateName}`,
+    `Role: ${params.roleTitle}`,
+    `Reference: ${params.referenceNumber}`,
+    "",
+    `Review in Recruitment → Onboarding: ${dashboardLink}`,
+  ].join("\n");
+
+  const html = emailShell(
+    "Onboarding approval needed",
+    `
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+        Hi ${escapeHtml(params.supervisorName)}, <strong>${escapeHtml(params.reviewedBy)}</strong>
+        submitted an onboarding package for your approval.
+      </p>
+      <table role="presentation" width="100%" style="margin:20px 0;background:#fafafa;border:1px solid #e5e7eb;border-radius:10px;">
+        <tr><td style="padding:18px 22px;font-size:14px;color:#374151;">
+          <p style="margin:0 0 8px;"><strong>Candidate:</strong> ${escapeHtml(params.candidateName)}</p>
+          <p style="margin:0 0 8px;"><strong>Role:</strong> ${escapeHtml(params.roleTitle)}</p>
+          <p style="margin:0;"><strong>Reference:</strong> ${escapeHtml(params.referenceNumber)}</p>
+        </td></tr>
+      </table>
+      <p style="margin:0 0 24px;">
+        <a href="${escapeHtml(dashboardLink)}" style="display:inline-block;background:#991b1b;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">Review &amp; approve</a>
+      </p>
+    `,
+  );
+
+  return sendViaResend({
+    to: params.supervisorEmail,
+    subject,
+    html,
+    text,
+  });
+}
+
 /** Referee reference form invite — sent when candidate submits job application */
 export async function sendRefereeReferenceInviteEmail(params: {
   refereeName: string;

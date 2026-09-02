@@ -5,9 +5,11 @@ import {
 } from "./appraisalDefaults";
 import {
   RECRUITMENT_APPLICATION_FIELDS_LIST,
+  RECRUITMENT_INSTITUTION_TYPES_LIST,
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
   getDefaultApplicationFormFields,
+  getDefaultInstitutionTypes,
 } from "./recruitmentDefaults";
 import {
   ONBOARDING_DEPARTMENTS_L1L6_LIST,
@@ -75,6 +77,13 @@ export function getGitFallbackOptions(
     optionList === APPRAISAL_SECTION_AUTH_LIST
   ) {
     return DEFAULT_SECTION_AUTHORISATION_OPTIONS;
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === RECRUITMENT_INSTITUTION_TYPES_LIST
+  ) {
+    return getDefaultInstitutionTypes();
   }
 
   if (

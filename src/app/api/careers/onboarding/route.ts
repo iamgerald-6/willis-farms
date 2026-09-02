@@ -156,7 +156,7 @@ export async function PATCH(req: NextRequest) {
 
   const { data: existing } = await supabaseAdmin
     .from("onboarding_submissions")
-    .select("hr_data")
+    .select("hr_data, form_data")
     .eq("application_id", application_id)
     .maybeSingle();
 
@@ -185,7 +185,7 @@ export async function PATCH(req: NextRequest) {
     .upsert(
       {
         application_id,
-        form_data: {},
+        form_data: existing?.form_data ?? {},
         hr_data: mergedHr,
       },
       { onConflict: "application_id" },

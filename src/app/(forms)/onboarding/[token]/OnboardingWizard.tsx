@@ -12,6 +12,8 @@ import {
   validateOnboardingMedicalExtras,
   validateOnboardingStep,
   visibleOnboardingFieldsForStep,
+  isOnboardingNameFieldKey,
+  isOnboardingDigitsOnlyFieldKey,
   type OnboardingApplicationContext,
   type OnboardingFlatValues,
   type OnboardingFormField,
@@ -23,6 +25,7 @@ import {
 import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { uploadHintForField } from "@/lib/uploadConstraints";
+import { isValidEmail, sanitizeDigitsInput, sanitizeNameInput } from "@/lib/validation";
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
@@ -446,8 +449,16 @@ export default function OnboardingWizard({
             className={cls}
             type="email"
             readOnly={readOnly}
+            inputMode="email"
+            autoComplete="email"
             value={String(value ?? "")}
             onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed && !isValidEmail(trimmed)) {
+                setError(`${field.label} must be a valid email address.`);
+              }
+            }}
           />
         </FieldBlock>
       );
@@ -462,7 +473,7 @@ export default function OnboardingWizard({
             placeholder="10–16 digits"
             value={String(value ?? "")}
             onChange={(e) =>
-              setFieldValue(fieldKey, e.target.value.replace(/\D/g, "").slice(0, 16))
+              setFieldValue(fieldKey, sanitizeDigitsInput(e.target.value).slice(0, 16))
             }
           />
         </FieldBlock>
@@ -481,14 +492,24 @@ export default function OnboardingWizard({
       );
     }
 
+    const isNameField = fieldType === "text" && isOnboardingNameFieldKey(fieldKey);
+    const isDigitsOnlyField =
+      fieldType === "text" && isOnboardingDigitsOnlyFieldKey(fieldKey);
+
     return (
       <FieldBlock key={field.id} label={field.label} required={required} half={half}>
         <input
           className={cls}
           readOnly={readOnly}
           placeholder={placeholder}
+          inputMode={isDigitsOnlyField ? "numeric" : undefined}
           value={String(value ?? "")}
-          onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+          onChange={(e) => {
+            let next = e.target.value;
+            if (isNameField) next = sanitizeNameInput(next);
+            else if (isDigitsOnlyField) next = sanitizeDigitsInput(next);
+            setFieldValue(fieldKey, next);
+          }}
         />
       </FieldBlock>
     );
@@ -539,8 +560,9 @@ export default function OnboardingWizard({
           <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-2">
             <h2 className="text-sm font-bold text-gray-900">Required medical reports</h2>
             <p className="text-xs text-gray-600 leading-relaxed">
-              Obtain the following from a registered clinic or hospital, then upload proof on
-              this step. The same list was included in your onboarding email.
+              Obtain the following from a registered clinic or hospital. HR will collect
+              your medical certificate during onboarding — you do not upload it here. The
+              same list was included in your onboarding email.
             </p>
             <ul className="mt-2 space-y-1.5">
               {requiredMedicalReports.map((item) => (
@@ -647,26 +669,6 @@ export default function OnboardingWizard({
                 I consent to the collection and processing of my personal data for employment
                 administration, and I certify that the information provided is accurate and
                 complete.
-              </span>
-            </label>
-          </section>
-        )}
-
-        {step === "medical" && (
-          <section className="space-y-3">
-            <label className="flex items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1 accent-red-600"
-                checked={formExtras.medical?.acknowledge_referral ?? false}
-                onChange={(e) =>
-                  patchExtras({ medical: { ...formExtras.medical, acknowledge_referral: e.target.checked } })
-                }
-              />
-              <span>
-                I confirm the medical report uploaded above is genuine and current. HR may
-                verify it with the issuing facility. I understand Wills Farms may arrange
-                further examination if required.
               </span>
             </label>
           </section>

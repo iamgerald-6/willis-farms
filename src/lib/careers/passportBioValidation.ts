@@ -20,6 +20,8 @@ export type ExtractedPassportBio = {
   dateOfBirth: string;
   nationality: string;
   passportNumber: string;
+  /** Normalized to Male | Female when legible. */
+  gender: string;
 };
 
 /** Lowercases, strips diacritics/punctuation, and splits into name tokens. */
@@ -82,6 +84,27 @@ export function passportNumbersMatch(
   return Boolean(a && b && a === b);
 }
 
+/** Map MRZ / passport sex codes to form gender options. */
+export function normalizePassportGender(raw: string | undefined | null): string {
+  const token = String(raw ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "");
+  if (token === "M" || token === "MALE") return "Male";
+  if (token === "F" || token === "FEMALE") return "Female";
+  return "";
+}
+
+export function gendersMatch(
+  formGender: string | undefined | null,
+  extractedGender: string | undefined | null,
+): boolean {
+  const form = String(formGender ?? "").trim();
+  const extracted = normalizePassportGender(extractedGender) || String(extractedGender ?? "").trim();
+  if (!form || !extracted) return false;
+  return form.toLowerCase() === extracted.toLowerCase();
+}
+
 function normalizeNationalityToken(raw: string): string {
   return raw
     .normalize("NFD")
@@ -136,6 +159,7 @@ export type PassportBioMatchResult = {
   nameMatches: boolean;
   dobMatches: boolean;
   nationalityMatches: boolean;
+  genderMatches: boolean;
   passportNumberMatches: boolean;
   message: string | null;
 };
@@ -155,6 +179,7 @@ function baseExtractedChecks(extracted: ExtractedPassportBio): PassportBioMatchR
       nameMatches: false,
       dobMatches: false,
       nationalityMatches: false,
+      genderMatches: false,
       passportNumberMatches: false,
       message: INVALID_PASSPORT_BIO_PAGE_MESSAGE,
     };
@@ -164,7 +189,7 @@ function baseExtractedChecks(extracted: ExtractedPassportBio): PassportBioMatchR
     !extracted.fullName.trim() &&
     !extracted.dateOfBirth.trim() &&
     !extracted.nationality.trim() &&
-    !extracted.passportNumber.trim()
+    !extracted.gender.trim()
   ) {
     return {
       matches: false,
@@ -172,6 +197,7 @@ function baseExtractedChecks(extracted: ExtractedPassportBio): PassportBioMatchR
       nameMatches: false,
       dobMatches: false,
       nationalityMatches: false,
+      genderMatches: false,
       passportNumberMatches: false,
       message:
         "We couldn't read anything clearly enough on that photo — please upload a clearer, well-lit photo of your passport bio page.",
@@ -181,13 +207,14 @@ function baseExtractedChecks(extracted: ExtractedPassportBio): PassportBioMatchR
   return null;
 }
 
-/** Name, date of birth, and nationality vs the form — used before pre-filling passport number. */
+/** Name, DOB, nationality, and gender vs the form — passport number is filled from the photo, not compared with the applicant. */
 export function evaluatePassportIdentityMatch(
   applicant: {
     firstName: string;
     lastName: string;
     dateOfBirth: string;
     nationality: string;
+    gender: string;
   },
   extracted: ExtractedPassportBio,
 ): PassportBioMatchResult {
@@ -201,8 +228,9 @@ export function evaluatePassportIdentityMatch(
   );
   const dobMatches = datesOfBirthMatch(applicant.dateOfBirth, extracted.dateOfBirth);
   const nationalityMatches = nationalitiesMatch(applicant.nationality, extracted.nationality);
+  const genderMatches = gendersMatch(applicant.gender, extracted.gender);
 
-  const identityMatches = nameMatches && dobMatches && nationalityMatches;
+  const identityMatches = nameMatches && dobMatches && nationalityMatches && genderMatches;
 
   if (identityMatches) {
     return {
@@ -211,6 +239,7 @@ export function evaluatePassportIdentityMatch(
       nameMatches,
       dobMatches,
       nationalityMatches,
+      genderMatches,
       passportNumberMatches: false,
       message: null,
     };
@@ -219,6 +248,13 @@ export function evaluatePassportIdentityMatch(
   const failedFields: string[] = [];
   if (!nameMatches) failedFields.push("name");
   if (!dobMatches) failedFields.push("date of birth");
+  if (!genderMatches) {
+    failedFields.push(
+      extracted.gender.trim()
+        ? "gender"
+        : "gender (we couldn't read it clearly on the passport)",
+    );
+  }
   if (!nationalityMatches) {
     failedFields.push(
       extracted.nationality.trim()
@@ -237,18 +273,20 @@ export function evaluatePassportIdentityMatch(
     nameMatches,
     dobMatches,
     nationalityMatches,
+    genderMatches,
     passportNumberMatches: false,
     message,
   };
 }
 
-/** Full check including passport number — run after identity matches and number is known. */
+/** Full check including passport number — used internally after identity matches. */
 export function evaluatePassportBioMatch(
   applicant: {
     firstName: string;
     lastName: string;
     dateOfBirth: string;
     nationality: string;
+    gender: string;
     passportNumber: string;
   },
   extracted: ExtractedPassportBio,
@@ -258,40 +296,19 @@ export function evaluatePassportBioMatch(
     return identity;
   }
 
-  if (!extracted.passportNumber.trim()) {
-    return {
-      ...identity,
-      matches: false,
-      message:
-        "We couldn't read a passport number on that photo — please upload a clearer photo of your passport bio page.",
-    };
-  }
-
   const passportNumberMatches = passportNumbersMatch(
     applicant.passportNumber,
     extracted.passportNumber,
   );
 
-  if (passportNumberMatches) {
-    return {
-      matches: true,
-      identityMatches: true,
-      nameMatches: identity.nameMatches,
-      dobMatches: identity.dobMatches,
-      nationalityMatches: identity.nationalityMatches,
-      passportNumberMatches: true,
-      message: null,
-    };
-  }
-
   return {
-    matches: false,
+    matches: passportNumberMatches,
     identityMatches: true,
     nameMatches: identity.nameMatches,
     dobMatches: identity.dobMatches,
     nationalityMatches: identity.nationalityMatches,
-    passportNumberMatches: false,
-    message:
-      "The passport number on this photo doesn't match what we read — please upload a clearer photo of your passport bio page.",
+    genderMatches: identity.genderMatches,
+    passportNumberMatches,
+    message: null,
   };
 }

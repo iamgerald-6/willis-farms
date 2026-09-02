@@ -18,6 +18,10 @@ import {
 } from "@/lib/accessControl";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import Pagination, { PAGE_SIZE } from "@/app/(dashboard)/dashboard/humanCapital/recruitment/components/Pagination";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  isConsultantEmployee,
+} from "@/lib/consultantPrograms";
 import { StatusBadge } from "./AppraisalStatusBadge";
 import {
   formatDate,
@@ -153,6 +157,8 @@ export default function AppraisalLandingPage({
 }) {
   // Default to the single applicable period so the list matches the form.
   const activePeriod = getActiveAppraisalPeriod();
+  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
+  const isConsultant = isConsultantEmployee(viewer.gradeLevel, gradeLevelsConfig);
   const [quarterFilter, setQuarterFilter] = useState<"" | Quarter>(
     activePeriod.quarter,
   );
@@ -232,7 +238,11 @@ export default function AppraisalLandingPage({
   // L4+ can also appraise people below them; everyone else only ever fills
   // their own self-assessment.
   const viewerCanAppraiseOthers =
-    canAppraiseOthers(viewer.gradeLevel) || isSuperAdmin(viewer.role);
+    canAppraiseOthers(viewer.gradeLevel, gradeLevelsConfig) ||
+    isSuperAdmin(viewer.role);
+  const showSelfAppraisalButton =
+    !isConsultant && !viewerCanAppraiseOthers;
+  const showNewAppraisalButton = viewerCanAppraiseOthers;
   const emptyMessage = viewerCanAppraiseOthers
     ? "Start a new appraisal using the button above"
     : "Complete your self-assessment using the button above";
@@ -260,17 +270,27 @@ export default function AppraisalLandingPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigateToForm?.()}
-            className="bg-red-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-shrink-0"
-          >
-            <PenLine className="w-4 h-4" />
-            {viewerCanAppraiseOthers ? "New Appraisal" : "My Appraisal Form"}
-          </button>
+          {showNewAppraisalButton && (
+            <button
+              onClick={() => onNavigateToForm?.()}
+              className="bg-red-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-shrink-0"
+            >
+              <PenLine className="w-4 h-4" />
+              New Appraisal
+            </button>
+          )}
+          {showSelfAppraisalButton && (
+            <button
+              onClick={() => onNavigateToForm?.()}
+              className="bg-red-600 text-white flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium shadow-sm flex-shrink-0"
+            >
+              <PenLine className="w-4 h-4" />
+              My Appraisal Form
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ── Filter tabs (period browsing is Manager/Admin only) ── */}
       <div className="flex gap-2 mb-5 flex-wrap items-center">
         {canBrowsePeriods ? (
           <>

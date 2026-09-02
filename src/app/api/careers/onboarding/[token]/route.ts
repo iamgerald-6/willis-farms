@@ -297,6 +297,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     application_id: validation.applicationId,
     token_id: validation.tokenId,
     form_data: merged,
+    hr_data: existingHr,
   };
 
   // Clear a stale submitted_at when reopening an incomplete submission.

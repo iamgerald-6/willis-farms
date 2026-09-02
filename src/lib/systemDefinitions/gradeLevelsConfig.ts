@@ -3,6 +3,8 @@ import {
   type GradeSalaryTiers,
 } from "./salaryRanges";
 
+export type GradeRoleKind = "ranked" | "consultant";
+
 export type GradeLevelDef = {
   id: string;
   rank: number;
@@ -10,12 +12,21 @@ export type GradeLevelDef = {
   /** Job posting role key (legacy_value) linked to this grade, when set. */
   roleKey?: string;
   builtIn?: boolean;
+  /** Ranked L1–L7+ vs consultant (no numeric level). */
+  roleKind?: GradeRoleKind;
   /** Low / mid / high salary bands (GHS) for HR Section O. */
   salaryTiers?: GradeSalaryTiers;
   /** Internal HR age band for shortlisting — not shown to applicants. */
   ageMin?: number;
   ageMax?: number;
 };
+
+export const CONSULTANT_GRADE_ID = "consultant" as const;
+
+function isConsultantGradeId(id: string): boolean {
+  const normalized = id.trim().toLowerCase();
+  return normalized === CONSULTANT_GRADE_ID || normalized.endsWith("_consultant");
+}
 
 export type GradeLevelsConfig = {
   levels?: GradeLevelDef[];
@@ -34,14 +45,27 @@ export const JUNIOR_BAND_MAX_RANK = 3;
 
 export const SPECIALIST_INTERVIEW_GUIDE_KEYS = ["data_analyst", "veterinarian"] as const;
 
+/** Built-in consultant grade — no L-rank; used for part-time HR and similar roles. */
+export const DEFAULT_CONSULTANT_GRADES: GradeLevelDef[] = [
+  {
+    id: CONSULTANT_GRADE_ID,
+    rank: 0,
+    label: "Consultant",
+    builtIn: true,
+    roleKind: "consultant",
+    ageMin: 25,
+    ageMax: 55,
+  },
+];
+
 export const DEFAULT_GRADE_LEVELS: GradeLevelDef[] = [
-  { id: "L1", rank: 1, label: "Junior (1)", builtIn: true, ageMin: 22, ageMax: 33 },
-  { id: "L2", rank: 2, label: "Technician (2)", builtIn: true, ageMin: 22, ageMax: 33 },
-  { id: "L3", rank: 3, label: "Senior (3)", builtIn: true, ageMin: 25, ageMax: 40 },
-  { id: "L4", rank: 4, label: "Supervisor (4)", builtIn: true, ageMin: 25, ageMax: 40 },
-  { id: "L5", rank: 5, label: "Asst. Manager (5)", builtIn: true, ageMin: 25, ageMax: 40 },
-  { id: "L6", rank: 6, label: "Farm Manager (6)", builtIn: true, ageMin: 33, ageMax: 55 },
-  { id: "L7", rank: 7, label: "Operations (7)", builtIn: true, ageMin: 33, ageMax: 55 },
+  { id: "L1", rank: 1, label: "Junior (1)", builtIn: true, roleKind: "ranked", ageMin: 22, ageMax: 33 },
+  { id: "L2", rank: 2, label: "Technician (2)", builtIn: true, roleKind: "ranked", ageMin: 22, ageMax: 33 },
+  { id: "L3", rank: 3, label: "Senior (3)", builtIn: true, roleKind: "ranked", ageMin: 25, ageMax: 40 },
+  { id: "L4", rank: 4, label: "Supervisor (4)", builtIn: true, roleKind: "ranked", ageMin: 25, ageMax: 40 },
+  { id: "L5", rank: 5, label: "Asst. Manager (5)", builtIn: true, roleKind: "ranked", ageMin: 25, ageMax: 40 },
+  { id: "L6", rank: 6, label: "Farm Manager (6)", builtIn: true, roleKind: "ranked", ageMin: 33, ageMax: 55 },
+  { id: "L7", rank: 7, label: "Operations (7)", builtIn: true, roleKind: "ranked", ageMin: 33, ageMax: 55 },
 ];
 
 function parseAgeLimit(value: unknown): number | undefined {
@@ -53,6 +77,7 @@ function parseAgeLimit(value: unknown): number | undefined {
 
 /** Default age band by grade rank when not explicitly configured. */
 export function defaultAgeRangeForRank(rank: number): { ageMin: number; ageMax: number } {
+  if (rank <= 0) return { ageMin: 25, ageMax: 55 };
   if (rank <= 2) return { ageMin: 22, ageMax: 33 };
   if (rank <= 5) return { ageMin: 25, ageMax: 40 };
   return { ageMin: 33, ageMax: 55 };
@@ -87,12 +112,36 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
   for (const item of levelsRaw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
-    const id = String(row.id ?? "")
-      .trim()
-      .toUpperCase();
+    const idRaw = String(row.id ?? "").trim();
+    const id = /^L\d+$/i.test(idRaw) ? idRaw.toUpperCase() : idRaw.toLowerCase();
     const label = String(row.label ?? "").trim();
+    const roleKindRaw = String(row.roleKind ?? row.role_kind ?? "").trim().toLowerCase();
+    const isConsultant =
+      roleKindRaw === "consultant" || isConsultantGradeId(id);
     const rank = Number(row.rank);
-    if (!/^L\d+$/.test(id) || !label || !Number.isFinite(rank) || rank < 1) continue;
+
+    if (!label) continue;
+    if (isConsultant) {
+      if (!/^[a-z][a-z0-9_]*$/.test(id) || usedIds.has(id)) continue;
+      usedIds.add(id);
+      const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
+      const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
+      const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
+      levels.push({
+        id,
+        rank: 0,
+        label,
+        roleKind: "consultant",
+        roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
+        builtIn: row.builtIn === true,
+        ...(salaryTiers ? { salaryTiers } : {}),
+        ...(ageMin != null ? { ageMin } : {}),
+        ...(ageMax != null ? { ageMax } : {}),
+      });
+      continue;
+    }
+
+    if (!/^L\d+$/.test(id) || !Number.isFinite(rank) || rank < 1) continue;
     if (usedIds.has(id)) continue;
     usedIds.add(id);
     const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
@@ -102,6 +151,7 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
       id,
       rank: Math.round(rank),
       label,
+      roleKind: "ranked",
       roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
       builtIn: row.builtIn === true,
       ...(salaryTiers ? { salaryTiers } : {}),
@@ -114,17 +164,49 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
 }
 
 export function resolveGradeLevels(config?: GradeLevelsConfig): GradeLevelDef[] {
-  const configured = config?.levels?.length ? config.levels : DEFAULT_GRADE_LEVELS;
+  const configured = config?.levels?.length ? config.levels : [];
   const byId = new Map<string, GradeLevelDef>();
 
   for (const builtIn of DEFAULT_GRADE_LEVELS) {
     byId.set(builtIn.id, { ...builtIn });
   }
-  for (const level of configured) {
-    byId.set(level.id, { ...byId.get(level.id), ...level, id: level.id });
+  for (const level of configured.filter((l) => l.roleKind !== "consultant" && !isConsultantGradeId(l.id))) {
+    byId.set(level.id, { ...byId.get(level.id), ...level, id: level.id, roleKind: "ranked" });
   }
 
   return [...byId.values()].sort((a, b) => a.rank - b.rank);
+}
+
+/** Ranked L1–L7+ plus consultant grades (no numeric rank). */
+export function resolveAllGradeLevels(config?: GradeLevelsConfig): GradeLevelDef[] {
+  const ranked = resolveGradeLevels(config);
+  const byId = new Map<string, GradeLevelDef>();
+
+  for (const builtIn of DEFAULT_CONSULTANT_GRADES) {
+    byId.set(builtIn.id, { ...builtIn });
+  }
+  const configured = config?.levels?.length ? config.levels : [];
+  for (const level of configured) {
+    if (level.roleKind === "consultant" || isConsultantGradeId(level.id)) {
+      byId.set(level.id, { ...byId.get(level.id), ...level, id: level.id, roleKind: "consultant", rank: 0 });
+    }
+  }
+
+  const consultants = [...byId.values()].sort((a, b) => a.label.localeCompare(b.label));
+  return [...ranked, ...consultants];
+}
+
+export function isConsultantGrade(
+  grade: string | null | undefined,
+  config?: GradeLevelsConfig,
+): boolean {
+  const id = grade?.trim();
+  if (!id) return false;
+  const fromConfig = resolveAllGradeLevels(config).find(
+    (l) => l.id.toLowerCase() === id.toLowerCase(),
+  );
+  if (fromConfig?.roleKind === "consultant") return true;
+  return isConsultantGradeId(id);
 }
 
 export function resolveAgeRangeForGrade(
@@ -157,21 +239,25 @@ export function resolveAgeRangeForGuideKey(
   if (id === "data_analyst" || id === "veterinarian") {
     return { gradeId: id, ageMin: 25, ageMax: 40 };
   }
+  if (isConsultantGradeId(id)) {
+    return { gradeId: id, ageMin: 25, ageMax: 55 };
+  }
   return null;
 }
 
 export function resolveGradeLevelOptions(
   config?: GradeLevelsConfig,
 ): { value: string; label: string }[] {
-  return resolveGradeLevels(config).map((level) => ({
+  return resolveAllGradeLevels(config).map((level) => ({
     value: level.id,
-    label: `${level.id} – ${level.label}`,
+    label: level.roleKind === "consultant" ? level.label : `${level.id} – ${level.label}`,
   }));
 }
 
 export function resolveInterviewGuideKeys(config?: GradeLevelsConfig): string[] {
-  const grades = resolveGradeLevels(config).map((l) => l.id);
-  return [...grades, ...SPECIALIST_INTERVIEW_GUIDE_KEYS];
+  const grades = resolveAllGradeLevels(config).map((l) => l.id);
+  const specialists = SPECIALIST_INTERVIEW_GUIDE_KEYS.filter((k) => !grades.includes(k));
+  return [...grades, ...specialists];
 }
 
 export function gradeLevelToRank(
@@ -181,7 +267,10 @@ export function gradeLevelToRank(
   const normalized = gradeLevel?.trim().toUpperCase();
   if (!normalized) return null;
 
-  const fromConfig = resolveGradeLevels(config).find((l) => l.id === normalized);
+  const fromConfig = resolveAllGradeLevels(config).find(
+    (l) => l.id.toUpperCase() === normalized || l.id.toLowerCase() === normalized.toLowerCase(),
+  );
+  if (fromConfig?.roleKind === "consultant") return null;
   if (fromConfig) return fromConfig.rank;
 
   const match = normalized.match(/^L(\d+)$/);
@@ -209,7 +298,9 @@ export function gradeIndexInOrder(
 
 export function normalizeGradeId(grade: string | null | undefined): string | null {
   if (!grade?.trim()) return null;
-  return grade.replace("_", "/").split("/")[0].trim().toUpperCase();
+  const clean = grade.replace("_", "/").split("/")[0].trim();
+  if (/^L\d+$/i.test(clean)) return clean.toUpperCase();
+  return clean.toLowerCase();
 }
 
 export function isKnownGrade(
@@ -218,7 +309,9 @@ export function isKnownGrade(
 ): boolean {
   const id = normalizeGradeId(grade);
   if (!id) return false;
-  return resolveGradeLevels(config).some((l) => l.id === id);
+  return resolveAllGradeLevels(config).some(
+    (l) => l.id.toUpperCase() === id || l.id.toLowerCase() === id.toLowerCase(),
+  );
 }
 
 export function isSupervisorRank(

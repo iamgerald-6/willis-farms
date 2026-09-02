@@ -1,6 +1,6 @@
 import type { UploadedFile } from "@/lib/careers/applicationFormSchema";
 import { deriveCitizenshipFromApplication } from "@/lib/careers/onboardingFormSchema";
-import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { formatDisplayDate } from "@/lib/formatDisplayDate";
 
 export type ProfileReviewItem = {
@@ -156,9 +156,11 @@ function nonEmptySections(sections: (ProfileReviewSection | null)[]): ProfileRev
 export function buildMergedCandidateProfile(input: {
   applicationFormData?: Record<string, unknown> | null;
   onboardingFormData?: OnboardingFormData | null;
+  onboardingHrData?: OnboardingHrData | null;
 }): ProfileReviewGroup[] {
   const app = normalizeApplicationFormData(input.applicationFormData);
   const onboard = input.onboardingFormData ?? {};
+  const hr = input.onboardingHrData ?? {};
   const personal = onboard.personal ?? {};
   const emergency = onboard.emergency ?? {};
   const nextOfKin = onboard.next_of_kin ?? {};
@@ -235,10 +237,13 @@ export function buildMergedCandidateProfile(input: {
           item("Blood group", str(medical.blood_group)),
           item("Allergies", str(medical.allergies)),
           item("Medical conditions", str(medical.conditions), { fullWidth: true }),
-          fileItem("Medical report", medical.medical_report),
+          fileItem(
+            "Medical report",
+            hr.medical_report ?? medical.medical_report,
+          ),
           item(
-            "Medical report declaration",
-            medical.acknowledge_referral ? "Acknowledged" : null,
+            "Medical report submitted on",
+            formatDateDisplay(hr.medical_report_received),
           ),
         ]),
       ),

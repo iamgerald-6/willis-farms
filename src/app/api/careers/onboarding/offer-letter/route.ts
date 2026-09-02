@@ -75,7 +75,6 @@ export async function GET(req: NextRequest) {
       context: context
         ? {
             salary_ghs: context.salaryGhs ?? null,
-            salary_range: context.salaryRange ?? null,
             grade_level: context.gradeLevel ?? null,
             pay_frequency: context.payFrequency ?? null,
             salary_display: context.salaryDisplay ?? null,
@@ -144,7 +143,7 @@ export async function PATCH(req: NextRequest) {
 
   const { data: existing } = await supabaseAdmin
     .from("onboarding_submissions")
-    .select("hr_data")
+    .select("hr_data, form_data")
     .eq("application_id", application_id)
     .maybeSingle();
 
@@ -169,7 +168,7 @@ export async function PATCH(req: NextRequest) {
     .upsert(
       {
         application_id,
-        form_data: {},
+        form_data: existing?.form_data ?? {},
         hr_data: nextHr,
       },
       { onConflict: "application_id" },

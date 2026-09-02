@@ -72,19 +72,29 @@ export function normalizeOnboardingHrFields(
     .sort((a, b) => a.sort_order - b.sort_order);
 }
 
+/** HR-only fields hidden from Section O (handled elsewhere or retired). */
+export const DEPRECATED_ONBOARDING_HR_FIELD_KEYS = new Set([
+  "reference_forms_sent",
+  "reference_forms_received",
+  "medical_report_received",
+  "approved_by",
+]);
+
 export function resolveOnboardingHrFields(options: SystemOption[]): OnboardingHrFieldDef[] {
   const fromDb = normalizeOnboardingHrFields(options);
   const defaults = normalizeOnboardingHrFields(getDefaultOnboardingHrFields());
-  if (fromDb.length === 0) return defaults;
+  const base = fromDb.length === 0 ? defaults : fromDb;
 
   const byKey = new Map<string, OnboardingHrFieldDef>();
   for (const field of defaults) {
     byKey.set(field.fieldKey, field);
   }
-  for (const field of fromDb) {
+  for (const field of base) {
     byKey.set(field.fieldKey, field);
   }
-  return [...byKey.values()].sort((a, b) => a.sort_order - b.sort_order);
+  return [...byKey.values()]
+    .filter((f) => !DEPRECATED_ONBOARDING_HR_FIELD_KEYS.has(f.fieldKey))
+    .sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export const ONBOARDING_HR_FIELD_TYPES: OnboardingHrFieldType[] = [

@@ -8,11 +8,26 @@ import {
   applyApplicationPrefill,
   mergeInitialOnboardingHrData,
   mergeOnboardingForm,
+  resolveOfferResponseAt,
+  resolveOfferResponseStatus,
+  resolveOnboardingHrPipelineStatus,
   type OnboardingFormData,
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
+import {
+  canConsultantApproveOnboarding,
+  consultantDisplayName,
+  isHeadConsultant,
+  isSubordinateConsultant,
+  usesConsultantHrApproval,
+} from "@/lib/careers/consultantHrApproval";
+import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import type { User } from "@/types";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
+import OnboardingMedicalReportPanel from "./OnboardingMedicalReportPanel";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
+import { gitFallbackRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 import { OFFER_TERMS_LOCKED_FIELD_KEYS } from "@/lib/careers/offerTerms";
 import {
   STATUS_LABELS,
@@ -29,6 +44,8 @@ type SubmissionRow = {
   form_data: OnboardingFormData;
   hr_data: OnboardingHrData;
   submitted_at: string | null;
+  personal_completed_at?: string | null;
+  medical_completed_at?: string | null;
   updated_at: string;
   job_applications: {
     id: string;
@@ -53,13 +70,13 @@ function formatDate(iso: string | null | undefined) {
   });
 }
 
-function offerResponseLabel(response: OnboardingHrData["offer_response"]): string {
+function offerResponseLabel(response: ReturnType<typeof resolveOfferResponseStatus>): string {
   if (response === "accepted") return "Accepted";
   if (response === "declined") return "Declined";
   return "Awaiting response";
 }
 
-function offerResponseStyles(response: OnboardingHrData["offer_response"]): string {
+function offerResponseStyles(response: ReturnType<typeof resolveOfferResponseStatus>): string {
   if (response === "accepted") return "bg-green-50 text-green-800 border-green-200";
   if (response === "declined") return "bg-red-50 text-red-800 border-red-200";
   return "bg-amber-50 text-amber-800 border-amber-200";
@@ -70,11 +87,13 @@ function OnboardingDetail({
   onClose,
   onUpdated,
   adminId,
+  userRole,
 }: {
   row: SubmissionRow;
   onClose: () => void;
   onUpdated: () => void;
   adminId: string;
+  userRole: string;
 }) {
   const app = row.job_applications;
   const form = applyApplicationPrefill(mergeOnboardingForm(row.form_data), {
@@ -84,6 +103,7 @@ function OnboardingDetail({
     role_title: app.role_title,
   });
   const [showPersonalInfo, setShowPersonalInfo] = useState(false);
+  const [approvalChecked, setApprovalChecked] = useState(false);
   const [hrData, setHrData] = useState<OnboardingHrData>(() =>
     mergeInitialOnboardingHrData({
       hr_data: row.hr_data,
@@ -95,6 +115,45 @@ function OnboardingDetail({
   const employeeIdTouched = useRef(Boolean(row.hr_data?.employee_id?.trim()));
   const companyEmailTouched = useRef(Boolean(row.hr_data?.company_email?.trim()));
   const { domain: companyEmailDomain } = useCompanyEmailDomain();
+
+  const { data: platformUsers = [] } = useQuery({
+    queryKey: ["get_users"],
+    queryFn: async () => {
+      const res = await api.get("/get_user");
+      return res.data as User[];
+    },
+  });
+
+  const currentUser = useMemo(
+    () => platformUsers.find((user) => user.user_id === adminId) ?? null,
+    [platformUsers, adminId],
+  );
+
+  const consultantProfile = useMemo(() => {
+    if (!currentUser || !isConsultantGrade(currentUser.grade_level)) return null;
+    return {
+      user_id: currentUser.user_id,
+      email: currentUser.email,
+      first_name: currentUser.first_name,
+      last_name: currentUser.last_name,
+      grade_level: currentUser.grade_level ?? null,
+      supervisor_id: currentUser.supervisor_id ?? null,
+    };
+  }, [currentUser]);
+
+  const headConsultantUser = consultantProfile && isHeadConsultant(consultantProfile);
+  const subordinateConsultantUser =
+    consultantProfile && isSubordinateConsultant(consultantProfile);
+  const consultantApprovalFlow = usesConsultantHrApproval(row.hr_data);
+  const canConsultantApprove =
+    consultantProfile &&
+    canConsultantApproveOnboarding({
+      caller: consultantProfile,
+      hr: row.hr_data ?? {},
+    });
+  const approverDisplayName = consultantProfile
+    ? consultantDisplayName(consultantProfile)
+    : "";
 
   const { data: suggestions, isLoading: loadingSuggestions, refetch: refetchSuggestions } =
     useQuery({
@@ -167,10 +226,10 @@ function OnboardingDetail({
   };
 
   const saveHr = useMutation({
-    mutationFn: () =>
+    mutationFn: (override?: OnboardingHrData) =>
       api.patch("/careers/onboarding", {
         application_id: row.application_id,
-        hr_data: hrData,
+        hr_data: override ?? hrData,
       }),
     onSuccess: () => {
       toast.success("HR fields saved.");
@@ -185,9 +244,15 @@ function OnboardingDetail({
     row.hr_data?.platform_invited_at?.trim() || row.hr_data?.hr_finished_at?.trim(),
   );
 
-  const offerResponse = row.hr_data?.offer_response ?? "pending";
+  const offerResponse = resolveOfferResponseStatus(row);
+  const offerResponseAt = resolveOfferResponseAt(row);
   const offerTermsLocked = Boolean(row.hr_data?.offer_terms_saved_at?.trim());
   const lockedOfferFields = offerTermsLocked ? [...OFFER_TERMS_LOCKED_FIELD_KEYS] : [];
+  const requiredMedicalReports = useMemo(() => gitFallbackRequiredMedicalReports(), []);
+  const candidateSubmitted = Boolean(row.submitted_at);
+  const pipelineStatus = resolveOnboardingHrPipelineStatus(row);
+  const isSeniorHr = isSeniorManagement(userRole);
+  const sectionOExcludeKeys = useMemo(() => ["hr_notes"], []);
 
   const finishHr = useMutation({
     mutationFn: async () => {
@@ -209,13 +274,40 @@ function OnboardingDetail({
           ? ` Invite sent to ${delivery}; they sign in with ${login}.`
           : "";
       toast.success(
-        `Onboarding finished — WillsOne invite sent.${detail} Employee is on probation in the Employees tab.`,
+        `Onboarding approved — WillsOne invite sent.${detail} Employee is on probation in the Employees tab.`,
       );
       onUpdated();
       onClose();
     },
     onError: (e: { response?: { data?: { error?: string } } }) => {
-      toast.error(e?.response?.data?.error ?? "Could not finish onboarding.");
+      toast.error(e?.response?.data?.error ?? "Could not approve onboarding.");
+    },
+  });
+
+  const submitHrReview = useMutation({
+    mutationFn: async () => {
+      if (!hrData.hr_notes?.trim()) {
+        throw new Error("Add HR review notes before submitting for approval.");
+      }
+      await api.patch("/careers/onboarding", {
+        application_id: row.application_id,
+        hr_data: hrData,
+      });
+      const res = await api.post("/careers/onboarding/submit-hr-review", {
+        application_id: row.application_id,
+        hr_data: hrData,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Submitted for senior HR approval.");
+      onUpdated();
+    },
+    onError: (e: { response?: { data?: { error?: string } } | Error }) => {
+      const msg =
+        (e as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (e instanceof Error ? e.message : "Submit failed.");
+      toast.error(msg);
     },
   });
 
@@ -321,9 +413,9 @@ function OnboardingDetail({
                 >
                   {offerResponseLabel(offerResponse)}
                 </span>
-                {row.hr_data?.offer_response_at && (
+                {offerResponseAt && (
                   <p className="text-xs text-gray-400 mt-1">
-                    {formatDate(row.hr_data.offer_response_at)}
+                    {formatDate(offerResponseAt)}
                   </p>
                 )}
               </div>
@@ -375,6 +467,17 @@ function OnboardingDetail({
             )}
 
             {app.status === "onboarding" && !row.submitted_at && (
+              <div className="rounded-xl border border-amber-100 bg-amber-50/80 p-4 text-sm text-amber-950">
+                <p className="font-semibold">Waiting for candidate submission</p>
+                <p className="text-xs mt-1 leading-relaxed text-amber-900/90">
+                  You can prepare Section O below while the candidate completes their
+                  onboarding form. HR review and sending the WillsOne invite happen
+                  only after they submit.
+                </p>
+              </div>
+            )}
+
+            {app.status === "onboarding" && !row.submitted_at && (
               <button
                 type="button"
                 onClick={() => resend.mutate()}
@@ -420,9 +523,22 @@ function OnboardingDetail({
                   stage.
                 </p>
               )}
+              {app.status === "onboarding" && (
+                <div className="mb-4">
+                  <OnboardingMedicalReportPanel
+                  applicationId={row.application_id}
+                  formData={form}
+                  hrData={hrData}
+                  setHrData={setHrData}
+                  requiredReports={requiredMedicalReports}
+                  onPersist={(nextHr) => saveHr.mutate(nextHr)}
+                  />
+                </div>
+              )}
               <OnboardingHrFieldsForm
                 hrData={hrData}
                 setHrData={setHrData}
+                excludeFieldKeys={sectionOExcludeKeys}
                 readOnlyFields={lockedOfferFields}
                 onGradeChange={() => {
                   employeeIdTouched.current = false;
@@ -436,40 +552,252 @@ function OnboardingDetail({
               />
               <button
                 type="button"
-                onClick={() => saveHr.mutate()}
+                onClick={() => saveHr.mutate(undefined)}
                 disabled={saveHr.isPending || finishHr.isPending}
                 className="mt-4 w-full sm:w-auto px-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
               >
                 {saveHr.isPending ? "Saving…" : "Save HR fields"}
               </button>
 
-              {row.submitted_at && !platformInvited && (
-                <div className="mt-4 rounded-xl border border-green-100 bg-green-50/80 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-gray-900">
-                    Finish onboarding
-                  </p>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    When Section O is complete, finish onboarding to send the WillsOne
-                    platform invite to their job application email ({app.email}). They
-                    sign in with the company email from Section O. The employee will
-                    appear on the <strong>Employees</strong> tab with status{" "}
-                    <strong>Probation</strong>.
-                  </p>
+              {candidateSubmitted && !platformInvited && (
+                <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/80 p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {pipelineStatus === "senior_approval"
+                        ? consultantApprovalFlow
+                          ? "Consultant approval"
+                          : "Senior HR approval"
+                        : "HR review"}
+                    </p>
+                    <p className="text-xs text-gray-600 leading-relaxed mt-1">
+                      {pipelineStatus === "senior_approval" ? (
+                        consultantApprovalFlow ? (
+                          <>
+                            HR review was submitted
+                            {row.hr_data?.hr_reviewed_by
+                              ? ` by ${row.hr_data.hr_reviewed_by}`
+                              : ""}
+                            {row.hr_data?.hr_review_submitted_at
+                              ? ` on ${formatDate(row.hr_data.hr_review_submitted_at)}`
+                              : ""}
+                            . The assigned consultant supervisor must approve and send
+                            the WillsOne invite.
+                          </>
+                        ) : (
+                          <>
+                            HR review was submitted
+                            {row.hr_data?.hr_reviewed_by
+                              ? ` by ${row.hr_data.hr_reviewed_by}`
+                              : ""}
+                            {row.hr_data?.hr_review_submitted_at
+                              ? ` on ${formatDate(row.hr_data.hr_review_submitted_at)}`
+                              : ""}
+                            . A senior HR user (admin or manager) must approve and send
+                            the WillsOne invite.
+                          </>
+                        )
+                      ) : headConsultantUser ? (
+                        <>
+                          Review the employee profile, complete Section O, save HR fields,
+                          then confirm your approval below to send the WillsOne invite.
+                        </>
+                      ) : subordinateConsultantUser ? (
+                        <>
+                          Review the employee profile, complete Section O, add HR notes, save
+                          HR fields, then submit to your supervisor for approval.
+                        </>
+                      ) : (
+                        <>
+                          The candidate has submitted their onboarding form. Review their
+                          employee profile, complete Section O, add HR notes, then submit for
+                          senior HR approval.
+                        </>
+                      )}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => finishHr.mutate()}
-                    disabled={finishHr.isPending || saveHr.isPending}
-                    className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-green-700 text-white text-sm font-medium rounded-lg hover:bg-green-800 disabled:opacity-60"
+                    onClick={() => setShowPersonalInfo(true)}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
                   >
-                    {finishHr.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <UserCheck className="w-4 h-4" />
-                    )}
-                    {finishHr.isPending
-                      ? "Finishing…"
-                      : "Finish onboarding & invite to WillsOne"}
+                    <FileText className="w-4 h-4" />
+                    Review employee profile
                   </button>
+                  {pipelineStatus === "hr_review" && subordinateConsultantUser && (
+                    <>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                          HR review notes
+                        </span>
+                        <textarea
+                          value={hrData.hr_notes ?? ""}
+                          onChange={(e) =>
+                            setHrData((prev) => ({ ...prev, hr_notes: e.target.value }))
+                          }
+                          rows={4}
+                          className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm leading-relaxed text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-200"
+                          placeholder="Summarise your review (required before submitting for approval)."
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => submitHrReview.mutate()}
+                        disabled={
+                          submitHrReview.isPending ||
+                          saveHr.isPending ||
+                          finishHr.isPending ||
+                          !hrData.hr_notes?.trim()
+                        }
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-60"
+                      >
+                        {submitHrReview.isPending && (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                        Submit for supervisor approval
+                      </button>
+                    </>
+                  )}
+                  {pipelineStatus === "hr_review" && !consultantProfile && (
+                    <>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                          HR review notes
+                        </span>
+                        <textarea
+                          value={hrData.hr_notes ?? ""}
+                          onChange={(e) =>
+                            setHrData((prev) => ({ ...prev, hr_notes: e.target.value }))
+                          }
+                          rows={4}
+                          className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm leading-relaxed text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-200"
+                          placeholder="Summarise your review (required before submitting for approval)."
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => submitHrReview.mutate()}
+                        disabled={
+                          submitHrReview.isPending ||
+                          saveHr.isPending ||
+                          finishHr.isPending ||
+                          !hrData.hr_notes?.trim()
+                        }
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-60"
+                      >
+                        {submitHrReview.isPending && (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                        Submit for senior HR approval
+                      </button>
+                    </>
+                  )}
+                  {pipelineStatus === "hr_review" && headConsultantUser && (
+                    <>
+                      <label className="flex items-start gap-3 rounded-lg border border-white bg-white/80 px-3 py-3 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={approvalChecked}
+                          onChange={(e) => setApprovalChecked(e.target.checked)}
+                        />
+                        <span>
+                          I, <strong>{approverDisplayName}</strong>, approve this onboarding.
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => finishHr.mutate()}
+                        disabled={
+                          finishHr.isPending ||
+                          saveHr.isPending ||
+                          !approvalChecked
+                        }
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-green-700 text-white text-sm font-medium rounded-lg hover:bg-green-800 disabled:opacity-60"
+                      >
+                        {finishHr.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <UserCheck className="w-4 h-4" />
+                        )}
+                        {finishHr.isPending ? "Approving…" : "Approve & invite to WillsOne"}
+                      </button>
+                    </>
+                  )}
+                  {pipelineStatus === "senior_approval" && consultantApprovalFlow && canConsultantApprove && (
+                    <>
+                      {hrData.hr_notes?.trim() && (
+                        <div className="rounded-lg border border-white bg-white/80 px-3 py-2 text-sm">
+                          <p className="text-xs text-gray-500 uppercase tracking-wide">
+                            HR review notes
+                          </p>
+                          <p className="text-gray-800 mt-1 whitespace-pre-wrap">
+                            {hrData.hr_notes.trim()}
+                          </p>
+                        </div>
+                      )}
+                      <label className="flex items-start gap-3 rounded-lg border border-white bg-white/80 px-3 py-3 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={approvalChecked}
+                          onChange={(e) => setApprovalChecked(e.target.checked)}
+                        />
+                        <span>
+                          I, <strong>{approverDisplayName}</strong>, approve this onboarding.
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => finishHr.mutate()}
+                        disabled={finishHr.isPending || saveHr.isPending || !approvalChecked}
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-green-700 text-white text-sm font-medium rounded-lg hover:bg-green-800 disabled:opacity-60"
+                      >
+                        {finishHr.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <UserCheck className="w-4 h-4" />
+                        )}
+                        {finishHr.isPending ? "Approving…" : "Approve & invite to WillsOne"}
+                      </button>
+                    </>
+                  )}
+                  {pipelineStatus === "senior_approval" && !consultantApprovalFlow && isSeniorHr && (
+                    <>
+                      {hrData.hr_notes?.trim() && (
+                        <div className="rounded-lg border border-white bg-white/80 px-3 py-2 text-sm">
+                          <p className="text-xs text-gray-500 uppercase tracking-wide">
+                            HR review notes
+                          </p>
+                          <p className="text-gray-800 mt-1 whitespace-pre-wrap">
+                            {hrData.hr_notes.trim()}
+                          </p>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => finishHr.mutate()}
+                        disabled={finishHr.isPending || saveHr.isPending}
+                        className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 bg-green-700 text-white text-sm font-medium rounded-lg hover:bg-green-800 disabled:opacity-60"
+                      >
+                        {finishHr.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <UserCheck className="w-4 h-4" />
+                        )}
+                        {finishHr.isPending ? "Approving…" : "Approve & invite to WillsOne"}
+                      </button>
+                    </>
+                  )}
+                  {pipelineStatus === "senior_approval" && consultantApprovalFlow && !canConsultantApprove && (
+                    <p className="text-xs text-blue-900/80 bg-white/70 border border-blue-100 rounded-lg px-3 py-2">
+                      Awaiting consultant supervisor sign-off.
+                    </p>
+                  )}
+                  {pipelineStatus === "senior_approval" && !consultantApprovalFlow && !isSeniorHr && (
+                    <p className="text-xs text-blue-900/80 bg-white/70 border border-blue-100 rounded-lg px-3 py-2">
+                      Awaiting senior HR sign-off. You will be notified when onboarding is complete.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -510,6 +838,7 @@ function OnboardingDetail({
               <CandidateProfileReview
                 applicationFormData={app.application_form_data ?? null}
                 onboardingFormData={form}
+                onboardingHrData={hrData}
                 showPrintButton
                 profileDownloadUrl={`/api/careers/onboarding/profile/pdf?application_id=${row.application_id}`}
                 header={{
@@ -529,7 +858,13 @@ function OnboardingDetail({
   );
 }
 
-export default function OnboardingTab({ adminId }: { adminId: string }) {
+export default function OnboardingTab({
+  adminId,
+  userRole = "",
+}: {
+  adminId: string;
+  userRole?: string;
+}) {
   const [selected, setSelected] = useState<SubmissionRow | null>(null);
   const queryClient = useQueryClient();
 
@@ -539,9 +874,16 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
       const res = await api.get("/careers/onboarding");
       return res.data.data as SubmissionRow[];
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 
   const rows = useMemo(() => data ?? [], [data]);
+
+  const activeRow = useMemo(() => {
+    if (!selected) return null;
+    return rows.find((row) => row.application_id === selected.application_id) ?? selected;
+  }, [rows, selected]);
 
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -581,7 +923,9 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
                 </td>
               </tr>
             ) : (
-              paginated.map((row) => (
+              paginated.map((row) => {
+                const offerStatus = resolveOfferResponseStatus(row);
+                return (
                 <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/80">
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{row.job_applications.full_name}</p>
@@ -590,9 +934,9 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
                   <td className="px-4 py-3 text-gray-700">{row.job_applications.role_title}</td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${offerResponseStyles(row.hr_data?.offer_response)}`}
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${offerResponseStyles(offerStatus)}`}
                     >
-                      {offerResponseLabel(row.hr_data?.offer_response)}
+                      {offerResponseLabel(offerStatus)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -603,7 +947,33 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
                         row.job_applications.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{formatDate(row.submitted_at)}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {row.submitted_at ? (
+                      <span>
+                        {formatDate(row.submitted_at)}
+                        {(() => {
+                          const status = resolveOnboardingHrPipelineStatus(row);
+                          if (status === "hr_review") {
+                            return (
+                              <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+                                HR review
+                              </span>
+                            );
+                          }
+                          if (status === "senior_approval") {
+                            return (
+                              <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-800">
+                                Senior approval
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"
@@ -614,7 +984,8 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
                     </button>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
@@ -626,10 +997,11 @@ export default function OnboardingTab({ adminId }: { adminId: string }) {
         />
       </div>
 
-      {selected && (
+      {activeRow && (
         <OnboardingDetail
-          row={selected}
+          row={activeRow}
           adminId={adminId}
+          userRole={userRole}
           onClose={() => setSelected(null)}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ["onboarding_submissions"] });

@@ -652,7 +652,6 @@ export default function SkillLogsPage() {
         )}
       </div>
 
-      {/* ── Stats ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         <StatCard label="Total" value={stats.total} sub="all time" />
         <StatCard

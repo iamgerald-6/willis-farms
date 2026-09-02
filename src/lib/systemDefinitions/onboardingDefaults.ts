@@ -2,7 +2,6 @@ import type { SystemOption } from "./types";
 import { GHANA_REGIONS } from "@/lib/careers/onboardingTypes";
 import {
   ACCEPT_PASSPORT_BIO,
-  ACCEPT_PDF_WORD_OR_IMAGE,
 } from "@/lib/uploadConstraints";
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
@@ -136,7 +135,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       prefillLocked: true,
       colSpan: "half",
     }),
-    field("opt:onboarding:field:middle", "Middle name(s)", "personal.middle_names", 3, {
+    field("opt:onboarding:field:middle", "Middle name(s) (optional)", "personal.middle_names", 3, {
       step: "personal",
       section: "A. Personal information",
       fieldKey: "personal.middle_names",
@@ -383,20 +382,6 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       fieldType: "textarea",
       required: false,
     }),
-    field(
-      "opt:onboarding:field:med_report",
-      "Medical report (upload proof)",
-      "medical.medical_report",
-      58,
-      {
-        step: "medical",
-        section: "I. Medical & safety self-declaration",
-        fieldKey: "medical.medical_report",
-        fieldType: "file",
-        required: true,
-        accept: ACCEPT_PDF_WORD_OR_IMAGE,
-      },
-    ),
 
     field("opt:onboarding:field:bio_initials", "Biosecurity commitment initials", "biosecurity.commitment_initials", 68, {
       step: "medical",

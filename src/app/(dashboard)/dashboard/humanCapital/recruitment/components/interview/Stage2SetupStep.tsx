@@ -403,7 +403,10 @@ export default function Stage2SetupStep({
       {!readOnly && (
         <button
           type="button"
-          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+          onClick={() =>
+            scheduledAt &&
+            onSendStage2Invites(scheduledAt, buildSendPayload(scheduledAt))
+          }
           disabled={isPending || !scheduledAt}
           className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
         >

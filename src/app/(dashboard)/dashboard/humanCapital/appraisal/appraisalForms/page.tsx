@@ -19,6 +19,11 @@ import {
 } from "@/lib/appraisal/deadlines";
 import { canAppraiseOthers } from "@/lib/appraisal/sections";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  consultantSelfServiceBlockedMessage,
+  isConsultantEmployee,
+} from "@/lib/consultantPrograms";
 import { CalendarRange, Info } from "lucide-react";
 
 function AppraisalFormPageContent() {
@@ -45,6 +50,11 @@ function AppraisalFormPageContent() {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
+  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
+  const isConsultant = isConsultantEmployee(
+    profile?.grade_level,
+    gradeLevelsConfig,
+  );
 
   const existingAppraisalId = searchParams?.get("id");
   const step = searchParams?.get("step");
@@ -83,7 +93,11 @@ function AppraisalFormPageContent() {
   });
 
   const canSuperviseOthers =
-    canAppraiseOthers(profile?.grade_level) || isSuperAdmin(profile?.role);
+    canAppraiseOthers(profile?.grade_level, gradeLevelsConfig) ||
+    isSuperAdmin(profile?.role);
+
+  const blockConsultantSelfStart =
+    isFreshFill && isConsultant && !existingAppraisalId && !canSuperviseOthers;
 
   // Pure self-appraisal users who already filed this period are done — send
   // them to the existing record. Supervisors still need the form so they can
@@ -160,6 +174,18 @@ function AppraisalFormPageContent() {
             onSuccess={() => router.push("/dashboard/humanCapital/appraisal")}
             onBack={() => goBack("/dashboard/humanCapital/appraisal")}
           />
+        ) : blockConsultantSelfStart ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-8 text-center">
+            <p className="text-sm font-semibold text-sky-950">
+              {consultantSelfServiceBlockedMessage("appraisal")}
+            </p>
+            <Link
+              href="/dashboard/humanCapital/appraisal"
+              className="inline-block mt-5 px-5 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition"
+            >
+              Back to appraisals
+            </Link>
+          </div>
         ) : isFreshFill && checkingOwn ? (
           <FormPageSkeleton />
         ) : blockFreshSelfOnly && ownActiveAppraisal ? (

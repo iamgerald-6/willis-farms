@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: submission } = await supabaseAdmin
       .from("onboarding_submissions")
-      .select("hr_data")
+      .select("hr_data, form_data")
       .eq("application_id", application_id)
       .maybeSingle();
 
@@ -99,9 +99,7 @@ export async function POST(req: NextRequest) {
       ? `Gross salary: ${ctx.salaryDisplay}`
       : ctx.salaryGhs
         ? `Gross salary: GHS ${ctx.salaryGhs}`
-        : ctx.salaryRange
-          ? `Salary band: ${ctx.salaryRange}`
-          : "Salary: to be confirmed in HR records";
+        : "Gross salary: to be confirmed with HR";
 
     const placementLines = [
       ctx.employmentType ? `- Employment type: ${ctx.employmentType}` : "",
@@ -134,7 +132,7 @@ export async function POST(req: NextRequest) {
       medicalBlock || "Standard pre-employment medical clearance as directed by HR.",
       "",
       "Write in clear, professional British English suitable for a senior agribusiness employer.",
-      "Include: warm congratulations, role title, gross salary amount in GHS, pay frequency, proposed start date,",
+      "Include: warm congratulations, role title, gross salary amount in GHS (do NOT mention salary band, salary range, or tier — only the gross salary figure), pay frequency, proposed start date,",
       "employment type and work location, required pre-employment medical reports, standard company policies reference,",
       "and invitation to accept via the onboarding link.",
       "Keep to roughly 350-550 words. Do not invent benefits not implied above.",
@@ -171,7 +169,7 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from("onboarding_submissions").upsert(
       {
         application_id,
-        form_data: {},
+        form_data: submission?.form_data ?? {},
         hr_data: nextHr,
       },
       { onConflict: "application_id" },
@@ -183,7 +181,6 @@ export async function POST(req: NextRequest) {
         offer_letter_draft: letterBody,
         context: {
           salary_ghs: ctx.salaryGhs ?? null,
-          salary_range: ctx.salaryRange ?? null,
           grade_level: ctx.gradeLevel ?? null,
           pay_frequency: ctx.payFrequency ?? null,
           salary_display: ctx.salaryDisplay ?? null,

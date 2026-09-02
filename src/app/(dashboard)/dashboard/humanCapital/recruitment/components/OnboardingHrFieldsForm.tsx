@@ -55,6 +55,8 @@ type OnboardingHrFieldsFormProps = {
   onCompanyEmailChange?: () => void;
   /** When set, only these field keys are rendered (offer tab subset). */
   includeFieldKeys?: string[];
+  /** Field keys omitted from Section O (e.g. review-only fields). */
+  excludeFieldKeys?: string[];
   /** Field keys shown read-only (e.g. after offer terms saved). */
   readOnlyFields?: string[];
   /** Hide helper text under fields (offer tab). */
@@ -79,6 +81,7 @@ export default function OnboardingHrFieldsForm({
   onEmployeeIdChange,
   onCompanyEmailChange,
   includeFieldKeys,
+  excludeFieldKeys = [],
   readOnlyFields = [],
   hideFieldHints = false,
 }: OnboardingHrFieldsFormProps) {
@@ -214,8 +217,11 @@ export default function OnboardingHrFieldsForm({
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
   const payFrequencyOptions = optionLists?.[ONBOARDING_PAY_FREQUENCIES_LIST] ?? [];
 
+  const excludeSet = useMemo(() => new Set(excludeFieldKeys), [excludeFieldKeys]);
+
   const fieldAllowed = (fieldKey: string) =>
-    !includeFieldKeys || includeFieldKeys.includes(fieldKey);
+    !excludeSet.has(fieldKey) &&
+    (!includeFieldKeys || includeFieldKeys.includes(fieldKey));
 
   const placementFields = hrFields.filter(
     (f) => f.group === "placement" && fieldAllowed(f.fieldKey),

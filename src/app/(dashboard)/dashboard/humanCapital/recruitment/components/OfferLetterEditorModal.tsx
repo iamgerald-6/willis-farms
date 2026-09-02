@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
   FileText,
@@ -29,7 +29,6 @@ type OfferLetterData = {
   offer_terms_saved_at: string | null;
   context: {
     salary_ghs: string | null;
-    salary_range: string | null;
     grade_level: string | null;
     pay_frequency: string | null;
     salary_display: string | null;
@@ -55,6 +54,9 @@ function formatCurrencyGhs(value: string | null | undefined): string | null {
   return `GHS ${value.trim()}`;
 }
 
+/** Survives Strict Mode remounts so we never fire two AI generations for one open. */
+const offerLetterAutoGenerateStarted = new Set<string>();
+
 export default function OfferLetterEditorModal({
   applicationId,
   candidateName,
@@ -64,9 +66,9 @@ export default function OfferLetterEditorModal({
   onSaved,
 }: Props) {
   const [draft, setDraft] = useState("");
-  const autoGenerateAttempted = useRef(false);
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["offer-letter", applicationId],
     queryFn: async () => {
       const res = await api.get(
@@ -75,6 +77,8 @@ export default function OfferLetterEditorModal({
       return res.data.data as OfferLetterData;
     },
   });
+
+  const showInitialLoader = isLoading && !data;
 
   useEffect(() => {
     if (data?.offer_letter_draft) {
@@ -90,30 +94,36 @@ export default function OfferLetterEditorModal({
     onSuccess: (res) => {
       const body = res.data.data.offer_letter_draft as string;
       setDraft(body);
+      queryClient.setQueryData<OfferLetterData>(
+        ["offer-letter", applicationId],
+        (prev) =>
+          prev
+            ? { ...prev, offer_letter_draft: body }
+            : {
+                offer_letter: null,
+                offer_letter_draft: body,
+                offer_terms_saved_at: null,
+                context: res.data.data.context ?? null,
+              },
+      );
       toast.success("Offer letter generated — review and edit before saving.");
-      void refetch();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Generation failed.");
     },
   });
 
-  const { mutate: generateDraft, isPending: isGenerating } = generateMutation;
+  const isGenerating = generateMutation.isPending;
 
   useEffect(() => {
-    if (
-      isLoading ||
-      !data ||
-      !data.offer_terms_saved_at ||
-      data.offer_letter_draft?.trim() ||
-      autoGenerateAttempted.current ||
-      isGenerating
-    ) {
-      return;
-    }
-    autoGenerateAttempted.current = true;
-    generateDraft();
-  }, [isLoading, data?.offer_terms_saved_at, data?.offer_letter_draft, isGenerating, generateDraft]);
+    if (showInitialLoader || !data?.offer_terms_saved_at) return;
+    if (data.offer_letter_draft?.trim()) return;
+    if (offerLetterAutoGenerateStarted.has(applicationId)) return;
+    offerLetterAutoGenerateStarted.add(applicationId);
+    generateMutation.mutate();
+    // One-shot auto-generate when the modal opens with no draft yet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit generateMutation
+  }, [showInitialLoader, applicationId, data?.offer_terms_saved_at, data?.offer_letter_draft]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -195,7 +205,7 @@ export default function OfferLetterEditorModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {isLoading ? (
+          {showInitialLoader ? (
             <div className="flex items-center justify-center py-16 text-gray-400">
               <Loader2 className="w-6 h-6 animate-spin" />
             </div>
@@ -235,12 +245,6 @@ export default function OfferLetterEditorModal({
                   <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
                     <p className="text-xs text-gray-500">Pay frequency</p>
                     <p className="font-semibold text-gray-900">{ctx.pay_frequency}</p>
-                  </div>
-                )}
-                {ctx?.salary_range && (
-                  <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                    <p className="text-xs text-gray-500">Salary band</p>
-                    <p className="font-semibold text-gray-900">{ctx.salary_range}</p>
                   </div>
                 )}
                 {ctx?.grade_level && (

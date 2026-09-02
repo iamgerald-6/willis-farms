@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   requireUserManagementAccess,
+  requireSeniorManagement,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
@@ -12,15 +13,22 @@ import {
   buildOnboardingInvitePrefill,
   findExistingPlatformUserForApplication,
 } from "@/lib/careers/buildOnboardingInvitePrefill";
+import {
+  canConsultantApproveOnboarding,
+  consultantDisplayName,
+  isHeadConsultant,
+  isSubordinateConsultant,
+  loadConsultantUserProfile,
+  usesConsultantHrApproval,
+} from "@/lib/careers/consultantHrApproval";
+import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { collectExistingEmployeeIds } from "@/lib/careers/hrEmployeeDefaults";
 import { invitePlatformEmployee } from "@/lib/careers/invitePlatformEmployee";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
 
 /**
- * HR completes Section O after the candidate submits onboarding:
- * saves HR fields, sends the WillsOne platform invite (probation), and
- * links the user so they appear on the Employees tab.
+ * Senior HR or an authorised consultant approves onboarding and sends the WillsOne invite.
  */
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -34,9 +42,16 @@ export async function POST(req: NextRequest) {
   const caller = await requireUserManagementAccess(req, "add");
   if (!caller) {
     return jsonForbidden(
-      "Forbidden — User Management add access required to finish onboarding and invite to WillsOne.",
+      "Forbidden — User Management add access required to invite to WillsOne.",
     );
   }
+
+  const callerProfile = await loadConsultantUserProfile(supabaseAdmin, caller.id);
+  if (!callerProfile) {
+    return NextResponse.json({ error: "User profile not found." }, { status: 404 });
+  }
+
+  const isConsultantCaller = isConsultantGrade(callerProfile.grade_level);
 
   const {
     application_id,
@@ -86,6 +101,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const existingHr = (submission.hr_data ?? {}) as OnboardingHrData;
+  const consultantFlow = usesConsultantHrApproval(existingHr);
+
+  if (isConsultantCaller) {
+    if (!canConsultantApproveOnboarding({ caller: callerProfile, hr: existingHr })) {
+      return jsonForbidden(
+        "Forbidden — only the assigned consultant supervisor or a head consultant may approve this onboarding.",
+      );
+    }
+    if (consultantFlow && !existingHr.hr_review_submitted_at?.trim()) {
+      const isHead = !callerProfile.supervisor_id?.trim();
+      if (!isHead) {
+        return NextResponse.json(
+          { error: "This onboarding has not been submitted for approval yet." },
+          { status: 400 },
+        );
+      }
+    }
+  } else {
+    const senior = await requireSeniorManagement(req);
+    if (!senior) {
+      return jsonForbidden(
+        "Forbidden — senior HR (admin or manager) must approve onboarding before the WillsOne invite is sent.",
+      );
+    }
+    if (!existingHr.hr_review_submitted_at?.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "HR review must be submitted for approval before senior HR can sign off.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const rawApp = submission.job_applications;
   const app = (Array.isArray(rawApp) ? rawApp[0] : rawApp) as {
     full_name: string;
@@ -105,6 +156,17 @@ export async function POST(req: NextRequest) {
     ...((submission.hr_data ?? {}) as OnboardingHrData),
     ...(hr_data ?? {}),
   };
+
+  if (!mergedHr.hr_notes?.trim() && !isConsultantCaller) {
+    return NextResponse.json(
+      { error: "HR review notes are missing." },
+      { status: 400 },
+    );
+  }
+
+  const approvedAt = new Date().toISOString();
+  mergedHr.approved_by = consultantDisplayName(callerProfile);
+  mergedHr.hr_approved_at = approvedAt;
 
   const { error: saveError } = await supabaseAdmin
     .from("onboarding_submissions")

@@ -19,6 +19,7 @@ import type {
 import type { OnboardingQualificationEntry } from "@/lib/careers/onboardingEntryTypes";
 import type { OnboardingCertificationEntry } from "@/lib/careers/onboardingEntryTypes";
 import type { OnboardingWorkExperienceEntry } from "@/lib/careers/onboardingEntryTypes";
+import { isValidEmail, isValidName } from "@/lib/validation";
 
 export type OnboardingFieldStep = "personal" | "medical" | "referee";
 
@@ -39,6 +40,32 @@ export type OnboardingFieldType =
   | "work_experience_list"
   | "application_certificates_view"
   | "referee_submissions_view";
+
+/** Plain text fields that hold a person's name (or initials) — letters only. */
+const ONBOARDING_NAME_FIELD_KEYS = new Set([
+  "personal.surname",
+  "personal.first_name",
+  "personal.middle_names",
+  "emergency.full_name",
+  "emergency.relationship",
+  "next_of_kin.full_name",
+  "payment.account_name",
+  "payment.momo_registered_name",
+  "payment.bank_name",
+  "declarations.signature_name",
+  "biosecurity.commitment_initials",
+]);
+
+/** Plain text fields that must be digits only (SSNIT, etc.). */
+const ONBOARDING_DIGITS_ONLY_FIELD_KEYS = new Set(["personal.ssnit_number"]);
+
+export function isOnboardingNameFieldKey(fieldKey: string): boolean {
+  return ONBOARDING_NAME_FIELD_KEYS.has(fieldKey);
+}
+
+export function isOnboardingDigitsOnlyFieldKey(fieldKey: string): boolean {
+  return ONBOARDING_DIGITS_ONLY_FIELD_KEYS.has(fieldKey);
+}
 
 export interface OnboardingFieldShowWhen {
   field: string;
@@ -281,6 +308,8 @@ export const DEPRECATED_ONBOARDING_FIELD_KEYS = new Set([
   "additional_certifications",
   "work_experience",
   "referee_submissions",
+  /** HR uploads medical proof in Section O — not on the candidate form. */
+  "medical.medical_report",
 ]);
 
 export const DEPRECATED_ONBOARDING_FIELD_IDS = new Set([
@@ -306,6 +335,7 @@ export const DEPRECATED_ONBOARDING_FIELD_IDS = new Set([
   "opt:onboarding:field:certs",
   "opt:onboarding:field:experience",
   "opt:onboarding:field:ref_view",
+  "opt:onboarding:field:med_report",
 ]);
 
 function isDeprecatedOnboardingField(field: OnboardingFormField): boolean {
@@ -356,6 +386,8 @@ export function mergeOnboardingFieldDefinitions(
     map.set(db.rules.fieldKey, {
       ...def,
       ...db,
+      label:
+        db.rules.fieldKey === "personal.middle_names" ? def.label : db.label,
       rules: {
         ...def.rules,
         ...db.rules,
@@ -724,7 +756,23 @@ export function validateOnboardingStep(
       }
     }
 
-    if (field.rules.fieldType === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str)) {
+    if (
+      field.rules.fieldType === "text" &&
+      isOnboardingNameFieldKey(field.rules.fieldKey) &&
+      !isValidName(str)
+    ) {
+      errors.push(`${field.label} can only contain letters.`);
+    }
+
+    if (
+      field.rules.fieldType === "text" &&
+      isOnboardingDigitsOnlyFieldKey(field.rules.fieldKey) &&
+      !/^\d+$/.test(str)
+    ) {
+      errors.push(`${field.label} must contain digits only.`);
+    }
+
+    if (field.rules.fieldType === "email" && !isValidEmail(str)) {
       errors.push(`${field.label} must be a valid email address.`);
     }
 
@@ -759,10 +807,6 @@ export function validateOnboardingMedicalExtras(form: OnboardingFormData): strin
 
   if (!bio.commitment_initials?.trim()) {
     errors.push("Biosecurity commitment initials are required.");
-  }
-
-  if (!form.medical?.acknowledge_referral) {
-    errors.push("Please confirm your medical report declaration.");
   }
 
   if (!form.declarations?.data_consent) {

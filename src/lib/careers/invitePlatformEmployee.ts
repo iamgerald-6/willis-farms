@@ -3,6 +3,7 @@ import { getAppBaseUrl } from "@/lib/appUrl";
 import { buildInviteEmail, sendViaResend } from "@/lib/email/resendClient";
 import { isSuperAdmin } from "@/lib/accessControl";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { resolveAllGradeLevels } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
@@ -60,6 +61,21 @@ export async function invitePlatformEmployee(
   }
 
   const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
+
+  const gradeLevelTrimmed = grade_level?.trim() ?? "";
+  if (gradeLevelTrimmed) {
+    const allowedGrades = new Set(
+      resolveAllGradeLevels(gradeConfig).map((level) => level.id.toLowerCase()),
+    );
+    if (!allowedGrades.has(gradeLevelTrimmed.toLowerCase())) {
+      return {
+        ok: false,
+        error: `Invalid grade level "${gradeLevelTrimmed}".`,
+        status: 400,
+      };
+    }
+  }
+
   let resolvedSupervisorId: string | null = null;
 
   if (supervisor_id) {
@@ -197,12 +213,20 @@ export async function invitePlatformEmployee(
 
   if (tableError || !tableUser) {
     await supabaseAdmin.auth.admin.deleteUser(authUser.id);
-    const hint = tableError?.message?.includes("created_by")
-      ? " Run in Supabase SQL: ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by uuid; NOTIFY pgrst, 'reload schema';"
-      : "";
+    const msg = tableError?.message ?? "Could not create user.";
+    const gradeConstraint =
+      msg.includes("users_grade_level_check") ||
+      (msg.includes("grade_level") && msg.includes("check constraint"));
+    const hint = gradeConstraint
+      ? " Run docs/access-control/users-grade-level-check.sql in Supabase to allow consultant and custom grades."
+      : tableError?.message?.includes("created_by")
+        ? " Run in Supabase SQL: ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by uuid; NOTIFY pgrst, 'reload schema';"
+        : "";
     return {
       ok: false,
-      error: (tableError?.message ?? "Could not create user.") + hint,
+      error: gradeConstraint
+        ? `Grade level "${gradeLevelTrimmed || grade_level}" is not allowed by the database yet.${hint}`
+        : msg + hint,
       status: 400,
     };
   }

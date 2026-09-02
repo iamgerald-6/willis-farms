@@ -1698,7 +1698,7 @@ function ApplicationDetail({
                   >
                     {startOnboarding.isPending
                       ? "Sending…"
-                      : "Send congratulations & onboarding link"}
+                      : "Send offer letter & onboarding link"}
                   </button>
                   <button
                     type="button"
@@ -5214,7 +5214,7 @@ function RecruitmentPageContent() {
           onSelect={setSelected}
         />
       ) : activeTab === "onboarding" ? (
-        <OnboardingTab adminId={session?.user?.id ?? ""} />
+        <OnboardingTab adminId={session?.user?.id ?? ""} userRole={role} />
       ) : activeTab === "employees" ? (
         <EmployeesTab />
       ) : (

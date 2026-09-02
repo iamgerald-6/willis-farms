@@ -162,20 +162,6 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       { fieldKey: "medical_referral_issued", fieldType: "date", group: "hr" },
     ),
     hrField(
-      "opt:recruitment:hr:reference_forms_sent",
-      "Reference forms sent on",
-      "reference_forms_sent",
-      19,
-      { fieldKey: "reference_forms_sent", fieldType: "date", group: "hr" },
-    ),
-    hrField(
-      "opt:recruitment:hr:approved_by",
-      "Approved by",
-      "approved_by",
-      20,
-      { fieldKey: "approved_by", fieldType: "text", group: "hr" },
-    ),
-    hrField(
       "opt:recruitment:hr:salary_range",
       "Salary band",
       "salary_range",
@@ -192,7 +178,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "HR notes",
       "hr_notes",
       31,
-      { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full", required: true },
+      { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full", required: false },
     ),
   ];
 }

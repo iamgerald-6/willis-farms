@@ -51,7 +51,7 @@ export function formatMedicalReportsPlainText(reports: string[]): string {
   if (reports.length === 0) return "";
   const lines = reports.map((item) => `• ${item}`);
   return [
-    "Please obtain the following medical reports and upload proof on the medical step of onboarding:",
+    "Please obtain the following medical reports and bring them to HR during onboarding:",
     ...lines,
   ].join("\n");
 }
@@ -67,7 +67,7 @@ export function formatMedicalReportsHtml(reports: string[]): string {
   return `
     <p style="margin:16px 0 8px;font-size:14px;font-weight:600;color:#111827;">Required medical reports</p>
     <p style="margin:0 0 8px;font-size:14px;color:#374151;">
-      Please obtain the following and upload proof on the medical step of onboarding:
+      Please obtain the following and bring them to HR during onboarding (you do not upload these on the form):
     </p>
     <ul style="margin:0 0 16px;padding-left:20px;">${items}</ul>
   `;

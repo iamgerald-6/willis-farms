@@ -10,6 +10,7 @@ import {
   gradeLevelToRank as gradeLevelToRankFromConfig,
   resolveGradeLevelOptions,
   resolveGradeLevels,
+  resolveAllGradeLevels,
   type GradeLevelsConfig,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
 
@@ -31,11 +32,14 @@ export function inferGradeLevel(
   hrData: OnboardingHrData | null | undefined,
   config?: GradeLevelsConfig,
 ): string | undefined {
-  const levels = resolveGradeLevels(config);
-  const levelSet = new Set(levels.map((l) => l.id));
+  const levels = resolveAllGradeLevels(config);
+  const levelSet = new Set(levels.map((l) => l.id.toLowerCase()));
 
-  const fromHr = hrData?.grade_level?.trim().toUpperCase();
-  if (fromHr && levelSet.has(fromHr)) return fromHr;
+  const fromHr = hrData?.grade_level?.trim();
+  if (fromHr && levelSet.has(fromHr.toLowerCase())) {
+    const match = levels.find((l) => l.id.toLowerCase() === fromHr.toLowerCase());
+    return match?.id;
+  }
 
   const opening = getOpeningBySlug(roleSlug);
   const key = opening?.interviewGuideKey?.toUpperCase();

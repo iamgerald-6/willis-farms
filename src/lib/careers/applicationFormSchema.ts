@@ -3,6 +3,7 @@ import { getGitFallbackOptions } from "@/lib/systemDefinitions/gitFallback";
 import {
   RECRUITMENT_APPLICATION_FIELDS_LIST,
   RECRUITMENT_MODULE_ID,
+  DEFAULT_INSTITUTION_TYPE_LABELS,
   getDefaultApplicationFormFields,
 } from "@/lib/systemDefinitions/recruitmentDefaults";
 import {
@@ -29,7 +30,17 @@ export type ApplicationFieldType =
   | "textarea"
   | "file"
   | "work_history"
-  | "education_history";
+  | "work_fields"
+  | "education_history"
+  | "education_fields";
+
+export function isWorkFieldsType(fieldType: string | undefined): boolean {
+  return fieldType === "work_history" || fieldType === "work_fields";
+}
+
+export function isEducationFieldsType(fieldType: string | undefined): boolean {
+  return fieldType === "education_history" || fieldType === "education_fields";
+}
 
 export interface WorkHistoryEntry {
   company: string;
@@ -49,13 +60,7 @@ export interface EducationEntry {
 
 // Shared between EducationHistoryInput.tsx (the select options) and the
 // CV-extraction route (matching AI output against valid values).
-export const INSTITUTION_TYPES = [
-  "High School",
-  "College",
-  "Diploma Institution",
-  "University",
-  "Other",
-];
+export const INSTITUTION_TYPES = [...DEFAULT_INSTITUTION_TYPE_LABELS];
 
 // The application form has no dedicated "name" fieldType (name fields are
 // plain fieldType: "text") — this matches the fieldKeys that actually hold
@@ -319,7 +324,15 @@ export function fieldsForStep(
   fields: ApplicationFormField[],
   step: ApplicationFieldStep,
 ): ApplicationFormField[] {
-  return fields.filter((f) => f.rules.step === step);
+  const stepFields = fields
+    .filter((f) => f.rules.step === step)
+    .sort((a, b) => {
+      const aFile = a.rules.fieldType === "file" ? 1 : 0;
+      const bFile = b.rules.fieldType === "file" ? 1 : 0;
+      if (aFile !== bFile) return aFile - bFile;
+      return a.sort_order - b.sort_order;
+    });
+  return stepFields;
 }
 
 export function isFieldVisible(
@@ -375,7 +388,7 @@ export function validateStep(
     // Work history stores an array of entries (see WorkHistoryInput) rather
     // than a single value — validated entry-by-entry instead of via the
     // generic isEmpty check below.
-    if (field.rules.fieldType === "work_history") {
+    if (isWorkFieldsType(field.rules.fieldType)) {
       const entries = Array.isArray(value) ? (value as WorkHistoryEntry[]) : [];
       if (field.rules.required && entries.length === 0) {
         errors.push(`${field.label} is required — add at least one entry.`);
@@ -400,7 +413,7 @@ export function validateStep(
     // Education history stores an array of entries (see
     // EducationHistoryInput) — degree is optional (not every institution
     // type has one), everything else is required per entry.
-    if (field.rules.fieldType === "education_history") {
+    if (isEducationFieldsType(field.rules.fieldType)) {
       const entries = Array.isArray(value) ? (value as EducationEntry[]) : [];
       if (field.rules.required && entries.length === 0) {
         errors.push(`${field.label} is required — add at least one entry.`);

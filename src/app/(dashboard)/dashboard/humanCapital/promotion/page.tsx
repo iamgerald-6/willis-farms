@@ -31,6 +31,10 @@ import {
   getPromotionMatrixStep,
   resolveNavIcon,
 } from "@/lib/moduleRegistry";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  canParticipateAsProgramSubject,
+} from "@/lib/consultantPrograms";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -329,9 +333,11 @@ function PromotionDetail({ promotion }: { promotion: CompletedPromotion }) {
 function PendingDetail({
   item,
   onStartAssessment,
+  canStartAssessment,
 }: {
   item: PendingPromotion;
   onStartAssessment: () => void;
+  canStartAssessment: boolean;
 }) {
   const matrixStep = getPromotionMatrixStep(item.current_grade);
 
@@ -384,10 +390,16 @@ function PendingDetail({
 
       <button
         onClick={onStartAssessment}
-        className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition"
+        disabled={!canStartAssessment}
+        className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <Plus className="w-4 h-4" /> Start Promotion Assessment
       </button>
+      {!canStartAssessment && (
+        <p className="text-xs text-gray-500 text-center">
+          Consultants are not on the promotion program.
+        </p>
+      )}
     </div>
   );
 }
@@ -657,6 +669,7 @@ export default function PromotionViewPage() {
     (session?.user?.user_metadata?.role as string | undefined) ??
     "";
   const viewerGradeLevel = currentUser?.grade_level ?? null;
+  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
 
   const canActOnOthers = canActOnOthersAccess(viewerRole, viewerGradeLevel);
   const canViewAll = canViewOthers(viewerRole, viewerGradeLevel);
@@ -710,8 +723,11 @@ export default function PromotionViewPage() {
   };
 
   const visiblePending = useMemo(
-    () => filterByVisibility(pendingRaw),
-    [pendingRaw, canViewAll, currentUser?.company_id],
+    () =>
+      filterByVisibility(pendingRaw).filter((item) =>
+        canParticipateAsProgramSubject(item.current_grade, gradeLevelsConfig),
+      ),
+    [pendingRaw, canViewAll, currentUser?.company_id, gradeLevelsConfig],
   );
 
   const visibleCompleted = useMemo(
@@ -792,6 +808,10 @@ export default function PromotionViewPage() {
           ) : (
             <PendingDetail
               item={selected}
+              canStartAssessment={canParticipateAsProgramSubject(
+                selected.current_grade,
+                gradeLevelsConfig,
+              )}
               onStartAssessment={() => {
                 setSelected(null);
                 setShowForm(true);

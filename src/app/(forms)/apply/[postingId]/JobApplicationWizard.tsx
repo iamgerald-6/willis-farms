@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  isEducationFieldsType,
+  isWorkFieldsType,
   type ApplicationFormData,
   type ApplicationFormField,
   type EducationEntry,
@@ -37,6 +39,7 @@ import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { WorkHistoryInput } from "@/components/WorkHistoryInput";
 import { EducationHistoryInput } from "@/components/EducationHistoryInput";
+import { useInstitutionTypes } from "@/hooks/useInstitutionTypes";
 import {
   AlertCircle,
   CheckCircle2,
@@ -101,6 +104,7 @@ export default function JobApplicationWizard({
 }: Props) {
   const router = useRouter();
   const requiredRefereeCount = resolveRequiredRefereeCount(formConfig);
+  const { institutionTypes } = useInstitutionTypes();
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<ApplicationFormData>(() => ({ ...initialValues }));
   const [saving, setSaving] = useState(false);
@@ -172,7 +176,8 @@ export default function JobApplicationWizard({
       key === "id_document_type" ||
       key === "first_name" ||
       key === "last_name" ||
-      key === "date_of_birth"
+      key === "date_of_birth" ||
+      key === "gender"
     ) {
       resetPassportVerification();
     }
@@ -403,7 +408,7 @@ export default function JobApplicationWizard({
     lastName: string,
     dateOfBirth: string,
     nationality: string,
-    passportNumber?: string,
+    gender: string,
   ) => {
     passportBioAbortRef.current?.abort();
     const controller = new AbortController();
@@ -422,7 +427,7 @@ export default function JobApplicationWizard({
           last_name: lastName,
           date_of_birth: dateOfBirth,
           nationality,
-          ...(passportNumber ? { passport_number: passportNumber } : {}),
+          gender,
         }),
         signal: controller.signal,
       });
@@ -436,33 +441,21 @@ export default function JobApplicationWizard({
 
       const extractedNumber = String(json.data.extracted?.passport_number ?? "").trim();
 
-      if (!passportNumber && json.data.identity_verified && extractedNumber) {
-        passportNumberPrefilledRef.current = true;
-        setPassportBioStatus("idle");
-        setPassportBioMessage(null);
-        setValues((prev) => ({ ...prev, passport_number: extractedNumber }));
-        return;
-      }
-
-      if (!passportNumber && json.data.identity_verified && !extractedNumber) {
-        setPassportBioStatus("mismatch");
-        setPassportBioMessage(
-          json.data.message ??
-            "We couldn't read a passport number on that photo — please upload a clearer photo of your passport bio page.",
-        );
-        return;
-      }
-
-      if (json.data.matches) {
+      if (json.data.identity_verified || json.data.matches) {
         setPassportBioStatus("ok");
         setPassportBioMessage(null);
-      } else {
-        setPassportBioStatus("mismatch");
-        setPassportBioMessage(
-          json.data.message ??
-            "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
-        );
+        if (extractedNumber) {
+          passportNumberPrefilledRef.current = true;
+          setValues((prev) => ({ ...prev, passport_number: extractedNumber }));
+        }
+        return;
       }
+
+      setPassportBioStatus("mismatch");
+      setPassportBioMessage(
+        json.data.message ??
+          "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setPassportBioStatus("error");
@@ -483,12 +476,12 @@ export default function JobApplicationWizard({
     const lastName = String(values.last_name ?? "").trim();
     const dob = String(values.date_of_birth ?? "").trim();
     const nationality = String(values.nationality ?? "").trim();
-    const passportNumber = String(values.passport_number ?? "").trim();
+    const gender = String(values.gender ?? "").trim();
 
-    if (!firstName || !lastName || !dob || !nationality) {
+    if (!firstName || !lastName || !dob || !nationality || !gender) {
       setPassportBioStatus("incomplete");
       setPassportBioMessage(
-        "Enter your first name, last name, date of birth, and nationality above — we'll verify your passport photo against them automatically.",
+        "Enter your first name, last name, date of birth, gender, and nationality above — we'll verify your passport photo against them automatically.",
       );
       return;
     }
@@ -500,7 +493,7 @@ export default function JobApplicationWizard({
       lastName,
       dob,
       nationality,
-      passportNumber || undefined,
+      gender,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -510,7 +503,7 @@ export default function JobApplicationWizard({
     values.last_name,
     values.date_of_birth,
     values.nationality,
-    values.passport_number,
+    values.gender,
     passportBioStatus,
   ]);
 
@@ -805,8 +798,17 @@ export default function JobApplicationWizard({
                       <button
                         type="button"
                         onClick={() => {
-                          setPassportBioStatus("idle");
-                          setPassportBioMessage(null);
+                          const bioFile = values.passport_bio_page as UploadedFile | undefined;
+                          if (!bioFile?.secure_url) return;
+                          void handleVerifyPassportBio(
+                            bioFile.secure_url,
+                            bioFile.original_name,
+                            String(values.first_name ?? "").trim(),
+                            String(values.last_name ?? "").trim(),
+                            String(values.date_of_birth ?? "").trim(),
+                            String(values.nationality ?? "").trim(),
+                            String(values.gender ?? "").trim(),
+                          );
                         }}
                         className="text-xs font-medium text-red-700 underline hover:text-red-800"
                       >
@@ -862,7 +864,7 @@ export default function JobApplicationWizard({
       );
     }
 
-    if (fieldType === "work_history") {
+    if (isWorkFieldsType(fieldType)) {
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <WorkHistoryInput value={value} onChange={(next) => setFieldValue(fieldKey, next)} />
@@ -870,12 +872,13 @@ export default function JobApplicationWizard({
       );
     }
 
-    if (fieldType === "education_history") {
+    if (isEducationFieldsType(fieldType)) {
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <EducationHistoryInput
             value={value}
             onChange={(next) => setFieldValue(fieldKey, next)}
+            institutionTypes={institutionTypes}
           />
         </FieldBlock>
       );
@@ -990,8 +993,8 @@ export default function JobApplicationWizard({
               className={
                 field.rules.fieldType === "textarea" ||
                 field.rules.fieldType === "file" ||
-                field.rules.fieldType === "work_history" ||
-                field.rules.fieldType === "education_history"
+                isWorkFieldsType(field.rules.fieldType) ||
+                isEducationFieldsType(field.rules.fieldType)
                   ? "sm:col-span-2"
                   : ""
               }
