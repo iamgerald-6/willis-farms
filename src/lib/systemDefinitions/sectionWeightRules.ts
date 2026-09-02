@@ -43,6 +43,10 @@ import {
   normalizeInterviewEvaluationConfig,
   type InterviewEvaluationConfig,
 } from "./interviewEvaluationConfig";
+import {
+  normalizeInterviewBenchmarksConfig,
+  type InterviewBenchmarksConfig,
+} from "./interviewBenchmarksConfig";
 
 export interface SectionWeightRule {
   id: string;
@@ -79,6 +83,8 @@ export interface ModuleBusinessLogic {
   interviewGuidesConfig?: InterviewGuidesConfig;
   /** Recruitment — evaluation checklist labels (Observed / Not observed). */
   interviewEvaluationConfig?: InterviewEvaluationConfig;
+  /** Recruitment — per-stage score thresholds for AI progression and hire decisions. */
+  interviewBenchmarksConfig?: InterviewBenchmarksConfig;
 }
 
 function rebalanceSectionWeights(
@@ -188,6 +194,9 @@ export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
     ),
     interviewEvaluationConfig: normalizeInterviewEvaluationConfig(
       obj.interviewEvaluationConfig,
+    ),
+    interviewBenchmarksConfig: normalizeInterviewBenchmarksConfig(
+      obj.interviewBenchmarksConfig,
     ),
   };
 }

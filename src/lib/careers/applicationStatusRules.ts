@@ -68,25 +68,12 @@ export function canHrChangeStatus(
 }
 
 // Transitions HR must justify with a note before they're allowed to go
-// through — both the quick-action buttons (Shortlisted/Interview
-// statuses) and the status dropdown (Rejected/Under review statuses) are
-// gated on this in page.tsx.
-const HR_NOTES_REQUIRED_TRANSITIONS: [ApplicationStatus, ApplicationStatus][] = [
-  ["rejected", "shortlisted"],
-  ["shortlisted", "interview"],
-  ["shortlisted", "rejected"],
-  ["interview", "rejected"],
-  ["under_review", "rejected"],
-  ["under_review", "shortlisted"],
-];
-
+// through — any manual status change requires HR notes.
 export function statusChangeRequiresHrNotes(
   currentStatus: ApplicationStatus,
   nextStatus: ApplicationStatus,
 ): boolean {
-  return HR_NOTES_REQUIRED_TRANSITIONS.some(
-    ([from, to]) => from === currentStatus && to === nextStatus,
-  );
+  return currentStatus !== nextStatus;
 }
 
 export function validateHrStatusChange(

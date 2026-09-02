@@ -35,13 +35,17 @@ async function fetchModuleConfigApi(moduleId: string) {
   return res.data.data as { businessLogic: ModuleBusinessLogic };
 }
 
-function slugifyStepId(label: string): string {
+function slugifyFieldKey(label: string): string {
   return label
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "")
-    .slice(0, 32);
+    .slice(0, 48);
+}
+
+function slugifyStepId(label: string): string {
+  return slugifyFieldKey(label).slice(0, 32);
 }
 
 type ApplicationFormEditorProps = {
@@ -60,7 +64,9 @@ const FIELD_TYPES: ApplicationFieldType[] = [
   "file",
   "ghana_card",
   "work_history",
+  "work_fields",
   "education_history",
+  "education_fields",
 ];
 
 type DraftRules = {
@@ -723,7 +729,13 @@ function FieldDraftForm({
       <div className="grid sm:grid-cols-2 gap-2">
         <label className="block sm:col-span-2">
           <span className="text-xs text-gray-500">Label</span>
-          <input className={inputClass} value={label} onChange={(e) => onLabelChange(e.target.value)} />
+          <input className={inputClass} value={label} onChange={(e) => {
+            const nextLabel = e.target.value;
+            onLabelChange(nextLabel);
+            if (!draft.fieldKey.trim() || draft.fieldKey === slugifyFieldKey(label)) {
+              onDraftChange({ ...draft, fieldKey: slugifyFieldKey(nextLabel) });
+            }
+          }} />
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Field key</span>

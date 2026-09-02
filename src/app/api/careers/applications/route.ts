@@ -88,6 +88,15 @@ export async function PATCH(req: NextRequest) {
       }
 
       const isRealTransition = status !== existing.status;
+      if (isRealTransition) {
+        const noteText = typeof hr_notes === "string" ? hr_notes.trim() : "";
+        if (!noteText) {
+          return NextResponse.json(
+            { error: "HR notes are required when changing application status." },
+            { status: 400 },
+          );
+        }
+      }
       const noteToArchive =
         isRealTransition && typeof hr_notes === "string" && hr_notes.trim() ? hr_notes.trim() : null;
 

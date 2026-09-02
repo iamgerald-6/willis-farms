@@ -18,11 +18,13 @@ import {
 import {
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
+  ONBOARDING_PAY_FREQUENCIES_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
 import {
   SALARY_TIER_IDS,
   SALARY_TIER_LABELS,
   resolveSalaryForGradeTier,
+  validateGrossSalaryInBand,
 } from "@/lib/systemDefinitions/salaryRanges";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
@@ -51,7 +53,26 @@ type OnboardingHrFieldsFormProps = {
   onGradeChange?: () => void;
   onEmployeeIdChange?: () => void;
   onCompanyEmailChange?: () => void;
+  /** When set, only these field keys are rendered (offer tab subset). */
+  includeFieldKeys?: string[];
+  /** Field keys omitted from Section O (e.g. review-only fields). */
+  excludeFieldKeys?: string[];
+  /** Field keys shown read-only (e.g. after offer terms saved). */
+  readOnlyFields?: string[];
+  /** Hide helper text under fields (offer tab). */
+  hideFieldHints?: boolean;
 };
+
+function ReadOnlyValue({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="block">
+      <span className="text-xs text-gray-500">{label}</span>
+      <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+        {value || "—"}
+      </div>
+    </label>
+  );
+}
 
 export default function OnboardingHrFieldsForm({
   hrData,
@@ -59,7 +80,13 @@ export default function OnboardingHrFieldsForm({
   onGradeChange,
   onEmployeeIdChange,
   onCompanyEmailChange,
+  includeFieldKeys,
+  excludeFieldKeys = [],
+  readOnlyFields = [],
+  hideFieldHints = false,
 }: OnboardingHrFieldsFormProps) {
+  const readOnlySet = useMemo(() => new Set(readOnlyFields), [readOnlyFields]);
+  const shouldShowHint = (hint?: string) => Boolean(!hideFieldHints && hint?.trim());
   const { data: hrFields = [] } = useQuery({
     queryKey: ["onboarding-hr-fields"],
     queryFn: async () => {
@@ -81,6 +108,7 @@ export default function OnboardingHrFieldsForm({
         ONBOARDING_DEPARTMENTS_L1L6_LIST,
         ONBOARDING_DEPARTMENTS_L7_LIST,
         ONBOARDING_EMPLOYMENT_TYPES_LIST,
+        ONBOARDING_PAY_FREQUENCIES_LIST,
       ] as const;
       const entries = await Promise.all(
         lists.map(async (option_list) => {
@@ -187,10 +215,23 @@ export default function OnboardingHrFieldsForm({
 
   const locationOptions = optionLists?.[ONBOARDING_LOCATIONS_LIST] ?? [];
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
+  const payFrequencyOptions = optionLists?.[ONBOARDING_PAY_FREQUENCIES_LIST] ?? [];
 
-  const placementFields = hrFields.filter((f) => f.group === "placement");
-  const hrGroupFields = hrFields.filter((f) => f.group === "hr");
-  const notesFields = hrFields.filter((f) => f.group === "notes");
+  const excludeSet = useMemo(() => new Set(excludeFieldKeys), [excludeFieldKeys]);
+
+  const fieldAllowed = (fieldKey: string) =>
+    !excludeSet.has(fieldKey) &&
+    (!includeFieldKeys || includeFieldKeys.includes(fieldKey));
+
+  const placementFields = hrFields.filter(
+    (f) => f.group === "placement" && fieldAllowed(f.fieldKey),
+  );
+  const hrGroupFields = hrFields.filter(
+    (f) => f.group === "hr" && fieldAllowed(f.fieldKey),
+  );
+  const notesFields = hrFields.filter(
+    (f) => f.group === "notes" && fieldAllowed(f.fieldKey),
+  );
 
   const setField = (key: string, value: string | undefined) => {
     setHrData((prev) => ({ ...prev, [key]: value }));
@@ -200,6 +241,14 @@ export default function OnboardingHrFieldsForm({
     const key = field.fieldKey as keyof OnboardingHrData;
     const value = String(hrData[key] ?? "");
     const spanClass = field.colSpan === "full" ? "sm:col-span-2" : "";
+
+    if (readOnlySet.has(field.fieldKey)) {
+      return (
+        <div key={field.id} className={spanClass}>
+          <ReadOnlyValue label={field.label} value={value} />
+        </div>
+      );
+    }
 
     if (
       field.fieldType === "supervisor" ||
@@ -244,7 +293,7 @@ export default function OnboardingHrFieldsForm({
               ))}
             </select>
           )}
-          {field.hint && (
+          {shouldShowHint(field.hint) && (
             <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
           )}
         </label>
@@ -304,7 +353,7 @@ export default function OnboardingHrFieldsForm({
               ))}
             </select>
           )}
-          {field.hint && (
+          {shouldShowHint(field.hint) && (
             <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
           )}
         </label>
@@ -325,11 +374,8 @@ export default function OnboardingHrFieldsForm({
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
           <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-            {rangeText || "Select grade level and salary tier to see the configured range."}
+            {rangeText || "Select grade and salary tier first."}
           </div>
-          {field.hint && (
-            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
-          )}
         </label>
       );
     }
@@ -394,6 +440,29 @@ export default function OnboardingHrFieldsForm({
       );
     }
 
+    if (field.fieldType === "pay_frequency") {
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <select
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            value={hrData.pay_frequency ?? ""}
+            onChange={(e) => setField("pay_frequency", e.target.value || undefined)}
+          >
+            <option value="">Select pay frequency…</option>
+            {payFrequencyOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+          {shouldShowHint(field.hint) && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
+        </label>
+      );
+    }
+
     if (field.fieldType === "date") {
       return (
         <label key={field.id} className={`block ${spanClass}`}>
@@ -411,11 +480,15 @@ export default function OnboardingHrFieldsForm({
     if (field.fieldType === "textarea") {
       return (
         <label key={field.id} className={`block ${spanClass}`}>
-          <span className="text-xs text-gray-500">{field.label}</span>
+          <span className="text-xs text-gray-500">
+            {field.label}
+            {field.required ? " *" : ""}
+          </span>
           <textarea
             className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
             rows={3}
             value={value}
+            required={field.required}
             onChange={(e) => setField(field.fieldKey, e.target.value)}
           />
         </label>
@@ -466,8 +539,55 @@ export default function OnboardingHrFieldsForm({
               @{companyEmailDomain}
             </span>
           </div>
-          {field.hint && (
+          {shouldShowHint(field.hint) && (
             <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
+        </label>
+      );
+    }
+
+    if (field.fieldKey === "salary_ghs") {
+      const bandCheck = validateGrossSalaryInBand(
+        value,
+        hrData.grade_level,
+        hrData.salary_tier,
+        gradeConfig,
+      );
+      const bandText =
+        hrData.salary_range?.trim() ||
+        (hrData.grade_level
+          ? resolveSalaryForGradeTier(
+              hrData.grade_level,
+              hrData.salary_tier ?? "mid",
+              gradeConfig,
+            ).formatted
+          : "");
+
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            className={`mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white ${
+              value.trim() && !bandCheck.valid
+                ? "border-red-300 focus:ring-red-200"
+                : "border-gray-200"
+            }`}
+            value={value}
+            placeholder="Enter gross salary"
+            onChange={(e) => {
+              salaryGhsTouched.current = true;
+              setField("salary_ghs", e.target.value);
+            }}
+          />
+          {bandText && (
+            <p className="text-[11px] text-gray-500 mt-1">
+              Must be within {bandText}
+            </p>
+          )}
+          {value.trim() && !bandCheck.valid && bandCheck.message && (
+            <p className="text-[11px] text-red-600 mt-1">{bandCheck.message}</p>
           )}
         </label>
       );
@@ -477,41 +597,50 @@ export default function OnboardingHrFieldsForm({
       <label key={field.id} className={`block ${spanClass}`}>
         <span className="text-xs text-gray-500">{field.label}</span>
         <input
-          className={`mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${
-            field.fieldKey === "salary_ghs" && hrData.salary_range?.trim()
-              ? "bg-gray-50"
-              : ""
-          }`}
+          className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
           value={value}
           onChange={(e) => {
             if (field.fieldKey === "employee_id") onEmployeeIdChange?.();
-            if (field.fieldKey === "salary_ghs") salaryGhsTouched.current = true;
             setField(field.fieldKey, e.target.value);
           }}
         />
-        {field.hint && <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>}
+        {shouldShowHint(field.hint) && <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>}
       </label>
     );
   };
 
   return (
     <>
-      {placementFields.length > 0 && (
-        <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
-          <p className="text-xs font-semibold text-gray-800">Employment placement</p>
+      {includeFieldKeys ? (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {[...placementFields, ...hrGroupFields, ...notesFields]
+            .sort(
+              (a, b) =>
+                includeFieldKeys.indexOf(a.fieldKey) -
+                includeFieldKeys.indexOf(b.fieldKey),
+            )
+            .map(renderField)}
+        </div>
+      ) : (
+        <>
+          {placementFields.length > 0 && (
+            <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+              <p className="text-xs font-semibold text-gray-800">Employment placement</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {placementFields.map(renderField)}
+              </div>
+            </div>
+          )}
           <div className="grid sm:grid-cols-2 gap-3">
-            {placementFields.map(renderField)}
+            {hrGroupFields.map(renderField)}
           </div>
-        </div>
+          {notesFields.map((field) => (
+            <div key={field.id} className="mt-3">
+              {renderField(field)}
+            </div>
+          ))}
+        </>
       )}
-      <div className="grid sm:grid-cols-2 gap-3">
-        {hrGroupFields.map(renderField)}
-      </div>
-      {notesFields.map((field) => (
-        <div key={field.id} className="mt-3">
-          {renderField(field)}
-        </div>
-      ))}
     </>
   );
 }

@@ -4,13 +4,9 @@ import { sendRejectionEmail } from "@/lib/careers/interviewEmails";
 import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/types";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
 
-// Rescinds an outstanding offer — only reachable while status is "offer"
-// (i.e. before "Send onboarding link" has moved them on to "onboarding").
-// Puts the applicant through the exact same shape as an evaluation
-// Do-not-hire: decision flips to "do_not_hire", status becomes "rejected",
-// and the same decline email goes out — so they land in the Rejects tab
-// indistinguishable from any other confirmed reject, reconsideration
-// included.
+// Rescinds an outstanding offer — while status is "offer" (before onboarding link
+// is sent), or while status is "onboarding" and the candidate has declined.
+// Puts the applicant through the same shape as an evaluation Do-not-hire.
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
@@ -35,9 +31,22 @@ export async function POST(req: NextRequest) {
 
   const app = application as JobApplication;
 
-  if (app.status !== "offer") {
+  const { data: submission } = await supabaseAdmin
+    .from("onboarding_submissions")
+    .select("hr_data")
+    .eq("application_id", application_id)
+    .maybeSingle();
+
+  const hr = (submission?.hr_data ?? {}) as { offer_response?: string };
+  const candidateDeclined = hr.offer_response === "declined";
+
+  if (app.status !== "offer" && !(app.status === "onboarding" && candidateDeclined)) {
     return NextResponse.json(
-      { error: "An offer can only be rescinded while it's outstanding." },
+      {
+        error: candidateDeclined
+          ? "This offer can only be rescinded while it is outstanding or after the candidate has declined."
+          : "An offer can only be rescinded while it's outstanding, or after the candidate declines.",
+      },
       { status: 400 },
     );
   }

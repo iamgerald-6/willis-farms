@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  isEducationFieldsType,
+  isWorkFieldsType,
   type ApplicationFormData,
   type ApplicationFormField,
   type EducationEntry,
@@ -13,10 +15,16 @@ import {
   UPLOADED_FILE_CATEGORY_LABELS,
   effectiveMaxLength,
   isNameFieldKey,
+  isRefereeEmailFieldKey,
   validateStep,
   visibleFieldsForStep,
 } from "@/lib/careers/applicationFormSchema";
-import { sanitizeNameInput } from "@/lib/validation";
+import { isValidEmail, sanitizeNameInput } from "@/lib/validation";
+import {
+  ID_DOCUMENT_GHANA_CARD,
+  ID_DOCUMENT_PASSPORT,
+  usesPassportIdDocument,
+} from "@/lib/careers/idDocumentType";
 import {
   isRefereeFieldKey,
   resolveRequiredRefereeCount,
@@ -31,6 +39,7 @@ import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { WorkHistoryInput } from "@/components/WorkHistoryInput";
 import { EducationHistoryInput } from "@/components/EducationHistoryInput";
+import { useInstitutionTypes } from "@/hooks/useInstitutionTypes";
 import {
   AlertCircle,
   CheckCircle2,
@@ -95,6 +104,7 @@ export default function JobApplicationWizard({
 }: Props) {
   const router = useRouter();
   const requiredRefereeCount = resolveRequiredRefereeCount(formConfig);
+  const { institutionTypes } = useInstitutionTypes();
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<ApplicationFormData>(() => ({ ...initialValues }));
   const [saving, setSaving] = useState(false);
@@ -119,6 +129,21 @@ export default function JobApplicationWizard({
   // also stops the abandoned request from showing as a spurious "failed to
   // load" network error in the browser.
   const passportBioAbortRef = useRef<AbortController | null>(null);
+  const passportNumberPrefilledRef = useRef(false);
+
+  const usesPassport = usesPassportIdDocument(values);
+
+  const resetPassportVerification = () => {
+    passportBioAbortRef.current?.abort();
+    setPassportBioStatus("idle");
+    setPassportBioMessage(null);
+    passportNumberPrefilledRef.current = false;
+  };
+
+  const clearPassportFields = (next: ApplicationFormData) => {
+    next.passport_number = "";
+    delete next.passport_bio_page;
+  };
 
   const step = steps[stepIndex] ?? steps[0];
   const stepFields = useMemo(
@@ -146,17 +171,64 @@ export default function JobApplicationWizard({
   const refereeStepLabel = stepLabels.references ?? "Referees";
 
   const setFieldValue = (key: string, value: unknown) => {
+    if (
+      key === "nationality" ||
+      key === "id_document_type" ||
+      key === "first_name" ||
+      key === "last_name" ||
+      key === "date_of_birth" ||
+      key === "gender"
+    ) {
+      resetPassportVerification();
+    }
+
     setValues((prev) => {
       const next = { ...prev, [key]: value };
-      // is_citizen isn't asked directly anymore (see recruitmentDefaults.ts)
-      // — it's derived from Nationality so the existing Ghana Card /
-      // Passport showWhen rules (which key off is_citizen) keep working.
-      // Blank nationality must clear is_citizen back to blank too — otherwise
-      // switching nationality back to "Select…" left is_citizen stuck at
-      // "No" (blank isn't "Ghana"), keeping Passport visible forever.
+
       if (key === "nationality") {
-        next.is_citizen = !value ? "" : value === "Ghana" ? "Yes" : "No";
+        const nat = String(value ?? "").trim();
+        if (!nat) {
+          next.is_citizen = "";
+          next.id_document_type = "";
+          clearPassportFields(next);
+          next.ghana_card_no = "";
+        } else if (nat === "Ghana") {
+          next.is_citizen = "Yes";
+          if (
+            next.id_document_type !== ID_DOCUMENT_GHANA_CARD &&
+            next.id_document_type !== ID_DOCUMENT_PASSPORT
+          ) {
+            next.id_document_type = ID_DOCUMENT_GHANA_CARD;
+          }
+          if (next.id_document_type === ID_DOCUMENT_GHANA_CARD) {
+            clearPassportFields(next);
+          } else {
+            next.ghana_card_no = "";
+          }
+        } else {
+          next.is_citizen = "No";
+          next.id_document_type = ID_DOCUMENT_PASSPORT;
+          next.ghana_card_no = "";
+        }
       }
+
+      if (key === "id_document_type") {
+        if (value === ID_DOCUMENT_GHANA_CARD) {
+          clearPassportFields(next);
+          next.ghana_card_no = next.ghana_card_no ?? "";
+        } else if (value === ID_DOCUMENT_PASSPORT) {
+          next.ghana_card_no = "";
+        }
+      }
+
+      if (key === "passport_number") {
+        passportNumberPrefilledRef.current = false;
+        if (passportBioStatus === "ok") {
+          setPassportBioStatus("idle");
+          setPassportBioMessage(null);
+        }
+      }
+
       return next;
     });
     setDraftSavedMessage(null);
@@ -288,6 +360,8 @@ export default function JobApplicationWizard({
         if (extracted.nationality && !String(next.nationality ?? "").trim()) {
           next.nationality = extracted.nationality;
           next.is_citizen = extracted.nationality === "Ghana" ? "Yes" : "No";
+          next.id_document_type =
+            extracted.nationality === "Ghana" ? ID_DOCUMENT_GHANA_CARD : ID_DOCUMENT_PASSPORT;
           filledAnything = true;
         }
         if (
@@ -333,7 +407,8 @@ export default function JobApplicationWizard({
     firstName: string,
     lastName: string,
     dateOfBirth: string,
-    passportNumber: string,
+    nationality: string,
+    gender: string,
   ) => {
     passportBioAbortRef.current?.abort();
     const controller = new AbortController();
@@ -351,7 +426,8 @@ export default function JobApplicationWizard({
           first_name: firstName,
           last_name: lastName,
           date_of_birth: dateOfBirth,
-          passport_number: passportNumber,
+          nationality,
+          gender,
         }),
         signal: controller.signal,
       });
@@ -362,16 +438,24 @@ export default function JobApplicationWizard({
             "We couldn't verify this photo. Please upload a clear passport bio page and try again.",
         );
       }
-      if (json.data.matches) {
+
+      const extractedNumber = String(json.data.extracted?.passport_number ?? "").trim();
+
+      if (json.data.identity_verified || json.data.matches) {
         setPassportBioStatus("ok");
         setPassportBioMessage(null);
-      } else {
-        setPassportBioStatus("mismatch");
-        setPassportBioMessage(
-          json.data.message ??
-            "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
-        );
+        if (extractedNumber) {
+          passportNumberPrefilledRef.current = true;
+          setValues((prev) => ({ ...prev, passport_number: extractedNumber }));
+        }
+        return;
       }
+
+      setPassportBioStatus("mismatch");
+      setPassportBioMessage(
+        json.data.message ??
+          "This doesn't match the details you entered — please check your details or upload a clearer photo of your passport bio page.",
+      );
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setPassportBioStatus("error");
@@ -381,13 +465,8 @@ export default function JobApplicationWizard({
     }
   };
 
-  // Auto-verify whenever there's an uploaded bio page photo, the applicant
-  // isn't a Ghana citizen, and we don't already have a settled result for
-  // the current photo. Re-runs as they finish typing name/DOB (guarded so
-  // it only ever calls the AI once those are filled in), and again whenever
-  // they upload a new photo (handleFileUpload resets status back to idle).
   useEffect(() => {
-    if (values.is_citizen !== "No") return;
+    if (!usesPassport) return;
     if (passportBioStatus !== "idle" && passportBioStatus !== "incomplete") return;
 
     const bio = values.passport_bio_page as UploadedFile | undefined;
@@ -396,12 +475,13 @@ export default function JobApplicationWizard({
     const firstName = String(values.first_name ?? "").trim();
     const lastName = String(values.last_name ?? "").trim();
     const dob = String(values.date_of_birth ?? "").trim();
-    const passportNumber = String(values.passport_number ?? "").trim();
+    const nationality = String(values.nationality ?? "").trim();
+    const gender = String(values.gender ?? "").trim();
 
-    if (!firstName || !lastName || !dob || !passportNumber) {
+    if (!firstName || !lastName || !dob || !nationality || !gender) {
       setPassportBioStatus("incomplete");
       setPassportBioMessage(
-        "Enter your first name, last name, date of birth, and passport number above — we'll verify your passport photo against them automatically.",
+        "Enter your first name, last name, date of birth, gender, and nationality above — we'll verify your passport photo against them automatically.",
       );
       return;
     }
@@ -412,25 +492,23 @@ export default function JobApplicationWizard({
       firstName,
       lastName,
       dob,
-      passportNumber,
+      nationality,
+      gender,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    values.is_citizen,
+    usesPassport,
     (values.passport_bio_page as UploadedFile | undefined)?.secure_url,
     values.first_name,
     values.last_name,
     values.date_of_birth,
-    values.passport_number,
+    values.nationality,
+    values.gender,
     passportBioStatus,
   ]);
 
-  // Blocks moving on while the passport bio page hasn't been verified yet —
-  // still checking, still missing name/DOB to check against, or a settled
-  // mismatch/error. Returns null (nothing to block) once verified or not
-  // applicable (Ghana citizens never see this field).
   const resolvePassportBioIssue = (): string | null => {
-    if (values.is_citizen !== "No") return null;
+    if (!usesPassport) return null;
     const bio = values.passport_bio_page as UploadedFile | undefined;
     if (!bio?.secure_url) return null;
     if (uploadingKey === "passport_bio_page") {
@@ -439,13 +517,18 @@ export default function JobApplicationWizard({
     if (passportBioStatus === "checking") {
       return "Please wait while we verify your passport bio page photo…";
     }
-    if (passportBioStatus === "incomplete" || passportBioStatus === "mismatch" || passportBioStatus === "error") {
+    if (passportBioStatus === "ok") return null;
+    if (
+      passportBioStatus === "incomplete" ||
+      passportBioStatus === "mismatch" ||
+      passportBioStatus === "error"
+    ) {
       return (
         passportBioMessage ??
         "Your passport bio page photo doesn't match the details you entered — please review and re-upload it."
       );
     }
-    return null;
+    return "Please upload and verify your passport bio page before continuing.";
   };
 
   const handleFileUpload = async (
@@ -481,10 +564,8 @@ export default function JobApplicationWizard({
         void handleExtractCv(uploaded.secure_url, uploaded.original_name);
       }
       if (fieldKey === "passport_bio_page") {
-        // New photo — clear any previous result so the effect above
-        // re-verifies it fresh against the current name/DOB fields.
-        setPassportBioStatus("idle");
-        setPassportBioMessage(null);
+        resetPassportVerification();
+        setValues((prev) => ({ ...prev, passport_number: "" }));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
@@ -717,8 +798,17 @@ export default function JobApplicationWizard({
                       <button
                         type="button"
                         onClick={() => {
-                          setPassportBioStatus("idle");
-                          setPassportBioMessage(null);
+                          const bioFile = values.passport_bio_page as UploadedFile | undefined;
+                          if (!bioFile?.secure_url) return;
+                          void handleVerifyPassportBio(
+                            bioFile.secure_url,
+                            bioFile.original_name,
+                            String(values.first_name ?? "").trim(),
+                            String(values.last_name ?? "").trim(),
+                            String(values.date_of_birth ?? "").trim(),
+                            String(values.nationality ?? "").trim(),
+                            String(values.gender ?? "").trim(),
+                          );
                         }}
                         className="text-xs font-medium text-red-700 underline hover:text-red-800"
                       >
@@ -729,6 +819,25 @@ export default function JobApplicationWizard({
                 )}
             </div>
           )}
+        </FieldBlock>
+      );
+    }
+
+    if (fieldKey === "passport_number" && usesPassport) {
+      const passportValue = String(value ?? "").trim();
+      if (!passportValue && passportBioStatus !== "ok") {
+        return null;
+      }
+      return (
+        <FieldBlock key={field.id} label={field.label} required={passportBioStatus === "ok"}>
+          <input
+            className={`${inputClass}${passportNumberPrefilledRef.current ? " bg-gray-50" : ""}`}
+            type="text"
+            value={passportValue}
+            readOnly={passportNumberPrefilledRef.current && passportBioStatus === "ok"}
+            onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+            placeholder={placeholder}
+          />
         </FieldBlock>
       );
     }
@@ -755,7 +864,7 @@ export default function JobApplicationWizard({
       );
     }
 
-    if (fieldType === "work_history") {
+    if (isWorkFieldsType(fieldType)) {
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <WorkHistoryInput value={value} onChange={(next) => setFieldValue(fieldKey, next)} />
@@ -763,23 +872,26 @@ export default function JobApplicationWizard({
       );
     }
 
-    if (fieldType === "education_history") {
+    if (isEducationFieldsType(fieldType)) {
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <EducationHistoryInput
             value={value}
             onChange={(next) => setFieldValue(fieldKey, next)}
+            institutionTypes={institutionTypes}
           />
         </FieldBlock>
       );
     }
 
     const inputType =
-      fieldType === "email"
+      fieldType === "email" || isRefereeEmailFieldKey(fieldKey)
         ? "email"
         : fieldType === "date"
           ? "date"
           : "text";
+
+    const isEmailField = inputType === "email";
 
     const dateMax =
       fieldType === "date" && fieldKey === "date_of_birth"
@@ -796,11 +908,29 @@ export default function JobApplicationWizard({
           placeholder={placeholder}
           max={dateMax}
           value={String(value ?? "")}
+          {...(isEmailField
+            ? {
+                inputMode: "email" as const,
+                autoComplete: "email",
+                pattern: "[^\\s@]+@[^\\s@]+\\.[^\\s@]+",
+                title: "Enter a valid email address (e.g. name@example.com)",
+              }
+            : {})}
           onChange={(e) =>
             setFieldValue(
               fieldKey,
               isNameField ? sanitizeNameInput(e.target.value) : e.target.value,
             )
+          }
+          onBlur={
+            isEmailField
+              ? (e) => {
+                  const trimmed = e.target.value.trim();
+                  if (trimmed && !isValidEmail(trimmed)) {
+                    setError(`${field.label} must be a valid email address.`);
+                  }
+                }
+              : undefined
           }
         />
       </FieldBlock>
@@ -863,8 +993,8 @@ export default function JobApplicationWizard({
               className={
                 field.rules.fieldType === "textarea" ||
                 field.rules.fieldType === "file" ||
-                field.rules.fieldType === "work_history" ||
-                field.rules.fieldType === "education_history"
+                isWorkFieldsType(field.rules.fieldType) ||
+                isEducationFieldsType(field.rules.fieldType)
                   ? "sm:col-span-2"
                   : ""
               }

@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock, Video } from "lucide-react";
+import {
+  CalendarClock,
+  Clock,
+  Loader2,
+  Mail,
+  Plus,
+  Trash2,
+  Unlock,
+  Video,
+} from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
@@ -19,7 +28,7 @@ type Props = {
   candidateName?: string;
   referenceNumber?: string;
   onChange: (data: InterviewFormData) => void;
-  onSendStage2Invites: (scheduledAt: string) => void;
+  onSendStage2Invites: (scheduledAt: string, data: InterviewFormData) => void;
   isPending: boolean;
   readOnly?: boolean;
   /** HR clicks this once the practical actually starts — unlocks the Stage 2 panel members' forms. */
@@ -72,6 +81,10 @@ export default function Stage2SetupStep({
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
 
+  const stage1MemberKey = stage1Members
+    .map((m) => `${m.id}:${m.email}:${m.name}`)
+    .join("|");
+
   useEffect(() => {
     if (setup.stage2_members?.length) return;
     if (stage1Members.length === 0) return;
@@ -85,13 +98,27 @@ export default function Stage2SetupStep({
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.stage1_review?.passed]);
+  }, [stage1MemberKey, setup.stage2_members?.length]);
 
   const stage2Members = setup.stage2_members?.length
     ? setup.stage2_members
     : stage1Members.map((m) => createPanelMember(m.name, m.email, 2));
 
-  const updateMember = (index: number, field: keyof PanelMember, value: string) => {
+  const buildSendPayload = (scheduledAt: string): InterviewFormData => ({
+    ...formData,
+    stage2_scheduled_at: scheduledAt,
+    setup: {
+      ...setup,
+      stage2_scheduled_at: scheduledAt,
+      stage2_members: stage2Members,
+    },
+  });
+
+  const updateMember = (
+    index: number,
+    field: keyof PanelMember,
+    value: string,
+  ) => {
     const next = stage2Members.map((m, i) =>
       i === index ? { ...m, [field]: value } : m,
     );
@@ -106,10 +133,7 @@ export default function Stage2SetupStep({
       ...formData,
       setup: {
         ...setup,
-        stage2_members: [
-          ...stage2Members,
-          createPanelMember("", "", 2),
-        ],
+        stage2_members: [...stage2Members, createPanelMember("", "", 2)],
       },
     });
   };
@@ -135,9 +159,7 @@ export default function Stage2SetupStep({
   };
 
   const scheduledAt =
-    setup.stage2_scheduled_at ??
-    formData.stage2_scheduled_at ??
-    "";
+    setup.stage2_scheduled_at ?? formData.stage2_scheduled_at ?? "";
 
   const handleGenerateMeetingLink = async () => {
     if (!scheduledAt) return;
@@ -203,9 +225,12 @@ export default function Stage2SetupStep({
       )}
 
       <section className="border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-bold text-gray-900 mb-1">Stage 2 — Add panel</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-1">
+          Stage 2 — Add panel
+        </h3>
         <p className="text-xs text-gray-500 mb-4">
-          Pre-filled from Stage 1. You can add additional panel members for the practical assessment.
+          Pre-filled from Stage 1. You can add additional panel members for the
+          practical assessment.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
@@ -258,7 +283,9 @@ export default function Stage2SetupStep({
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Practical format *</label>
+            <label className="text-xs text-gray-500 block mb-1">
+              Practical format *
+            </label>
             <select
               value={setup.stage2_location_type ?? ""}
               disabled={readOnly}
@@ -269,6 +296,7 @@ export default function Stage2SetupStep({
                     ...setup,
                     stage2_location_type:
                       (e.target.value as "onsite" | "online") || undefined,
+                    stage2_members: stage2Members,
                   },
                 })
               }
@@ -312,7 +340,11 @@ export default function Stage2SetupStep({
                 onChange={(e) =>
                   onChange({
                     ...formData,
-                    setup: { ...setup, stage2_meeting_link: e.target.value },
+                    setup: {
+                      ...setup,
+                      stage2_meeting_link: e.target.value,
+                      stage2_members: stage2Members,
+                    },
                   })
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
@@ -320,7 +352,9 @@ export default function Stage2SetupStep({
             </div>
           ) : setup.stage2_location_type === "onsite" ? (
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Location *</label>
+              <label className="text-xs text-gray-500 block mb-1">
+                Location *
+              </label>
               <input
                 type="text"
                 placeholder="Practical assessment location"
@@ -329,7 +363,11 @@ export default function Stage2SetupStep({
                 onChange={(e) =>
                   onChange({
                     ...formData,
-                    setup: { ...setup, stage2_location: e.target.value },
+                    setup: {
+                      ...setup,
+                      stage2_location: e.target.value,
+                      stage2_members: stage2Members,
+                    },
                   })
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
@@ -359,7 +397,9 @@ export default function Stage2SetupStep({
             <div
               key={member.id || index}
               className={`border rounded-xl p-3 space-y-2 ${
-                member.unavailable ? "border-amber-200 bg-amber-50/40" : "border-gray-100"
+                member.unavailable
+                  ? "border-amber-200 bg-amber-50/40"
+                  : "border-gray-100"
               }`}
             >
               <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
@@ -397,7 +437,8 @@ export default function Stage2SetupStep({
                   onChange={(e) => toggleUnavailable(index, e.target.checked)}
                   className="rounded border-gray-300"
                 />
-                Couldn&apos;t make it — exclude from this round (stays on record, won&apos;t be sent invites or block progress)
+                Couldn&apos;t make it — exclude from this round (stays on
+                record, won&apos;t be sent invites or block progress)
               </label>
             </div>
           ))}
@@ -414,7 +455,10 @@ export default function Stage2SetupStep({
       {!readOnly && (
         <button
           type="button"
-          onClick={() => scheduledAt && onSendStage2Invites(scheduledAt)}
+          onClick={() =>
+            scheduledAt &&
+            onSendStage2Invites(scheduledAt, buildSendPayload(scheduledAt))
+          }
           disabled={isPending || !scheduledAt}
           className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
         >
@@ -440,8 +484,9 @@ export default function Stage2SetupStep({
           ) : (
             <>
               <p className="text-xs text-amber-800 mb-3">
-                Panel members&apos; links stay locked with a &quot;not open yet&quot; message
-                until you open the forms — do this once the practical actually starts, not before.
+                Panel members&apos; links stay locked with a &quot;not open
+                yet&quot; message until you open the forms — do this once the
+                practical actually starts, not before.
               </p>
               {onOpenPanelForms && (
                 <button

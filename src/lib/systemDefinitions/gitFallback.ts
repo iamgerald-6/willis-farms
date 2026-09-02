@@ -5,9 +5,11 @@ import {
 } from "./appraisalDefaults";
 import {
   RECRUITMENT_APPLICATION_FIELDS_LIST,
+  RECRUITMENT_INSTITUTION_TYPES_LIST,
   RECRUITMENT_JOB_POSTINGS_LIST,
   RECRUITMENT_MODULE_ID,
   getDefaultApplicationFormFields,
+  getDefaultInstitutionTypes,
 } from "./recruitmentDefaults";
 import {
   ONBOARDING_DEPARTMENTS_L1L6_LIST,
@@ -24,8 +26,10 @@ import {
 import {
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
+  ONBOARDING_PAY_FREQUENCIES_LIST,
   getDefaultOnboardingEmploymentTypes,
   getDefaultOnboardingHrFields,
+  getDefaultPayFrequencies,
 } from "./onboardingHrDefaults";
 import {
   SKILL_LOG_MODULE_ID,
@@ -77,6 +81,13 @@ export function getGitFallbackOptions(
 
   if (
     moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === RECRUITMENT_INSTITUTION_TYPES_LIST
+  ) {
+    return getDefaultInstitutionTypes();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
     optionList === RECRUITMENT_APPLICATION_FIELDS_LIST
   ) {
     return getDefaultApplicationFormFields();
@@ -116,6 +127,13 @@ export function getGitFallbackOptions(
     optionList === ONBOARDING_EMPLOYMENT_TYPES_LIST
   ) {
     return getDefaultOnboardingEmploymentTypes();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_PAY_FREQUENCIES_LIST
+  ) {
+    return getDefaultPayFrequencies();
   }
 
   if (

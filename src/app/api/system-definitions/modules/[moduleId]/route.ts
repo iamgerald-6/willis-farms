@@ -29,6 +29,7 @@ const BUSINESS_LOGIC_KEYS = [
   "companyEmailDomain",
   "interviewGuidesConfig",
   "interviewEvaluationConfig",
+  "interviewBenchmarksConfig",
 ];
 
 function pickDefinedBusinessLogic(

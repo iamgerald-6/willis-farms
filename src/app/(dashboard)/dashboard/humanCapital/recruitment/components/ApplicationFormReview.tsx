@@ -47,8 +47,6 @@ function buildItem(
 ): ReviewItem | null {
   if (value === undefined || value === null || value === "") return null;
 
-  // Any single-file upload field (cv, passport_bio_page, ...) is an object
-  // with secure_url — not just "cv" specifically.
   if (
     typeof value === "object" &&
     value !== null &&
@@ -127,6 +125,8 @@ const FIELD_SECTIONS: {
       { key: "date_of_birth", label: "Date of birth" },
       { key: "gender", label: "Gender" },
       { key: "nationality", label: "Nationality" },
+      // { key: "nationality", label: "Nationality" },
+      { key: "id_document_type", label: "ID document type" },
       { key: "is_citizen", label: "Ghana citizen" },
       { key: "ghana_card_no", label: "Ghana Card" },
       { key: "passport_number", label: "Passport number" },
@@ -221,7 +221,10 @@ export default function ApplicationFormReview({ formData }: Props) {
                   {item.kind === "files" && (
                     <div className="mt-1 flex flex-col gap-1.5">
                       {item.files.map((f, i) => (
-                        <div key={`${f.url}-${i}`} className="flex items-center gap-2">
+                        <div
+                          key={`${f.url}-${i}`}
+                          className="flex items-center gap-2"
+                        >
                           <a
                             href={f.url}
                             target="_blank"

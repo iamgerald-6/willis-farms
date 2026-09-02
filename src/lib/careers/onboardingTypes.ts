@@ -193,13 +193,38 @@ export interface OnboardingHrData {
   equipment_issued?: string;
   approved_by?: string;
   hr_notes?: string;
+  /** HR officer submitted review notes for senior sign-off. */
+  hr_review_submitted_at?: string;
+  hr_reviewed_by?: string;
+  /** consultant = subordinate consultant submitted to their supervisor; senior_hr = default inbox flow. */
+  hr_review_mode?: "consultant" | "senior_hr";
+  /** user_id of the consultant supervisor who must approve (consultant workflow). */
+  hr_approval_supervisor_id?: string;
+  /** Senior HR signed off and invited the employee to WillsOne. */
+  hr_approved_at?: string;
+  /** @deprecated Use hr_review_submitted_at / hr_approved_at */
+  hr_reviewed_at?: string;
   /** Signed offer letter PDF — required before sending onboarding link. */
   offer_letter?: {
     secure_url?: string;
     public_id?: string;
     original_name?: string;
   };
+  /** HR-uploaded pre-employment medical report (Section O). */
+  medical_report?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  };
+  /** Editable plain-text draft used to generate the PDF offer letter. */
+  offer_letter_draft?: string;
+  offer_letter_generated_at?: string;
   offer_letter_uploaded_at?: string;
+  /** Set when HR saves compensation & placement on the Offer tab. */
+  offer_terms_saved_at?: string;
+  /** Candidate response to the job offer (before / instead of completing onboarding). */
+  offer_response?: "pending" | "accepted" | "declined";
+  offer_response_at?: string;
   /** Set when HR sends the WillsOne platform invite (User Management). */
   platform_invited_at?: string;
   /** Set when HR completes Section O and sends the WillsOne invite from Recruitment. */
@@ -423,4 +448,68 @@ export function mergeInitialOnboardingHrData(input: {
       input.location?.trim() ||
       undefined,
   };
+}
+
+/** Offer accept/decline for HR display — uses explicit hr_data or onboarding progress. */
+export function resolveOfferResponseStatus(input: {
+  hr_data?: OnboardingHrData | null;
+  submitted_at?: string | null;
+  personal_completed_at?: string | null;
+  medical_completed_at?: string | null;
+}): NonNullable<OnboardingHrData["offer_response"]> {
+  const explicit = input.hr_data?.offer_response;
+  if (explicit === "accepted" || explicit === "declined") return explicit;
+  if (
+    input.submitted_at ||
+    input.personal_completed_at ||
+    input.medical_completed_at
+  ) {
+    return "accepted";
+  }
+  return "pending";
+}
+
+export function resolveOfferResponseAt(input: {
+  hr_data?: OnboardingHrData | null;
+  submitted_at?: string | null;
+  personal_completed_at?: string | null;
+  medical_completed_at?: string | null;
+}): string | null | undefined {
+  if (input.hr_data?.offer_response_at?.trim()) {
+    return input.hr_data.offer_response_at;
+  }
+  if (resolveOfferResponseStatus(input) === "accepted") {
+    return input.personal_completed_at ?? input.submitted_at ?? undefined;
+  }
+  return undefined;
+}
+
+export type OnboardingHrPipelineStatus =
+  | "waiting_candidate"
+  | "hr_review"
+  | "senior_approval"
+  | "complete";
+
+function usesConsultantHrApproval(hr: OnboardingHrData | null | undefined): boolean {
+  return Boolean(
+    hr?.hr_approval_supervisor_id?.trim() || hr?.hr_review_mode === "consultant",
+  );
+}
+
+export function resolveOnboardingHrPipelineStatus(input: {
+  submitted_at?: string | null;
+  hr_data?: OnboardingHrData | null;
+}): OnboardingHrPipelineStatus {
+  const hr = input.hr_data;
+  if (hr?.platform_invited_at?.trim() || hr?.hr_finished_at?.trim()) {
+    return "complete";
+  }
+  if (!input.submitted_at) return "waiting_candidate";
+  if (usesConsultantHrApproval(hr)) {
+    if (!hr?.hr_review_submitted_at?.trim()) return "hr_review";
+    if (!hr?.hr_approved_at?.trim()) return "senior_approval";
+    return "complete";
+  }
+  if (!hr?.hr_review_submitted_at?.trim()) return "hr_review";
+  return "senior_approval";
 }

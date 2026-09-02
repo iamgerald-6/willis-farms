@@ -261,9 +261,9 @@ export default function PanelInterviewWizard({ token }: Props) {
                       {item.requirement}
                     </p>
                     <div className="flex gap-2 mt-3">
-                      {(["yes", "no", ""] as const).map((v) => (
+                      {(["yes", "no"] as const).map((v) => (
                         <button
-                          key={v || "blank"}
+                          key={v}
                           type="button"
                           onClick={() =>
                             updateScreening(
@@ -278,7 +278,7 @@ export default function PanelInterviewWizard({ token }: Props) {
                               : "bg-white text-gray-600 border-gray-200"
                           }`}
                         >
-                          {v === "yes" ? "Yes" : v === "no" ? "No" : "—"}
+                          {v === "yes" ? "Yes" : "No"}
                         </button>
                       ))}
                     </div>

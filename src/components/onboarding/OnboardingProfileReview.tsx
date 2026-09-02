@@ -6,13 +6,6 @@ type Props = {
   formData: OnboardingFormData;
 };
 
-function formatFile(
-  file: { secure_url?: string; original_name?: string } | null | undefined,
-): string | null {
-  if (!file?.secure_url) return null;
-  return file.original_name ?? "Uploaded file";
-}
-
 function formatYesNo(value: string | undefined): string | null {
   if (value === "yes") return "Yes";
   if (value === "no") return "No";
@@ -80,8 +73,6 @@ export default function OnboardingProfileReview({ formData }: Props) {
         field("Blood group", medical.blood_group),
         field("Allergies", medical.allergies),
         field("Medical conditions", medical.conditions),
-        field("Medical report", formatFile(medical.medical_report)),
-        field("Medical declaration acknowledged", medical.acknowledge_referral ? "Yes" : null),
       ].filter(Boolean) as { label: string; value: string }[],
     },
     {

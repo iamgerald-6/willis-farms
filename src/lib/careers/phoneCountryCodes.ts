@@ -1,11 +1,3 @@
-// Country calling codes offered on the job application form's phone
-// fields. Full list, since applications can come from anywhere — Ghana
-// is pinned to the top and pre-selected by default (DEFAULT_COUNTRY_CODE)
-// since this is a Ghana farm operation and most applicants will be local,
-// everything else follows alphabetically by country name. A handful of
-// codes are shared by more than one country/territory (e.g. +1 for the
-// US/Canada/Caribbean, +7 for Russia/Kazakhstan) — those are listed once
-// under their most commonly recognized country rather than repeated.
 export const DEFAULT_COUNTRY_CODE = "+233";
 
 export const COUNTRY_CODES: { code: string; country: string }[] = [

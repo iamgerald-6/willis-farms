@@ -64,7 +64,7 @@ function fullName(u?: SkillLogUser | null): string {
 function yesNoLabel(v: string | null | undefined): string {
   if (v === "yes") return "Yes";
   if (v === "no") return "No";
-  return "—";
+  return "Not answered";
 }
 
 function RatingDisplay({ value }: { value: number | null }) {

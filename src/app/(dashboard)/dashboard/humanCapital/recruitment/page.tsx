@@ -25,12 +25,13 @@ import {
   canHrChangeStatus,
   getAllowedHrStatusOptions,
   isAwaitingAiScreening,
-  statusChangeRequiresHrNotes,
   validateHrStatusChange,
 } from "@/lib/careers/applicationStatusRules";
 import InterviewPanelForm from "./components/InterviewPanelForm";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ApplicationFormReview from "./components/ApplicationFormReview";
+import OfferLetterEditorModal from "./components/OfferLetterEditorModal";
+import OfferTermsPanel from "./components/OfferTermsPanel";
 import OnboardingTab from "./components/OnboardingTab";
 import EmployeesTab from "./components/EmployeesTab";
 import CareersTab from "./components/CareersTab";
@@ -51,7 +52,6 @@ import {
   Mail,
   RefreshCw,
   Search,
-  Upload,
   UserPlus,
   X,
 } from "lucide-react";
@@ -61,8 +61,6 @@ import {
   ListRowsSkeleton,
 } from "@/components/skeletons/PageSkeletons";
 import { isFullRoleAccess } from "@/lib/pagePermissions";
-import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
-import { ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
 
 const AI_RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -396,7 +394,7 @@ function ApplicationDetail({
     },
   });
 
-  const offerLetterInputRef = useRef<HTMLInputElement>(null);
+  const [showOfferLetterModal, setShowOfferLetterModal] = useState(false);
 
   const { data: offerLetterData, refetch: refetchOfferLetter } = useQuery({
     queryKey: ["offer-letter", application.id],
@@ -409,36 +407,19 @@ function ApplicationDetail({
           secure_url: string;
           original_name: string;
         } | null;
+        offer_letter_draft: string | null;
+        offer_terms_saved_at: string | null;
+        offer_terms_valid: boolean;
       };
     },
     enabled: application.status === "offer",
   });
 
-  const uploadOfferLetter = useMutation({
-    mutationFn: async (file: File) => {
-      const uploaded = await uploadCareersFile(
-        file,
-        "careers/offer-letters",
-        ACCEPT_PDF_OR_WORD,
-        "offer_letter",
-      );
-      await api.patch("/careers/onboarding/offer-letter", {
-        application_id: application.id,
-        offer_letter: uploaded,
-      });
-      return uploaded;
-    },
-    onSuccess: () => {
-      toast.success("Offer letter uploaded.");
-      void refetchOfferLetter();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message ?? "Upload failed.");
-    },
-  });
-
   const offerLetter = offerLetterData?.offer_letter ?? null;
   const hasOfferLetter = !!offerLetter?.secure_url;
+  const offerTermsReady = Boolean(
+    offerLetterData?.offer_terms_saved_at && offerLetterData?.offer_terms_valid,
+  );
 
   const generateReportMutation = useMutation({
     mutationFn: () =>
@@ -526,6 +507,10 @@ function ApplicationDetail({
         toast.error(validationError);
         return;
       }
+      if (!hrNotes.trim()) {
+        toast.error("Add HR notes before changing status.");
+        return;
+      }
     }
     mutation.mutate({
       id: application.id,
@@ -566,6 +551,10 @@ function ApplicationDetail({
     const validationError = validateHrStatusChange(application, next);
     if (validationError) {
       toast.error(validationError);
+      return;
+    }
+    if (!hrNotes.trim()) {
+      toast.error("Add HR notes before changing status.");
       return;
     }
     quickStatusMutation.mutate(next);
@@ -689,6 +678,34 @@ function ApplicationDetail({
               application.status !== "evaluation" &&
               application.status !== "offer" && (
                 <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-4">
+                  {application.ai_screening.age_assessment && (
+                    <div className="mb-3 pb-3 border-b border-purple-200">
+                      <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
+                        Age eligibility
+                        {application.ai_screening.grade_level &&
+                          application.ai_screening.age_min != null &&
+                          application.ai_screening.age_max != null && (
+                            <span className="font-normal normal-case text-purple-700">
+                              {" "}
+                              ({application.ai_screening.grade_level}:{" "}
+                              {application.ai_screening.age_min}–
+                              {application.ai_screening.age_max} years)
+                            </span>
+                          )}
+                      </p>
+                      {application.ai_screening.applicant_age != null && (
+                        <p className="text-xs text-purple-700 mb-1">
+                          Applicant age: {application.ai_screening.applicant_age}
+                          {application.ai_screening.age_within_range === true && " — within band"}
+                          {application.ai_screening.age_within_range === false &&
+                            " — outside band (shortlisting cutoff)"}
+                        </p>
+                      )}
+                      <p className="text-sm text-purple-900 whitespace-pre-wrap">
+                        {application.ai_screening.age_assessment}
+                      </p>
+                    </div>
+                  )}
                   {application.ai_screening.certificate_validation_summary && (
                     <div className="mb-3 pb-3 border-b border-purple-200">
                       <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
@@ -735,17 +752,18 @@ function ApplicationDetail({
               </div>
             )}
 
-            {!(application.status === "evaluation" && canConfirmOutcome) && (
+            {!(application.status === "evaluation" && canConfirmOutcome) &&
+              !(application.status === "offer" && decision === "hire") && (
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">
-                  HR notes (internal)
+                  HR notes (internal) *
                 </label>
                 <textarea
                   value={hrNotes}
                   onChange={(e) => setHrNotes(e.target.value)}
                   rows={3}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Screening notes, interview scheduling, etc."
+                  placeholder="Required before any status change — screening notes, interview scheduling, reasoning, etc."
                 />
               </div>
             )}
@@ -773,9 +791,7 @@ function ApplicationDetail({
                         type="button"
                         onClick={() => applyQuickStatus("rejected")}
                         disabled={
-                          quickStatusMutation.isPending ||
-                          (statusChangeRequiresHrNotes(application.status, "rejected") &&
-                            !hrNotes.trim())
+                          quickStatusMutation.isPending || !hrNotes.trim()
                         }
                         className="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                       >
@@ -785,9 +801,7 @@ function ApplicationDetail({
                         type="button"
                         onClick={() => applyQuickStatus("interview")}
                         disabled={
-                          quickStatusMutation.isPending ||
-                          (statusChangeRequiresHrNotes(application.status, "interview") &&
-                            !hrNotes.trim())
+                          quickStatusMutation.isPending || !hrNotes.trim()
                         }
                         className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-60"
                       >
@@ -799,9 +813,7 @@ function ApplicationDetail({
                       type="button"
                       onClick={() => applyQuickStatus("rejected")}
                       disabled={
-                        quickStatusMutation.isPending ||
-                        (statusChangeRequiresHrNotes(application.status, "rejected") &&
-                          !hrNotes.trim())
+                        quickStatusMutation.isPending || !hrNotes.trim()
                       }
                       className="px-4 py-1.5 border border-red-200 bg-red-50 text-red-700 text-sm font-medium rounded-lg hover:bg-red-100 disabled:opacity-60"
                     >
@@ -822,9 +834,8 @@ function ApplicationDetail({
                       ))}
                     </select>
                   )}
-                  {(application.status === "shortlisted" ||
-                    application.status === "interview") &&
-                    statusEditable &&
+                  {statusEditable &&
+                    status !== application.status &&
                     !hrNotes.trim() && (
                       <p className="text-[11px] text-amber-700 mt-2">
                         Add HR notes above before you can change status.
@@ -846,7 +857,6 @@ function ApplicationDetail({
                   {application.status === "under_review" &&
                     statusEditable &&
                     status !== application.status &&
-                    statusChangeRequiresHrNotes(application.status, status) &&
                     !hrNotes.trim() && (
                       <p className="text-[11px] text-amber-700 mt-2">
                         Add HR notes above before saving this status change.
@@ -1615,17 +1625,27 @@ function ApplicationDetail({
 
             {application.status === "offer" && decision === "hire" && (
               <div className="space-y-3">
+                <OfferTermsPanel
+                  applicationId={application.id}
+                  roleTitle={application.role_title}
+                  onSaved={() => void refetchOfferLetter()}
+                />
+
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
                   <div>
                     <p className="text-sm font-semibold text-gray-900">
                       Offer letter
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      Upload the signed offer letter before sending the
-                      onboarding link.
+                      After offer terms are saved, generate a professional offer
+                      letter with AI, edit as needed, then save the PDF.
                     </p>
                   </div>
-                  {hasOfferLetter ? (
+                  {!offerTermsReady ? (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      Save offer terms above before creating the offer letter.
+                    </p>
+                  ) : hasOfferLetter ? (
                     <div className="flex flex-wrap items-center gap-3">
                       <a
                         href={offerLetter!.secure_url}
@@ -1634,44 +1654,27 @@ function ApplicationDetail({
                         className="inline-flex items-center gap-2 text-sm font-medium text-red-600 hover:underline"
                       >
                         <FileText className="w-4 h-4" />
-                        {offerLetter!.original_name || "View offer letter"}
+                        {offerLetter!.original_name || "View offer letter PDF"}
                         <ExternalLink className="w-3 h-3" />
                       </a>
                       <button
                         type="button"
-                        onClick={() => offerLetterInputRef.current?.click()}
-                        disabled={uploadOfferLetter.isPending}
-                        className="text-xs font-medium text-gray-600 hover:text-red-600 disabled:opacity-60"
+                        onClick={() => setShowOfferLetterModal(true)}
+                        className="text-xs font-medium text-gray-600 hover:text-red-600"
                       >
-                        Replace file
+                        Edit offer letter
                       </button>
                     </div>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => offerLetterInputRef.current?.click()}
-                      disabled={uploadOfferLetter.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 disabled:opacity-60"
+                      onClick={() => setShowOfferLetterModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100"
                     >
-                      {uploadOfferLetter.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Upload className="w-4 h-4" />
-                      )}
-                      Upload offer letter
+                      <FileText className="w-4 h-4" />
+                      Create offer letter
                     </button>
                   )}
-                  <input
-                    ref={offerLetterInputRef}
-                    type="file"
-                    accept={ACCEPT_PDF_OR_WORD}
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) uploadOfferLetter.mutate(file);
-                      e.target.value = "";
-                    }}
-                  />
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -1680,19 +1683,22 @@ function ApplicationDetail({
                     onClick={() => startOnboarding.mutate()}
                     disabled={
                       !hasOfferLetter ||
+                      !offerTermsReady ||
                       startOnboarding.isPending ||
                       rescindOffer.isPending
                     }
                     className="flex-1 py-2 border border-green-200 bg-green-50 text-green-800 text-sm font-medium rounded-lg hover:bg-green-100 disabled:opacity-60"
                     title={
-                      hasOfferLetter
-                        ? undefined
-                        : "Upload the offer letter first"
+                      !offerTermsReady
+                        ? "Save offer terms first"
+                        : hasOfferLetter
+                          ? undefined
+                          : "Create and save the offer letter first"
                     }
                   >
                     {startOnboarding.isPending
                       ? "Sending…"
-                      : "Send congratulations & onboarding link"}
+                      : "Send offer letter & onboarding link"}
                   </button>
                   <button
                     type="button"
@@ -1725,9 +1731,7 @@ function ApplicationDetail({
                 onClick={save}
                 disabled={
                   mutation.isPending ||
-                  (status !== application.status &&
-                    statusChangeRequiresHrNotes(application.status, status) &&
-                    !hrNotes.trim())
+                  (status !== application.status && !hrNotes.trim())
                 }
                 className="flex-1 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60"
               >
@@ -1771,6 +1775,20 @@ function ApplicationDetail({
           onInterviewSubmitted={async () => {
             setShowInterview(false);
             await onRefreshApplication();
+          }}
+        />
+      )}
+
+      {showOfferLetterModal && application.status === "offer" && (
+        <OfferLetterEditorModal
+          applicationId={application.id}
+          candidateName={application.full_name}
+          roleTitle={application.role_title}
+          referenceNumber={application.reference_number}
+          onClose={() => setShowOfferLetterModal(false)}
+          onSaved={() => {
+            void refetchOfferLetter();
+            void onRefreshApplication();
           }}
         />
       )}
@@ -2985,9 +3003,19 @@ function ScreeningStageTab({
             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
               {a.ai_screening.score}% match
             </span>
+            {a.ai_screening.age_within_range === false && (
+              <span className="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                Outside age band
+              </span>
+            )}
             <p className="text-xs text-gray-500 mt-1 max-w-sm line-clamp-2">
               {a.ai_screening.summary}
             </p>
+            {a.ai_screening.age_assessment && (
+              <p className="text-xs text-gray-400 mt-1 max-w-sm line-clamp-2">
+                Age: {a.ai_screening.age_assessment}
+              </p>
+            )}
           </div>
         ) : (
           <span className="text-xs text-gray-400">No score</span>
@@ -5186,7 +5214,7 @@ function RecruitmentPageContent() {
           onSelect={setSelected}
         />
       ) : activeTab === "onboarding" ? (
-        <OnboardingTab />
+        <OnboardingTab adminId={session?.user?.id ?? ""} userRole={role} />
       ) : activeTab === "employees" ? (
         <EmployeesTab />
       ) : (

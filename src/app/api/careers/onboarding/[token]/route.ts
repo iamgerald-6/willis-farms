@@ -24,6 +24,7 @@ import {
 } from "@/lib/careers/getOnboardingFormFields";
 import { validateOnboardingToken } from "@/lib/careers/onboardingTokens";
 import { sendOnboardingSubmittedEmail } from "@/lib/careers/interviewEmails";
+import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 type RouteParams = { params: Promise<{ token: string }> };
 
@@ -128,6 +129,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     > | null,
   });
 
+  const hr = (submission?.hr_data ?? {}) as OnboardingHrData;
+
   return NextResponse.json({
     success: true,
     data: {
@@ -147,6 +150,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       personal_completed_at: submission?.personal_completed_at ?? null,
       medical_completed_at: submission?.medical_completed_at ?? null,
       expires_at: validation.expiresAt,
+      offer_response: hr.offer_response ?? "pending",
     },
   });
 }
@@ -195,6 +199,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   ) {
     return NextResponse.json(
       { error: "Onboarding has already been submitted." },
+      { status: 400 },
+    );
+  }
+
+  const existingHr = (existing?.hr_data ?? {}) as OnboardingHrData;
+  if (existingHr.offer_response === "declined") {
+    return NextResponse.json(
+      { error: "This offer has been declined." },
+      { status: 400 },
+    );
+  }
+  if (existingHr.offer_response !== "accepted") {
+    return NextResponse.json(
+      { error: "Please accept the offer before starting onboarding." },
       { status: 400 },
     );
   }
@@ -279,6 +297,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     application_id: validation.applicationId,
     token_id: validation.tokenId,
     form_data: merged,
+    hr_data: existingHr,
   };
 
   // Clear a stale submitted_at when reopening an incomplete submission.

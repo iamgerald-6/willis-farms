@@ -1,4 +1,8 @@
 import type { ApplicationStatus, InterviewFormData, PanelDecision } from "./types";
+import {
+  DEFAULT_INTERVIEW_BENCHMARKS,
+  type ResolvedInterviewBenchmarks,
+} from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 
 export type ScoreStanding =
   | "strong_hire"
@@ -7,11 +11,14 @@ export type ScoreStanding =
   | "do_not_hire"
   | "incomplete";
 
-export function scoreStanding(total: number | null | undefined): ScoreStanding {
+export function scoreStanding(
+  total: number | null | undefined,
+  benchmarks: ResolvedInterviewBenchmarks = DEFAULT_INTERVIEW_BENCHMARKS,
+): ScoreStanding {
   if (total == null) return "incomplete";
-  if (total >= 4.0) return "strong_hire";
-  if (total >= 3.3) return "hire";
-  if (total >= 2.8) return "hold";
+  if (total >= benchmarks.strongHireMin) return "strong_hire";
+  if (total >= benchmarks.hireMin) return "hire";
+  if (total >= benchmarks.holdMin) return "hold";
   return "do_not_hire";
 }
 
@@ -30,9 +37,12 @@ export function standingLabel(standing: ScoreStanding): string {
   }
 }
 
-/** Hire is only allowed when weighted total is at least 3.3 */
-export function canConfirmHire(total: number | null | undefined): boolean {
-  return total != null && total >= 3.3;
+/** Hire is only allowed when weighted total meets the configured hire minimum. */
+export function canConfirmHire(
+  total: number | null | undefined,
+  benchmarks: ResolvedInterviewBenchmarks = DEFAULT_INTERVIEW_BENCHMARKS,
+): boolean {
+  return total != null && total >= benchmarks.hireMin;
 }
 
 export function observedDisqualifiers(
@@ -64,10 +74,11 @@ export function observedDisqualifiers(
 export function validatePanelDecision(
   decision: PanelDecision | "" | undefined,
   total: number | null | undefined,
+  benchmarks: ResolvedInterviewBenchmarks = DEFAULT_INTERVIEW_BENCHMARKS,
 ): string | null {
   if (!decision) return "Select a panel decision before confirming.";
-  if (decision === "hire" && !canConfirmHire(total)) {
-    return "Hire requires a weighted score of at least 3.3.";
+  if (decision === "hire" && !canConfirmHire(total, benchmarks)) {
+    return `Hire requires a weighted score of at least ${benchmarks.hireMin}.`;
   }
   return null;
 }

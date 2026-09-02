@@ -15,6 +15,7 @@ import {
   parseModuleBusinessLogic,
   type ModuleBusinessLogic,
 } from "./sectionWeightRules";
+import { getGitInterviewBenchmarksConfig } from "./interviewBenchmarksConfig";
 
 export type ModuleSystemConfig = {
   businessLogic: ModuleBusinessLogic;
@@ -78,6 +79,9 @@ export async function fetchModuleConfig(
         gitFallbackBusinessLogic(moduleId).companyEmailDomain,
       interviewGuidesConfig: businessLogic.interviewGuidesConfig,
       interviewEvaluationConfig: businessLogic.interviewEvaluationConfig,
+      interviewBenchmarksConfig:
+        businessLogic.interviewBenchmarksConfig ??
+        gitFallbackBusinessLogic(moduleId).interviewBenchmarksConfig,
     },
     formDefinition,
   };
@@ -91,7 +95,10 @@ function gitFallbackBusinessLogic(moduleId: string): ModuleBusinessLogic {
     return { annualLeaveCapDays: DEFAULT_ANNUAL_LEAVE_CAP_DAYS };
   }
   if (moduleId === "mod:recruitment") {
-    return { companyEmailDomain: DEFAULT_COMPANY_EMAIL_DOMAIN };
+    return {
+      companyEmailDomain: DEFAULT_COMPANY_EMAIL_DOMAIN,
+      interviewBenchmarksConfig: getGitInterviewBenchmarksConfig(),
+    };
   }
   return {};
 }

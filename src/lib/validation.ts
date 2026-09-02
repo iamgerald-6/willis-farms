@@ -26,3 +26,8 @@ export function isValidName(value: string): boolean {
 export function sanitizeNameInput(value: string): string {
   return value.replace(/[^\p{L}\s'-]/gu, "");
 }
+
+/** Strips non-digit characters — for account numbers, SSNIT, etc. */
+export function sanitizeDigitsInput(value: string): string {
+  return value.replace(/\D/g, "");
+}

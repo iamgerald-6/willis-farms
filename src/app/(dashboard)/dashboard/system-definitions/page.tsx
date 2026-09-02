@@ -347,7 +347,7 @@ function ModuleDetail({
       {isEditableInterviewGuidesModule(m.id) && (
         <SectionCard
           icon={Rows3}
-          title="Interview guides"
+          title="Interview"
           description="Questions, practical scenarios, rating scale, and evaluation checklist per grade level (L1–L7+). Linked to job postings via interview guide key."
         >
           <InterviewGuidesEditor

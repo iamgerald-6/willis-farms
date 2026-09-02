@@ -26,6 +26,12 @@ import {
   SKILL_LOG_FORM_COPY,
   SKILL_LOG_MIN_FILLER_GRADE,
 } from "@/lib/moduleRegistry";
+import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  canParticipateAsProgramSubject,
+  consultantSelfServiceBlockedMessage,
+  isConsultantEmployee,
+} from "@/lib/consultantPrograms";
 import {
   buildSkillLogCompetencyRowsFromConfig,
   resolveSkillLogSectionsForType,
@@ -186,7 +192,9 @@ function YesNoDropdown({
               : ({ borderColor: "#e5e7eb", "--tw-ring-color": BRAND } as any)
         }
       >
-        <option value="">—</option>
+        <option value="" disabled hidden>
+          Select
+        </option>
         <option value="yes">Yes</option>
         <option value="no">No</option>
       </select>
@@ -253,6 +261,11 @@ function SkillLogFormPageContent() {
 
   // Derive supervisor profile from the already-fetched list
   const supervisor = allUsers.find((u) => u.user_id === supervisorId) ?? null;
+  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
+  const isConsultantSupervisor = isConsultantEmployee(
+    supervisor?.grade_level,
+    gradeLevelsConfig,
+  );
 
   const supervisorGradeLevel = parseSkillLogGradeLevel(
     supervisor?.grade_level ?? "L1",
@@ -263,12 +276,17 @@ function SkillLogFormPageContent() {
     if (supervisor && supervisorGradeLevel < SKILL_LOG_MIN_FILLER_GRADE) {
       router.replace(SKILL_LOG_ROUTE);
     }
+    if (supervisor && isConsultantSupervisor && !isEditMode) {
+      router.replace(SKILL_LOG_ROUTE);
+    }
   }, [
     supervisor,
     supervisorGradeLevel,
     router,
     allUsers.length,
     supervisorId,
+    isConsultantSupervisor,
+    isEditMode,
   ]);
 
   const getAuthHeaders = async () => {
@@ -360,8 +378,13 @@ function SkillLogFormPageContent() {
   const watchedEmployeeId = watch("employee_id");
 
   const directReports = useMemo(
-    () => allUsers.filter((u) => u.supervisor_id === supervisorId),
-    [allUsers, supervisorId],
+    () =>
+      allUsers.filter(
+        (u) =>
+          u.supervisor_id === supervisorId &&
+          canParticipateAsProgramSubject(u.grade_level, gradeLevelsConfig),
+      ),
+    [allUsers, supervisorId, gradeLevelsConfig],
   );
 
   const assessableGrades = useMemo(() => {

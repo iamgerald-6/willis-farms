@@ -7,6 +7,8 @@ import { INSTITUTION_TYPES, type EducationEntry } from "@/lib/careers/applicatio
 type Props = {
   value: unknown;
   onChange: (next: EducationEntry[]) => void;
+  /** From system definitions — defaults to built-in list when omitted. */
+  institutionTypes?: string[];
 };
 
 function emptyEntry(): EducationEntry {
@@ -28,9 +30,10 @@ const fieldLabelClass = "text-xs font-medium text-gray-600";
 const inputClass =
   "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400";
 
-export function EducationHistoryInput({ value, onChange }: Props) {
+export function EducationHistoryInput({ value, onChange, institutionTypes }: Props) {
   const entries = normalize(value);
   const idBase = useId();
+  const typeOptions = institutionTypes?.length ? institutionTypes : INSTITUTION_TYPES;
 
   const update = (index: number, patch: Partial<EducationEntry>) => {
     const next = entries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry));
@@ -67,7 +70,7 @@ export function EducationHistoryInput({ value, onChange }: Props) {
                 onChange={(e) => update(index, { institutionType: e.target.value })}
               >
                 <option value="">Select…</option>
-                {INSTITUTION_TYPES.map((t) => (
+                {typeOptions.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>

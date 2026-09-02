@@ -1,4 +1,4 @@
-import OnboardingWizard from "./OnboardingWizard";
+import OnboardingEntry from "./OnboardingEntry";
 import { FormShell } from "@/components/Forms/FormShell";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import type { OnboardingFlatValues } from "@/lib/careers/onboardingFormSchema";
@@ -6,7 +6,10 @@ import type { OnboardingFormField } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
 import { headers } from "next/headers";
 
-type PageProps = { params: Promise<{ token: string }> };
+type PageProps = {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ start?: string }>;
+};
 
 async function loadOnboarding(token: string) {
   const headersList = await headers();
@@ -25,8 +28,10 @@ async function loadOnboarding(token: string) {
   });
 }
 
-export default async function OnboardingPage({ params }: PageProps) {
+export default async function OnboardingPage({ params, searchParams }: PageProps) {
   const { token } = await params;
+  const { start } = await searchParams;
+  const autoStart = start === "1";
   const res = await loadOnboarding(token);
 
   if (!res.ok) {
@@ -51,6 +56,7 @@ export default async function OnboardingPage({ params }: PageProps) {
     submitted_at,
     application_form_data,
     form_data,
+    offer_response,
   } = json.data;
 
   if (submitted) {
@@ -79,7 +85,7 @@ export default async function OnboardingPage({ params }: PageProps) {
   }
 
   return (
-    <OnboardingWizard
+    <OnboardingEntry
       token={token}
       application={application}
       applicationFormData={application_form_data as Record<string, unknown> | null}
@@ -87,6 +93,10 @@ export default async function OnboardingPage({ params }: PageProps) {
       fields={fields as OnboardingFormField[]}
       optionLists={option_lists as Record<string, string[]>}
       expiresAt={expires_at}
+      offerResponse={
+        (offer_response as "pending" | "accepted" | "declined" | null) ?? "pending"
+      }
+      autoStart={autoStart}
     />
   );
 }

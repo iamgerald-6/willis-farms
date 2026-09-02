@@ -2,7 +2,7 @@
 
 import { Download, Printer } from "lucide-react";
 import { buildMergedCandidateProfile } from "@/lib/careers/buildMergedCandidateProfile";
-import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { formatDisplayDateTime } from "@/lib/formatDisplayDate";
 
 export type CandidateProfileHeader = {
@@ -17,6 +17,7 @@ export type CandidateProfileHeader = {
 type Props = {
   applicationFormData?: Record<string, unknown> | null;
   onboardingFormData?: OnboardingFormData | null;
+  onboardingHrData?: OnboardingHrData | null;
   header?: CandidateProfileHeader;
   showPrintButton?: boolean;
   /** PDF download — e.g. /api/careers/onboarding/profile/pdf?application_id=… */
@@ -26,6 +27,7 @@ type Props = {
 export default function CandidateProfileReview({
   applicationFormData,
   onboardingFormData,
+  onboardingHrData,
   header,
   showPrintButton = true,
   profileDownloadUrl,
@@ -33,6 +35,7 @@ export default function CandidateProfileReview({
   const groups = buildMergedCandidateProfile({
     applicationFormData,
     onboardingFormData,
+    onboardingHrData,
   });
 
   if (groups.length === 0) {

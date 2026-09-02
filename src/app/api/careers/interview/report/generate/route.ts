@@ -5,7 +5,8 @@ import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import { recruitmentInterviewUrl } from "@/lib/appUrl";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { formatInterviewBenchmarksForPrompt } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { normalizeInterviewFormData, STATUS_LABELS, type InterviewReport } from "@/lib/careers/types";
 import {
   gradersForStage,
@@ -141,7 +142,10 @@ export async function POST(req: NextRequest) {
     if (!guideKey) {
       return NextResponse.json({ error: "Unknown role on application." }, { status: 400 });
     }
-    const guide = await fetchResolvedInterviewGuide(supabaseAdmin, guideKey);
+    const { guide, benchmarks } = await fetchResolvedInterviewContext(
+      supabaseAdmin,
+      guideKey,
+    );
     if (!guide) {
       return NextResponse.json(
         { error: "Interview guide not configured for this role." },
@@ -233,13 +237,14 @@ export async function POST(req: NextRequest) {
     const prompt = [
       `You are writing a comprehensive interview report for Wills Farms' Human Capital team for the role "${guide.title}".`,
       `Candidate: ${application.full_name}. Reference: ${application.reference_number}.`,
+      formatInterviewBenchmarksForPrompt(benchmarks),
       `Interpretation guide for this role: ${guide.interpretation}`,
       `Known disqualifiers to watch for: ${guide.disqualifiers.join("; ")}`,
       `HR's own critical-concern checklist for this candidate: ${concernsText}`,
       `Assessment areas for this role, in order: ${guide.weights.map((w) => w.area).join(", ")}.`,
       `Combined score per assessment area: ${areaScoreSummary}.`,
       `Stage 1 grader scores: ${stage1ScoreSummary}. Stage 2 grader scores: ${stage2ScoreSummary}.`,
-      `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. Note: HR can only confirm "hire" when this combined score is at least 3.3/5.`,
+      `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. HR can only confirm "hire" when combined score is at least ${benchmarks.hireMin}/5.`,
       "Detailed per-grader notes follow:",
       ...sections,
       ...(decisionHistorySection ? [decisionHistorySection] : []),

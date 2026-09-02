@@ -1,3 +1,5 @@
+import { isValidEmail } from "@/lib/validation";
+
 export type RefereeRating = "Excellent" | "Good" | "Fair" | "Poor" | "N/A" | "";
 
 export const REFEREE_ASSESSMENT_ATTRIBUTES = [
@@ -92,7 +94,7 @@ export function extractRefereesFromApplication(
     const email = String(formData[`reference_${index}_email`] ?? "")
       .trim()
       .toLowerCase();
-    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+    if (!name || !email || !isValidEmail(email)) continue;
 
     slots.push({
       index,

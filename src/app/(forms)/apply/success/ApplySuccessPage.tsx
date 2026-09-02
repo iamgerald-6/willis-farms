@@ -43,7 +43,7 @@ export default function ApplySuccessPage() {
           </p>
         )}
         <p className="text-xs text-gray-400 mt-4">
-          Please keep this reference number for follow-up. Our Human Capital team
+          Please keep this reference number for follow-up. Our hiring manager
           will contact you if you are shortlisted.
         </p>
         <button

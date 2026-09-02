@@ -4,7 +4,8 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { formatInterviewBenchmarksForPrompt } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 import {
   gradersForStage,
@@ -82,7 +83,10 @@ export async function POST(req: NextRequest) {
     if (!guideKey) {
       return NextResponse.json({ error: "Unknown role on application." }, { status: 400 });
     }
-    const guide = await fetchResolvedInterviewGuide(supabaseAdmin, guideKey);
+    const { guide, benchmarks } = await fetchResolvedInterviewContext(
+      supabaseAdmin,
+      guideKey,
+    );
     if (!guide) {
       return NextResponse.json(
         { error: "Interview guide not configured for this role." },
@@ -157,12 +161,13 @@ export async function POST(req: NextRequest) {
     const prompt = [
       `You are assisting Wills Farms' Human Capital team with a final hire decision for the role "${guide.title}".`,
       `Candidate: ${application.full_name}. Reference: ${application.reference_number}.`,
+      formatInterviewBenchmarksForPrompt(benchmarks),
       `Interpretation guide for this role: ${guide.interpretation}`,
       `Known disqualifiers to watch for: ${guide.disqualifiers.join("; ")}`,
       `HR's critical-concern checklist for this candidate — every item, as answered by HR:\n${checklistText}`,
       `Stage 1 grader scores: ${stage1ScoreSummary}. Stage 1 average: ${stage1Avg?.toFixed(2) ?? "—"}/5.`,
       `Stage 2 grader scores: ${stage2ScoreSummary}. Stage 2 average: ${stage2Avg?.toFixed(2) ?? "—"}/5.`,
-      `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. Note: HR can only confirm "hire" when this combined score is at least 3.3/5 (currently ${canConfirmHire(combined) ? "meets" : "does NOT meet"} that bar).`,
+      `Combined weighted score: ${combined?.toFixed(2) ?? "—"}/5. HR can only confirm "hire" when combined score is at least ${benchmarks.hireMin}/5 (currently ${canConfirmHire(combined, benchmarks) ? "meets" : "does NOT meet"} that bar).`,
       "Detailed per-grader notes follow:",
       ...sections,
       "Using the record_final_recommendation tool, give HR a one-paragraph analysis and a clear final recommendation: hire, hold, or do_not_hire. Treat the combined score, the grader notes, and the critical-concern checklist above as three factors to weigh together — don't just restate the checklist, reason about what any flagged item means for the candidate and let that genuinely inform whether you recommend hire, hold, or do_not_hire.",
