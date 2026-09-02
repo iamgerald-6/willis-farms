@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock } from "lucide-react";
+import { CalendarClock, Clock, Loader2, Mail, Plus, Trash2, Unlock, Video } from "lucide-react";
+import { toast } from "sonner";
+import api from "@/lib/api";
 import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
@@ -13,6 +15,9 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 type Props = {
   guide: InterviewGuideConfig;
   formData: InterviewFormData;
+  /** Used to build a meaningful topic for auto-generated Zoom meetings. */
+  candidateName?: string;
+  referenceNumber?: string;
   onChange: (data: InterviewFormData) => void;
   onSendStage2Invites: (scheduledAt: string) => void;
   isPending: boolean;
@@ -48,6 +53,8 @@ function combineDateTime(date: string, time: string): string {
 export default function Stage2SetupStep({
   guide,
   formData,
+  candidateName,
+  referenceNumber,
   onChange,
   onSendStage2Invites,
   isPending,
@@ -61,6 +68,7 @@ export default function Stage2SetupStep({
   isRescheduling = false,
 }: Props) {
   const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
 
@@ -130,6 +138,36 @@ export default function Stage2SetupStep({
     setup.stage2_scheduled_at ??
     formData.stage2_scheduled_at ??
     "";
+
+  const handleGenerateMeetingLink = async () => {
+    if (!scheduledAt) return;
+    setIsGeneratingLink(true);
+    try {
+      const topic = [
+        "Interview",
+        candidateName,
+        referenceNumber ? `(${referenceNumber})` : null,
+        "— Stage 2",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const res = await api.post("/careers/interview/meeting-link", {
+        topic,
+        startAt: scheduledAt,
+      });
+      onChange({
+        ...formData,
+        setup: { ...setup, stage2_meeting_link: res.data.data.joinUrl },
+      });
+      toast.success("Meeting link generated.");
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.error ?? "Failed to generate meeting link.",
+      );
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -243,7 +281,29 @@ export default function Stage2SetupStep({
           </div>
           {setup.stage2_location_type === "online" ? (
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Meeting link *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-gray-500">Meeting link *</label>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateMeetingLink}
+                    disabled={isGeneratingLink || !scheduledAt}
+                    title={
+                      !scheduledAt
+                        ? "Set the practical date and time first"
+                        : undefined
+                    }
+                    className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline disabled:opacity-40 disabled:hover:no-underline"
+                  >
+                    {isGeneratingLink ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Video className="w-3 h-3" />
+                    )}
+                    Generate meeting link
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 placeholder="https://meet.google.com/..."
@@ -257,13 +317,6 @@ export default function Stage2SetupStep({
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Generate a link from any calendar/meeting provider (Google
-                Meet, Zoom, Teams, etc.) and paste it here. Use only the
-                &quot;generate link&quot; option — do not schedule or send an
-                actual calendar invite from that provider, as it can create a
-                scheduling clashes.
-              </p>
             </div>
           ) : setup.stage2_location_type === "onsite" ? (
             <div>
