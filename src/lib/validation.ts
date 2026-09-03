@@ -31,3 +31,45 @@ export function sanitizeNameInput(value: string): string {
 export function sanitizeDigitsInput(value: string): string {
   return value.replace(/\D/g, "");
 }
+
+// --- Password strength -----------------------------------------------------
+// Shared rules for every "set/change password" form in the app (invite
+// setup, reset, and the settings-page change-password form) so the
+// requirement is consistent and only defined once.
+
+export const PASSWORD_MIN_LENGTH = 8;
+
+export type PasswordRequirement = {
+  key: "length" | "uppercase" | "lowercase" | "number" | "symbol";
+  label: string;
+  met: boolean;
+};
+
+/** Live checklist of password rules — used to render a requirements list as the user types. */
+export function getPasswordRequirements(password: string): PasswordRequirement[] {
+  return [
+    {
+      key: "length",
+      label: `At least ${PASSWORD_MIN_LENGTH} characters`,
+      met: password.length >= PASSWORD_MIN_LENGTH,
+    },
+    { key: "uppercase", label: "One uppercase letter (A–Z)", met: /[A-Z]/.test(password) },
+    { key: "lowercase", label: "One lowercase letter (a–z)", met: /[a-z]/.test(password) },
+    { key: "number", label: "One number (0–9)", met: /[0-9]/.test(password) },
+    {
+      key: "symbol",
+      label: "One symbol (e.g. ! @ # $ %)",
+      met: /[^A-Za-z0-9]/.test(password),
+    },
+  ];
+}
+
+export function isStrongPassword(password: string): boolean {
+  return getPasswordRequirements(password).every((r) => r.met);
+}
+
+/** First unmet requirement, phrased as a toast-friendly error — or null if the password is strong. */
+export function passwordStrengthError(password: string): string | null {
+  const unmet = getPasswordRequirements(password).find((r) => !r.met);
+  return unmet ? `Password needs: ${unmet.label.toLowerCase()}.` : null;
+}

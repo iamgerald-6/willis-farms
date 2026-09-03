@@ -19,7 +19,8 @@ export type OnboardingHrFieldType =
   | "supervisor"
   | "salary_tier"
   | "salary_range"
-  | "pay_frequency";
+  | "pay_frequency"
+  | "reporting_to";
 
 function hrField(
   id: string,
@@ -70,6 +71,19 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "work_location",
       3,
       { fieldKey: "work_location", fieldType: "work_location", group: "placement", required: false },
+    ),
+    hrField(
+      "opt:recruitment:hr:reporting_to",
+      "Reporting to",
+      "reporting_to",
+      4,
+      {
+        fieldKey: "reporting_to",
+        fieldType: "reporting_to",
+        group: "placement",
+        required: true,
+        hint: "Position title of the manager this hire reports to — drawn from staff currently holding a manager/admin/super-admin role.",
+      },
     ),
     hrField(
       "opt:recruitment:hr:grade_level",
@@ -153,6 +167,106 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       "fitness_determination",
       17,
       { fieldKey: "fitness_determination", fieldType: "text", group: "hr" },
+    ),
+    hrField(
+      "opt:recruitment:hr:start_date",
+      "Start date",
+      "start_date",
+      17.5,
+      {
+        fieldKey: "start_date",
+        fieldType: "date",
+        group: "hr",
+        required: true,
+        hint: "Effective employment start date — used throughout the offer letter as both the appointment date and Position Details start date.",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:notice_period",
+      "Notice period",
+      "notice_period",
+      19,
+      {
+        fieldKey: "notice_period",
+        fieldType: "text",
+        group: "hr",
+        required: true,
+        hint: "e.g. \"3 months\" — used in the offer letter's Terms of Employment clause.",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:working_hours",
+      "Working hours",
+      "working_hours",
+      20,
+      {
+        fieldKey: "working_hours",
+        fieldType: "text",
+        group: "hr",
+        required: true,
+        hint: "e.g. \"40 hours per week, Monday to Sunday with one day off duty.\"",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:acceptance_deadline",
+      "Offer acceptance deadline",
+      "acceptance_deadline",
+      21,
+      { fieldKey: "acceptance_deadline", fieldType: "date", group: "hr", required: true },
+    ),
+    hrField(
+      "opt:recruitment:hr:basic_salary_ghs",
+      "Basic salary (GHS)",
+      "basic_salary_ghs",
+      22,
+      { fieldKey: "basic_salary_ghs", fieldType: "text", group: "hr", required: true },
+    ),
+    hrField(
+      "opt:recruitment:hr:housing_allowance",
+      "Housing allowance",
+      "housing_allowance",
+      23,
+      {
+        fieldKey: "housing_allowance",
+        fieldType: "text",
+        group: "hr",
+        required: true,
+        hint: "Amount, or how it's provided — e.g. \"Provided by the Company upon signing a Housing Agreement.\"",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:medical_allowance",
+      "Medical allowance",
+      "medical_allowance",
+      24,
+      { fieldKey: "medical_allowance", fieldType: "text", group: "hr", required: true },
+    ),
+    hrField(
+      "opt:recruitment:hr:social_security_contribution",
+      "Social security contribution",
+      "social_security_contribution",
+      25,
+      {
+        fieldKey: "social_security_contribution",
+        fieldType: "text",
+        group: "hr",
+        required: true,
+        hint: "SSNIT deduction amount for Annex 1 of the offer letter.",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:income_tax",
+      "Income tax",
+      "income_tax",
+      26,
+      { fieldKey: "income_tax", fieldType: "text", group: "hr", required: true },
+    ),
+    hrField(
+      "opt:recruitment:hr:net_payable",
+      "Net payable",
+      "net_payable",
+      27,
+      { fieldKey: "net_payable", fieldType: "text", group: "hr", required: true },
     ),
     hrField(
       "opt:recruitment:hr:medical_referral_issued",

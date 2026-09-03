@@ -6,6 +6,8 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import PasswordInput from "@/app/(auth)/components/PasswordInput";
+import PasswordRequirements from "@/app/(auth)/components/PasswordRequirements";
+import { isStrongPassword, passwordStrengthError } from "@/lib/validation";
 
 export default function ChangePasswordSection() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -36,8 +38,9 @@ export default function ChangePasswordSection() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      toast.error("New password must be at least 6 characters.");
+    const strengthError = passwordStrengthError(newPassword);
+    if (strengthError) {
+      toast.error(strengthError);
       return;
     }
 
@@ -118,9 +121,10 @@ export default function ChangePasswordSection() {
             id="new-password"
             value={newPassword}
             onChange={setNewPassword}
-            placeholder="Min. 6 characters"
+            placeholder="Min. 8 characters"
             autoComplete="new-password"
           />
+          <PasswordRequirements password={newPassword} />
         </div>
 
         <div>
@@ -141,7 +145,12 @@ export default function ChangePasswordSection() {
 
         <button
           type="submit"
-          disabled={loading || !currentPassword}
+          disabled={
+            loading ||
+            !currentPassword ||
+            !isStrongPassword(newPassword) ||
+            newPassword !== confirmPassword
+          }
           className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#C62828] text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
         >
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -270,7 +270,7 @@ export function buildMergedCandidateProfile(input: {
             "Travelled to ASF-affected region in past 30 days",
             bio.asf_travel_30d === "yes" ? "Yes" : bio.asf_travel_30d === "no" ? "No" : null,
           ),
-          item("Biosecurity commitment initials", str(bio.commitment_initials)),
+          item("Biosecurity commitment", bio.commitment_initials ? "Yes" : null),
           item("Additional details", str(bio.details), { fullWidth: true }),
         ]),
       ),

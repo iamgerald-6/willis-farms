@@ -375,6 +375,25 @@ export async function sendInterviewInvitationEmail(params: {
 
   const subject = `Interview invitation — ${params.roleTitle} (${params.referenceNumber})`;
 
+  const calendarLocation =
+    params.locationType === "online" && params.meetingLink?.trim()
+      ? params.meetingLink.trim()
+      : (params.location?.trim() ?? "");
+  const calendarEvent = {
+    uid: `candidate-interview-${params.referenceNumber}-stage1@willsfarms.com`,
+    title: `Interview — ${params.roleTitle} (${params.referenceNumber})`,
+    description: `Role: ${params.roleTitle}\nReference: ${params.referenceNumber}`,
+    location: calendarLocation,
+    startsAt: params.interviewStartAt,
+  };
+  const icsAttachment: EmailAttachment = {
+    filename: "interview-stage1.ics",
+    content: Buffer.from(buildIcsEvent(calendarEvent), "utf-8").toString("base64"),
+    contentType: "text/calendar; charset=utf-8; method=REQUEST",
+  };
+  const googleLink = googleCalendarLink(calendarEvent);
+  const outlookLink = outlookCalendarLink(calendarEvent);
+
   const text = [
     `Dear ${firstName},`,
     "",
@@ -390,6 +409,11 @@ export async function sendInterviewInvitationEmail(params: {
     locationText,
     "",
     `${arriveNote} If you need to reschedule or have any questions, contact info@willsfarms.com and quote your reference number.`,
+    "",
+    "Add to calendar:",
+    `Google Calendar: ${googleLink}`,
+    `Outlook.com: ${outlookLink}`,
+    "(A calendar file is also attached to this email.)",
     "",
     "We look forward to meeting you.",
     "",
@@ -419,7 +443,14 @@ export async function sendInterviewInvitationEmail(params: {
         <a href="mailto:info@willsfarms.com" style="color:#991b1b;">info@willsfarms.com</a>
         and quote reference <strong>${escapeHtml(params.referenceNumber)}</strong>.
       </p>
-      <p style="margin:0;font-size:15px;color:#374151;">We look forward to meeting you.</p>
+      <p style="margin:0 0 20px;font-size:15px;color:#374151;">We look forward to meeting you.</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#374151;"><strong>Add to calendar:</strong></p>
+      <p style="margin:0 0 4px;">
+        <a href="${escapeHtml(googleLink)}" style="color:#991b1b;font-size:13px;">Google Calendar</a>
+        &nbsp;·&nbsp;
+        <a href="${escapeHtml(outlookLink)}" style="color:#991b1b;font-size:13px;">Outlook.com</a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">A calendar file is also attached to this email.</p>
     `,
   );
 
@@ -429,6 +460,7 @@ export async function sendInterviewInvitationEmail(params: {
     subject,
     html,
     text,
+    attachments: [icsAttachment],
   });
 }
 
@@ -481,6 +513,25 @@ export async function sendStage2ScheduleEmail(params: {
 
   const subject = `Practical assessment scheduled — ${params.roleTitle} (${params.referenceNumber})`;
 
+  const calendarLocation =
+    params.locationType === "online" && params.meetingLink?.trim()
+      ? params.meetingLink.trim()
+      : (params.location?.trim() ?? "");
+  const calendarEvent = {
+    uid: `candidate-interview-${params.referenceNumber}-stage2@willsfarms.com`,
+    title: `Practical assessment — ${params.roleTitle} (${params.referenceNumber})`,
+    description: `Role: ${params.roleTitle}\nReference: ${params.referenceNumber}`,
+    location: calendarLocation,
+    startsAt: params.scheduledAt,
+  };
+  const icsAttachment: EmailAttachment = {
+    filename: "interview-stage2.ics",
+    content: Buffer.from(buildIcsEvent(calendarEvent), "utf-8").toString("base64"),
+    contentType: "text/calendar; charset=utf-8; method=REQUEST",
+  };
+  const googleLink = googleCalendarLink(calendarEvent);
+  const outlookLink = outlookCalendarLink(calendarEvent);
+
   const text = [
     `Dear ${firstName},`,
     "",
@@ -498,6 +549,11 @@ export async function sendStage2ScheduleEmail(params: {
     expectationsText,
     "",
     "If you need to reschedule, contact info@willsfarms.com quoting your reference number.",
+    "",
+    "Add to calendar:",
+    `Google Calendar: ${googleLink}`,
+    `Outlook.com: ${outlookLink}`,
+    "(A calendar file is also attached to this email.)",
     "",
     "Kind regards,",
     "Human Capital Team",
@@ -523,11 +579,18 @@ export async function sendStage2ScheduleEmail(params: {
       </table>
       <p style="margin:0 0 12px;font-size:14px;font-weight:600;color:#374151;">What we expect from you on the day:</p>
       <ul style="margin:0 0 20px;padding-left:20px;">${expectationsHtml}</ul>
-      <p style="margin:0;font-size:14px;color:#374151;">
+      <p style="margin:0 0 20px;font-size:14px;color:#374151;">
         If you need to reschedule, contact
         <a href="mailto:info@willsfarms.com" style="color:#991b1b;">info@willsfarms.com</a>
         and quote reference <strong>${escapeHtml(params.referenceNumber)}</strong>.
       </p>
+      <p style="margin:0 0 8px;font-size:13px;color:#374151;"><strong>Add to calendar:</strong></p>
+      <p style="margin:0 0 4px;">
+        <a href="${escapeHtml(googleLink)}" style="color:#991b1b;font-size:13px;">Google Calendar</a>
+        &nbsp;·&nbsp;
+        <a href="${escapeHtml(outlookLink)}" style="color:#991b1b;font-size:13px;">Outlook.com</a>
+      </p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">A calendar file is also attached to this email.</p>
     `,
   );
 
@@ -537,6 +600,7 @@ export async function sendStage2ScheduleEmail(params: {
     subject,
     html,
     text,
+    attachments: [icsAttachment],
   });
 }
 

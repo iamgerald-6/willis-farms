@@ -29,9 +29,9 @@ import { isValidEmail, sanitizeDigitsInput, sanitizeNameInput } from "@/lib/vali
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
+import { SsnitNumberInput } from "@/components/SsnitNumberInput";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
-import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -178,11 +178,6 @@ export default function OnboardingWizard({
     }
     return [...map.entries()];
   }, [stepFields]);
-
-  const requiredMedicalReports = useMemo(
-    () => optionLists[ONBOARDING_MEDICAL_REPORTS_LIST] ?? [],
-    [optionLists],
-  );
 
   const setFieldValue = (key: string, value: unknown) => {
     setValues((prev) => {
@@ -356,6 +351,27 @@ export default function OnboardingWizard({
       );
     }
 
+    if (fieldType === "checkbox") {
+      return (
+        <label
+          key={field.id}
+          className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2"
+        >
+          <input
+            type="checkbox"
+            className="mt-1 accent-red-600"
+            checked={Boolean(value)}
+            disabled={readOnly}
+            onChange={(e) => setFieldValue(fieldKey, e.target.checked)}
+          />
+          <span>
+            {field.label}
+            {required && <span className="text-red-600"> *</span>}
+          </span>
+        </label>
+      );
+    }
+
     if (fieldType === "phone") {
       return (
         <FieldBlock key={field.id} label={field.label} required={required} half={half}>
@@ -375,6 +391,17 @@ export default function OnboardingWizard({
       return (
         <FieldBlock key={field.id} label={field.label} required={required} half={half}>
           <GhanaCardInput
+            value={String(value ?? "")}
+            onChange={(v) => setFieldValue(fieldKey, v)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "ssnit") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <SsnitNumberInput
             value={String(value ?? "")}
             onChange={(v) => setFieldValue(fieldKey, v)}
           />
@@ -556,31 +583,11 @@ export default function OnboardingWizard({
       )}
 
       <div className="space-y-6">
-        {step === "medical" && requiredMedicalReports.length > 0 && (
-          <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-2">
-            <h2 className="text-sm font-bold text-gray-900">Required medical reports</h2>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Obtain the following from a registered clinic or hospital. HR will collect
-              your medical certificate during onboarding — you do not upload it here. The
-              same list was included in your onboarding email.
-            </p>
-            <ul className="mt-2 space-y-1.5">
-              {requiredMedicalReports.map((item) => (
-                <li key={item} className="flex gap-2 text-sm text-gray-800">
-                  <span className="text-red-600 shrink-0" aria-hidden>
-                    •
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         {sections.map(([sectionTitle, sectionFields]) => {
           const isBiosecuritySection =
             sectionTitle === "Biosecurity" ||
             sectionTitle === "K. Biosecurity declaration";
+          const isConsentSection = sectionTitle === "Consent & signature";
 
           return (
             <section key={sectionTitle || "default"} className="space-y-3">
@@ -641,38 +648,35 @@ export default function OnboardingWizard({
                 </div>
               )}
 
+              {step === "medical" && isConsentSection && (
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-red-600"
+                    checked={formExtras.declarations?.data_consent ?? false}
+                    onChange={(e) =>
+                      patchExtras({
+                        declarations: {
+                          ...formExtras.declarations,
+                          data_consent: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span>
+                    I consent to the collection and processing of my personal data for
+                    employment administration, and I certify that the information provided is
+                    accurate and complete.
+                  </span>
+                </label>
+              )}
+
               <div className="grid sm:grid-cols-2 gap-3">
                 {sectionFields.map((field) => renderField(field))}
               </div>
             </section>
           );
         })}
-
-        {step === "medical" && (
-          <section className="space-y-4">
-            <h2 className="text-sm font-bold text-gray-900">Consent & signature</h2>
-            <label className="flex items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1 accent-red-600"
-                checked={formExtras.declarations?.data_consent ?? false}
-                onChange={(e) =>
-                  patchExtras({
-                    declarations: {
-                      ...formExtras.declarations,
-                      data_consent: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <span>
-                I consent to the collection and processing of my personal data for employment
-                administration, and I certify that the information provided is accurate and
-                complete.
-              </span>
-            </label>
-          </section>
-        )}
       </div>
 
       <div className="flex gap-2 mt-8 pt-6 border-t border-gray-100">
