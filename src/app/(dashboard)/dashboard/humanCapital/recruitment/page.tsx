@@ -5154,6 +5154,11 @@ function RecruitmentPageContent() {
                         : tab === "employees"
                           ? "Employees"
                           : "Onboarding"}
+            {tab === "applications" && applicationsTabApplications.length > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {applicationsTabApplications.length}
+              </span>
+            )}
             {tab === "screening" && screeningApplications.length > 0 && (
               <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                 {screeningApplications.length}
