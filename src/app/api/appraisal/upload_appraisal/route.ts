@@ -11,7 +11,6 @@ import { canRate, type Quarter } from "@/lib/appraisal/sections";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { fetchAppraisalScopeConfig } from "@/lib/grades/fetchAppraisalScopeConfig";
 import { isValidAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
-import { canParticipateAsProgramSubject } from "@/lib/consultantPrograms";
 import { isSuperAdmin } from "@/lib/accessControl";
 import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import {
@@ -125,13 +124,6 @@ export async function POST(req: NextRequest) {
 
     const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
     const scopeConfig = await fetchAppraisalScopeConfig(supabaseAdmin);
-
-    if (!canParticipateAsProgramSubject(current_grade, gradeConfig)) {
-      return NextResponse.json(
-        { error: "Consultants are not on the appraisal program." },
-        { status: 400 },
-      );
-    }
 
     // Validate form key (grouped band or individual grade)
     if (!isValidAppraisalFormKey(grade_band, scopeConfig, gradeConfig)) {

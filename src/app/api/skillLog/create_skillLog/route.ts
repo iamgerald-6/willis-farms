@@ -6,7 +6,6 @@ import {
   requireSkillLogAccess,
 } from "@/lib/apiRequestAuth";
 import { canFillSkillLog, canFillSkillLogForEmployee } from "@/lib/skillLogAccess";
-import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { SKILL_LOG_MIN_FILLER_GRADE } from "@/lib/moduleRegistry";
 
 export async function POST(req: NextRequest) {
@@ -89,16 +88,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, message: "Employee not found" },
         { status: 404 },
-      );
-    }
-
-    if (isConsultantGrade(employeeProfile.grade_level)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Consultants are not on the skill log program.",
-        },
-        { status: 403 },
       );
     }
 

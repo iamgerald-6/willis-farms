@@ -347,7 +347,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
           </Dialog.Title>
           <p className="text-sm text-gray-500 mb-6">
             {isManualInvite
-              ? "For consultants and other users not on onboarding: enter their personal email for delivery. A company login username and employee ID are generated automatically."
+              ? "For users not on onboarding: enter their personal email for delivery. A company login username and employee ID are generated automatically."
               : "For new hires from onboarding: the set-password invite goes to their application email; they sign in with their company username from HR."}
           </p>
 

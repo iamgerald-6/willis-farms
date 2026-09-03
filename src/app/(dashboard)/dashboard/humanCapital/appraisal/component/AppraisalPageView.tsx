@@ -19,9 +19,6 @@ import {
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import Pagination, { PAGE_SIZE } from "@/app/(dashboard)/dashboard/humanCapital/recruitment/components/Pagination";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
-import {
-  isConsultantEmployee,
-} from "@/lib/consultantPrograms";
 import { StatusBadge } from "./AppraisalStatusBadge";
 import {
   formatDate,
@@ -158,7 +155,6 @@ export default function AppraisalLandingPage({
   // Default to the single applicable period so the list matches the form.
   const activePeriod = getActiveAppraisalPeriod();
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
-  const isConsultant = isConsultantEmployee(viewer.gradeLevel, gradeLevelsConfig);
   const [quarterFilter, setQuarterFilter] = useState<"" | Quarter>(
     activePeriod.quarter,
   );
@@ -240,8 +236,7 @@ export default function AppraisalLandingPage({
   const viewerCanAppraiseOthers =
     canAppraiseOthers(viewer.gradeLevel, gradeLevelsConfig) ||
     isSuperAdmin(viewer.role);
-  const showSelfAppraisalButton =
-    !isConsultant && !viewerCanAppraiseOthers;
+  const showSelfAppraisalButton = !viewerCanAppraiseOthers;
   const showNewAppraisalButton = viewerCanAppraiseOthers;
   const emptyMessage = viewerCanAppraiseOthers
     ? "Start a new appraisal using the button above"

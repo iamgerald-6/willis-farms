@@ -7,11 +7,9 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import {
   DEFAULT_GRADE_LEVELS,
-  DEFAULT_CONSULTANT_GRADES,
   defaultAgeRangeForRank,
   mergeAgeIntoLevels,
   resolveAgeRangeForGrade,
-  resolveAllGradeLevels,
   resolveGradeLevels,
   type GradeLevelDef,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
@@ -183,7 +181,7 @@ export default function GradeLevelsEditor({
   });
 
   const levels = useMemo(
-    () => resolveAllGradeLevels(moduleConfig?.businessLogic?.gradeLevelsConfig),
+    () => resolveGradeLevels(moduleConfig?.businessLogic?.gradeLevelsConfig),
     [moduleConfig],
   );
 
@@ -420,8 +418,7 @@ export default function GradeLevelsEditor({
   return (
     <div className="space-y-4 min-w-0">
       <p className="text-xs text-gray-500">
-        L1–L7 and Consultant are built in. Add L8 or higher with a linked job posting role, or
-        add another consultant grade (no numeric level — for part-time HR and similar roles).
+        L1–L7 are built in. Add L8 or higher with a linked job posting role.
       </p>
 
       <div className="w-full max-w-full overflow-x-auto rounded-xl border border-gray-200">
@@ -440,9 +437,7 @@ export default function GradeLevelsEditor({
               const linked = rolesByGrade.get(level.id) ?? [];
               const isEditing = editingId === level.id;
               const isBuiltIn =
-                DEFAULT_GRADE_LEVELS.some((d) => d.id === level.id) ||
-                DEFAULT_CONSULTANT_GRADES.some((d) => d.id === level.id);
-              const isConsultant = level.roleKind === "consultant";
+                DEFAULT_GRADE_LEVELS.some((d) => d.id === level.id);
               const midSummary = formatSalaryTierBand(level.salaryTiers?.mid);
               const ageBand = resolveAgeRangeForGrade(
                 level.id,
@@ -455,9 +450,6 @@ export default function GradeLevelsEditor({
                   <tr className="border-b border-gray-100 last:border-0">
                     <td className="px-3 py-2 font-mono text-xs align-top">
                       {level.id}
-                      {isConsultant && (
-                        <span className="block text-[10px] text-gray-400 font-sans">consultant</span>
-                      )}
                     </td>
                     <td className="px-3 py-2 align-top">
                       {isEditing ? (
@@ -481,9 +473,7 @@ export default function GradeLevelsEditor({
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
-                      {isConsultant ? (
-                        <span className="text-gray-400">—</span>
-                      ) : isEditing ? (
+                      {isEditing ? (
                         <input
                           type="number"
                           min={1}

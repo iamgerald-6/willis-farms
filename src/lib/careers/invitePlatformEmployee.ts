@@ -218,7 +218,7 @@ export async function invitePlatformEmployee(
       msg.includes("users_grade_level_check") ||
       (msg.includes("grade_level") && msg.includes("check constraint"));
     const hint = gradeConstraint
-      ? " Run docs/access-control/users-grade-level-check.sql in Supabase to allow consultant and custom grades."
+      ? " Run docs/access-control/users-grade-level-check.sql in Supabase to allow custom grades."
       : tableError?.message?.includes("created_by")
         ? " Run in Supabase SQL: ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by uuid; NOTIFY pgrst, 'reload schema';"
         : "";

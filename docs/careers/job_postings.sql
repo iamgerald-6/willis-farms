@@ -25,7 +25,7 @@ create table if not exists public.job_postings (
   description         text not null,
   interview_guide_key text not null default 'L1'
     check (interview_guide_key in (
-      'L1','L2','L3','L4','L5','L6','L7','consultant','data_analyst','veterinarian'
+      'L1','L2','L3','L4','L5','L6','L7','data_analyst','veterinarian'
     )),
   jd_file_url         text,
   jd_file_public_id   text,

@@ -1,5 +1,4 @@
 import { canSignOffSkillLog } from "@/lib/accessControl";
-import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { AccessProfile } from "@/lib/pagePermissions";
@@ -108,7 +107,6 @@ export function canFillSkillLog(
   sessionRole?: string | null,
 ): boolean {
   if (!profile) return false;
-  if (isConsultantGrade(profile.grade_level)) return false;
   const grade = profile.grade_level;
   const gradeNum = parseInt(String(grade ?? "").replace(/\D/g, ""), 10) || 0;
   if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
@@ -119,7 +117,6 @@ export function canFillSkillLogForEmployee(
   fillerUserId: string | null | undefined,
   employee: { supervisor_id?: string | null; grade_level?: string | null },
 ): boolean {
-  if (isConsultantGrade(employee.grade_level)) return false;
   return isAssignedSupervisorOf(fillerUserId, employee);
 }
 

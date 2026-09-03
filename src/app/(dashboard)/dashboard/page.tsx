@@ -27,10 +27,6 @@ import {
 } from "lucide-react";
 import { DashboardOverviewSkeleton } from "@/components/skeletons/PageSkeletons";
 import { formatOverviewGreeting, getModuleRoute } from "@/lib/moduleRegistry";
-import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
-import {
-  isConsultantEmployee,
-} from "@/lib/consultantPrograms";
 import {
   DonutChart,
   CategoryBarChart,
@@ -558,11 +554,6 @@ export default function DashboardPage() {
   const profile = users?.find((u) => u.user_id === userId);
   const role = profile?.role ?? metaRole;
   const isAdmin = isFullRoleAccess(role);
-  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
-  const isConsultant = isConsultantEmployee(
-    profile?.grade_level,
-    gradeLevelsConfig,
-  );
 
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],
@@ -870,7 +861,7 @@ export default function DashboardPage() {
           type: "warning",
         });
       });
-    if (!isConsultant && latestAppraisal?.status === "draft") {
+    if (latestAppraisal?.status === "draft") {
       items.push({
         id: `appraisal-${latestAppraisal.id}`,
         title: `Complete ${latestAppraisal.review_quarter} ${latestAppraisal.review_year} appraisal`,
@@ -880,7 +871,7 @@ export default function DashboardPage() {
       });
     }
     return items;
-  }, [myLeave, latestAppraisal, isConsultant]);
+  }, [myLeave, latestAppraisal]);
 
   // Recent activity's visibility follows the same admin/manager/super_admin
   // gate the rest of this page already uses for "see everyone's records"
@@ -1043,26 +1034,24 @@ export default function DashboardPage() {
           type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
         });
       });
-      if (!isConsultant) {
-        myAppraisals.forEach((a) => {
-          add(a.created_at, {
-            id: `appraisal-${a.id}`,
-            title: `${a.review_quarter} ${a.review_year} appraisal`,
-            subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
-            href: "/dashboard/humanCapital/appraisal",
-            type: a.status === "draft" ? "info" : "success",
-          });
+      myAppraisals.forEach((a) => {
+        add(a.created_at, {
+          id: `appraisal-${a.id}`,
+          title: `${a.review_quarter} ${a.review_year} appraisal`,
+          subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+          href: "/dashboard/humanCapital/appraisal",
+          type: a.status === "draft" ? "info" : "success",
         });
-        mySkillLogs.forEach((s) => {
-          add(s.created_at, {
-            id: `skill-${s.id}`,
-            title: "Skill log entry recorded",
-            subtitle: timeAgo(s.created_at),
-            href: "/dashboard/humanCapital/skillLog",
-            type: "success",
-          });
+      });
+      mySkillLogs.forEach((s) => {
+        add(s.created_at, {
+          id: `skill-${s.id}`,
+          title: "Skill log entry recorded",
+          subtitle: timeAgo(s.created_at),
+          href: "/dashboard/humanCapital/skillLog",
+          type: "success",
         });
-      }
+      });
     }
 
     // Merging leave + appraisal (+ skill logs) needs an explicit sort —
@@ -1096,7 +1085,6 @@ export default function DashboardPage() {
     manualsData,
     applicationsData,
     promotionsData,
-    isConsultant,
   ]);
 
   const coreLoading = usersLoading || leaveLoading || appraisalLoading;
@@ -1191,30 +1179,6 @@ export default function DashboardPage() {
                 value={sopData?.length ?? "—"}
                 icon={FileText}
                 sub="Active procedures"
-                loading={sopLoading}
-                href="/dashboard/sop"
-              />
-              <OverdueTasksCard
-                loading={tasksLoading}
-                overdueProjects={overdueProjects}
-                total={overdueTasks}
-              />
-            </>
-          ) : isConsultant ? (
-            <>
-              <StatCard
-                accent
-                label="Leave Pending"
-                value={myPendingLeave}
-                icon={CalendarCheck}
-                sub={`${myApprovedLeave} approved`}
-                href="/dashboard/humanCapital/leave"
-              />
-              <StatCard
-                label="SOPs"
-                value={sopData?.length ?? "—"}
-                icon={FileText}
-                sub="Available to you"
                 loading={sopLoading}
                 href="/dashboard/sop"
               />
@@ -1342,26 +1306,6 @@ export default function DashboardPage() {
               </Panel>
             )}
           </>
-        ) : isConsultant ? (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Panel title="My leave" className="lg:col-span-1">
-                <div className="pt-2 pb-4">
-                  <SegmentedBar segments={myLeaveSegments} />
-                </div>
-                <p className="text-xs text-gray-400 text-center">
-                  {myLeave.length} total request{myLeave.length !== 1 ? "s" : ""}
-                </p>
-              </Panel>
-
-              <Panel title="My snapshot" className="lg:col-span-1">
-                <AttentionPanel
-                  items={employeeAttentionItems}
-                  emptyText="You're all set — no pending actions"
-                />
-              </Panel>
-            </div>
-          </>
         ) : (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1446,7 +1390,7 @@ export default function DashboardPage() {
             />
           </Panel>
 
-          {!isAdmin && !isConsultant && latestAppraisal && (
+          {!isAdmin && latestAppraisal && (
             <Panel title="Appraisal details">
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">

@@ -9,7 +9,6 @@ export type InterviewGuideKey =
   | "L5"
   | "L6"
   | "L7"
-  | "consultant"
   | "data_analyst"
   | "veterinarian";
 

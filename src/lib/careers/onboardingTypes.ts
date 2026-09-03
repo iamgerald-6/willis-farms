@@ -196,9 +196,9 @@ export interface OnboardingHrData {
   /** HR officer submitted review notes for senior sign-off. */
   hr_review_submitted_at?: string;
   hr_reviewed_by?: string;
-  /** consultant = subordinate consultant submitted to their supervisor; senior_hr = default inbox flow. */
-  hr_review_mode?: "consultant" | "senior_hr";
-  /** user_id of the consultant supervisor who must approve (consultant workflow). */
+  /** senior_hr = default inbox flow. */
+  hr_review_mode?: "senior_hr";
+  /** @deprecated Legacy consultant workflow — ignored. */
   hr_approval_supervisor_id?: string;
   /** Senior HR signed off and invited the employee to WillsOne. */
   hr_approved_at?: string;
@@ -490,12 +490,6 @@ export type OnboardingHrPipelineStatus =
   | "senior_approval"
   | "complete";
 
-function usesConsultantHrApproval(hr: OnboardingHrData | null | undefined): boolean {
-  return Boolean(
-    hr?.hr_approval_supervisor_id?.trim() || hr?.hr_review_mode === "consultant",
-  );
-}
-
 export function resolveOnboardingHrPipelineStatus(input: {
   submitted_at?: string | null;
   hr_data?: OnboardingHrData | null;
@@ -505,11 +499,6 @@ export function resolveOnboardingHrPipelineStatus(input: {
     return "complete";
   }
   if (!input.submitted_at) return "waiting_candidate";
-  if (usesConsultantHrApproval(hr)) {
-    if (!hr?.hr_review_submitted_at?.trim()) return "hr_review";
-    if (!hr?.hr_approved_at?.trim()) return "senior_approval";
-    return "complete";
-  }
   if (!hr?.hr_review_submitted_at?.trim()) return "hr_review";
   return "senior_approval";
 }

@@ -60,11 +60,6 @@ import {
   type SystemOption,
 } from "@/lib/systemDefinitions";
 import { useAppraisalFormProgress } from "@/lib/appraisal/appraisalFormProgress";
-import {
-  canParticipateAsProgramSubject,
-  consultantSelfServiceBlockedMessage,
-  isConsultantEmployee,
-} from "@/lib/consultantPrograms";
 
 // Shape of an existing appraisal fetched from the API
 interface ExistingAppraisal {
@@ -403,7 +398,6 @@ export default function AppraisalForm({
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
   const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.role);
-  const isConsultantViewer = isConsultantEmployee(currentUserGrade, gradeConfig);
 
   // ── Which side of the form am I filling? ──
   // Everyone — supervisors included — completes their own self-assessment, so
@@ -613,7 +607,6 @@ export default function AppraisalForm({
       }
     }
     return allUsers.filter((u) => {
-      if (!canParticipateAsProgramSubject(u.grade_level, gradeConfig)) return false;
       if (!u.grade_level || !allowedGrades.has(u.grade_level)) return false;
       if (u.user_id === userId) return false;
       return isSuperAdmin || canRate(currentUserGrade, u.grade_level, gradeConfig);
@@ -991,30 +984,6 @@ export default function AppraisalForm({
       </div>
     </div>
   ) : null;
-
-  if (!isFillingSecond && fillingForSelf && isConsultantViewer) {
-    return (
-      <div className="rounded-2xl border border-sky-200 bg-sky-50 p-8 text-center">
-        <p className="text-sm font-semibold text-sky-950">
-          {consultantSelfServiceBlockedMessage("appraisal")}
-        </p>
-      </div>
-    );
-  }
-
-  if (
-    existingAppraisal &&
-    isConsultantViewer &&
-    isOwnAppraisal(viewer, subject)
-  ) {
-    return (
-      <div className="rounded-2xl border border-sky-200 bg-sky-50 p-8 text-center">
-        <p className="text-sm font-semibold text-sky-950">
-          {consultantSelfServiceBlockedMessage("appraisal")}
-        </p>
-      </div>
-    );
-  }
 
   if (selfAlreadyFiled && ownPeriodAppraisal) {
     return (
