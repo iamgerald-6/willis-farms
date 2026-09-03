@@ -324,12 +324,18 @@ export function fieldsForStep(
   fields: ApplicationFormField[],
   step: ApplicationFieldStep,
 ): ApplicationFormField[] {
+  // File uploads render last within their step regardless of sort_order —
+  // except the CV, which is deliberately sort_order 0 (first) so applicants
+  // upload it before anything else and get the rest of the form pre-filled
+  // from it (see handleExtractCv in JobApplicationWizard.tsx).
+  const rendersLast = (f: ApplicationFormField) =>
+    f.rules.fieldType === "file" && f.rules.fieldKey !== "cv";
   const stepFields = fields
     .filter((f) => f.rules.step === step)
     .sort((a, b) => {
-      const aFile = a.rules.fieldType === "file" ? 1 : 0;
-      const bFile = b.rules.fieldType === "file" ? 1 : 0;
-      if (aFile !== bFile) return aFile - bFile;
+      const aLast = rendersLast(a) ? 1 : 0;
+      const bLast = rendersLast(b) ? 1 : 0;
+      if (aLast !== bLast) return aLast - bLast;
       return a.sort_order - b.sort_order;
     });
   return stepFields;

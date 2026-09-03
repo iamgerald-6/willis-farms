@@ -12,8 +12,10 @@ export default function FormsLayout({ children }: { children: React.ReactNode })
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+        <QueryProvider>
         <Analytics />
-        <QueryProvider>{children}</QueryProvider>
+        {children}
+        </QueryProvider>
       </body>
     </html>
   );
