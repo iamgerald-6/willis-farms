@@ -57,7 +57,6 @@ export default function ManageUserAccessPage() {
     "group",
   );
   const [isDisabled, setIsDisabled] = useState(false);
-  const [tmCanViewAllTasks, setTmCanViewAllTasks] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [supervisorId, setSupervisorId] = useState<string>("");
@@ -105,7 +104,6 @@ export default function ManageUserAccessPage() {
       hasIndividualPermissionOverride(target) ? "individual" : "group",
     );
     setIsDisabled(!!target.is_disabled);
-    setTmCanViewAllTasks(!!target.tm_can_view_all_tasks);
     setFirstName(target.first_name ?? "");
     setLastName(target.last_name ?? "");
     setSupervisorId(target.supervisor_id ?? "");
@@ -154,9 +152,6 @@ export default function ManageUserAccessPage() {
 
   const supervisorDirty =
     !!target && (supervisorId || "") !== (target.supervisor_id ?? "");
-
-  const tmCanViewAllTasksDirty =
-    !!target && tmCanViewAllTasks !== !!target.tm_can_view_all_tasks;
 
   const permissionModuleCount = permissionActionModuleCount(permissionActions);
 
@@ -210,24 +205,6 @@ export default function ManageUserAccessPage() {
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Failed to update supervisor.");
-    },
-  });
-
-  const saveTmCanViewAllTasksMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.patch(`/task-manager/users/${userId}/permissions`, {
-        tm_can_view_all_tasks: tmCanViewAllTasks,
-      });
-      return res.data;
-    },
-    onSuccess: () => {
-      toast.success("Task Manager visibility updated.");
-      queryClient.invalidateQueries({ queryKey: ["get_users"] });
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(
-        error?.response?.data?.error ?? "Failed to update Task Manager visibility.",
-      );
     },
   });
 
@@ -454,52 +431,6 @@ export default function ManageUserAccessPage() {
                 <button
                   type="button"
                   onClick={() => setSupervisorId(target.supervisor_id ?? "")}
-                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-gray-100">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={tmCanViewAllTasks}
-                onChange={(e) => setTmCanViewAllTasks(e.target.checked)}
-                className="accent-red-600 w-4 h-4"
-              />
-              <span className="text-sm font-medium text-gray-700">
-                Can view all Task Manager tasks
-              </span>
-            </label>
-            <p className="text-xs text-gray-500 mt-1.5">
-              Grants visibility into every task and project across Task Manager
-              dashboards and reports (e.g. the Overview page&apos;s Overdue Tasks
-              count) — not edit rights, which Senior Management already has.
-              Off by default, so most users only see totals for tasks they own.
-            </p>
-            <div className="flex flex-wrap items-center gap-3 mt-3">
-              <button
-                type="button"
-                onClick={() => saveTmCanViewAllTasksMutation.mutate()}
-                disabled={
-                  saveTmCanViewAllTasksMutation.isPending || !tmCanViewAllTasksDirty
-                }
-                className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
-              >
-                {saveTmCanViewAllTasksMutation.isPending && (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                )}
-                Save Task Manager visibility
-              </button>
-              {tmCanViewAllTasksDirty && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setTmCanViewAllTasks(!!target.tm_can_view_all_tasks)
-                  }
                   className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
                   Cancel
