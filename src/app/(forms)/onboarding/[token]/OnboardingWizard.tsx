@@ -29,6 +29,7 @@ import { isValidEmail, sanitizeDigitsInput, sanitizeNameInput } from "@/lib/vali
 import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
+import { SsnitNumberInput } from "@/components/SsnitNumberInput";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
@@ -375,6 +376,17 @@ export default function OnboardingWizard({
       return (
         <FieldBlock key={field.id} label={field.label} required={required} half={half}>
           <GhanaCardInput
+            value={String(value ?? "")}
+            onChange={(v) => setFieldValue(fieldKey, v)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "ssnit") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <SsnitNumberInput
             value={String(value ?? "")}
             onChange={(v) => setFieldValue(fieldKey, v)}
           />

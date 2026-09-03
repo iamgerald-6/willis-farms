@@ -29,6 +29,7 @@ const FIELD_TYPES: OnboardingFieldType[] = [
   "email",
   "phone",
   "ghana_card",
+  "ssnit",
   "date",
   "select",
   "textarea",

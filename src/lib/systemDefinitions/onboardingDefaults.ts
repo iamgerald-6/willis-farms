@@ -200,7 +200,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       step: "personal",
       section: "A. Personal information",
       fieldKey: "personal.ssnit_number",
-      fieldType: "text",
+      fieldType: "ssnit",
       required: true,
       colSpan: "half",
     }),
