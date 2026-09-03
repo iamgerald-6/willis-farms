@@ -90,22 +90,35 @@ export default function InterviewPanelForm({
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
 
-  const { isLoading, refetch } = useQuery({
+  const { data: queryData, isLoading, refetch } = useQuery({
     queryKey: ["interview_guide", applicationId],
     queryFn: async () => {
       const res = await api.get(
         `/careers/interview?application_id=${applicationId}`,
       );
-      const { application, guide: g, evaluationLabels: labels } = res.data.data;
-      setCandidateName(application.full_name);
-      setReferenceNumber(application.reference_number);
-      setInterviewSubmitted(!!application.interview_submitted_at);
-      setGuide(g);
-      setEvaluationLabels(labels ?? DEFAULT_INTERVIEW_EVALUATION_LABELS);
-      setFormData(normalizeInterviewFormData(application.interview_form_data));
       return res.data.data;
     },
   });
+
+  // Hydrates from whatever the query currently holds — including data
+  // already cached from before this component was last unmounted (e.g.
+  // closing and reopening Panel setup). Previously this hydration lived
+  // inside queryFn above, so it only ran once an actual network request
+  // finished; reopening the panel always showed a blank loading state
+  // for the length of that round trip, even though React Query already
+  // had the answer cached. Deriving it from `queryData` here instead runs
+  // as soon as cached data is available, so a reopen shows the existing
+  // data immediately while a fresh copy loads quietly in the background.
+  useEffect(() => {
+    if (!queryData) return;
+    const { application, guide: g, evaluationLabels: labels } = queryData;
+    setCandidateName(application.full_name);
+    setReferenceNumber(application.reference_number);
+    setInterviewSubmitted(!!application.interview_submitted_at);
+    setGuide(g);
+    setEvaluationLabels(labels ?? DEFAULT_INTERVIEW_EVALUATION_LABELS);
+    setFormData(normalizeInterviewFormData(application.interview_form_data));
+  }, [queryData]);
 
   const workflowStep = interviewWorkflowStepV2(formData);
   const activeStep = manualStep ?? workflowStep;
