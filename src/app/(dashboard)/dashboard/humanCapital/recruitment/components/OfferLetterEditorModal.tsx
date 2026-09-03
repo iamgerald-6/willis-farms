@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
@@ -12,7 +12,12 @@ import {
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
-import { ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
+import { ACCEPT_IMAGE_JPEG_PNG, ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
+import type { User } from "@/types";
+import SignaturePad from "./SignaturePad";
+
+type SignatureImage = { secure_url: string; public_id: string; original_name: string };
 
 type Props = {
   applicationId: string;
@@ -49,7 +54,33 @@ type OfferLetterData = {
     income_tax: string | null;
     net_payable: string | null;
   } | null;
+  hr_data?: {
+    signer_user_id?: string | null;
+    signer_name?: string | null;
+    signer_title?: string | null;
+    signature_type?: "typed" | "drawn" | null;
+    signature_text?: string | null;
+    signature_image?: SignatureImage | null;
+  } | null;
 };
+
+function roleFallbackTitle(role: string): string {
+  switch (role) {
+    case "super_admin":
+      return "Senior Administrator";
+    case "admin":
+      return "Administrator";
+    case "manager":
+      return "Manager";
+    default:
+      return "Human Capital";
+  }
+}
+
+/** Senior management, or anyone granted the Recruitment module directly (HR). */
+function isEligibleSigner(user: User): boolean {
+  return isSeniorManagement(user.role) || Boolean(user.page_permissions?.includes("hc:recruitment"));
+}
 
 function formatCurrencyGhs(value: string | null | undefined): string | null {
   if (!value?.trim()) return null;
@@ -76,6 +107,12 @@ export default function OfferLetterEditorModal({
   onSaved,
 }: Props) {
   const [draft, setDraft] = useState("");
+  const [signerUserId, setSignerUserId] = useState("");
+  const [signatureMode, setSignatureMode] = useState<"typed" | "drawn">("typed");
+  const [typedSignature, setTypedSignature] = useState("");
+  const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
+  const [savedSignatureImage, setSavedSignatureImage] = useState<SignatureImage | null>(null);
+  const [signatureHydrated, setSignatureHydrated] = useState(false);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -88,6 +125,19 @@ export default function OfferLetterEditorModal({
     },
   });
 
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["get_users"],
+    queryFn: async () => {
+      const res = await api.get("/get_user");
+      return res.data;
+    },
+  });
+
+  const eligibleSigners = useMemo(
+    () => allUsers.filter(isEligibleSigner),
+    [allUsers],
+  );
+
   const showInitialLoader = isLoading && !data;
 
   useEffect(() => {
@@ -95,6 +145,17 @@ export default function OfferLetterEditorModal({
       setDraft(data.offer_letter_draft);
     }
   }, [data?.offer_letter_draft]);
+
+  // One-shot hydration of the previously saved signer/signature, if any.
+  useEffect(() => {
+    if (signatureHydrated || !data?.hr_data) return;
+    const hr = data.hr_data;
+    if (hr.signer_user_id) setSignerUserId(hr.signer_user_id);
+    if (hr.signature_type) setSignatureMode(hr.signature_type);
+    if (hr.signature_text) setTypedSignature(hr.signature_text);
+    if (hr.signature_image?.secure_url) setSavedSignatureImage(hr.signature_image);
+    setSignatureHydrated(true);
+  }, [signatureHydrated, data?.hr_data]);
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -135,16 +196,52 @@ export default function OfferLetterEditorModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit generateMutation
   }, [showInitialLoader, applicationId, data?.offer_terms_saved_at, data?.offer_letter_draft]);
 
+  const selectedSigner = eligibleSigners.find((u) => u.user_id === signerUserId);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const trimmed = draft.trim();
       if (!trimmed) {
         throw new Error("Offer letter text is empty.");
       }
+      if (!selectedSigner) {
+        throw new Error("Select who is signing this offer letter.");
+      }
+
+      let signatureImage: SignatureImage | undefined;
+      if (signatureMode === "drawn") {
+        if (drawnSignature) {
+          const blob = await (await fetch(drawnSignature)).blob();
+          const file = new File([blob], `signature-${applicationId}.png`, {
+            type: "image/png",
+          });
+          signatureImage = await uploadCareersFile(
+            file,
+            "careers/offer-letters/signatures",
+            ACCEPT_IMAGE_JPEG_PNG,
+            "signature_image",
+          );
+        } else if (savedSignatureImage) {
+          signatureImage = savedSignatureImage;
+        } else {
+          throw new Error("Draw a signature, or switch to typing your name.");
+        }
+      } else if (!typedSignature.trim()) {
+        throw new Error("Type the signer's name, or switch to drawing a signature.");
+      }
 
       await api.patch("/careers/onboarding/offer-letter", {
         application_id: applicationId,
         offer_letter_draft: trimmed,
+        signature: {
+          signer_user_id: selectedSigner.user_id,
+          signer_name: `${selectedSigner.first_name} ${selectedSigner.last_name}`.trim(),
+          signer_title:
+            selectedSigner.job_position?.trim() || roleFallbackTitle(selectedSigner.role),
+          signature_type: signatureMode,
+          signature_text: signatureMode === "typed" ? typedSignature.trim() : undefined,
+          signature_image: signatureMode === "drawn" ? signatureImage : undefined,
+        },
       });
 
       const pdfRes = await fetch(
@@ -304,6 +401,54 @@ export default function OfferLetterEditorModal({
                 />
               </div>
 
+              <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                  Sign-off
+                </label>
+                <div>
+                  <label className="text-xs text-gray-500">Signing as</label>
+                  <select
+                    value={signerUserId}
+                    onChange={(e) => setSignerUserId(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-200"
+                  >
+                    <option value="">Select a signer…</option>
+                    {eligibleSigners.map((u) => (
+                      <option key={u.user_id} value={u.user_id}>
+                        {u.first_name} {u.last_name}
+                        {u.job_position?.trim() ? ` — ${u.job_position.trim()}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Senior management and HR staff with Recruitment access only.
+                  </p>
+                </div>
+
+                {savedSignatureImage && signatureMode === "drawn" && !drawnSignature && (
+                  <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={savedSignatureImage.secure_url}
+                      alt="Signature on file"
+                      className="h-10 object-contain"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Signature on file — draw below to replace it.
+                    </p>
+                  </div>
+                )}
+
+                <SignaturePad
+                  mode={signatureMode}
+                  onModeChange={setSignatureMode}
+                  typedValue={typedSignature}
+                  onTypedChange={setTypedSignature}
+                  drawnValue={drawnSignature}
+                  onDrawnChange={setDrawnSignature}
+                />
+              </div>
+
               {data?.offer_letter?.secure_url && (
                 <a
                   href={data.offer_letter.secure_url}
@@ -348,7 +493,13 @@ export default function OfferLetterEditorModal({
           <button
             type="button"
             onClick={() => saveMutation.mutate()}
-            disabled={!draft.trim() || saveMutation.isPending || isGenerating}
+            disabled={
+              !draft.trim() ||
+              !signerUserId ||
+              (signatureMode === "typed" ? !typedSignature.trim() : !drawnSignature && !savedSignatureImage) ||
+              saveMutation.isPending ||
+              isGenerating
+            }
             className="sm:ml-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
             {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

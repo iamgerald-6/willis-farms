@@ -258,6 +258,21 @@ export interface OnboardingHrData {
   social_security_contribution?: string;
   income_tax?: string;
   net_payable?: string;
+  /** Offer letter sign-off — who signed and how (Stage 3). */
+  signer_user_id?: string;
+  signer_name?: string;
+  /** Job title shown under the signature — signer's job_position, or a role fallback. */
+  signer_title?: string;
+  signature_type?: "typed" | "drawn";
+  /** Typed signature text (used when signature_type === "typed"). */
+  signature_text?: string;
+  /** Canvas-drawn signature, uploaded as a PNG (used when signature_type === "drawn"). */
+  signature_image?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  };
+  signed_at?: string;
   /** Additional admin-configured HR fields stored in hr_data JSON. */
   [key: string]:
     | string

@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { OfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
 
 const RED = "#991B1B";
@@ -73,6 +73,18 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     color: GRAY,
     marginTop: 2,
+  },
+  signatureImage: {
+    width: 130,
+    height: 46,
+    marginTop: 10,
+    objectFit: "contain",
+  },
+  signatureTyped: {
+    fontFamily: "Times-Italic",
+    fontSize: 20,
+    marginTop: 10,
+    color: DARK,
   },
   footer: {
     position: "absolute",
@@ -197,8 +209,17 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
 
         <View style={styles.signOff}>
           <Text>Yours sincerely,</Text>
-          <Text style={styles.signName}>Human Capital Team</Text>
-          <Text style={styles.signTitle}>Wills Farms Ltd.</Text>
+          {data.signatureType === "drawn" && data.signatureImageUrl ? (
+            <Image src={data.signatureImageUrl} style={styles.signatureImage} />
+          ) : (
+            <Text style={styles.signatureTyped}>
+              {data.signatureType === "typed" && data.signatureText
+                ? data.signatureText
+                : "[HR TO SIGN]"}
+            </Text>
+          )}
+          <Text style={styles.signName}>{data.signerName || "[HR TO COMPLETE]"}</Text>
+          <Text style={styles.signTitle}>{data.signerTitle || "Wills Farms Ltd."}</Text>
         </View>
 
         <Text style={styles.footer}>

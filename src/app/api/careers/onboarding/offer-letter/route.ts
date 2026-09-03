@@ -13,6 +13,15 @@ type OfferLetterFile = {
   original_name: string;
 };
 
+type SignaturePayload = {
+  signer_user_id?: string;
+  signer_name?: string;
+  signer_title?: string;
+  signature_type?: "typed" | "drawn";
+  signature_text?: string;
+  signature_image?: OfferLetterFile;
+};
+
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
@@ -114,10 +123,12 @@ export async function PATCH(req: NextRequest) {
     application_id,
     offer_letter,
     offer_letter_draft,
+    signature,
   }: {
     application_id?: string;
     offer_letter?: OfferLetterFile;
     offer_letter_draft?: string;
+    signature?: SignaturePayload;
   } = body;
 
   if (!application_id) {
@@ -127,9 +138,9 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
-  if (!offer_letter?.secure_url && offer_letter_draft === undefined) {
+  if (!offer_letter?.secure_url && offer_letter_draft === undefined && !signature) {
     return NextResponse.json(
-      { error: "offer_letter or offer_letter_draft is required." },
+      { error: "offer_letter, offer_letter_draft, or signature is required." },
       { status: 400 },
     );
   }
@@ -169,6 +180,17 @@ export async function PATCH(req: NextRequest) {
       ? {
           offer_letter,
           offer_letter_uploaded_at: now,
+        }
+      : {}),
+    ...(signature
+      ? {
+          signer_user_id: signature.signer_user_id,
+          signer_name: signature.signer_name,
+          signer_title: signature.signer_title,
+          signature_type: signature.signature_type,
+          signature_text: signature.signature_text,
+          signature_image: signature.signature_image,
+          signed_at: now,
         }
       : {}),
   };

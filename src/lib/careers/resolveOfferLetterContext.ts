@@ -37,6 +37,12 @@ export type OfferLetterContext = {
   socialSecurityContribution?: string;
   incomeTax?: string;
   netPayable?: string;
+  /** Sign-off — who signed the letter and how (Stage 3). */
+  signerName?: string;
+  signerTitle?: string;
+  signatureType?: "typed" | "drawn";
+  signatureText?: string;
+  signatureImageUrl?: string;
 };
 
 function formatDisplayDate(raw: string | null | undefined): string | undefined {
@@ -115,5 +121,10 @@ export async function resolveOfferLetterContext(
     socialSecurityContribution: hr.social_security_contribution?.trim() || undefined,
     incomeTax: hr.income_tax?.trim() || undefined,
     netPayable: hr.net_payable?.trim() || undefined,
+    signerName: hr.signer_name?.trim() || undefined,
+    signerTitle: hr.signer_title?.trim() || undefined,
+    signatureType: hr.signature_type,
+    signatureText: hr.signature_text?.trim() || undefined,
+    signatureImageUrl: hr.signature_image?.secure_url || undefined,
   };
 }
