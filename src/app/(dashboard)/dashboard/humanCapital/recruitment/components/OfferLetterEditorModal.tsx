@@ -291,19 +291,6 @@ export default function OfferLetterEditorModal({
                 )}
               </div>
 
-              {ctx?.medical_reports?.length ? (
-                <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-4 py-3">
-                  <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">
-                    Required medical reports
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm text-amber-950 list-disc pl-5">
-                    {ctx.medical_reports.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
               <div>
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
                   Edit offer letter
