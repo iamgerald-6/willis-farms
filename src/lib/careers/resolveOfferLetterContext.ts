@@ -39,6 +39,18 @@ export type OfferLetterContext = {
   netPayable?: string;
 };
 
+function formatDisplayDate(raw: string | null | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export async function resolveOfferLetterContext(
   supabase: SupabaseClient,
   application: JobApplication,
@@ -63,21 +75,21 @@ export async function resolveOfferLetterContext(
   const salaryGhs = hr.salary_ghs?.trim() || salary.salaryGhs || undefined;
   const payFrequency = hr.pay_frequency?.trim() || undefined;
 
-  const acceptanceDeadlineRaw = hr.acceptance_deadline?.trim();
-  const acceptanceDeadline = acceptanceDeadlineRaw
-    ? new Date(acceptanceDeadlineRaw).toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    : undefined;
+  const acceptanceDeadline = formatDisplayDate(hr.acceptance_deadline);
+  // Offer Terms' start_date is the single source of truth for the offer letter's
+  // appointment/effective date; fall back to the older interview-summary value
+  // only for offers generated before this field existed.
+  const recommendedStartDate =
+    formatDisplayDate(hr.start_date) ||
+    formData.summary?.recommended_start_date?.trim() ||
+    undefined;
 
   return {
     candidateName: application.full_name,
     candidateEmail: application.email,
     roleTitle: hr.position_title?.trim() || application.role_title,
     referenceNumber: application.reference_number,
-    recommendedStartDate: formData.summary?.recommended_start_date?.trim() || undefined,
+    recommendedStartDate,
     gradeLevel,
     salaryGhs,
     salaryRange: hr.salary_range?.trim() || salary.formatted || undefined,

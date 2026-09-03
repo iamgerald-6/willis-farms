@@ -169,6 +169,19 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       { fieldKey: "fitness_determination", fieldType: "text", group: "hr" },
     ),
     hrField(
+      "opt:recruitment:hr:start_date",
+      "Start date",
+      "start_date",
+      17.5,
+      {
+        fieldKey: "start_date",
+        fieldType: "date",
+        group: "hr",
+        required: true,
+        hint: "Effective employment start date — used throughout the offer letter as both the appointment date and Position Details start date.",
+      },
+    ),
+    hrField(
       "opt:recruitment:hr:notice_period",
       "Notice period",
       "notice_period",

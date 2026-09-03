@@ -6,7 +6,6 @@ import type { JobApplication } from "@/lib/careers/types";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { resolveOfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
 import { validateOfferTerms } from "@/lib/careers/offerTerms";
-import { formatMedicalReportsPlainText } from "@/lib/systemDefinitions/onboardingMedicalReports";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
@@ -113,8 +112,6 @@ export async function POST(req: NextRequest) {
         ? `GHS ${ctx.salaryGhs}`
         : "[HR TO COMPLETE]";
 
-    const medicalBlock = formatMedicalReportsPlainText(ctx.medicalReports);
-
     const facts = [
       `- Candidate name: ${ctx.candidateName}`,
       `- Position: ${ctx.roleTitle}`,
@@ -135,15 +132,13 @@ export async function POST(req: NextRequest) {
       "",
       "IMPORTANT: This letter is for a NEW external candidate who has just been selected for hire. They are NOT yet an employee.",
       "Do NOT write as if they are already in the company. Do NOT mention probation periods, six-month reviews, or internal promotion language.",
+      "Do NOT include any section about pre-employment medical reports, medical clearance, or health screening requirements — that is handled separately outside this letter.",
       "",
       "CRITICAL: Every fact you need is listed below. Use these values exactly as given — do not reword, compute, or invent numbers, dates, or names.",
       "If a value below reads \"[HR TO COMPLETE]\", write that exact placeholder text in the letter at that spot instead of guessing — never make one up.",
       "",
       "Known facts:",
       ...facts,
-      "",
-      "Required medical reports (list clearly as pre-employment requirements before start):",
-      medicalBlock || "Standard pre-employment medical clearance as directed by HR.",
       "",
       keyResponsibilitiesSource
         ? `Key responsibilities for this role, taken from the job posting (reformat into a clean bulleted list, do not add duties not present here):\n${keyResponsibilitiesSource}`

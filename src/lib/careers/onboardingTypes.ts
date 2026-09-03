@@ -242,6 +242,9 @@ export interface OnboardingHrData {
   /** Position title of the manager this hire reports to — picked from staff
    * currently holding a manager/admin/super_admin role (see isSeniorManagement). */
   reporting_to?: string;
+  /** Effective employment start date — single source for both the offer letter's
+   * appointment/effective date and its Position Details "Start Date" line. */
+  start_date?: string;
   /** e.g. "3 months" — used in the offer letter's Terms of Employment clause. */
   notice_period?: string;
   /** e.g. "40 hours per week, Monday to Sunday with one day off duty." */
