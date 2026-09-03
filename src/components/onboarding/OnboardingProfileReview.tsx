@@ -94,7 +94,7 @@ export default function OnboardingProfileReview({ formData }: Props) {
           "Travelled to ASF-affected region in past 30 days",
           formatYesNo(bio.asf_travel_30d),
         ),
-        field("Biosecurity commitment initials", bio.commitment_initials),
+        field("Biosecurity commitment", bio.commitment_initials ? "Yes" : null),
         field("Additional details", bio.details),
       ].filter(Boolean) as { label: string; value: string }[],
     },

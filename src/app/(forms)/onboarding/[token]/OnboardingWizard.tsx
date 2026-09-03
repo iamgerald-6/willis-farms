@@ -351,6 +351,27 @@ export default function OnboardingWizard({
       );
     }
 
+    if (fieldType === "checkbox") {
+      return (
+        <label
+          key={field.id}
+          className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2"
+        >
+          <input
+            type="checkbox"
+            className="mt-1 accent-red-600"
+            checked={Boolean(value)}
+            disabled={readOnly}
+            onChange={(e) => setFieldValue(fieldKey, e.target.checked)}
+          />
+          <span>
+            {field.label}
+            {required && <span className="text-red-600"> *</span>}
+          </span>
+        </label>
+      );
+    }
+
     if (fieldType === "phone") {
       return (
         <FieldBlock key={field.id} label={field.label} required={required} half={half}>

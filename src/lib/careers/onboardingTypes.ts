@@ -138,7 +138,8 @@ export interface OnboardingFormData {
     visited_swine_site_12m?: "yes" | "no" | "";
     details?: string;
     asf_travel_30d?: "yes" | "no" | "";
-    commitment_initials?: string;
+    /** Checkbox consent — "I consent to abide by and commit to all biosecurity requirements…" */
+    commitment_initials?: boolean;
   };
   background?: {
     criminal_conviction?: "yes" | "no" | "";

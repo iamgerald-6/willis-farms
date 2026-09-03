@@ -29,6 +29,7 @@ export type OnboardingFieldType =
   | "phone"
   | "ghana_card"
   | "ssnit"
+  | "checkbox"
   | "date"
   | "select"
   | "textarea"
@@ -54,7 +55,6 @@ const ONBOARDING_NAME_FIELD_KEYS = new Set([
   "payment.momo_registered_name",
   "payment.bank_name",
   "declarations.signature_name",
-  "biosecurity.commitment_initials",
 ]);
 
 /** Plain text fields that must be digits only. SSNIT has its own dedicated
@@ -745,6 +745,13 @@ export function validateOnboardingStep(
       continue;
     }
 
+    if (field.rules.fieldType === "checkbox") {
+      if (field.rules.required && !value) {
+        errors.push(`${field.label} must be checked to continue.`);
+      }
+      continue;
+    }
+
     const isEmpty =
       value === undefined || value === null || String(value).trim() === "";
 
@@ -840,8 +847,8 @@ export function validateOnboardingMedicalExtras(form: OnboardingFormData): strin
     }
   }
 
-  if (!bio.commitment_initials?.trim()) {
-    errors.push("Biosecurity commitment initials are required.");
+  if (!bio.commitment_initials) {
+    errors.push("Please confirm your biosecurity commitment before submitting.");
   }
 
   if (!form.declarations?.data_consent) {
