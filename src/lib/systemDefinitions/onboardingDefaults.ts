@@ -387,23 +387,23 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       "opt:onboarding:field:bio_initials",
       "I consent to abide by and commit to all biosecurity requirements at Wills Farms.",
       "biosecurity.commitment_initials",
-      68,
+      69,
       {
         step: "medical",
-        section: "Biosecurity",
+        section: "Consent & signature",
         fieldKey: "biosecurity.commitment_initials",
         fieldType: "checkbox",
         required: true,
         colSpan: "full",
       },
     ),
-    field("opt:onboarding:field:sig_name", "Typed full name (signature)", "declarations.signature_name", 69, {
+    field("opt:onboarding:field:sig_name", "Full name (signature)", "declarations.signature_name", 70, {
       step: "medical",
       section: "Consent & signature",
       fieldKey: "declarations.signature_name",
       fieldType: "text",
       required: true,
-      prefillLocked: true,
+      colSpan: "full",
     }),
   ];
 }

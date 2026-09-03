@@ -587,6 +587,7 @@ export default function OnboardingWizard({
           const isBiosecuritySection =
             sectionTitle === "Biosecurity" ||
             sectionTitle === "K. Biosecurity declaration";
+          const isConsentSection = sectionTitle === "Consent & signature";
 
           return (
             <section key={sectionTitle || "default"} className="space-y-3">
@@ -647,38 +648,35 @@ export default function OnboardingWizard({
                 </div>
               )}
 
+              {step === "medical" && isConsentSection && (
+                <label className="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-red-600"
+                    checked={formExtras.declarations?.data_consent ?? false}
+                    onChange={(e) =>
+                      patchExtras({
+                        declarations: {
+                          ...formExtras.declarations,
+                          data_consent: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span>
+                    I consent to the collection and processing of my personal data for
+                    employment administration, and I certify that the information provided is
+                    accurate and complete.
+                  </span>
+                </label>
+              )}
+
               <div className="grid sm:grid-cols-2 gap-3">
                 {sectionFields.map((field) => renderField(field))}
               </div>
             </section>
           );
         })}
-
-        {step === "medical" && (
-          <section className="space-y-4">
-            <h2 className="text-sm font-bold text-gray-900">Consent & signature</h2>
-            <label className="flex items-start gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="mt-1 accent-red-600"
-                checked={formExtras.declarations?.data_consent ?? false}
-                onChange={(e) =>
-                  patchExtras({
-                    declarations: {
-                      ...formExtras.declarations,
-                      data_consent: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <span>
-                I consent to the collection and processing of my personal data for employment
-                administration, and I certify that the information provided is accurate and
-                complete.
-              </span>
-            </label>
-          </section>
-        )}
       </div>
 
       <div className="flex gap-2 mt-8 pt-6 border-t border-gray-100">
