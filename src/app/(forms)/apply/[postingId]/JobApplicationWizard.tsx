@@ -11,8 +11,8 @@ import {
   type UploadedFile,
   type UploadedFileCategory,
   type WorkHistoryEntry,
-  UPLOADED_FILE_CATEGORIES,
-  UPLOADED_FILE_CATEGORY_LABELS,
+  resolveUploadCategories,
+  resolveUploadCategoryLabel,
   effectiveMaxLength,
   isNameFieldKey,
   isRefereeEmailFieldKey,
@@ -169,6 +169,12 @@ export default function JobApplicationWizard({
   }, [refereeFields, requiredRefereeCount]);
 
   const refereeStepLabel = stepLabels.references ?? "Referees";
+
+  // Document-upload category options — derived from whichever work/education
+  // -shaped fields exist on this form (see resolveUploadCategories), so a
+  // newly added field like "Professional qualifications" automatically gets
+  // its own tagging option here without any code change.
+  const uploadCategories = useMemo(() => resolveUploadCategories(fields), [fields]);
 
   const setFieldValue = (key: string, value: unknown) => {
     if (
@@ -661,7 +667,7 @@ export default function JobApplicationWizard({
                   {f.original_name}
                   {f.category && (
                     <span className="ml-2 inline-block text-[11px] font-medium text-red-600 bg-red-50 rounded-full px-2 py-0.5 align-middle">
-                      {UPLOADED_FILE_CATEGORY_LABELS[f.category]}
+                      {resolveUploadCategoryLabel(fields, f.category)}
                     </span>
                   )}
                 </span>
@@ -688,7 +694,7 @@ export default function JobApplicationWizard({
               <option value="">
                 What is this document? Select before uploading…
               </option>
-              {UPLOADED_FILE_CATEGORIES.map((c) => (
+              {uploadCategories.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
                 </option>

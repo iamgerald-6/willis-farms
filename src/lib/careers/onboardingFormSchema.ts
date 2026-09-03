@@ -28,6 +28,8 @@ export type OnboardingFieldType =
   | "email"
   | "phone"
   | "ghana_card"
+  | "ssnit"
+  | "checkbox"
   | "date"
   | "select"
   | "textarea"
@@ -53,11 +55,11 @@ const ONBOARDING_NAME_FIELD_KEYS = new Set([
   "payment.momo_registered_name",
   "payment.bank_name",
   "declarations.signature_name",
-  "biosecurity.commitment_initials",
 ]);
 
-/** Plain text fields that must be digits only (SSNIT, etc.). */
-const ONBOARDING_DIGITS_ONLY_FIELD_KEYS = new Set(["personal.ssnit_number"]);
+/** Plain text fields that must be digits only. SSNIT has its own dedicated
+ * "ssnit" fieldType (see SSNIT_REGEX) rather than living in this set. */
+const ONBOARDING_DIGITS_ONLY_FIELD_KEYS = new Set<string>([]);
 
 export function isOnboardingNameFieldKey(fieldKey: string): boolean {
   return ONBOARDING_NAME_FIELD_KEYS.has(fieldKey);
@@ -215,6 +217,30 @@ export function formatGhanaPostGps(raw: string): string {
 
 export function isCompleteGhanaPostGps(value: string): boolean {
   return GPS_ADDRESS_REGEX.test(String(value ?? "").trim());
+}
+
+/** SSNIT number: 1 letter followed by 12 digits (13 characters total). */
+export const SSNIT_REGEX = /^[A-Z]\d{12}$/;
+
+/** Format raw input as a SSNIT number: a leading letter, then up to 12 digits. */
+export function formatSsnitNumber(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  let letter = "";
+  let digits = "";
+
+  for (const ch of cleaned) {
+    if (!letter && /[A-Z]/.test(ch)) {
+      letter = ch;
+    } else if (/\d/.test(ch) && digits.length < 12) {
+      digits += ch;
+    }
+  }
+
+  return letter + digits;
+}
+
+export function isCompleteSsnitNumber(value: string): boolean {
+  return SSNIT_REGEX.test(String(value ?? "").trim());
 }
 
 /** Ghana bank account numbers are typically 10–16 digits. */
@@ -719,6 +745,13 @@ export function validateOnboardingStep(
       continue;
     }
 
+    if (field.rules.fieldType === "checkbox") {
+      if (field.rules.required && !value) {
+        errors.push(`${field.label} must be checked to continue.`);
+      }
+      continue;
+    }
+
     const isEmpty =
       value === undefined || value === null || String(value).trim() === "";
 
@@ -739,6 +772,15 @@ export function validateOnboardingStep(
       if (!/^GHA-\d{9}-\d$/.test(str)) {
         errors.push(`${field.label} needs all 10 digits (9 digits + 1 check digit).`);
       }
+    }
+
+    if (field.rules.fieldType === "ssnit") {
+      if (!isCompleteSsnitNumber(formatSsnitNumber(str))) {
+        errors.push(
+          `${field.label} must be a valid SSNIT number: 1 letter followed by 12 digits (e.g. P123456789012).`,
+        );
+      }
+      continue;
     }
 
     if (field.rules.fieldType === "gps") {
@@ -805,8 +847,8 @@ export function validateOnboardingMedicalExtras(form: OnboardingFormData): strin
     }
   }
 
-  if (!bio.commitment_initials?.trim()) {
-    errors.push("Biosecurity commitment initials are required.");
+  if (!bio.commitment_initials) {
+    errors.push("Please confirm your biosecurity commitment before submitting.");
   }
 
   if (!form.declarations?.data_consent) {

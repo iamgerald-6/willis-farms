@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, KeyRound } from "lucide-react";
 import PasswordInput from "./PasswordInput";
+import PasswordRequirements from "./PasswordRequirements";
+import { isStrongPassword, passwordStrengthError } from "@/lib/validation";
 import {
   authLinkFetch,
   closeAuthLinkSession,
@@ -115,8 +117,9 @@ export default function SetPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password.length < 6) {
-      toast.error("Password must be at least 6 characters.");
+    const strengthError = passwordStrengthError(password);
+    if (strengthError) {
+      toast.error(strengthError);
       return;
     }
     if (password !== confirm) {
@@ -242,9 +245,10 @@ export default function SetPasswordPage() {
               id="password"
               value={password}
               onChange={setPassword}
-              placeholder="Min. 6 characters"
+              placeholder="Min. 8 characters"
               autoComplete="new-password"
             />
+            <PasswordRequirements password={password} />
           </div>
 
           <div>
@@ -265,7 +269,7 @@ export default function SetPasswordPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isStrongPassword(password) || password !== confirm}
             className="w-full bg-[#C62828] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
           >
             {loading

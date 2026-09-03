@@ -200,7 +200,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       step: "personal",
       section: "A. Personal information",
       fieldKey: "personal.ssnit_number",
-      fieldType: "text",
+      fieldType: "ssnit",
       required: true,
       colSpan: "half",
     }),
@@ -383,14 +383,21 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       required: false,
     }),
 
-    field("opt:onboarding:field:bio_initials", "Biosecurity commitment initials", "biosecurity.commitment_initials", 68, {
-      step: "medical",
-      section: "Biosecurity",
-      fieldKey: "biosecurity.commitment_initials",
-      fieldType: "text",
-      required: true,
-    }),
-    field("opt:onboarding:field:sig_name", "Typed full name (signature)", "declarations.signature_name", 69, {
+    field(
+      "opt:onboarding:field:bio_initials",
+      "I consent to abide by and commit to all biosecurity requirements at Wills Farms.",
+      "biosecurity.commitment_initials",
+      69,
+      {
+        step: "medical",
+        section: "Consent & signature",
+        fieldKey: "biosecurity.commitment_initials",
+        fieldType: "checkbox",
+        required: true,
+        colSpan: "full",
+      },
+    ),
+    field("opt:onboarding:field:sig_name", "Typed full name (signature)", "declarations.signature_name", 70, {
       step: "medical",
       section: "Consent & signature",
       fieldKey: "declarations.signature_name",

@@ -138,7 +138,8 @@ export interface OnboardingFormData {
     visited_swine_site_12m?: "yes" | "no" | "";
     details?: string;
     asf_travel_30d?: "yes" | "no" | "";
-    commitment_initials?: string;
+    /** Checkbox consent — "I consent to abide by and commit to all biosecurity requirements…" */
+    commitment_initials?: boolean;
   };
   background?: {
     criminal_conviction?: "yes" | "no" | "";
@@ -239,6 +240,40 @@ export interface OnboardingHrData {
   department?: string;
   employment_type?: string;
   work_location?: string;
+  /** Position title of the manager this hire reports to — picked from staff
+   * currently holding a manager/admin/super_admin role (see isSeniorManagement). */
+  reporting_to?: string;
+  /** Effective employment start date — single source for both the offer letter's
+   * appointment/effective date and its Position Details "Start Date" line. */
+  start_date?: string;
+  /** e.g. "3 months" — used in the offer letter's Terms of Employment clause. */
+  notice_period?: string;
+  /** e.g. "40 hours per week, Monday to Sunday with one day off duty." */
+  working_hours?: string;
+  /** Deadline by which the candidate must sign and return the offer letter. */
+  acceptance_deadline?: string;
+  /** Offer letter Annex 1 — compensation breakdown, entered by HR (never AI-computed). */
+  basic_salary_ghs?: string;
+  housing_allowance?: string;
+  medical_allowance?: string;
+  social_security_contribution?: string;
+  income_tax?: string;
+  net_payable?: string;
+  /** Offer letter sign-off — who signed and how (Stage 3). */
+  signer_user_id?: string;
+  signer_name?: string;
+  /** Job title shown under the signature — signer's job_position, or a role fallback. */
+  signer_title?: string;
+  signature_type?: "typed" | "drawn";
+  /** Typed signature text (used when signature_type === "typed"). */
+  signature_text?: string;
+  /** Canvas-drawn signature, uploaded as a PNG (used when signature_type === "drawn"). */
+  signature_image?: {
+    secure_url?: string;
+    public_id?: string;
+    original_name?: string;
+  };
+  signed_at?: string;
   /** Additional admin-configured HR fields stored in hr_data JSON. */
   [key: string]:
     | string

@@ -7,11 +7,19 @@ import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { resolveAgeRangeForGuideKey } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import type {
+  ApplicationFormField,
   EducationEntry,
   UploadedFile,
   WorkHistoryEntry,
 } from "@/lib/careers/applicationFormSchema";
-import { UPLOADED_FILE_CATEGORY_LABELS } from "@/lib/careers/applicationFormSchema";
+import {
+  isEducationFieldsType,
+  isWorkFieldsType,
+  normalizeApplicationFields,
+  resolveUploadCategoryLabel,
+} from "@/lib/careers/applicationFormSchema";
+import { getDefaultApplicationFormFields } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { parseApplicationFormFieldsSnapshot } from "@/lib/systemDefinitions/applicationFormConfig";
 
 export const SHORTLIST_THRESHOLD = 60;
 
@@ -46,7 +54,7 @@ function buildScreeningTool(ageContext: AgeScreeningContext | null) {
     certificate_validation_summary: {
       type: "string",
       description:
-        "Only include when supporting documents were provided below. Name every uploaded document and its tagged category, and for each one: if it's tagged Work Experience or Educational Qualifications, state whether it plausibly matches one of the applicant's corresponding entries (institution/employer, role/qualification, dates — broad consistency, not exact wording) or state the specific discrepancy/mismatch found; if it's tagged Other, just state that it was uploaded and does not correspond to any specific field on the form. Keep it factual and concise — a couple of sentences per document.",
+        "Only include when supporting documents were provided below. Name every uploaded document and its tagged category, and for each one: if it's tagged with one of the applicant's structured entry sections (e.g. Work Experience, Educational Qualifications, Professional Qualifications, or any similar section listed below), state whether it plausibly matches one of the applicant's corresponding entries in that section (institution/employer, role/qualification, dates — broad consistency, not exact wording) or state the specific discrepancy/mismatch found; if it's tagged Other, just state that it was uploaded and does not correspond to any specific field on the form. Keep it factual and concise — a couple of sentences per document.",
     },
   };
 
@@ -92,6 +100,14 @@ export type ScreenApplicationInput = {
    * entries live — used to build the certificate validation pass. Absent
    * (or missing the relevant keys) simply skips that pass. */
   application_form_data?: Record<string, unknown> | null;
+  /** Saved snapshot of which fields were on the application form when this
+   * candidate submitted — used to discover every structured-entry section
+   * (Work experience, Education, Professional qualifications, or any
+   * similar field added later) to cross-check uploaded documents against,
+   * instead of a hardcoded pair of field keys. Falls back to today's
+   * default fields when absent (e.g. applications submitted before this
+   * snapshot existed). */
+  application_form_fields_snapshot?: Record<string, unknown> | null;
 };
 
 export type ScreenApplicationResult =
@@ -197,14 +213,43 @@ function formatEducation(entries: EducationEntry[]): string {
     .join("\n");
 }
 
+/** Every field shaped like Work experience or Education (Professional
+ * qualifications, or any future field built the same way) that a
+ * supporting document could plausibly be tagged against. Resolved from
+ * the application's saved form snapshot so a newly added field is picked
+ * up automatically, with no code change here. */
+function resolveStructuredEntryFields(
+  fieldsSnapshot: Record<string, unknown> | null | undefined,
+): ApplicationFormField[] {
+  const parsed = parseApplicationFormFieldsSnapshot(fieldsSnapshot);
+  const fields =
+    parsed?.fields ?? normalizeApplicationFields(getDefaultApplicationFormFields(), {});
+  return fields.filter(
+    (f) =>
+      f.is_active !== false &&
+      (isWorkFieldsType(f.rules.fieldType) || isEducationFieldsType(f.rules.fieldType)),
+  );
+}
+
+function formatStructuredEntries(field: ApplicationFormField, value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return "None entered.";
+  if (isWorkFieldsType(field.rules.fieldType)) {
+    return formatWorkExperience(value as WorkHistoryEntry[]);
+  }
+  return formatEducation(value as EducationEntry[]);
+}
+
 function buildCertificateSectionIntro(
-  workExperience: WorkHistoryEntry[],
-  education: EducationEntry[],
+  structuredFields: ApplicationFormField[],
+  formData: Record<string, unknown>,
 ): string {
+  const entrySections = structuredFields.map(
+    (f) =>
+      `${f.label} the applicant entered:\n${formatStructuredEntries(f, formData[f.rules.fieldKey])}`,
+  );
   return [
     "The applicant also uploaded supporting documents on the Experience & Qualifications step of the application, each tagged by the applicant with what it's supposed to be. Cross-check each one against what the applicant typed in below, and record your findings in the certificate_validation_summary field of the record_application_screening tool.",
-    `Work experience the applicant entered:\n${formatWorkExperience(workExperience)}`,
-    `Educational qualifications the applicant entered:\n${formatEducation(education)}`,
+    ...entrySections,
     "Each uploaded document follows below, labeled with its filename and tagged category.",
   ].join("\n\n");
 }
@@ -344,12 +389,9 @@ export async function screenApplication(
   const certificates = Array.isArray(formData.certificates)
     ? (formData.certificates as UploadedFile[]).filter((f) => f?.secure_url)
     : [];
-  const workExperience = Array.isArray(formData.work_experience)
-    ? (formData.work_experience as WorkHistoryEntry[])
-    : [];
-  const education = Array.isArray(formData.education)
-    ? (formData.education as EducationEntry[])
-    : [];
+  const structuredFields = resolveStructuredEntryFields(
+    application.application_form_fields_snapshot,
+  );
 
   const instructions = buildInstructions(
     posting,
@@ -363,9 +405,14 @@ export async function screenApplication(
   ];
 
   if (certificates.length > 0) {
-    content.push({ type: "text", text: buildCertificateSectionIntro(workExperience, education) });
+    content.push({
+      type: "text",
+      text: buildCertificateSectionIntro(structuredFields, formData),
+    });
     for (const cert of certificates) {
-      const categoryLabel = cert.category ? UPLOADED_FILE_CATEGORY_LABELS[cert.category] : "Uncategorized";
+      const categoryLabel = cert.category
+        ? resolveUploadCategoryLabel(structuredFields, cert.category)
+        : "Uncategorized";
       const doc = await fetchDocumentContent(cert.secure_url, remainingBudget);
       if (!doc.ok) {
         content.push({
