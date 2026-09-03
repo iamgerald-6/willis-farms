@@ -397,13 +397,13 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
         colSpan: "full",
       },
     ),
-    field("opt:onboarding:field:sig_name", "Full name (signature)", "declarations.signature_name", 70, {
+    field("opt:onboarding:field:sig_name", "Typed full name (signature)", "declarations.signature_name", 70, {
       step: "medical",
       section: "Consent & signature",
       fieldKey: "declarations.signature_name",
       fieldType: "text",
       required: true,
-      colSpan: "full",
+      prefillLocked: true,
     }),
   ];
 }
