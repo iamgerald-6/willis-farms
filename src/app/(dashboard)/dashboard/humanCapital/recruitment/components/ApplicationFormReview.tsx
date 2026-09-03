@@ -2,15 +2,36 @@
 
 import { FileText, ExternalLink } from "lucide-react";
 import type {
+  ApplicationFieldType,
+  ApplicationFormField,
   EducationEntry,
   UploadedFile,
   UploadedFileCategory,
   WorkHistoryEntry,
 } from "@/lib/careers/applicationFormSchema";
-import { UPLOADED_FILE_CATEGORY_LABELS } from "@/lib/careers/applicationFormSchema";
+import {
+  isEducationFieldsType,
+  isWorkFieldsType,
+  normalizeApplicationFields,
+  resolveUploadCategoryLabel,
+} from "@/lib/careers/applicationFormSchema";
+import { getDefaultApplicationFormFields } from "@/lib/systemDefinitions/recruitmentDefaults";
+import {
+  parseApplicationFormFieldsSnapshot,
+  resolveApplicationFormSteps,
+  type ApplicationFormConfig,
+} from "@/lib/systemDefinitions/applicationFormConfig";
 
 type Props = {
   formData: Record<string, unknown>;
+  /** Saved snapshot of exactly which fields/sections existed on the
+   * application form when this candidate submitted (application record's
+   * application_form_fields_snapshot column) — this drives which sections
+   * render below, so a custom field (e.g. "Professional qualifications")
+   * shows up automatically without a hardcoded field-key list here.
+   * Applications submitted before this snapshot existed fall back to
+   * today's default fields as the closest available approximation. */
+  fieldsSnapshot?: Record<string, unknown> | null;
 };
 
 function normalizeApplicationFormData(
@@ -32,7 +53,7 @@ function normalizeApplicationFormData(
 }
 
 type ReviewItem =
-  | { kind: "text"; label: string; text: string }
+  | { kind: "text"; label: string; text: string; fieldType?: ApplicationFieldType }
   | { kind: "list"; label: string; lines: string[] }
   | {
       kind: "files";
@@ -40,11 +61,10 @@ type ReviewItem =
       files: { name: string; url: string; category?: UploadedFileCategory }[];
     };
 
-function buildItem(
-  key: string,
-  label: string,
-  value: unknown,
-): ReviewItem | null {
+function buildItem(field: ApplicationFormField, value: unknown): ReviewItem | null {
+  const { fieldType } = field.rules;
+  const label = field.label;
+
   if (value === undefined || value === null || value === "") return null;
 
   if (
@@ -65,9 +85,10 @@ function buildItem(
   if (Array.isArray(value)) {
     if (value.length === 0) return null;
 
-    // Field keys match ApplicationFieldRules.fieldKey in recruitmentDefaults.ts
-    // — "work_experience" and "education", not "work_history"/"education_history".
-    if (key === "work_experience") {
+    // Any field of this shape — Work experience, Education, Professional
+    // qualifications, or a future field built the same way — renders as a
+    // list of entries, driven by its fieldType rather than its exact key.
+    if (isWorkFieldsType(fieldType)) {
       const lines = (value as WorkHistoryEntry[]).map((entry) => {
         const end = entry.current ? "Present" : entry.end || "—";
         return `${entry.title || "Role"} at ${entry.company || "Company"} (${entry.start || "?"} – ${end})`;
@@ -75,7 +96,7 @@ function buildItem(
       return { kind: "list", label, lines };
     }
 
-    if (key === "education") {
+    if (isEducationFieldsType(fieldType)) {
       const lines = (value as EducationEntry[]).map((entry) => {
         const degree = entry.degree?.trim() ? ` — ${entry.degree}` : "";
         return `${entry.institutionType || "Institution"}: ${entry.institutionName || "—"} (${entry.yearStarted || "?"}–${entry.yearCompleted || "?"}${degree})`;
@@ -104,69 +125,77 @@ function buildItem(
   }
 
   if (typeof value === "object") return null;
-  return { kind: "text", label, text: String(value) };
+  return { kind: "text", label, text: String(value), fieldType };
 }
 
-// Keys here must match ApplicationFieldRules.fieldKey in
-// src/lib/systemDefinitions/recruitmentDefaults.ts — this is meant to show
-// everything an applicant filled in, so a stale/mismatched key here just
-// silently hides that field from HR.
-const FIELD_SECTIONS: {
-  title: string;
-  fields: { key: string; label: string }[];
-}[] = [
-  {
-    title: "Personal",
-    fields: [
-      { key: "first_name", label: "First name" },
-      { key: "last_name", label: "Last name" },
-      { key: "email", label: "Email" },
-      { key: "phone", label: "Phone" },
-      { key: "date_of_birth", label: "Date of birth" },
-      { key: "gender", label: "Gender" },
-      { key: "nationality", label: "Nationality" },
-      // { key: "nationality", label: "Nationality" },
-      { key: "id_document_type", label: "ID document type" },
-      { key: "is_citizen", label: "Ghana citizen" },
-      { key: "ghana_card_no", label: "Ghana Card" },
-      { key: "passport_number", label: "Passport number" },
-      { key: "passport_bio_page", label: "Passport bio page" },
-    ],
-  },
-  {
-    title: "Experience & qualifications",
-    fields: [
-      { key: "work_experience", label: "Work history" },
-      { key: "education", label: "Education" },
-      { key: "certificates", label: "Educational certificates" },
-    ],
-  },
-  {
-    title: "Documents",
-    fields: [{ key: "cover_letter", label: "Cover letter" }],
-  },
-  // Referees 1–5 (1 and 2 required, 3–5 optional "add another" slots — see
-  // MAX_REFEREES in recruitmentDefaults.ts). Sections with no data are
-  // dropped below, so unused optional slots simply don't render.
-  ...Array.from({ length: 5 }, (_, i) => i + 1).map((n) => ({
-    title: `Referee ${n}`,
-    fields: [
-      { key: `reference_${n}_name`, label: "Referee name" },
-      { key: `reference_${n}_phone`, label: "Referee phone" },
-      { key: `reference_${n}_email`, label: "Referee email" },
-      { key: `reference_${n}_relationship`, label: "Relationship" },
-    ],
-  })),
-];
+// Referee contact fields are auto-generated (reference_N_name, _phone,
+// _email, _relationship — see generateRefereeFormFields) rather than
+// individually configured, so they're grouped per referee number here
+// instead of going through the generic per-step loop below.
+const REFEREE_KEY_PATTERN = /^reference_(\d+)_(name|phone|email|relationship)$/;
+const REFEREE_SUFFIX_LABELS: Record<string, string> = {
+  name: "Referee name",
+  phone: "Referee phone",
+  email: "Referee email",
+  relationship: "Relationship",
+};
 
-export default function ApplicationFormReview({ formData }: Props) {
+function resolveFormContext(
+  fieldsSnapshot: Record<string, unknown> | null | undefined,
+): { fields: ApplicationFormField[]; config: ApplicationFormConfig } {
+  const parsed = parseApplicationFormFieldsSnapshot(fieldsSnapshot);
+  if (parsed) return parsed;
+  return {
+    fields: normalizeApplicationFields(getDefaultApplicationFormFields(), {}),
+    config: {},
+  };
+}
+
+export default function ApplicationFormReview({ formData, fieldsSnapshot }: Props) {
   const normalized = normalizeApplicationFormData(formData);
-  const sections = FIELD_SECTIONS.map((section) => ({
-    ...section,
-    items: section.fields
-      .map((field) => buildItem(field.key, field.label, formData[field.key]))
-      .filter((item): item is ReviewItem => item !== null),
-  })).filter((section) => section.items.length > 0);
+  const { fields, config } = resolveFormContext(fieldsSnapshot);
+  const activeFields = fields.filter((f) => f.is_active !== false);
+  const steps = resolveApplicationFormSteps(config);
+
+  const sections: { title: string; items: ReviewItem[] }[] = [];
+
+  for (const step of steps) {
+    // Referees render below, grouped per referee rather than as one flat list.
+    if (step.id === "references") continue;
+    const stepFields = activeFields
+      .filter((f) => f.rules.step === step.id)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const items = stepFields
+      .map((f) => buildItem(f, normalized[f.rules.fieldKey]))
+      .filter((item): item is ReviewItem => item !== null);
+    if (items.length > 0) sections.push({ title: step.label, items });
+  }
+
+  const refereeFields = activeFields.filter((f) =>
+    REFEREE_KEY_PATTERN.test(f.rules.fieldKey),
+  );
+  const refereeNumbers = Array.from(
+    new Set(
+      refereeFields
+        .map((f) => f.rules.fieldKey.match(REFEREE_KEY_PATTERN)?.[1])
+        .filter((n): n is string => Boolean(n))
+        .map(Number),
+    ),
+  ).sort((a, b) => a - b);
+
+  for (const n of refereeNumbers) {
+    const group = refereeFields.filter((f) =>
+      f.rules.fieldKey.startsWith(`reference_${n}_`),
+    );
+    const items = group
+      .map((f) => {
+        const suffix = f.rules.fieldKey.match(REFEREE_KEY_PATTERN)?.[2] ?? "";
+        const label = REFEREE_SUFFIX_LABELS[suffix] ?? f.label;
+        return buildItem({ ...f, label }, normalized[f.rules.fieldKey]);
+      })
+      .filter((item): item is ReviewItem => item !== null);
+    if (items.length > 0) sections.push({ title: `Referee ${n}`, items });
+  }
 
   if (sections.length === 0) {
     return (
@@ -194,7 +223,7 @@ export default function ApplicationFormReview({ formData }: Props) {
               const fullWidth =
                 item.kind === "list" ||
                 item.kind === "files" ||
-                item.label === "Cover letter";
+                (item.kind === "text" && item.fieldType === "textarea");
               return (
                 <div
                   key={item.label}
@@ -237,7 +266,7 @@ export default function ApplicationFormReview({ formData }: Props) {
                           </a>
                           {f.category && (
                             <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">
-                              {UPLOADED_FILE_CATEGORY_LABELS[f.category]}
+                              {resolveUploadCategoryLabel(fields, f.category)}
                             </span>
                           )}
                         </div>

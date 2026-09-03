@@ -671,6 +671,7 @@ function ApplicationDetail({
               application.status !== "offer" && (
                 <ApplicationFormReview
                   formData={application.application_form_data}
+                  fieldsSnapshot={application.application_form_fields_snapshot}
                 />
               )}
 
@@ -1817,6 +1818,7 @@ function ApplicationDetail({
             <div className="p-5 overflow-y-auto min-h-0">
               <ApplicationFormReview
                 formData={application.application_form_data}
+                fieldsSnapshot={application.application_form_fields_snapshot}
               />
             </div>
           </div>

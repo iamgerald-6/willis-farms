@@ -101,26 +101,48 @@ export interface ApplicationFieldRules {
 // Which part of the "Experience & qualifications" step a supporting
 // document backs up — chosen by the applicant before each individual
 // upload (see JobApplicationWizard.tsx), and used by the AI screening
-// step to know which structured entries (education vs. work history) to
-// cross-check a given document against. "other" has nothing to cross-check
-// against, so it's just noted as uploaded.
-export type UploadedFileCategory = "work_experience" | "education" | "other";
+// step to know which structured entries (education, work history,
+// professional qualifications, or any future field of that shape) to
+// cross-check a given document against. This used to be a fixed 3-value
+// list; it's now derived from whichever "structured entry" fields
+// (isWorkFieldsType / isEducationFieldsType) exist on the form, so adding
+// a new field of that kind automatically adds a matching upload category
+// — see resolveUploadCategories below. "other" is always available as a
+// catch-all with nothing to cross-check against.
+export type UploadedFileCategory = string;
 
-export const UPLOADED_FILE_CATEGORIES: {
-  value: UploadedFileCategory;
-  label: string;
-}[] = [
-  { value: "work_experience", label: "Work Experience" },
-  { value: "education", label: "Educational Qualifications" },
-  { value: "other", label: "Other" },
-];
+export const OTHER_UPLOAD_CATEGORY: UploadedFileCategory = "other";
 
-export const UPLOADED_FILE_CATEGORY_LABELS: Record<
-  UploadedFileCategory,
-  string
-> = Object.fromEntries(
-  UPLOADED_FILE_CATEGORIES.map((c) => [c.value, c.label]),
-) as Record<UploadedFileCategory, string>;
+/** Upload-category options for the document-tagging dropdown, built from
+ * whichever work/education-shaped fields are on the form (in their form
+ * order), plus a fixed "Other" catch-all at the end. */
+export function resolveUploadCategories(
+  fields: ApplicationFormField[],
+): { value: UploadedFileCategory; label: string }[] {
+  const categories = fields
+    .filter((f) => f.is_active !== false)
+    .filter(
+      (f) =>
+        isWorkFieldsType(f.rules.fieldType) ||
+        isEducationFieldsType(f.rules.fieldType),
+    )
+    .map((f) => ({ value: f.rules.fieldKey, label: f.label }));
+  categories.push({ value: OTHER_UPLOAD_CATEGORY, label: "Other" });
+  return categories;
+}
+
+/** Human-readable label for a stored upload category — looks up the
+ * matching form field's current label so a category always reflects
+ * whatever that field is named today, even if it's been renamed. */
+export function resolveUploadCategoryLabel(
+  fields: ApplicationFormField[],
+  category: UploadedFileCategory | undefined,
+): string {
+  if (!category) return "";
+  if (category === OTHER_UPLOAD_CATEGORY) return "Other";
+  const field = fields.find((f) => f.rules.fieldKey === category);
+  return field?.label ?? category;
+}
 
 export interface UploadedFile {
   secure_url: string;
