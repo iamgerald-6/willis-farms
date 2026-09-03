@@ -239,6 +239,22 @@ export interface OnboardingHrData {
   department?: string;
   employment_type?: string;
   work_location?: string;
+  /** Position title of the manager this hire reports to — picked from staff
+   * currently holding a manager/admin/super_admin role (see isSeniorManagement). */
+  reporting_to?: string;
+  /** e.g. "3 months" — used in the offer letter's Terms of Employment clause. */
+  notice_period?: string;
+  /** e.g. "40 hours per week, Monday to Sunday with one day off duty." */
+  working_hours?: string;
+  /** Deadline by which the candidate must sign and return the offer letter. */
+  acceptance_deadline?: string;
+  /** Offer letter Annex 1 — compensation breakdown, entered by HR (never AI-computed). */
+  basic_salary_ghs?: string;
+  housing_allowance?: string;
+  medical_allowance?: string;
+  social_security_contribution?: string;
+  income_tax?: string;
+  net_payable?: string;
   /** Additional admin-configured HR fields stored in hr_data JSON. */
   [key: string]:
     | string

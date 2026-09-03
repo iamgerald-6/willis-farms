@@ -35,6 +35,7 @@ import {
 import {
   eligibleSupervisorsForEmployee,
 } from "@/lib/supervisorAssignment";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
 
@@ -212,6 +213,18 @@ export default function OnboardingHrFieldsForm({
     }
     return lists[ONBOARDING_DEPARTMENTS_L1L6_LIST] ?? [];
   }, [hrData.grade_level, optionLists, gradeConfig]);
+
+  // Real position titles currently held by senior staff (manager/admin/
+  // super_admin) — not the recruitment job-postings catalog, since "Reporting
+  // to" should reflect who's actually in the org today, not a hypothetical
+  // opening. HR picks the applicable one per offer.
+  const reportingToOptions = useMemo(() => {
+    const titles = allUsers
+      .filter((u) => isSeniorManagement(u.role))
+      .map((u) => u.job_position?.trim())
+      .filter((title): title is string => Boolean(title));
+    return [...new Set(titles)].sort((a, b) => a.localeCompare(b));
+  }, [allUsers]);
 
   const locationOptions = optionLists?.[ONBOARDING_LOCATIONS_LIST] ?? [];
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
@@ -436,6 +449,33 @@ export default function OnboardingHrFieldsForm({
               </option>
             ))}
           </select>
+        </label>
+      );
+    }
+
+    if (field.fieldType === "reporting_to") {
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <select
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            value={hrData.reporting_to ?? ""}
+            onChange={(e) => setField("reporting_to", e.target.value || undefined)}
+          >
+            <option value="">
+              {reportingToOptions.length === 0
+                ? "No senior staff positions found"
+                : "Select who this hire reports to…"}
+            </option>
+            {reportingToOptions.map((title) => (
+              <option key={title} value={title}>
+                {title}
+              </option>
+            ))}
+          </select>
+          {shouldShowHint(field.hint) && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
         </label>
       );
     }
