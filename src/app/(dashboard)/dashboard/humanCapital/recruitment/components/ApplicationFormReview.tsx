@@ -162,9 +162,18 @@ export default function ApplicationFormReview({ formData, fieldsSnapshot }: Prop
   for (const step of steps) {
     // Referees render below, grouped per referee rather than as one flat list.
     if (step.id === "references") continue;
+    // File uploads (e.g. the certificates upload) render after the
+    // qualification-detail fields they support — a field like Professional
+    // Qualification should read above the upload that backs it up, not
+    // below, regardless of which was added to the form more recently.
     const stepFields = activeFields
       .filter((f) => f.rules.step === step.id)
-      .sort((a, b) => a.sort_order - b.sort_order);
+      .sort((a, b) => {
+        const aFile = a.rules.fieldType === "file" ? 1 : 0;
+        const bFile = b.rules.fieldType === "file" ? 1 : 0;
+        if (aFile !== bFile) return aFile - bFile;
+        return a.sort_order - b.sort_order;
+      });
     const items = stepFields
       .map((f) => buildItem(f, normalized[f.rules.fieldKey]))
       .filter((item): item is ReviewItem => item !== null);
