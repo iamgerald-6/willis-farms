@@ -55,31 +55,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: DARK,
   },
-  compensationBox: {
-    marginBottom: 16,
-    padding: 10,
-    border: `0.5pt solid ${BORDER}`,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 4,
-  },
-  compensationLabel: {
-    fontSize: 8,
-    color: GRAY,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  compensationValue: {
-    fontSize: 10.5,
-    fontWeight: 700,
-    color: DARK,
-    marginBottom: 2,
-  },
-  compensationDetail: {
-    fontSize: 9.5,
-    color: GRAY,
-    marginBottom: 1,
-  },
   paragraph: {
     marginBottom: 10,
     textAlign: "justify",
@@ -109,6 +84,69 @@ const styles = StyleSheet.create({
     textAlign: "center",
     borderTop: `0.5pt solid ${BORDER}`,
     paddingTop: 8,
+  },
+  annexTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: RED,
+    marginBottom: 4,
+  },
+  annexSubtitle: {
+    fontSize: 9,
+    color: GRAY,
+    marginBottom: 18,
+  },
+  annexSectionLabel: {
+    fontSize: 9.5,
+    fontWeight: 700,
+    color: DARK,
+    marginBottom: 6,
+    marginTop: 14,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  table: {
+    border: `0.5pt solid ${BORDER}`,
+    borderRadius: 4,
+  },
+  tableRow: {
+    flexDirection: "row",
+    borderBottom: `0.5pt solid ${BORDER}`,
+  },
+  tableRowLast: {
+    flexDirection: "row",
+  },
+  tableCellLabel: {
+    flex: 2,
+    fontSize: 10,
+    color: DARK,
+    padding: 8,
+  },
+  tableCellValue: {
+    flex: 1.4,
+    fontSize: 10,
+    color: DARK,
+    padding: 8,
+    textAlign: "right",
+  },
+  tableRowNet: {
+    flexDirection: "row",
+    backgroundColor: "#F9FAFB",
+  },
+  tableCellLabelBold: {
+    flex: 2,
+    fontSize: 10,
+    fontWeight: 700,
+    color: DARK,
+    padding: 8,
+  },
+  tableCellValueBold: {
+    flex: 1.4,
+    fontSize: 10,
+    fontWeight: 700,
+    color: DARK,
+    padding: 8,
+    textAlign: "right",
   },
 });
 
@@ -151,36 +189,6 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
           Offer of Employment — {data.roleTitle}
         </Text>
 
-        {data.salaryDisplay && (
-          <View style={styles.compensationBox}>
-            <Text style={styles.compensationLabel}>Gross salary</Text>
-            <Text style={styles.compensationValue}>{data.salaryDisplay}</Text>
-            {data.payFrequency ? (
-              <Text style={styles.compensationDetail}>
-                Pay frequency: {data.payFrequency}
-              </Text>
-            ) : null}
-            {data.gradeLevel ? (
-              <Text style={styles.compensationDetail}>Grade: {data.gradeLevel}</Text>
-            ) : null}
-            {data.employmentType ? (
-              <Text style={styles.compensationDetail}>
-                Employment: {data.employmentType}
-              </Text>
-            ) : null}
-            {data.department ? (
-              <Text style={styles.compensationDetail}>
-                Department: {data.department}
-              </Text>
-            ) : null}
-            {data.workLocation ? (
-              <Text style={styles.compensationDetail}>
-                Location: {data.workLocation}
-              </Text>
-            ) : null}
-          </View>
-        )}
-
         {paragraphs.map((paragraph, index) => (
           <Text key={index} style={styles.paragraph}>
             {paragraph}
@@ -197,6 +205,62 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
           Confidential — This letter is intended solely for the named recipient.
         </Text>
       </Page>
+
+      <Page size="A4" style={styles.page}>
+        <View style={styles.letterheadBar}>
+          <Text style={styles.companyName}>Wills Farms Ltd.</Text>
+          <Text style={styles.companyTagline}>
+            Genetics-led agribusiness · Professional farm management
+          </Text>
+        </View>
+
+        <Text style={styles.annexTitle}>Annex 1 — Compensation Details</Text>
+        <Text style={styles.annexSubtitle}>
+          {data.candidateName} · {data.roleTitle} · Ref: {data.referenceNumber}
+        </Text>
+
+        <Text style={styles.annexSectionLabel}>Earnings</Text>
+        <View style={styles.table}>
+          <AnnexRow label="Basic Salary" value={data.basicSalaryGhs} />
+          <AnnexRow label="Housing Allowance" value={data.housingAllowance} />
+          <AnnexRow label="Medical Allowance" value={data.medicalAllowance} last />
+        </View>
+
+        <Text style={styles.annexSectionLabel}>Deductions</Text>
+        <View style={styles.table}>
+          <AnnexRow label="Social Security Contribution (SSNIT)" value={data.socialSecurityContribution} />
+          <AnnexRow label="Income Tax" value={data.incomeTax} last />
+        </View>
+
+        <Text style={styles.annexSectionLabel}>Net Payable</Text>
+        <View style={styles.table}>
+          <View style={styles.tableRowNet}>
+            <Text style={styles.tableCellLabelBold}>Net Payable</Text>
+            <Text style={styles.tableCellValueBold}>{data.netPayable || "[HR TO COMPLETE]"}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.footer}>
+          Confidential — This letter is intended solely for the named recipient.
+        </Text>
+      </Page>
     </Document>
+  );
+}
+
+function AnnexRow({
+  label,
+  value,
+  last,
+}: {
+  label: string;
+  value?: string;
+  last?: boolean;
+}) {
+  return (
+    <View style={last ? styles.tableRowLast : styles.tableRow}>
+      <Text style={styles.tableCellLabel}>{label}</Text>
+      <Text style={styles.tableCellValue}>{value || "[HR TO COMPLETE]"}</Text>
+    </View>
   );
 }

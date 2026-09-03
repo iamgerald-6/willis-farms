@@ -38,6 +38,16 @@ type OfferLetterData = {
     position_title: string | null;
     medical_reports: string[];
     recommended_start_date: string | null;
+    reporting_to: string | null;
+    notice_period: string | null;
+    working_hours: string | null;
+    acceptance_deadline: string | null;
+    basic_salary_ghs: string | null;
+    housing_allowance: string | null;
+    medical_allowance: string | null;
+    social_security_contribution: string | null;
+    income_tax: string | null;
+    net_payable: string | null;
   } | null;
 };
 

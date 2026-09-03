@@ -24,6 +24,19 @@ export type OfferLetterContext = {
   medicalReports: string[];
   letterDate: string;
   salaryDisplay?: string;
+  /** Position title of the manager this hire reports to (see reporting_to on OnboardingHrData). */
+  reportingTo?: string;
+  noticePeriod?: string;
+  workingHours?: string;
+  /** Formatted for display — e.g. "20 September 2026". */
+  acceptanceDeadline?: string;
+  /** Annex 1 compensation breakdown — entered by HR verbatim, never computed here. */
+  basicSalaryGhs?: string;
+  housingAllowance?: string;
+  medicalAllowance?: string;
+  socialSecurityContribution?: string;
+  incomeTax?: string;
+  netPayable?: string;
 };
 
 export async function resolveOfferLetterContext(
@@ -50,6 +63,15 @@ export async function resolveOfferLetterContext(
   const salaryGhs = hr.salary_ghs?.trim() || salary.salaryGhs || undefined;
   const payFrequency = hr.pay_frequency?.trim() || undefined;
 
+  const acceptanceDeadlineRaw = hr.acceptance_deadline?.trim();
+  const acceptanceDeadline = acceptanceDeadlineRaw
+    ? new Date(acceptanceDeadlineRaw).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : undefined;
+
   return {
     candidateName: application.full_name,
     candidateEmail: application.email,
@@ -71,5 +93,15 @@ export async function resolveOfferLetterContext(
       month: "long",
       year: "numeric",
     }),
+    reportingTo: hr.reporting_to?.trim() || undefined,
+    noticePeriod: hr.notice_period?.trim() || undefined,
+    workingHours: hr.working_hours?.trim() || undefined,
+    acceptanceDeadline,
+    basicSalaryGhs: hr.basic_salary_ghs?.trim() || undefined,
+    housingAllowance: hr.housing_allowance?.trim() || undefined,
+    medicalAllowance: hr.medical_allowance?.trim() || undefined,
+    socialSecurityContribution: hr.social_security_contribution?.trim() || undefined,
+    incomeTax: hr.income_tax?.trim() || undefined,
+    netPayable: hr.net_payable?.trim() || undefined,
   };
 }
