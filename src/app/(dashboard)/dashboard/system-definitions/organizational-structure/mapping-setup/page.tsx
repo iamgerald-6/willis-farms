@@ -149,10 +149,10 @@ export default function MappingSetupPage() {
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-full">
       <Link
-        href="/dashboard/system-definitions/organizational-structure"
+        href="/dashboard/system-definitions"
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to organizational structure
+        <ArrowLeft className="w-4 h-4" /> Back to System Definitions
       </Link>
 
       <div className="mb-5">
