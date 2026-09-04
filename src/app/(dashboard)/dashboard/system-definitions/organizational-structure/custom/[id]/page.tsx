@@ -208,23 +208,30 @@ export default function ManageCustomListPage() {
   // Numeric-range generator state (Age, Salary, etc.)
   const [rangeMin, setRangeMin] = useState("");
   const [rangeMax, setRangeMax] = useState("");
+  const [rangeLength, setRangeLength] = useState("");
+  const isBandsMode = config?.numeric_range_mode === "bands";
 
   const generateRangeMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post(
         `/organizational-structure/custom-list-types/${listTypeId}/items/generate-range`,
-        { min: Number(rangeMin), max: Number(rangeMax) },
+        {
+          min: Number(rangeMin),
+          max: Number(rangeMax),
+          ...(isBandsMode ? { length: Number(rangeLength) } : {}),
+        },
       );
       return res.data.added as number;
     },
     onSuccess: (added) => {
       toast.success(
         added > 0
-          ? `Added ${added} number${added === 1 ? "" : "s"}.`
-          : "Those numbers are already in the list.",
+          ? `Added ${added} ${isBandsMode ? "range" : "number"}${added === 1 ? "" : "s"}.`
+          : "Those already exist in the list.",
       );
       setRangeMin("");
       setRangeMax("");
+      setRangeLength("");
       invalidate();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
@@ -345,10 +352,12 @@ export default function ManageCustomListPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
           <p className="text-sm font-semibold text-gray-800 mb-3">Fill {config.label.toLowerCase()}</p>
           <p className="text-xs text-gray-500 mb-3">
-            Enter a minimum and maximum and every whole number in between will be added.
-            Numbers already in the list are skipped.
+            {isBandsMode
+              ? "Enter a minimum, maximum, and range length — bucketed ranges will be added (e.g. 1000-2000, 2000-3000...)."
+              : "Enter a minimum and maximum and every whole number in between will be added."}{" "}
+            Entries already in the list are skipped.
           </p>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className={`grid ${isBandsMode ? "grid-cols-3" : "grid-cols-2"} gap-3 mb-3`}>
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
                 Minimum
@@ -371,6 +380,19 @@ export default function ManageCustomListPage() {
                 className={inputClass}
               />
             </div>
+            {isBandsMode && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                  Range length
+                </label>
+                <input
+                  type="number"
+                  value={rangeLength}
+                  onChange={(e) => setRangeLength(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -379,7 +401,8 @@ export default function ManageCustomListPage() {
               generateRangeMutation.isPending ||
               rangeMin === "" ||
               rangeMax === "" ||
-              Number(rangeMin) > Number(rangeMax)
+              Number(rangeMin) > Number(rangeMax) ||
+              (isBandsMode && (rangeLength === "" || Number(rangeLength) <= 0))
             }
             className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
           >

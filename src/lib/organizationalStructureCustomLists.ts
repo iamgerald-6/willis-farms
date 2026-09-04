@@ -25,6 +25,13 @@ export type CustomFieldDef = {
   options?: string[];
 };
 
+/**
+ * How a numeric-range list's generator behaves: "digits" fills one row per
+ * whole number (e.g. Age: 15, 16, 17...); "bands" fills bucketed ranges of
+ * a given length (e.g. Salary: 1000-2000, 2000-3000...).
+ */
+export type NumericRangeMode = "digits" | "bands";
+
 export type OrgCustomListType = {
   id: string;
   label: string;
@@ -33,8 +40,10 @@ export type OrgCustomListType = {
   /** Name of this list's own physical table, e.g. "custom_cost_centres". */
   table_name: string;
   has_region: boolean;
-  /** When true, Manage shows a min/max range generator instead of a label field — e.g. Age, Salary. */
+  /** When true, Manage shows a range generator instead of a label field — e.g. Age, Salary. */
   is_numeric_range: boolean;
+  /** Only meaningful when is_numeric_range is true. */
+  numeric_range_mode: NumericRangeMode;
   fields: CustomFieldDef[];
   sort_order: number;
   created_at: string;

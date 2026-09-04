@@ -20,6 +20,7 @@ import {
   CUSTOM_FIELD_TYPES,
   type CustomFieldDef,
   type CustomFieldType,
+  type NumericRangeMode,
   type OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
 
@@ -99,6 +100,7 @@ export default function OrganizationalStructurePage() {
   const [newListLabel, setNewListLabel] = useState("");
   const [newListHasRegion, setNewListHasRegion] = useState(false);
   const [newListIsNumericRange, setNewListIsNumericRange] = useState(false);
+  const [newListNumericMode, setNewListNumericMode] = useState<NumericRangeMode>("digits");
   const [newListFields, setNewListFields] = useState<DraftField[]>([]);
 
   const addFieldRow = () =>
@@ -114,6 +116,7 @@ export default function OrganizationalStructurePage() {
     setNewListLabel("");
     setNewListHasRegion(false);
     setNewListIsNumericRange(false);
+    setNewListNumericMode("digits");
     setNewListFields([]);
     setShowNewListForm(false);
   };
@@ -140,6 +143,7 @@ export default function OrganizationalStructurePage() {
         label: newListLabel.trim(),
         has_region: newListHasRegion,
         is_numeric_range: newListIsNumericRange,
+        numeric_range_mode: newListNumericMode,
         fields: newListIsNumericRange ? [] : fields,
       });
       return res.data.data as OrgCustomListType;
@@ -257,10 +261,39 @@ export default function OrganizationalStructurePage() {
             </span>
           </label>
           {newListIsNumericRange && (
-            <p className="text-xs text-gray-500 -mt-3 mb-4">
-              Instead of typing items one at a time, Manage will let you fill this list
-              by entering a minimum and maximum number.
-            </p>
+            <div className="mb-4 -mt-2 pl-6 space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="numeric_range_mode"
+                  checked={newListNumericMode === "digits"}
+                  onChange={() => setNewListNumericMode("digits")}
+                  className="accent-red-600 w-4 h-4 mt-0.5"
+                />
+                <span className="text-sm text-gray-700">
+                  Individual numbers
+                  <span className="block text-xs text-gray-500">
+                    Min/max fills one row per number, e.g. 15, 16, 17... — good for Age.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="numeric_range_mode"
+                  checked={newListNumericMode === "bands"}
+                  onChange={() => setNewListNumericMode("bands")}
+                  className="accent-red-600 w-4 h-4 mt-0.5"
+                />
+                <span className="text-sm text-gray-700">
+                  Number ranges
+                  <span className="block text-xs text-gray-500">
+                    Min/max/length fills bucketed ranges, e.g. 1000-2000, 2000-3000... —
+                    good for Salary.
+                  </span>
+                </span>
+              </label>
+            </div>
           )}
 
           {!newListIsNumericRange && (

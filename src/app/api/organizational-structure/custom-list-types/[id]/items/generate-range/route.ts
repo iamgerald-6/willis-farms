@@ -10,10 +10,13 @@ import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists
 const MAX_RANGE_SIZE = 1000;
 
 /**
- * POST — bulk-fill a numeric-range list (e.g. Age, Salary) with one row per
- * whole number from min to max. Existing numbers already in the list are
- * skipped rather than erroring, so this is safe to run again to extend a
- * range.
+ * POST — bulk-fill a numeric-range list (e.g. Age, Salary). Two modes,
+ * per the list's numeric_range_mode:
+ *  - "digits": one row per whole number from min to max (e.g. Age: 15, 16, 17...).
+ *  - "bands": bucketed ranges of `length` from min to max (e.g. Salary:
+ *    min 1000, max 20000, length 1000 -> "1000-2000", "2000-3000", ...).
+ * Existing rows (matched by code) are skipped rather than erroring, so
+ * this is safe to run again to extend a list.
  */
 export async function POST(
   req: NextRequest,
@@ -45,12 +48,6 @@ export async function POST(
         { status: 400 },
       );
     }
-    if (max - min + 1 > MAX_RANGE_SIZE) {
-      return NextResponse.json(
-        { error: `A range can add at most ${MAX_RANGE_SIZE} numbers at once.` },
-        { status: 400 },
-      );
-    }
 
     const supabase = getSupabaseAdminFromAuth();
     if (!supabase) {
@@ -78,18 +75,55 @@ export async function POST(
       );
     }
 
-    const rows = [];
-    for (let n = min; n <= max; n++) {
-      rows.push({
-        label: String(n),
-        code: slugifyLabel(String(n)),
-        sort_order: n,
-        is_active: true,
-        notes: null,
-      });
+    const rows: { label: string; code: string; sort_order: number; is_active: boolean; notes: null }[] = [];
+
+    if (config.numeric_range_mode === "bands") {
+      const length = Number(body.length);
+      if (!Number.isInteger(length) || length <= 0) {
+        return NextResponse.json(
+          { error: "Range length must be a positive whole number." },
+          { status: 400 },
+        );
+      }
+      if (Math.ceil((max - min) / length) > MAX_RANGE_SIZE) {
+        return NextResponse.json(
+          { error: `A range can add at most ${MAX_RANGE_SIZE} bands at once.` },
+          { status: 400 },
+        );
+      }
+
+      let start = min;
+      while (start < max) {
+        const end = Math.min(start + length, max);
+        const label = `${start}-${end}`;
+        rows.push({
+          label,
+          code: slugifyLabel(label),
+          sort_order: start,
+          is_active: true,
+          notes: null,
+        });
+        start = end;
+      }
+    } else {
+      if (max - min + 1 > MAX_RANGE_SIZE) {
+        return NextResponse.json(
+          { error: `A range can add at most ${MAX_RANGE_SIZE} numbers at once.` },
+          { status: 400 },
+        );
+      }
+      for (let n = min; n <= max; n++) {
+        rows.push({
+          label: String(n),
+          code: slugifyLabel(String(n)),
+          sort_order: n,
+          is_active: true,
+          notes: null,
+        });
+      }
     }
 
-    // Skip numbers already in the list rather than failing the whole batch.
+    // Skip entries already in the list rather than failing the whole batch.
     const { data, error } = await supabase
       .from(config.table_name)
       .upsert(rows, { onConflict: "code", ignoreDuplicates: true })
