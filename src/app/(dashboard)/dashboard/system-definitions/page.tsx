@@ -553,6 +553,10 @@ export default function SystemDefinitionsPage() {
   const orgStructureActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/organizational-structure",
   );
+  const mappingSetupActive = !!pathname?.startsWith(
+    "/dashboard/system-definitions/organizational-structure/mapping-setup",
+  );
+  const setupActive = orgStructureActive && !mappingSetupActive;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
@@ -727,12 +731,22 @@ export default function SystemDefinitionsPage() {
                     <Link
                       href="/dashboard/system-definitions/organizational-structure"
                       className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        orgStructureActive
+                        setupActive
                           ? "bg-red-50 text-red-600"
                           : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                       }`}
                     >
                       Set up
+                    </Link>
+                    <Link
+                      href="/dashboard/system-definitions/organizational-structure/mapping-setup"
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                        mappingSetupActive
+                          ? "bg-red-50 text-red-600"
+                          : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                      }`}
+                    >
+                      Mapping set up
                     </Link>
                   </div>
                 )}
