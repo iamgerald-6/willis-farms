@@ -38,13 +38,15 @@ export type OrgMappingGroup = {
   parent_list_key: string;
   child_list_key: string;
   title: string;
+  /** Name of this group's own physical table, e.g. "mapping_1a2b3c4d_...". */
+  table_name: string;
   sort_order: number;
   created_at: string;
 };
 
+/** A row in a mapping group's own table — no group_id, each group has its own table. */
 export type OrgMappingRow = {
   id: string;
-  group_id: string;
   parent_row_id: string;
   child_row_id: string;
   created_at: string;

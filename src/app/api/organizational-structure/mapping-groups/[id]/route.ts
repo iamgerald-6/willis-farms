@@ -4,8 +4,9 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
+import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 
-/** DELETE — remove a mapping group and all of its mappings (cascade). */
+/** DELETE — remove a mapping group: drops its physical table, then its registry row. */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -26,6 +27,24 @@ export async function DELETE(
         { error: "Server configuration error" },
         { status: 500 },
       );
+    }
+
+    const { data: group, error: groupError } = await supabase
+      .from("org_mapping_groups")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (groupError || !group) {
+      return NextResponse.json({ error: "Unknown mapping group" }, { status: 404 });
+    }
+    const config = group as OrgMappingGroup;
+
+    const { error: dropError } = await supabase.rpc("drop_org_dynamic_mapping_table", {
+      p_table_name: config.table_name,
+    });
+    if (dropError) {
+      return NextResponse.json({ error: dropError.message }, { status: 500 });
     }
 
     const { error } = await supabase.from("org_mapping_groups").delete().eq("id", id);

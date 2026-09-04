@@ -4,14 +4,14 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
-import type { OrgMappingRow } from "@/lib/organizationalStructureMappings";
+import type { OrgMappingGroup, OrgMappingRow } from "@/lib/organizationalStructureMappings";
 
 /**
- * GET — every mapping row for a group (?group_id=...). Labels aren't
- * resolved here — parent_row_id/child_row_id can point at any of the 5 org
- * structure tables depending on the group, so the frontend resolves labels
- * client-side from the parent/child list rows it already has loaded for the
- * dropdowns.
+ * GET — every mapping row in a group's own table (?group_id=...). Labels
+ * aren't resolved here — parent_row_id/child_row_id can point at any of
+ * the org structure lists depending on the group, so the frontend resolves
+ * labels client-side from the parent/child list rows it already has loaded
+ * for the dropdowns.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -35,10 +35,20 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const { data: group, error: groupError } = await supabase
+      .from("org_mapping_groups")
+      .select("*")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !group) {
+      return NextResponse.json({ error: "Unknown mapping group" }, { status: 404 });
+    }
+    const config = group as OrgMappingGroup;
+
     const { data, error } = await supabase
-      .from("org_structure_mappings")
-      .select("id, group_id, parent_row_id, child_row_id, created_at")
-      .eq("group_id", groupId)
+      .from(config.table_name)
+      .select("id, parent_row_id, child_row_id, created_at")
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -52,7 +62,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST — add a new mapping row to a group. */
+/** POST — add a new mapping row to a group's own table. */
 export async function POST(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "add");
@@ -82,11 +92,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { data: group, error: groupError } = await supabase
+      .from("org_mapping_groups")
+      .select("*")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !group) {
+      return NextResponse.json({ error: "Unknown mapping group" }, { status: 404 });
+    }
+    const config = group as OrgMappingGroup;
+
     const { data, error } = await supabase
-      .from("org_structure_mappings")
-      .insert([
-        { group_id: groupId, parent_row_id: parentRowId, child_row_id: childRowId },
-      ])
+      .from(config.table_name)
+      .insert([{ parent_row_id: parentRowId, child_row_id: childRowId }])
       .select()
       .single();
 

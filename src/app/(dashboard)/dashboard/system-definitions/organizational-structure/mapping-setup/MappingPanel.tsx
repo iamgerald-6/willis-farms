@@ -145,7 +145,9 @@ export default function MappingPanel({
   const [deleteTarget, setDeleteTarget] = useState<OrgMappingRow | null>(null);
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/organizational-structure/mappings/${id}`);
+      await api.delete(`/organizational-structure/mappings/${id}`, {
+        params: { group_id: group.id },
+      });
     },
     onSuccess: () => {
       toast.success("Mapping removed.");

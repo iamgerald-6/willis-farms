@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("org_mapping_groups")
-      .select("id, parent_list_key, child_list_key, title, sort_order, created_at")
+      .select("id, parent_list_key, child_list_key, title, table_name, sort_order, created_at")
       .order("sort_order", { ascending: true });
 
     if (error) {
@@ -135,13 +136,30 @@ export async function POST(req: NextRequest) {
 
     const title = `${parentLabel} & ${childLabel}`;
 
+    // Generate the id ourselves so the table name (derived from it) is
+    // known before the row is inserted — a UUID contains only hex digits
+    // and dashes, so this is always a valid, unique Postgres identifier.
+    const groupId = randomUUID();
+    const tableName = `mapping_${groupId.replace(/-/g, "_")}`;
+
+    // Create the physical table first — if this fails, nothing is written
+    // to org_mapping_groups at all.
+    const { error: createTableError } = await supabase.rpc("create_org_dynamic_mapping_table", {
+      p_table_name: tableName,
+    });
+    if (createTableError) {
+      return NextResponse.json({ error: createTableError.message }, { status: 500 });
+    }
+
     const { data, error } = await supabase
       .from("org_mapping_groups")
       .insert([
         {
+          id: groupId,
           parent_list_key: parentListKey,
           child_list_key: childListKey,
           title,
+          table_name: tableName,
           sort_order: count ?? 0,
         },
       ])
@@ -149,6 +167,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
+      // Metadata insert failed after the table was already created — clean
+      // up so we don't leave an orphaned table with no registry entry.
+      await supabase.rpc("drop_org_dynamic_mapping_table", { p_table_name: tableName });
       if (error.code === "23505") {
         return NextResponse.json(
           { error: "A mapping group for this pair already exists." },

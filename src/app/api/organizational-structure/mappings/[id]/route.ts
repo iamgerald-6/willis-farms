@@ -4,8 +4,9 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
+import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 
-/** DELETE — remove a single mapping row. */
+/** DELETE — remove a single mapping row (?group_id=... says which group's table). */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -20,6 +21,11 @@ export async function DELETE(
       );
     }
 
+    const groupId = req.nextUrl.searchParams.get("group_id");
+    if (!groupId) {
+      return NextResponse.json({ error: "group_id is required" }, { status: 400 });
+    }
+
     const supabase = getSupabaseAdminFromAuth();
     if (!supabase) {
       return NextResponse.json(
@@ -28,7 +34,18 @@ export async function DELETE(
       );
     }
 
-    const { error } = await supabase.from("org_structure_mappings").delete().eq("id", id);
+    const { data: group, error: groupError } = await supabase
+      .from("org_mapping_groups")
+      .select("*")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !group) {
+      return NextResponse.json({ error: "Unknown mapping group" }, { status: 404 });
+    }
+    const config = group as OrgMappingGroup;
+
+    const { error } = await supabase.from(config.table_name).delete().eq("id", id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
