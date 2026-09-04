@@ -33,6 +33,8 @@ export type OrgCustomListType = {
   /** Name of this list's own physical table, e.g. "custom_cost_centres". */
   table_name: string;
   has_region: boolean;
+  /** When true, Manage shows a min/max range generator instead of a label field — e.g. Age, Salary. */
+  is_numeric_range: boolean;
   fields: CustomFieldDef[];
   sort_order: number;
   created_at: string;

@@ -94,6 +94,7 @@ export default function OrganizationalStructurePage() {
   const [showNewListForm, setShowNewListForm] = useState(false);
   const [newListLabel, setNewListLabel] = useState("");
   const [newListHasRegion, setNewListHasRegion] = useState(false);
+  const [newListIsNumericRange, setNewListIsNumericRange] = useState(false);
   const [newListFields, setNewListFields] = useState<DraftField[]>([]);
 
   const addFieldRow = () =>
@@ -108,6 +109,7 @@ export default function OrganizationalStructurePage() {
   const resetNewListForm = () => {
     setNewListLabel("");
     setNewListHasRegion(false);
+    setNewListIsNumericRange(false);
     setNewListFields([]);
     setShowNewListForm(false);
   };
@@ -133,7 +135,8 @@ export default function OrganizationalStructurePage() {
       const res = await api.post("/organizational-structure/custom-list-types", {
         label: newListLabel.trim(),
         has_region: newListHasRegion,
-        fields,
+        is_numeric_range: newListIsNumericRange,
+        fields: newListIsNumericRange ? [] : fields,
       });
       return res.data.data as OrgCustomListType;
     },
@@ -224,81 +227,103 @@ export default function OrganizationalStructurePage() {
           <label className="inline-flex items-center gap-2 cursor-pointer mb-4">
             <input
               type="checkbox"
-              checked={newListHasRegion}
-              onChange={(e) => setNewListHasRegion(e.target.checked)}
+              checked={newListIsNumericRange}
+              onChange={(e) => setNewListIsNumericRange(e.target.checked)}
               className="accent-red-600 w-4 h-4"
             />
             <span className="text-sm font-medium text-gray-700">
-              Include a region field (like Sites)
+              This is a range of numbers (e.g. Age, Salary)
             </span>
           </label>
-
-          <div className="mb-4 bg-gray-50 border border-gray-100 rounded-lg p-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-              Included by default
+          {newListIsNumericRange && (
+            <p className="text-xs text-gray-500 -mt-3 mb-4">
+              Instead of typing items one at a time, Manage will let you fill this list
+              by entering a minimum and maximum number.
             </p>
-            <p className="text-xs text-gray-500">
-              Label, code (auto), sort order (auto), active toggle, notes
-            </p>
-          </div>
+          )}
 
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Extra fields (optional)
-            </p>
-            <button
-              type="button"
-              onClick={addFieldRow}
-              className="text-xs font-medium text-red-600 hover:text-red-700 flex items-center gap-1"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add field
-            </button>
-          </div>
+          {!newListIsNumericRange && (
+            <>
+              <label className="inline-flex items-center gap-2 cursor-pointer mb-4">
+                <input
+                  type="checkbox"
+                  checked={newListHasRegion}
+                  onChange={(e) => setNewListHasRegion(e.target.checked)}
+                  className="accent-red-600 w-4 h-4"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Include a region field (like Sites)
+                </span>
+              </label>
 
-          {newListFields.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {newListFields.map((field, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <input
-                    type="text"
-                    value={field.label}
-                    onChange={(e) => updateFieldRow(index, { label: e.target.value })}
-                    placeholder="Field name"
-                    className={`${inputClass} flex-1`}
-                  />
-                  <select
-                    value={field.type}
-                    onChange={(e) =>
-                      updateFieldRow(index, { type: e.target.value as CustomFieldType })
-                    }
-                    className={`${inputClass} w-36 shrink-0`}
-                  >
-                    {CUSTOM_FIELD_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => removeFieldRow(index)}
-                    aria-label="Remove field"
-                    className="text-gray-400 hover:text-red-600 mt-2 shrink-0"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                  {field.type === "select" && (
-                    <input
-                      type="text"
-                      value={field.options}
-                      onChange={(e) => updateFieldRow(index, { options: e.target.value })}
-                      placeholder="Options, comma separated"
-                      className={`${inputClass} basis-full`}
-                    />
-                  )}
+              <div className="mb-4 bg-gray-50 border border-gray-100 rounded-lg p-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Included by default
+                </p>
+                <p className="text-xs text-gray-500">
+                  Label, code (auto), sort order (auto), active toggle, notes
+                </p>
+              </div>
+
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Extra fields (optional)
+                </p>
+                <button
+                  type="button"
+                  onClick={addFieldRow}
+                  className="text-xs font-medium text-red-600 hover:text-red-700 flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add field
+                </button>
+              </div>
+
+              {newListFields.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {newListFields.map((field, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <input
+                        type="text"
+                        value={field.label}
+                        onChange={(e) => updateFieldRow(index, { label: e.target.value })}
+                        placeholder="Field name"
+                        className={`${inputClass} flex-1`}
+                      />
+                      <select
+                        value={field.type}
+                        onChange={(e) =>
+                          updateFieldRow(index, { type: e.target.value as CustomFieldType })
+                        }
+                        className={`${inputClass} w-36 shrink-0`}
+                      >
+                        {CUSTOM_FIELD_TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => removeFieldRow(index)}
+                        aria-label="Remove field"
+                        className="text-gray-400 hover:text-red-600 mt-2 shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      {field.type === "select" && (
+                        <input
+                          type="text"
+                          value={field.options}
+                          onChange={(e) => updateFieldRow(index, { options: e.target.value })}
+                          placeholder="Options, comma separated"
+                          className={`${inputClass} basis-full`}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
 
           <div className="flex items-center gap-2">

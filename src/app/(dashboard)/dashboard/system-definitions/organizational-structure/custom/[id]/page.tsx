@@ -205,6 +205,33 @@ export default function ManageCustomListPage() {
     },
   });
 
+  // Numeric-range generator state (Age, Salary, etc.)
+  const [rangeMin, setRangeMin] = useState("");
+  const [rangeMax, setRangeMax] = useState("");
+
+  const generateRangeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post(
+        `/organizational-structure/custom-list-types/${listTypeId}/items/generate-range`,
+        { min: Number(rangeMin), max: Number(rangeMax) },
+      );
+      return res.data.added as number;
+    },
+    onSuccess: (added) => {
+      toast.success(
+        added > 0
+          ? `Added ${added} number${added === 1 ? "" : "s"}.`
+          : "Those numbers are already in the list.",
+      );
+      setRangeMin("");
+      setRangeMax("");
+      invalidate();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not generate range.");
+    },
+  });
+
   // Inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -314,7 +341,55 @@ export default function ManageCustomListPage() {
         <h2 className="text-xl font-bold text-gray-900">Manage — {config.label}</h2>
       </div>
 
-      {canAdd && (
+      {canAdd && config.is_numeric_range && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
+          <p className="text-sm font-semibold text-gray-800 mb-3">Fill {config.label.toLowerCase()}</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Enter a minimum and maximum and every whole number in between will be added.
+            Numbers already in the list are skipped.
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                Minimum
+              </label>
+              <input
+                type="number"
+                value={rangeMin}
+                onChange={(e) => setRangeMin(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                Maximum
+              </label>
+              <input
+                type="number"
+                value={rangeMax}
+                onChange={(e) => setRangeMax(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => generateRangeMutation.mutate()}
+            disabled={
+              generateRangeMutation.isPending ||
+              rangeMin === "" ||
+              rangeMax === "" ||
+              Number(rangeMin) > Number(rangeMax)
+            }
+            className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+          >
+            {generateRangeMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            Generate
+          </button>
+        </div>
+      )}
+
+      {canAdd && !config.is_numeric_range && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
           <p className="text-sm font-semibold text-gray-800 mb-3">Add {config.singular}</p>
           <div className="space-y-3">

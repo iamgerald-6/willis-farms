@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const label = (body.label as string | undefined)?.trim();
     const hasRegion = body.has_region === true;
+    const isNumericRange = body.is_numeric_range === true;
 
     if (!label) {
       return NextResponse.json({ error: "List name is required" }, { status: 400 });
@@ -178,6 +179,7 @@ export async function POST(req: NextRequest) {
           code,
           table_name: tableName,
           has_region: hasRegion,
+          is_numeric_range: isNumericRange,
           fields,
           sort_order: count ?? 0,
         },
