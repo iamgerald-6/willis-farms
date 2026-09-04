@@ -13,18 +13,12 @@ import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
-  ORG_STRUCTURE_LIST_KEYS,
-  type OrgStructureListKey,
-} from "@/lib/organizationalStructure";
-import {
   CUSTOM_FIELD_TYPES,
   type CustomFieldDef,
   type CustomFieldType,
   type NumericRangeMode,
   type OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
-
-type ListCount = { key: OrgStructureListKey; label: string; count: number };
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -74,15 +68,6 @@ export default function OrganizationalStructurePage() {
   const canEdit =
     accessProfile &&
     canPerformModuleAction(accessProfile, "sys:definitions", "edit", sessionRole, groupPresets);
-
-  const { data: lists, isLoading: listsLoading } = useQuery<ListCount[]>({
-    queryKey: ["organizational_structure_summary"],
-    queryFn: async () => {
-      const res = await api.get("/organizational-structure");
-      return res.data.data as ListCount[];
-    },
-    enabled: !!canView,
-  });
 
   const { data: customListTypes, isLoading: customListTypesLoading } = useQuery<
     OrgCustomListType[]
@@ -223,9 +208,6 @@ export default function OrganizationalStructurePage() {
       </div>
     );
   }
-
-  const countFor = (key: OrgStructureListKey) =>
-    lists?.find((l) => l.key === key)?.count;
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-full">
@@ -439,26 +421,6 @@ export default function OrganizationalStructurePage() {
             </tr>
           </thead>
           <tbody>
-            {ORG_STRUCTURE_LIST_KEYS.map((key) => {
-              const label = lists?.find((l) => l.key === key)?.label ?? key;
-              const count = countFor(key);
-              return (
-                <tr key={key} className="border-t border-gray-100">
-                  <td className="px-4 py-2.5 text-gray-900">{label}</td>
-                  <td className="px-4 py-2.5 text-gray-500">
-                    {listsLoading || count === undefined ? "…" : count}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <Link
-                      href={`/dashboard/system-definitions/organizational-structure/${key}`}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      Manage
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
             {(customListTypes ?? []).map((listType) => {
               const isEditingList = editingListId === listType.id;
               return (

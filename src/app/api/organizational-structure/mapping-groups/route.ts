@@ -4,46 +4,23 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
-import { ORG_STRUCTURE_LISTS, slugifyLabel } from "@/lib/organizationalStructure";
-import {
-  parseListRef,
-  type OrgListRef,
-  type OrgMappingGroup,
-} from "@/lib/organizationalStructureMappings";
+import { slugifyLabel } from "@/lib/organizationalStructure";
+import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
+import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Display label for a list ref — looked up from the fixed config or the
- * org_custom_list_types table, depending on which kind it is. */
-async function labelForRef(
+/** Looks up a list's label + singular from org_custom_list_types — every
+ * list (the original 5 and any custom one) lives there now. */
+async function listTypeById(
   supabase: SupabaseClient,
-  ref: OrgListRef,
-): Promise<string | null> {
-  if (ref.kind === "fixed") {
-    return ORG_STRUCTURE_LISTS[ref.key].label;
-  }
+  id: string,
+): Promise<Pick<OrgCustomListType, "label" | "singular"> | null> {
   const { data } = await supabase
     .from("org_custom_list_types")
-    .select("label")
-    .eq("id", ref.id)
+    .select("label, singular")
+    .eq("id", id)
     .maybeSingle();
-  return data?.label ?? null;
-}
-
-/** Singular form for a list ref — used to derive the mapping table's real
- * column names (e.g. "section" -> "section_id"). */
-async function singularForRef(
-  supabase: SupabaseClient,
-  ref: OrgListRef,
-): Promise<string | null> {
-  if (ref.kind === "fixed") {
-    return ORG_STRUCTURE_LISTS[ref.key].singular;
-  }
-  const { data } = await supabase
-    .from("org_custom_list_types")
-    .select("singular")
-    .eq("id", ref.id)
-    .maybeSingle();
-  return data?.singular ?? null;
+  return data ?? null;
 }
 
 /** GET — every mapping group (one per Mapping set up accordion panel). */
@@ -102,11 +79,6 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const parentRef = parseListRef(parentListKey);
-    const childRef = parseListRef(childListKey);
-    if (!parentRef || !childRef) {
-      return NextResponse.json({ error: "Unknown list key" }, { status: 400 });
-    }
     if (parentListKey === childListKey) {
       return NextResponse.json(
         { error: "Choose two different lists to map." },
@@ -122,10 +94,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const parentLabel = await labelForRef(supabase, parentRef);
-    const childLabel = await labelForRef(supabase, childRef);
-    if (!parentLabel || !childLabel) {
-      return NextResponse.json({ error: "Unknown list key" }, { status: 400 });
+    const parentType = await listTypeById(supabase, parentListKey);
+    const childType = await listTypeById(supabase, childListKey);
+    if (!parentType || !childType) {
+      return NextResponse.json({ error: "Unknown list" }, { status: 400 });
     }
 
     // Block the pair in either order — Site<->Business unit and Business
@@ -152,7 +124,7 @@ export async function POST(req: NextRequest) {
       .from("org_mapping_groups")
       .select("id", { count: "exact", head: true });
 
-    const title = `${parentLabel} & ${childLabel}`;
+    const title = `${parentType.label} & ${childType.label}`;
 
     // Human-readable table name from the two list names, e.g.
     // "mapping_sections_positions" — not the group's id. Postgres
@@ -160,7 +132,7 @@ export async function POST(req: NextRequest) {
     // for the "mapping_" prefix and a numeric suffix if there's a
     // collision (two pairs slugifying to the same name).
     const baseTableName =
-      `mapping_${slugifyLabel(parentLabel)}_${slugifyLabel(childLabel)}`.slice(0, 55);
+      `mapping_${slugifyLabel(parentType.label)}_${slugifyLabel(childType.label)}`.slice(0, 55);
     let tableName = baseTableName;
     let suffix = 2;
     for (;;) {
@@ -176,10 +148,8 @@ export async function POST(req: NextRequest) {
 
     // Real column names, e.g. "section_id" / "position_id" — same
     // convention as the original fixed pairs (site_id, business_unit_id).
-    const parentSingular = (await singularForRef(supabase, parentRef)) ?? "parent";
-    const childSingularRaw = (await singularForRef(supabase, childRef)) ?? "child";
-    const parentColumn = `${slugifyLabel(parentSingular)}_id`;
-    let childColumn = `${slugifyLabel(childSingularRaw)}_id`;
+    const parentColumn = `${slugifyLabel(parentType.singular)}_id`;
+    let childColumn = `${slugifyLabel(childType.singular)}_id`;
     if (parentColumn === childColumn) {
       childColumn = `${childColumn}_2`;
     }

@@ -6,24 +6,16 @@ import { ChevronDown, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
-import {
-  parseListRef,
-  type OrgListRef,
-  type OrgMappingGroup,
-  type OrgMappingRow,
-} from "@/lib/organizationalStructureMappings";
+import type { OrgMappingGroup, OrgMappingRow } from "@/lib/organizationalStructureMappings";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 
-/** Minimal shape shared by fixed org structure rows and custom list items —
- * all the panel needs for the dropdowns and the table. */
+/** Minimal shape shared by every org structure list's rows — all the panel
+ * needs for the dropdowns and the table. */
 type MappingSideRow = { id: string; label: string };
 
-function urlForRef(ref: OrgListRef | null): string | null {
-  if (!ref) return null;
-  return ref.kind === "fixed"
-    ? `/organizational-structure/${ref.key}`
-    : `/organizational-structure/custom-list-types/${ref.id}/items`;
+function urlForListId(id: string | null): string | null {
+  if (!id) return null;
+  return `/organizational-structure/custom-list-types/${id}/items`;
 }
 
 const inputClass =
@@ -47,29 +39,35 @@ export default function MappingPanel({
   canEdit,
 }: MappingPanelProps) {
   const queryClient = useQueryClient();
-  const parentRef = parseListRef(group.parent_list_key);
-  const childRef = parseListRef(group.child_list_key);
-  const needsCustomListTypes = parentRef?.kind === "custom" || childRef?.kind === "custom";
 
+  // Every list — including the original 5 — lives in org_custom_list_types
+  // now, so this is always fetched (not just for groups involving a
+  // "custom" list, since that distinction no longer exists). Fetching it
+  // live also means the panel header always reflects the current list
+  // names, even if one was renamed after this group was created (rather
+  // than the group's own stored `title`, which is only a snapshot from
+  // creation time).
   const { data: customListTypes } = useQuery<OrgCustomListType[]>({
     queryKey: ["organizational_structure_custom_list_types"],
     queryFn: async () => {
       const res = await api.get("/organizational-structure/custom-list-types");
       return res.data.data as OrgCustomListType[];
     },
-    enabled: !!canView && open && needsCustomListTypes,
+    enabled: !!canView && open,
   });
 
-  const configFor = (ref: OrgListRef | null): { label: string; singular: string } => {
-    if (!ref) return { label: "Unknown", singular: "item" };
-    if (ref.kind === "fixed") return ORG_STRUCTURE_LISTS[ref.key];
-    const customType = customListTypes?.find((t) => t.id === ref.id);
+  const configFor = (id: string): { label: string; singular: string } => {
+    const customType = customListTypes?.find((t) => t.id === id);
     return { label: customType?.label ?? "Unknown", singular: customType?.singular ?? "item" };
   };
-  const parentConfig = configFor(parentRef);
-  const childConfig = configFor(childRef);
-  const parentUrl = urlForRef(parentRef);
-  const childUrl = urlForRef(childRef);
+  const parentConfig = configFor(group.parent_list_key);
+  const childConfig = configFor(group.child_list_key);
+  const liveTitle =
+    customListTypes && parentConfig.label !== "Unknown" && childConfig.label !== "Unknown"
+      ? `${parentConfig.label} & ${childConfig.label}`
+      : group.title;
+  const parentUrl = urlForListId(group.parent_list_key);
+  const childUrl = urlForListId(group.child_list_key);
 
   const { data: parentRows, isLoading: parentLoading } = useQuery<MappingSideRow[]>({
     queryKey: ["organizational_structure_mapping_side", group.parent_list_key],
@@ -184,7 +182,7 @@ export default function MappingPanel({
           onClick={onToggle}
           className="flex-1 flex items-center gap-2.5 text-left"
         >
-          <span className="text-sm font-semibold text-gray-900">{group.title}</span>
+          <span className="text-sm font-semibold text-gray-900">{liveTitle}</span>
         </button>
         <div className="flex items-center gap-3 shrink-0">
           {canEdit && (
@@ -348,7 +346,7 @@ export default function MappingPanel({
       <ConfirmDialog
         open={confirmDeleteGroup}
         title="Delete this mapping group?"
-        message={`"${group.title}" and every mapping in it will be removed. This can't be undone.`}
+        message={`"${liveTitle}" and every mapping in it will be removed. This can't be undone.`}
         confirmLabel="Delete group"
         destructive
         confirming={deleteGroupMutation.isPending}

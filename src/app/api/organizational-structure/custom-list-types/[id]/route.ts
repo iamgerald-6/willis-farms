@@ -100,12 +100,11 @@ export async function DELETE(
       return NextResponse.json({ error: "Unknown list" }, { status: 404 });
     }
     const config = listType as OrgCustomListType;
-    const ref = `custom:${id}`;
 
     const { data: dependentGroups, error: dependentGroupsError } = await supabase
       .from("org_mapping_groups")
       .select("*")
-      .or(`parent_list_key.eq.${ref},child_list_key.eq.${ref}`);
+      .or(`parent_list_key.eq.${id},child_list_key.eq.${id}`);
 
     if (dependentGroupsError) {
       return NextResponse.json({ error: dependentGroupsError.message }, { status: 500 });

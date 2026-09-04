@@ -11,8 +11,7 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
-import { ORG_STRUCTURE_LIST_KEYS, ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
-import { encodeListRef, type OrgMappingGroup } from "@/lib/organizationalStructureMappings";
+import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 import MappingPanel from "./MappingPanel";
 
@@ -71,18 +70,12 @@ export default function MappingSetupPage() {
     enabled: !!canView,
   });
 
-  // Every list an admin can pick from when creating a mapping group — the
-  // 5 fixed lists plus any custom lists created from Set up.
-  const listOptions = [
-    ...ORG_STRUCTURE_LIST_KEYS.map((key) => ({
-      value: encodeListRef({ kind: "fixed", key }),
-      label: ORG_STRUCTURE_LISTS[key].label,
-    })),
-    ...(customListTypes ?? []).map((t) => ({
-      value: encodeListRef({ kind: "custom", id: t.id }),
-      label: t.label,
-    })),
-  ];
+  // Every list an admin can pick from when creating a mapping group — all
+  // of them now live in org_custom_list_types.
+  const listOptions = (customListTypes ?? []).map((t) => ({
+    value: t.id,
+    label: t.label,
+  }));
   const listLabelByValue = new Map(listOptions.map((o) => [o.value, o.label]));
 
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);

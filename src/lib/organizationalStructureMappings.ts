@@ -2,39 +2,20 @@
 // user-created groups (accordion panels) that link one org structure list
 // to another (e.g. Sites & business units), each holding its own set of
 // parent<->child mapping rows. See docs/organizational-structure/
-// mapping-groups.sql for the tables themselves.
+// dynamic-mapping-tables.sql and mapping-column-names.sql for the tables
+// themselves.
 //
-// A "list ref" identifies which list a group's parent/child side points at
-// — either one of the 5 fixed lists (Sites, Business units, Departments,
-// Sections, Grade levels) or a custom list type created from Set up. Both
-// are stored in the same `parent_list_key`/`child_list_key` text column:
-// fixed lists as their plain key ("sites"), custom lists as
-// "custom:<list_type_id>". No schema change needed to support custom lists
-// here — just this encoding.
-
-import { isOrgStructureListKey, type OrgStructureListKey } from "@/lib/organizationalStructure";
-
-export type OrgListRef =
-  | { kind: "fixed"; key: OrgStructureListKey }
-  | { kind: "custom"; id: string };
-
-const CUSTOM_PREFIX = "custom:";
-
-export function encodeListRef(ref: OrgListRef): string {
-  return ref.kind === "fixed" ? ref.key : `${CUSTOM_PREFIX}${ref.id}`;
-}
-
-export function parseListRef(value: string): OrgListRef | null {
-  if (value.startsWith(CUSTOM_PREFIX)) {
-    const id = value.slice(CUSTOM_PREFIX.length);
-    return id ? { kind: "custom", id } : null;
-  }
-  return isOrgStructureListKey(value) ? { kind: "fixed", key: value } : null;
-}
+// A group's parent_list_key/child_list_key is always a plain
+// org_custom_list_types.id — every list (the original 5 fixed ones and any
+// custom list from Set up) lives in that same registry now, so there's no
+// "fixed vs custom" distinction to encode here anymore. See
+// docs/organizational-structure/merge-fixed-lists.sql for the migration
+// that folded the old fixed-key format ("sites", "custom:<id>", etc.) into
+// this plain-id format.
 
 export type OrgMappingGroup = {
   id: string;
-  /** Encoded OrgListRef — see parseListRef/encodeListRef above. */
+  /** org_custom_list_types.id for each side of the mapping. */
   parent_list_key: string;
   child_list_key: string;
   title: string;
