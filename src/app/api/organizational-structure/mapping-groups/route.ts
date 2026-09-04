@@ -29,6 +29,23 @@ async function labelForRef(
   return data?.label ?? null;
 }
 
+/** Singular form for a list ref — used to derive the mapping table's real
+ * column names (e.g. "section" -> "section_id"). */
+async function singularForRef(
+  supabase: SupabaseClient,
+  ref: OrgListRef,
+): Promise<string | null> {
+  if (ref.kind === "fixed") {
+    return ORG_STRUCTURE_LISTS[ref.key].singular;
+  }
+  const { data } = await supabase
+    .from("org_custom_list_types")
+    .select("singular")
+    .eq("id", ref.id)
+    .maybeSingle();
+  return data?.singular ?? null;
+}
+
 /** GET — every mapping group (one per Mapping set up accordion panel). */
 export async function GET(req: NextRequest) {
   try {
@@ -49,7 +66,9 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("org_mapping_groups")
-      .select("id, parent_list_key, child_list_key, title, table_name, sort_order, created_at")
+      .select(
+        "id, parent_list_key, child_list_key, title, table_name, parent_column, child_column, sort_order, created_at",
+      )
       .order("sort_order", { ascending: true });
 
     if (error) {
@@ -155,10 +174,22 @@ export async function POST(req: NextRequest) {
       suffix += 1;
     }
 
+    // Real column names, e.g. "section_id" / "position_id" — same
+    // convention as the original fixed pairs (site_id, business_unit_id).
+    const parentSingular = (await singularForRef(supabase, parentRef)) ?? "parent";
+    const childSingularRaw = (await singularForRef(supabase, childRef)) ?? "child";
+    const parentColumn = `${slugifyLabel(parentSingular)}_id`;
+    let childColumn = `${slugifyLabel(childSingularRaw)}_id`;
+    if (parentColumn === childColumn) {
+      childColumn = `${childColumn}_2`;
+    }
+
     // Create the physical table first — if this fails, nothing is written
     // to org_mapping_groups at all.
     const { error: createTableError } = await supabase.rpc("create_org_dynamic_mapping_table", {
       p_table_name: tableName,
+      p_parent_column: parentColumn,
+      p_child_column: childColumn,
     });
     if (createTableError) {
       return NextResponse.json({ error: createTableError.message }, { status: 500 });
@@ -172,6 +203,8 @@ export async function POST(req: NextRequest) {
           child_list_key: childListKey,
           title,
           table_name: tableName,
+          parent_column: parentColumn,
+          child_column: childColumn,
           sort_order: count ?? 0,
         },
       ])

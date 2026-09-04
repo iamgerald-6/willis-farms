@@ -38,13 +38,22 @@ export type OrgMappingGroup = {
   parent_list_key: string;
   child_list_key: string;
   title: string;
-  /** Name of this group's own physical table, e.g. "mapping_1a2b3c4d_...". */
+  /** Name of this group's own physical table, e.g. "mapping_sections_positions". */
   table_name: string;
+  /** Real column names on that table, e.g. "section_id" / "position_id". */
+  parent_column: string;
+  child_column: string;
   sort_order: number;
   created_at: string;
 };
 
-/** A row in a mapping group's own table — no group_id, each group has its own table. */
+/**
+ * A row in a mapping group's own table, as the API returns it — always
+ * shaped as parent_row_id/child_row_id regardless of the group, even
+ * though the underlying table's columns are named after its lists (see
+ * parent_column/child_column on OrgMappingGroup). The API translates
+ * between the two so the frontend doesn't need to know column names.
+ */
 export type OrgMappingRow = {
   id: string;
   parent_row_id: string;
