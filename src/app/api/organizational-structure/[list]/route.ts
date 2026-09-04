@@ -75,9 +75,6 @@ export async function POST(
     const body = await req.json();
     const label = (body.label as string | undefined)?.trim();
     const notes = (body.notes as string | undefined)?.trim() || null;
-    const region = config.hasRegion
-      ? (body.region as string | undefined)?.trim() || null
-      : null;
     const isActive = body.is_active !== false;
 
     if (!label) {
@@ -106,7 +103,9 @@ export async function POST(
         {
           label,
           code: slugifyLabel(label),
-          region,
+          ...(config.hasRegion
+            ? { region: (body.region as string | undefined)?.trim() || null }
+            : {}),
           sort_order: nextSortOrder,
           is_active: isActive,
           notes,
