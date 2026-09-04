@@ -3,7 +3,6 @@ import {
   AlertCircle,
   Bell,
   BookOpen,
-  Building2,
   Calendar,
   CalendarCheck,
   CheckCircle2,
@@ -49,7 +48,6 @@ export const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   clock: Clock,
   "alert-circle": AlertCircle,
   "x-circle": XCircle,
-  "building-2": Building2,
 };
 
 export function resolveNavIcon(key: NavIconKey): LucideIcon {

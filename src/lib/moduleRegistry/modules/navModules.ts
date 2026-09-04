@@ -92,16 +92,6 @@ export const NAV_BUILTIN_MODULES: ModuleRecord[] = [
   modSop,
   modSopManage,
   navModule({
-    id: "mod:organizational-structure-setup",
-    legacyKey: "sys:definitions",
-    label: "Set up",
-    groupId: "grp:organizational-structure",
-    route: "/dashboard/organizational-structure/setup",
-    sortOrder: 10,
-    icon: "building-2",
-    supportedActions: ["view", "add", "edit"],
-  }),
-  navModule({
     id: "mod:notifications",
     legacyKey: "notifications",
     label: "Notifications",

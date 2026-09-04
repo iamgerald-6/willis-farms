@@ -28,16 +28,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     },
   },
   {
-    id: "grp:organizational-structure",
-    label: "Organizational Structure",
-    sortOrder: 3.5,
-    sidebar: {
-      mode: "collapsible",
-      icon: "building-2",
-      href: "/dashboard/organizational-structure",
-    },
-  },
-  {
     id: "grp:operations",
     label: "Operations",
     sortOrder: 4,

@@ -19,7 +19,6 @@ export type ModuleGroupId =
   | "grp:general"
   | "grp:human-capital"
   | "grp:task-manager"
-  | "grp:organizational-structure"
   | "grp:operations"
   | "grp:system";
 
@@ -45,8 +44,7 @@ export type NavIconKey =
   | "check-circle"
   | "clock"
   | "alert-circle"
-  | "x-circle"
-  | "building-2";
+  | "x-circle";
 
 /** How a group renders in the sidebar */
 export type SidebarGroupMode = "collapsible" | "flat";
