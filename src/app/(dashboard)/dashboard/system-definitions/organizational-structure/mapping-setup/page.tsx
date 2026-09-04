@@ -11,12 +11,9 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
-import {
-  ORG_STRUCTURE_LIST_KEYS,
-  ORG_STRUCTURE_LISTS,
-  type OrgStructureListKey,
-} from "@/lib/organizationalStructure";
-import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
+import { ORG_STRUCTURE_LIST_KEYS, ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
+import { encodeListRef, type OrgMappingGroup } from "@/lib/organizationalStructureMappings";
+import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 import MappingPanel from "./MappingPanel";
 
 const inputClass =
@@ -65,11 +62,34 @@ export default function MappingSetupPage() {
     enabled: !!canView,
   });
 
+  const { data: customListTypes } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () => {
+      const res = await api.get("/organizational-structure/custom-list-types");
+      return res.data.data as OrgCustomListType[];
+    },
+    enabled: !!canView,
+  });
+
+  // Every list an admin can pick from when creating a mapping group — the
+  // 5 fixed lists plus any custom lists created from Set up.
+  const listOptions = [
+    ...ORG_STRUCTURE_LIST_KEYS.map((key) => ({
+      value: encodeListRef({ kind: "fixed", key }),
+      label: ORG_STRUCTURE_LISTS[key].label,
+    })),
+    ...(customListTypes ?? []).map((t) => ({
+      value: encodeListRef({ kind: "custom", id: t.id }),
+      label: t.label,
+    })),
+  ];
+  const listLabelByValue = new Map(listOptions.map((o) => [o.value, o.label]));
+
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
 
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
-  const [newParentListKey, setNewParentListKey] = useState<OrgStructureListKey | "">("");
-  const [newChildListKey, setNewChildListKey] = useState<OrgStructureListKey | "">("");
+  const [newParentListKey, setNewParentListKey] = useState("");
+  const [newChildListKey, setNewChildListKey] = useState("");
 
   const existingPairKeys = new Set(
     (mappingGroups ?? []).flatMap((g) => [
@@ -77,10 +97,10 @@ export default function MappingSetupPage() {
       `${g.child_list_key}|${g.parent_list_key}`,
     ]),
   );
-  const availableChildListKeys = ORG_STRUCTURE_LIST_KEYS.filter(
-    (key) =>
-      key !== newParentListKey &&
-      !(newParentListKey && existingPairKeys.has(`${newParentListKey}|${key}`)),
+  const availableChildListOptions = listOptions.filter(
+    (opt) =>
+      opt.value !== newParentListKey &&
+      !(newParentListKey && existingPairKeys.has(`${newParentListKey}|${opt.value}`)),
   );
 
   const createGroupMutation = useMutation({
@@ -170,15 +190,15 @@ export default function MappingSetupPage() {
               <select
                 value={newParentListKey}
                 onChange={(e) => {
-                  setNewParentListKey(e.target.value as OrgStructureListKey);
+                  setNewParentListKey(e.target.value);
                   setNewChildListKey("");
                 }}
                 className={inputClass}
               >
                 <option value="">Select a list</option>
-                {ORG_STRUCTURE_LIST_KEYS.map((key) => (
-                  <option key={key} value={key}>
-                    {ORG_STRUCTURE_LISTS[key].label}
+                {listOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -189,21 +209,21 @@ export default function MappingSetupPage() {
               </label>
               <select
                 value={newChildListKey}
-                onChange={(e) => setNewChildListKey(e.target.value as OrgStructureListKey)}
+                onChange={(e) => setNewChildListKey(e.target.value)}
                 className={inputClass}
                 disabled={!newParentListKey}
               >
                 <option value="">Select a list</option>
-                {availableChildListKeys.map((key) => (
-                  <option key={key} value={key}>
-                    {ORG_STRUCTURE_LISTS[key].label}
+                {availableChildListOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
-              {newParentListKey && availableChildListKeys.length === 0 && (
+              {newParentListKey && availableChildListOptions.length === 0 && (
                 <p className="text-xs text-gray-400 mt-1">
                   Every other list is already mapped to{" "}
-                  {ORG_STRUCTURE_LISTS[newParentListKey].label.toLowerCase()}.
+                  {(listLabelByValue.get(newParentListKey) ?? "").toLowerCase()}.
                 </p>
               )}
             </div>

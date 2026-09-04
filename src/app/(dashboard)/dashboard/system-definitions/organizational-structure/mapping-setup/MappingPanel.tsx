@@ -6,8 +6,25 @@ import { ChevronDown, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { ORG_STRUCTURE_LISTS, type OrgStructureRow } from "@/lib/organizationalStructure";
-import type { OrgMappingGroup, OrgMappingRow } from "@/lib/organizationalStructureMappings";
+import { ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
+import {
+  parseListRef,
+  type OrgListRef,
+  type OrgMappingGroup,
+  type OrgMappingRow,
+} from "@/lib/organizationalStructureMappings";
+import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+
+/** Minimal shape shared by fixed org structure rows and custom list items —
+ * all the panel needs for the dropdowns and the table. */
+type MappingSideRow = { id: string; label: string };
+
+function urlForRef(ref: OrgListRef | null): string | null {
+  if (!ref) return null;
+  return ref.kind === "fixed"
+    ? `/organizational-structure/${ref.key}`
+    : `/organizational-structure/custom-list-types/${ref.id}/items`;
+}
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -30,25 +47,46 @@ export default function MappingPanel({
   canEdit,
 }: MappingPanelProps) {
   const queryClient = useQueryClient();
-  const parentConfig = ORG_STRUCTURE_LISTS[group.parent_list_key];
-  const childConfig = ORG_STRUCTURE_LISTS[group.child_list_key];
+  const parentRef = parseListRef(group.parent_list_key);
+  const childRef = parseListRef(group.child_list_key);
+  const needsCustomListTypes = parentRef?.kind === "custom" || childRef?.kind === "custom";
 
-  const { data: parentRows, isLoading: parentLoading } = useQuery<OrgStructureRow[]>({
-    queryKey: ["organizational_structure_list", group.parent_list_key],
+  const { data: customListTypes } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
     queryFn: async () => {
-      const res = await api.get(`/organizational-structure/${group.parent_list_key}`);
-      return res.data.data as OrgStructureRow[];
+      const res = await api.get("/organizational-structure/custom-list-types");
+      return res.data.data as OrgCustomListType[];
     },
-    enabled: !!canView && open,
+    enabled: !!canView && open && needsCustomListTypes,
   });
 
-  const { data: childRows, isLoading: childLoading } = useQuery<OrgStructureRow[]>({
-    queryKey: ["organizational_structure_list", group.child_list_key],
+  const configFor = (ref: OrgListRef | null): { label: string; singular: string } => {
+    if (!ref) return { label: "Unknown", singular: "item" };
+    if (ref.kind === "fixed") return ORG_STRUCTURE_LISTS[ref.key];
+    const customType = customListTypes?.find((t) => t.id === ref.id);
+    return { label: customType?.label ?? "Unknown", singular: customType?.singular ?? "item" };
+  };
+  const parentConfig = configFor(parentRef);
+  const childConfig = configFor(childRef);
+  const parentUrl = urlForRef(parentRef);
+  const childUrl = urlForRef(childRef);
+
+  const { data: parentRows, isLoading: parentLoading } = useQuery<MappingSideRow[]>({
+    queryKey: ["organizational_structure_mapping_side", group.parent_list_key],
     queryFn: async () => {
-      const res = await api.get(`/organizational-structure/${group.child_list_key}`);
-      return res.data.data as OrgStructureRow[];
+      const res = await api.get(parentUrl as string);
+      return res.data.data as MappingSideRow[];
     },
-    enabled: !!canView && open,
+    enabled: !!canView && open && !!parentUrl,
+  });
+
+  const { data: childRows, isLoading: childLoading } = useQuery<MappingSideRow[]>({
+    queryKey: ["organizational_structure_mapping_side", group.child_list_key],
+    queryFn: async () => {
+      const res = await api.get(childUrl as string);
+      return res.data.data as MappingSideRow[];
+    },
+    enabled: !!canView && open && !!childUrl,
   });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<OrgMappingRow[]>({

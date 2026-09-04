@@ -4,8 +4,30 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
-import { ORG_STRUCTURE_LISTS, isOrgStructureListKey } from "@/lib/organizationalStructure";
-import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
+import { ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
+import {
+  parseListRef,
+  type OrgListRef,
+  type OrgMappingGroup,
+} from "@/lib/organizationalStructureMappings";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/** Display label for a list ref — looked up from the fixed config or the
+ * org_custom_list_types table, depending on which kind it is. */
+async function labelForRef(
+  supabase: SupabaseClient,
+  ref: OrgListRef,
+): Promise<string | null> {
+  if (ref.kind === "fixed") {
+    return ORG_STRUCTURE_LISTS[ref.key].label;
+  }
+  const { data } = await supabase
+    .from("org_custom_list_types")
+    .select("label")
+    .eq("id", ref.id)
+    .maybeSingle();
+  return data?.label ?? null;
+}
 
 /** GET — every mapping group (one per Mapping set up accordion panel). */
 export async function GET(req: NextRequest) {
@@ -61,7 +83,9 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    if (!isOrgStructureListKey(parentListKey) || !isOrgStructureListKey(childListKey)) {
+    const parentRef = parseListRef(parentListKey);
+    const childRef = parseListRef(childListKey);
+    if (!parentRef || !childRef) {
       return NextResponse.json({ error: "Unknown list key" }, { status: 400 });
     }
     if (parentListKey === childListKey) {
@@ -77,6 +101,12 @@ export async function POST(req: NextRequest) {
         { error: "Server configuration error" },
         { status: 500 },
       );
+    }
+
+    const parentLabel = await labelForRef(supabase, parentRef);
+    const childLabel = await labelForRef(supabase, childRef);
+    if (!parentLabel || !childLabel) {
+      return NextResponse.json({ error: "Unknown list key" }, { status: 400 });
     }
 
     // Block the pair in either order — Site<->Business unit and Business
@@ -103,7 +133,7 @@ export async function POST(req: NextRequest) {
       .from("org_mapping_groups")
       .select("id", { count: "exact", head: true });
 
-    const title = `${ORG_STRUCTURE_LISTS[parentListKey].label} & ${ORG_STRUCTURE_LISTS[childListKey].label}`;
+    const title = `${parentLabel} & ${childLabel}`;
 
     const { data, error } = await supabase
       .from("org_mapping_groups")
