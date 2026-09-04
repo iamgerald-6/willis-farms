@@ -1,8 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
   History,
   Layers,
   ListChecks,
@@ -542,7 +547,16 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
 ]);
 
 export default function SystemDefinitionsPage() {
+  const pathname = usePathname();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [orgStructureOpen, setOrgStructureOpen] = useState(false);
+  const orgStructureActive = !!pathname?.startsWith(
+    "/dashboard/system-definitions/organizational-structure",
+  );
+  const mappingSetupActive = !!pathname?.startsWith(
+    "/dashboard/system-definitions/organizational-structure/mapping-setup",
+  );
+  const setupActive = orgStructureActive && !mappingSetupActive;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
@@ -685,6 +699,57 @@ export default function SystemDefinitionsPage() {
                   />
                   <span className="truncate">Audit log</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setOrgStructureOpen((prev) => !prev)}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
+                    orgStructureActive
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <Building2
+                    className={`w-4 h-4 shrink-0 ${
+                      orgStructureActive ? "text-white" : "text-gray-400"
+                    }`}
+                  />
+                  <span className="flex-1 text-left truncate">
+                    Organizational structure
+                  </span>
+                  {orgStructureOpen || orgStructureActive ? (
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        orgStructureActive ? "text-white/70" : "text-gray-400"
+                      }`}
+                    />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                  )}
+                </button>
+                {(orgStructureOpen || orgStructureActive) && (
+                  <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
+                    <Link
+                      href="/dashboard/system-definitions/organizational-structure"
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                        setupActive
+                          ? "bg-red-50 text-red-600"
+                          : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                      }`}
+                    >
+                      Organizational structure set up
+                    </Link>
+                    <Link
+                      href="/dashboard/system-definitions/organizational-structure/mapping-setup"
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                        mappingSetupActive
+                          ? "bg-red-50 text-red-600"
+                          : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                      }`}
+                    >
+                      Organizational structure mapping set up
+                    </Link>
+                  </div>
+                )}
               </div>
               <div className="border-t border-gray-100 my-2" />
             </div>
