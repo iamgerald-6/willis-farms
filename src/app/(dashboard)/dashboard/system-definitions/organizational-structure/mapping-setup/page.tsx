@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
@@ -11,12 +12,19 @@ import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
-  ORG_MAPPING_PAIR_KEYS,
-  type OrgMappingPairKey,
-} from "@/lib/organizationalStructureMappings";
+  ORG_STRUCTURE_LIST_KEYS,
+  ORG_STRUCTURE_LISTS,
+  type OrgStructureListKey,
+} from "@/lib/organizationalStructure";
+import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 import MappingPanel from "./MappingPanel";
 
+const inputClass =
+  "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
+
 export default function MappingSetupPage() {
+  const queryClient = useQueryClient();
+
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
@@ -48,9 +56,55 @@ export default function MappingSetupPage() {
     accessProfile &&
     canPerformModuleAction(accessProfile, "sys:definitions", "edit", sessionRole, groupPresets);
 
-  const [openPair, setOpenPair] = useState<OrgMappingPairKey | null>(
-    ORG_MAPPING_PAIR_KEYS[0],
+  const { data: mappingGroups, isLoading: groupsLoading } = useQuery<OrgMappingGroup[]>({
+    queryKey: ["organizational_structure_mapping_groups"],
+    queryFn: async () => {
+      const res = await api.get("/organizational-structure/mapping-groups");
+      return res.data.data as OrgMappingGroup[];
+    },
+    enabled: !!canView,
+  });
+
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
+
+  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
+  const [newParentListKey, setNewParentListKey] = useState<OrgStructureListKey | "">("");
+  const [newChildListKey, setNewChildListKey] = useState<OrgStructureListKey | "">("");
+
+  const existingPairKeys = new Set(
+    (mappingGroups ?? []).flatMap((g) => [
+      `${g.parent_list_key}|${g.child_list_key}`,
+      `${g.child_list_key}|${g.parent_list_key}`,
+    ]),
   );
+  const availableChildListKeys = ORG_STRUCTURE_LIST_KEYS.filter(
+    (key) =>
+      key !== newParentListKey &&
+      !(newParentListKey && existingPairKeys.has(`${newParentListKey}|${key}`)),
+  );
+
+  const createGroupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/organizational-structure/mapping-groups", {
+        parent_list_key: newParentListKey,
+        child_list_key: newChildListKey,
+      });
+      return res.data.data as OrgMappingGroup;
+    },
+    onSuccess: (group) => {
+      toast.success("Mapping group added.");
+      setNewParentListKey("");
+      setNewChildListKey("");
+      setShowNewGroupForm(false);
+      setOpenGroupId(group.id);
+      queryClient.invalidateQueries({
+        queryKey: ["organizational_structure_mapping_groups"],
+      });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not add mapping group.");
+    },
+  });
 
   if (sessionLoading || usersLoading) {
     return (
@@ -82,22 +136,125 @@ export default function MappingSetupPage() {
         <ArrowLeft className="w-4 h-4" /> Back to System Definitions
       </Link>
 
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900">Mapping set up</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Link the items set up in Organizational structure to each other. Expand a
-          section to add or remove a mapping.
-        </p>
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Mapping set up</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Link the items set up in Organizational structure to each other. Expand a
+            section to add or remove a mapping.
+          </p>
+        </div>
+        {canAdd && (
+          <button
+            type="button"
+            onClick={() => setShowNewGroupForm((prev) => !prev)}
+            className="shrink-0 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add mapping
+          </button>
+        )}
       </div>
 
+      {showNewGroupForm && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-xl">
+          <p className="text-sm font-semibold text-gray-800 mb-3">New mapping group</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Pick any two lists to link. You'll add the individual pairs once the group
+            is created.
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                First list
+              </label>
+              <select
+                value={newParentListKey}
+                onChange={(e) => {
+                  setNewParentListKey(e.target.value as OrgStructureListKey);
+                  setNewChildListKey("");
+                }}
+                className={inputClass}
+              >
+                <option value="">Select a list</option>
+                {ORG_STRUCTURE_LIST_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {ORG_STRUCTURE_LISTS[key].label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                Second list
+              </label>
+              <select
+                value={newChildListKey}
+                onChange={(e) => setNewChildListKey(e.target.value as OrgStructureListKey)}
+                className={inputClass}
+                disabled={!newParentListKey}
+              >
+                <option value="">Select a list</option>
+                {availableChildListKeys.map((key) => (
+                  <option key={key} value={key}>
+                    {ORG_STRUCTURE_LISTS[key].label}
+                  </option>
+                ))}
+              </select>
+              {newParentListKey && availableChildListKeys.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Every other list is already mapped to{" "}
+                  {ORG_STRUCTURE_LISTS[newParentListKey].label.toLowerCase()}.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => createGroupMutation.mutate()}
+              disabled={
+                createGroupMutation.isPending || !newParentListKey || !newChildListKey
+              }
+              className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+            >
+              {createGroupMutation.isPending && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+              Create group
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNewGroupForm(false);
+                setNewParentListKey("");
+                setNewChildListKey("");
+              }}
+              className="px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3 max-w-3xl">
-        {ORG_MAPPING_PAIR_KEYS.map((pairKey) => (
+        {groupsLoading && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
+            Loading…
+          </div>
+        )}
+        {!groupsLoading && (mappingGroups ?? []).length === 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
+            No mapping groups yet. Use "Add mapping" to create one.
+          </div>
+        )}
+        {(mappingGroups ?? []).map((group) => (
           <MappingPanel
-            key={pairKey}
-            pairKey={pairKey}
-            open={openPair === pairKey}
+            key={group.id}
+            group={group}
+            open={openGroupId === group.id}
             onToggle={() =>
-              setOpenPair((prev) => (prev === pairKey ? null : pairKey))
+              setOpenGroupId((prev) => (prev === group.id ? null : group.id))
             }
             canView={!!canView}
             canAdd={!!canAdd}

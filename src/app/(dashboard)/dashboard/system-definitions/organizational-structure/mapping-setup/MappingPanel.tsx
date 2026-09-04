@@ -7,17 +7,13 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { ORG_STRUCTURE_LISTS, type OrgStructureRow } from "@/lib/organizationalStructure";
-import {
-  ORG_MAPPING_PAIRS,
-  type OrgMappingPairKey,
-  type OrgMappingRow,
-} from "@/lib/organizationalStructureMappings";
+import type { OrgMappingGroup, OrgMappingRow } from "@/lib/organizationalStructureMappings";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
 type MappingPanelProps = {
-  pairKey: OrgMappingPairKey;
+  group: OrgMappingGroup;
   open: boolean;
   onToggle: () => void;
   canView: boolean;
@@ -26,7 +22,7 @@ type MappingPanelProps = {
 };
 
 export default function MappingPanel({
-  pairKey,
+  group,
   open,
   onToggle,
   canView,
@@ -34,40 +30,44 @@ export default function MappingPanel({
   canEdit,
 }: MappingPanelProps) {
   const queryClient = useQueryClient();
-  const config = ORG_MAPPING_PAIRS[pairKey];
-  const parentConfig = ORG_STRUCTURE_LISTS[config.parentListKey];
-  const childConfig = ORG_STRUCTURE_LISTS[config.childListKey];
+  const parentConfig = ORG_STRUCTURE_LISTS[group.parent_list_key];
+  const childConfig = ORG_STRUCTURE_LISTS[group.child_list_key];
 
   const { data: parentRows, isLoading: parentLoading } = useQuery<OrgStructureRow[]>({
-    queryKey: ["organizational_structure_list", config.parentListKey],
+    queryKey: ["organizational_structure_list", group.parent_list_key],
     queryFn: async () => {
-      const res = await api.get(`/organizational-structure/${config.parentListKey}`);
+      const res = await api.get(`/organizational-structure/${group.parent_list_key}`);
       return res.data.data as OrgStructureRow[];
     },
     enabled: !!canView && open,
   });
 
   const { data: childRows, isLoading: childLoading } = useQuery<OrgStructureRow[]>({
-    queryKey: ["organizational_structure_list", config.childListKey],
+    queryKey: ["organizational_structure_list", group.child_list_key],
     queryFn: async () => {
-      const res = await api.get(`/organizational-structure/${config.childListKey}`);
+      const res = await api.get(`/organizational-structure/${group.child_list_key}`);
       return res.data.data as OrgStructureRow[];
     },
     enabled: !!canView && open,
   });
 
   const { data: mappings, isLoading: mappingsLoading } = useQuery<OrgMappingRow[]>({
-    queryKey: ["organizational_structure_mappings", pairKey],
+    queryKey: ["organizational_structure_mappings", group.id],
     queryFn: async () => {
-      const res = await api.get(`/organizational-structure/mappings/${pairKey}`);
+      const res = await api.get(`/organizational-structure/mappings`, {
+        params: { group_id: group.id },
+      });
       return res.data.data as OrgMappingRow[];
     },
     enabled: !!canView && open,
   });
 
-  const invalidate = () =>
+  const parentLabelById = new Map((parentRows ?? []).map((p) => [p.id, p.label]));
+  const childLabelById = new Map((childRows ?? []).map((c) => [c.id, c.label]));
+
+  const invalidateMappings = () =>
     queryClient.invalidateQueries({
-      queryKey: ["organizational_structure_mappings", pairKey],
+      queryKey: ["organizational_structure_mappings", group.id],
     });
 
   const [newParentId, setNewParentId] = useState("");
@@ -77,8 +77,8 @@ export default function MappingPanel({
   // dropdown so the same pair can't be added twice.
   const mappedChildIdsForParent = new Set(
     (mappings ?? [])
-      .filter((m) => m.parent_id === newParentId)
-      .map((m) => m.child_id),
+      .filter((m) => m.parent_row_id === newParentId)
+      .map((m) => m.child_row_id),
   );
   const availableChildRows = (childRows ?? []).filter(
     (c) => !mappedChildIdsForParent.has(c.id),
@@ -86,9 +86,10 @@ export default function MappingPanel({
 
   const addMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post(`/organizational-structure/mappings/${pairKey}`, {
-        parent_id: newParentId,
-        child_id: newChildId,
+      const res = await api.post(`/organizational-structure/mappings`, {
+        group_id: group.id,
+        parent_row_id: newParentId,
+        child_row_id: newChildId,
       });
       return res.data.data as OrgMappingRow;
     },
@@ -96,7 +97,7 @@ export default function MappingPanel({
       toast.success("Mapping added.");
       setNewParentId("");
       setNewChildId("");
-      invalidate();
+      invalidateMappings();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Could not add mapping.");
@@ -106,32 +107,68 @@ export default function MappingPanel({
   const [deleteTarget, setDeleteTarget] = useState<OrgMappingRow | null>(null);
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/organizational-structure/mappings/${pairKey}/${id}`);
+      await api.delete(`/organizational-structure/mappings/${id}`);
     },
     onSuccess: () => {
       toast.success("Mapping removed.");
       setDeleteTarget(null);
-      invalidate();
+      invalidateMappings();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Could not remove mapping.");
     },
   });
 
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
+  const deleteGroupMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/organizational-structure/mapping-groups/${group.id}`);
+    },
+    onSuccess: () => {
+      toast.success("Mapping group removed.");
+      setConfirmDeleteGroup(false);
+      queryClient.invalidateQueries({
+        queryKey: ["organizational_structure_mapping_groups"],
+      });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not remove mapping group.");
+    },
+  });
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
-      >
-        <span className="text-sm font-semibold text-gray-900">{config.title}</span>
-        {open ? (
-          <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
-        )}
-      </button>
+      <div className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2.5 text-left"
+        >
+          <span className="text-sm font-semibold text-gray-900">{group.title}</span>
+        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDeleteGroup(true);
+              }}
+              aria-label="Delete mapping group"
+              className="text-gray-300 hover:text-red-600 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button type="button" onClick={onToggle} aria-label="Toggle mapping group">
+            {open ? (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+        </div>
+      </div>
 
       {open && (
         <div className="px-5 pb-5 border-t border-gray-100 pt-4">
@@ -225,8 +262,12 @@ export default function MappingPanel({
                 )}
                 {(mappings ?? []).map((row) => (
                   <tr key={row.id} className="border-t border-gray-100">
-                    <td className="px-4 py-2 text-gray-900">{row.parent_label}</td>
-                    <td className="px-4 py-2 text-gray-700">{row.child_label}</td>
+                    <td className="px-4 py-2 text-gray-900">
+                      {parentLabelById.get(row.parent_row_id) ?? "Unknown"}
+                    </td>
+                    <td className="px-4 py-2 text-gray-700">
+                      {childLabelById.get(row.child_row_id) ?? "Unknown"}
+                    </td>
                     {canEdit && (
                       <td className="px-4 py-2 text-right">
                         <button
@@ -250,7 +291,9 @@ export default function MappingPanel({
             title="Remove this mapping?"
             message={
               deleteTarget
-                ? `"${deleteTarget.parent_label}" will no longer be linked to "${deleteTarget.child_label}". This can't be undone.`
+                ? `"${parentLabelById.get(deleteTarget.parent_row_id) ?? "This item"}" will no longer be linked to "${
+                    childLabelById.get(deleteTarget.child_row_id) ?? "that item"
+                  }". This can't be undone.`
                 : ""
             }
             confirmLabel="Remove"
@@ -261,6 +304,17 @@ export default function MappingPanel({
           />
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteGroup}
+        title="Delete this mapping group?"
+        message={`"${group.title}" and every mapping in it will be removed. This can't be undone.`}
+        confirmLabel="Delete group"
+        destructive
+        confirming={deleteGroupMutation.isPending}
+        onConfirm={() => deleteGroupMutation.mutate()}
+        onCancel={() => setConfirmDeleteGroup(false)}
+      />
     </div>
   );
 }
