@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
@@ -174,6 +174,32 @@ export default function OrganizationalStructurePage() {
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Could not delete list.");
+    },
+  });
+
+  const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editListLabel, setEditListLabel] = useState("");
+
+  const startEditList = (listType: OrgCustomListType) => {
+    setEditingListId(listType.id);
+    setEditListLabel(listType.label);
+  };
+
+  const renameListMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.patch(`/organizational-structure/custom-list-types/${id}`, {
+        label: editListLabel.trim(),
+      });
+    },
+    onSuccess: () => {
+      toast.success("List renamed.");
+      setEditingListId(null);
+      queryClient.invalidateQueries({
+        queryKey: ["organizational_structure_custom_list_types"],
+      });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not rename list.");
     },
   });
 
@@ -433,34 +459,81 @@ export default function OrganizationalStructurePage() {
                 </tr>
               );
             })}
-            {(customListTypes ?? []).map((listType) => (
-              <tr key={listType.id} className="border-t border-gray-100">
-                <td className="px-4 py-2.5 text-gray-900">{listType.label}</td>
-                <td className="px-4 py-2.5 text-gray-500">
-                  {customListTypesLoading ? "…" : listType.item_count ?? 0}
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <div className="inline-flex items-center gap-2">
-                    <Link
-                      href={`/dashboard/system-definitions/organizational-structure/custom/${listType.id}`}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      Manage
-                    </Link>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(listType)}
-                        aria-label={`Delete ${listType.label}`}
-                        className="text-gray-400 hover:text-red-600 p-1.5"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+            {(customListTypes ?? []).map((listType) => {
+              const isEditingList = editingListId === listType.id;
+              return (
+                <tr key={listType.id} className="border-t border-gray-100">
+                  <td className="px-4 py-2.5 text-gray-900">
+                    {isEditingList ? (
+                      <input
+                        type="text"
+                        value={editListLabel}
+                        onChange={(e) => setEditListLabel(e.target.value)}
+                        className={inputClass}
+                        autoFocus
+                      />
+                    ) : (
+                      listType.label
                     )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-500">
+                    {customListTypesLoading ? "…" : listType.item_count ?? 0}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    {isEditingList ? (
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => renameListMutation.mutate(listType.id)}
+                          disabled={renameListMutation.isPending || !editListLabel.trim()}
+                          aria-label="Save"
+                          className="text-green-600 hover:text-green-700 disabled:opacity-60 p-1.5"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingListId(null)}
+                          aria-label="Cancel"
+                          className="text-gray-400 hover:text-gray-600 p-1.5"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/dashboard/system-definitions/organizational-structure/custom/${listType.id}`}
+                          className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Manage
+                        </Link>
+                        {canEdit && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => startEditList(listType)}
+                              aria-label={`Rename ${listType.label}`}
+                              className="text-gray-400 hover:text-gray-700 p-1.5"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(listType)}
+                              aria-label={`Delete ${listType.label}`}
+                              className="text-gray-400 hover:text-red-600 p-1.5"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
