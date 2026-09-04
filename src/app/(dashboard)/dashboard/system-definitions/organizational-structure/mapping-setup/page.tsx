@@ -2,25 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import type { OrgStructureRow } from "@/lib/organizationalStructure";
-import type { SiteBusinessUnitRow } from "@/app/api/organizational-structure/site-business-units/route";
-
-const inputClass =
-  "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
+import {
+  ORG_MAPPING_PAIR_KEYS,
+  type OrgMappingPairKey,
+} from "@/lib/organizationalStructureMappings";
+import MappingPanel from "./MappingPanel";
 
 export default function MappingSetupPage() {
-  const queryClient = useQueryClient();
-
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
@@ -52,89 +48,9 @@ export default function MappingSetupPage() {
     accessProfile &&
     canPerformModuleAction(accessProfile, "sys:definitions", "edit", sessionRole, groupPresets);
 
-  const { data: sites, isLoading: sitesLoading } = useQuery<OrgStructureRow[]>({
-    queryKey: ["organizational_structure_list", "sites"],
-    queryFn: async () => {
-      const res = await api.get("/organizational-structure/sites");
-      return res.data.data as OrgStructureRow[];
-    },
-    enabled: !!canView,
-  });
-
-  const { data: businessUnits, isLoading: businessUnitsLoading } = useQuery<
-    OrgStructureRow[]
-  >({
-    queryKey: ["organizational_structure_list", "business-units"],
-    queryFn: async () => {
-      const res = await api.get("/organizational-structure/business-units");
-      return res.data.data as OrgStructureRow[];
-    },
-    enabled: !!canView,
-  });
-
-  const { data: mappings, isLoading: mappingsLoading } = useQuery<
-    SiteBusinessUnitRow[]
-  >({
-    queryKey: ["site_business_units"],
-    queryFn: async () => {
-      const res = await api.get("/organizational-structure/site-business-units");
-      return res.data.data as SiteBusinessUnitRow[];
-    },
-    enabled: !!canView,
-  });
-
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["site_business_units"] });
-
-  const [newSiteId, setNewSiteId] = useState("");
-  const [newBusinessUnitId, setNewBusinessUnitId] = useState("");
-
-  // Business units already mapped to the selected site — excluded from the
-  // dropdown so the same site/business unit pair can't be added twice.
-  const mappedBusinessUnitIdsForSite = new Set(
-    (mappings ?? [])
-      .filter((m) => m.site_id === newSiteId)
-      .map((m) => m.business_unit_id),
+  const [openPair, setOpenPair] = useState<OrgMappingPairKey | null>(
+    ORG_MAPPING_PAIR_KEYS[0],
   );
-  const availableBusinessUnits = (businessUnits ?? []).filter(
-    (b) => !mappedBusinessUnitIdsForSite.has(b.id),
-  );
-
-  const addMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.post("/organizational-structure/site-business-units", {
-        site_id: newSiteId,
-        business_unit_id: newBusinessUnitId,
-      });
-      return res.data.data as SiteBusinessUnitRow;
-    },
-    onSuccess: () => {
-      toast.success("Mapping added.");
-      setNewSiteId("");
-      setNewBusinessUnitId("");
-      invalidate();
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Could not add mapping.");
-    },
-  });
-
-  const [deleteTarget, setDeleteTarget] = useState<SiteBusinessUnitRow | null>(
-    null,
-  );
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/organizational-structure/site-business-units/${id}`);
-    },
-    onSuccess: () => {
-      toast.success("Mapping removed.");
-      setDeleteTarget(null);
-      invalidate();
-    },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Could not remove mapping.");
-    },
-  });
 
   if (sessionLoading || usersLoading) {
     return (
@@ -167,132 +83,28 @@ export default function MappingSetupPage() {
       </Link>
 
       <div className="mb-5">
-        <h2 className="text-xl font-bold text-gray-900">
-          Mapping set up — Sites &amp; business units
-        </h2>
+        <h2 className="text-xl font-bold text-gray-900">Mapping set up</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          Link the items set up in Organizational structure to each other. Expand a
+          section to add or remove a mapping.
+        </p>
       </div>
 
-      {canAdd && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-xl">
-          <p className="text-sm font-semibold text-gray-800 mb-3">Add mapping</p>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                Site
-              </label>
-              <select
-                value={newSiteId}
-                onChange={(e) => {
-                  setNewSiteId(e.target.value);
-                  setNewBusinessUnitId("");
-                }}
-                className={inputClass}
-                disabled={sitesLoading}
-              >
-                <option value="">Select a site</option>
-                {(sites ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                Business unit
-              </label>
-              <select
-                value={newBusinessUnitId}
-                onChange={(e) => setNewBusinessUnitId(e.target.value)}
-                className={inputClass}
-                disabled={businessUnitsLoading || !newSiteId}
-              >
-                <option value="">Select a business unit</option>
-                {availableBusinessUnits.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-              {newSiteId && availableBusinessUnits.length === 0 && (
-                <p className="text-xs text-gray-400 mt-1">
-                  All business units are already mapped to this site.
-                </p>
-              )}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => addMutation.mutate()}
-            disabled={addMutation.isPending || !newSiteId || !newBusinessUnitId}
-            className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
-          >
-            {addMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Add mapping
-          </button>
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden max-w-xl">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-left text-xs text-gray-500">
-              <th className="px-4 py-2.5 font-medium">Site</th>
-              <th className="px-4 py-2.5 font-medium">Business unit</th>
-              {canEdit && <th className="px-4 py-2.5 font-medium text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {mappingsLoading && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {!mappingsLoading && (mappings ?? []).length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
-                  Nothing here yet.
-                </td>
-              </tr>
-            )}
-            {(mappings ?? []).map((row) => (
-              <tr key={row.id} className="border-t border-gray-100">
-                <td className="px-4 py-2 text-gray-900">{row.site_label}</td>
-                <td className="px-4 py-2 text-gray-700">{row.business_unit_label}</td>
-                {canEdit && (
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(row)}
-                      aria-label="Remove mapping"
-                      className="text-gray-400 hover:text-red-600"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-3 max-w-3xl">
+        {ORG_MAPPING_PAIR_KEYS.map((pairKey) => (
+          <MappingPanel
+            key={pairKey}
+            pairKey={pairKey}
+            open={openPair === pairKey}
+            onToggle={() =>
+              setOpenPair((prev) => (prev === pairKey ? null : pairKey))
+            }
+            canView={!!canView}
+            canAdd={!!canAdd}
+            canEdit={!!canEdit}
+          />
+        ))}
       </div>
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Remove this mapping?"
-        message={
-          deleteTarget
-            ? `"${deleteTarget.site_label}" will no longer be linked to "${deleteTarget.business_unit_label}". This can't be undone.`
-            : ""
-        }
-        confirmLabel="Remove"
-        destructive
-        confirming={deleteMutation.isPending}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   );
 }
