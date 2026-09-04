@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Building2 } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
@@ -83,13 +83,6 @@ export default function OrganizationalStructurePage() {
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-full">
-      <Link
-        href="/dashboard/system-definitions"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-4"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to System Definitions
-      </Link>
-
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-red-600" />

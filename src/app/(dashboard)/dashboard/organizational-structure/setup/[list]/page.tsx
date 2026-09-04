@@ -180,7 +180,7 @@ export default function ManageOrgStructureListPage() {
     return (
       <div className="p-6">
         <Link
-          href="/dashboard/system-definitions/organizational-structure"
+          href="/dashboard/organizational-structure/setup"
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-4"
         >
           <ArrowLeft className="w-4 h-4" /> Back to organizational structure
@@ -195,7 +195,7 @@ export default function ManageOrgStructureListPage() {
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-full">
       <Link
-        href="/dashboard/system-definitions/organizational-structure"
+        href="/dashboard/organizational-structure/setup"
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
         <ArrowLeft className="w-4 h-4" /> Back to organizational structure

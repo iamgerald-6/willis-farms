@@ -34,6 +34,7 @@ const SIDEBAR_LAYOUT: Array<
   { kind: "module", moduleId: "mod:overview" },
   { kind: "collapsible-group", groupId: "grp:human-capital" },
   { kind: "collapsible-group", groupId: "grp:task-manager" },
+  { kind: "collapsible-group", groupId: "grp:organizational-structure" },
   { kind: "flat-modules", groupId: "grp:operations" },
   { kind: "module", moduleId: "mod:notifications" },
 ];

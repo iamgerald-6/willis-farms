@@ -1,10 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Building2,
   History,
   Layers,
   ListChecks,
@@ -544,7 +542,6 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
 ]);
 
 export default function SystemDefinitionsPage() {
-  const router = useRouter();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -687,18 +684,6 @@ export default function SystemDefinitionsPage() {
                     }`}
                   />
                   <span className="truncate">Audit log</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    router.push(
-                      "/dashboard/system-definitions/organizational-structure",
-                    )
-                  }
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left text-gray-600 hover:bg-gray-50"
-                >
-                  <Building2 className="w-4 h-4 shrink-0 text-gray-400" />
-                  <span className="truncate">Organizational structure</span>
                 </button>
               </div>
               <div className="border-t border-gray-100 my-2" />
