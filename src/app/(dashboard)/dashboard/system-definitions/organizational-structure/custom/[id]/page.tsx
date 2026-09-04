@@ -32,7 +32,7 @@ function emptyFieldValues(fields: CustomFieldDef[]): FieldValues {
 function fieldValuesFromItem(item: OrgCustomListItem, fields: CustomFieldDef[]): FieldValues {
   return Object.fromEntries(
     fields.map((f) => {
-      const value = item.custom_fields?.[f.key];
+      const value = item[f.key];
       if (f.type === "boolean") return [f.key, value ? "true" : "false"];
       return [f.key, value === null || value === undefined ? "" : String(value)];
     }),
@@ -478,7 +478,7 @@ export default function ManageCustomListPage() {
                       ) : (
                         <span className="text-gray-700">
                           {(() => {
-                            const value = row.custom_fields?.[field.key];
+                            const value = row[field.key];
                             if (value === null || value === undefined || value === "") return "—";
                             if (field.type === "boolean") return value ? "Yes" : "No";
                             return String(value);

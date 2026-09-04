@@ -4,8 +4,13 @@ import {
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
+import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 
-/** DELETE — remove a custom list type and all of its items (cascade). */
+/**
+ * DELETE — remove a custom list type: drops its physical table, then its
+ * registry row. Irreversible, same as deleting any of the fixed org
+ * structure lists' underlying table would be.
+ */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -26,6 +31,24 @@ export async function DELETE(
         { error: "Server configuration error" },
         { status: 500 },
       );
+    }
+
+    const { data: listType, error: listTypeError } = await supabase
+      .from("org_custom_list_types")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (listTypeError || !listType) {
+      return NextResponse.json({ error: "Unknown list" }, { status: 404 });
+    }
+    const config = listType as OrgCustomListType;
+
+    const { error: dropError } = await supabase.rpc("drop_org_dynamic_list_table", {
+      p_table_name: config.table_name,
+    });
+    if (dropError) {
+      return NextResponse.json({ error: dropError.message }, { status: 500 });
     }
 
     const { error } = await supabase.from("org_custom_list_types").delete().eq("id", id);

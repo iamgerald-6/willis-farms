@@ -13,6 +13,20 @@ import type {
 
 const VALID_FIELD_TYPES: CustomFieldType[] = ["text", "number", "boolean", "date", "select"];
 
+// Columns every custom list's table already has — an extra field can't
+// reuse one of these names.
+const RESERVED_FIELD_KEYS = new Set([
+  "id",
+  "label",
+  "code",
+  "region",
+  "sort_order",
+  "is_active",
+  "notes",
+  "created_at",
+  "updated_at",
+]);
+
 function sanitizeFields(input: unknown): CustomFieldDef[] | null {
   if (!Array.isArray(input)) return [];
   const fields: CustomFieldDef[] = [];
@@ -40,7 +54,7 @@ function sanitizeFields(input: unknown): CustomFieldDef[] | null {
   return fields;
 }
 
-/** GET — every custom list type, for the Set up hub table. */
+/** GET — every custom list type, with a live item count per list for the Set up hub table. */
 export async function GET(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "view");
@@ -60,20 +74,22 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("org_custom_list_types")
-      .select("*, org_custom_list_items(count)")
+      .select("*")
       .order("sort_order", { ascending: true });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    type WithCount = OrgCustomListType & {
-      org_custom_list_items?: { count: number }[];
-    };
-    const withCounts: OrgCustomListType[] = ((data ?? []) as WithCount[]).map((row) => {
-      const { org_custom_list_items, ...rest } = row;
-      return { ...rest, item_count: org_custom_list_items?.[0]?.count ?? 0 };
-    });
+    const listTypes = (data ?? []) as OrgCustomListType[];
+    const withCounts: OrgCustomListType[] = await Promise.all(
+      listTypes.map(async (listType) => {
+        const { count } = await supabase
+          .from(listType.table_name)
+          .select("id", { count: "exact", head: true });
+        return { ...listType, item_count: count ?? 0 };
+      }),
+    );
 
     return NextResponse.json({ data: withCounts });
   } catch (err) {
@@ -82,7 +98,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST — create a new custom list type. */
+/** POST — create a new custom list type, and its own physical table. */
 export async function POST(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "add");
@@ -107,6 +123,12 @@ export async function POST(req: NextRequest) {
 
     const fieldKeys = new Set<string>();
     for (const f of fields) {
+      if (RESERVED_FIELD_KEYS.has(f.key)) {
+        return NextResponse.json(
+          { error: `"${f.label}" isn't available as a field name. Choose another.` },
+          { status: 400 },
+        );
+      }
       if (fieldKeys.has(f.key)) {
         return NextResponse.json(
           { error: `Duplicate field: "${f.label}"` },
@@ -132,6 +154,20 @@ export async function POST(req: NextRequest) {
     // button text; admins can't rename it after creation (same as `code`
     // on the fixed lists).
     const singular = label.trim().replace(/s$/i, "") || label.trim();
+    const code = slugifyLabel(label);
+    const tableName = `custom_${code}`;
+
+    // Create the physical table first — if this fails (e.g. name
+    // collision), nothing is written to org_custom_list_types at all.
+    const { error: createTableError } = await supabase.rpc("create_org_dynamic_list_table", {
+      p_table_name: tableName,
+      p_has_region: hasRegion,
+      p_fields: fields,
+    });
+
+    if (createTableError) {
+      return NextResponse.json({ error: createTableError.message }, { status: 500 });
+    }
 
     const { data, error } = await supabase
       .from("org_custom_list_types")
@@ -139,7 +175,8 @@ export async function POST(req: NextRequest) {
         {
           label: label.trim(),
           singular,
-          code: slugifyLabel(label),
+          code,
+          table_name: tableName,
           has_region: hasRegion,
           fields,
           sort_order: count ?? 0,
@@ -149,6 +186,9 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
+      // Metadata insert failed after the table was already created —
+      // clean up so we don't leave an orphaned table with no registry entry.
+      await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
       if (error.code === "23505") {
         return NextResponse.json(
           { error: "A list with that name already exists." },

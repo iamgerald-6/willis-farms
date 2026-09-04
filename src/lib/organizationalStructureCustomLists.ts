@@ -1,7 +1,11 @@
 // Shared types for custom Organizational Structure list types — catalogs an
 // admin creates from the Set up page beyond the fixed 5 (Sites, Business
-// units, Departments/divisions, Sections, Grade levels). See
-// docs/organizational-structure/custom-lists.sql for the tables themselves.
+// units, Departments/divisions, Sections, Grade levels). Each one gets its
+// own real Postgres table (named table_name below) — same pattern as sites,
+// business_units, etc. — rather than sharing one generic table. See
+// docs/organizational-structure/custom-lists.sql and
+// docs/organizational-structure/dynamic-list-tables.sql for the tables and
+// the functions that create/drop them.
 
 export type CustomFieldType = "text" | "number" | "boolean" | "date" | "select";
 
@@ -26,6 +30,8 @@ export type OrgCustomListType = {
   label: string;
   singular: string;
   code: string;
+  /** Name of this list's own physical table, e.g. "custom_cost_centres". */
+  table_name: string;
   has_region: boolean;
   fields: CustomFieldDef[];
   sort_order: number;
@@ -35,16 +41,19 @@ export type OrgCustomListType = {
   item_count?: number;
 };
 
+/**
+ * A row in a custom list's own table. Extra fields the admin defined are
+ * real columns on that table (keyed by each field's `key`), not a nested
+ * JSON blob — hence the index signature.
+ */
 export type OrgCustomListItem = {
   id: string;
-  list_type_id: string;
   label: string;
   code: string;
   region: string | null;
   sort_order: number;
   is_active: boolean;
   notes: string | null;
-  custom_fields: Record<string, string | number | boolean | null>;
   created_at: string;
   updated_at: string;
-};
+} & Record<string, unknown>;

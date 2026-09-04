@@ -11,18 +11,16 @@ import type {
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
 
-/** Keep only known field keys, and drop anything the type doesn't define. */
-function sanitizeCustomFieldValues(
+/** Build the extra-column values to insert/update, one per defined field. */
+function extraColumnValues(
   input: unknown,
   fields: CustomFieldDef[],
 ): Record<string, string | number | boolean | null> {
   const values: Record<string, string | number | boolean | null> = {};
-  if (!input || typeof input !== "object") return values;
-  const raw = input as Record<string, unknown>;
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   for (const field of fields) {
     const value = raw[field.key];
-    if (value === undefined) continue;
-    if (value === null || value === "") {
+    if (value === undefined || value === null || value === "") {
       values[field.key] = null;
       continue;
     }
@@ -38,7 +36,7 @@ function sanitizeCustomFieldValues(
   return values;
 }
 
-/** GET — every item under a custom list type. */
+/** GET — every item in a custom list's own table. */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -61,10 +59,20 @@ export async function GET(
       );
     }
 
-    const { data, error } = await supabase
-      .from("org_custom_list_items")
+    const { data: listType, error: listTypeError } = await supabase
+      .from("org_custom_list_types")
       .select("*")
-      .eq("list_type_id", id)
+      .eq("id", id)
+      .single();
+
+    if (listTypeError || !listType) {
+      return NextResponse.json({ error: "Unknown list" }, { status: 404 });
+    }
+    const config = listType as OrgCustomListType;
+
+    const { data, error } = await supabase
+      .from(config.table_name)
+      .select("*")
       .order("sort_order", { ascending: true });
 
     if (error) {
@@ -78,7 +86,7 @@ export async function GET(
   }
 }
 
-/** POST — add a new item to a custom list type. */
+/** POST — add a new item to a custom list's own table. */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -122,28 +130,26 @@ export async function POST(
     const config = listType as OrgCustomListType;
 
     const { data: last } = await supabase
-      .from("org_custom_list_items")
+      .from(config.table_name)
       .select("sort_order")
-      .eq("list_type_id", id)
       .order("sort_order", { ascending: false })
       .limit(1)
       .maybeSingle();
     const nextSortOrder = (last?.sort_order ?? -1) + 1;
 
     const { data, error } = await supabase
-      .from("org_custom_list_items")
+      .from(config.table_name)
       .insert([
         {
-          list_type_id: id,
           label,
           code: slugifyLabel(label),
-          region: config.has_region
-            ? (body.region as string | undefined)?.trim() || null
-            : null,
+          ...(config.has_region
+            ? { region: (body.region as string | undefined)?.trim() || null }
+            : {}),
           sort_order: nextSortOrder,
           is_active: isActive,
           notes,
-          custom_fields: sanitizeCustomFieldValues(body.custom_fields, config.fields),
+          ...extraColumnValues(body.custom_fields, config.fields),
         },
       ])
       .select()
