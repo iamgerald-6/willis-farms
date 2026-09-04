@@ -89,6 +89,17 @@ export default function MappingSetupPage() {
   const [newSiteId, setNewSiteId] = useState("");
   const [newBusinessUnitId, setNewBusinessUnitId] = useState("");
 
+  // Business units already mapped to the selected site — excluded from the
+  // dropdown so the same site/business unit pair can't be added twice.
+  const mappedBusinessUnitIdsForSite = new Set(
+    (mappings ?? [])
+      .filter((m) => m.site_id === newSiteId)
+      .map((m) => m.business_unit_id),
+  );
+  const availableBusinessUnits = (businessUnits ?? []).filter(
+    (b) => !mappedBusinessUnitIdsForSite.has(b.id),
+  );
+
   const addMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/organizational-structure/site-business-units", {
@@ -171,7 +182,10 @@ export default function MappingSetupPage() {
               </label>
               <select
                 value={newSiteId}
-                onChange={(e) => setNewSiteId(e.target.value)}
+                onChange={(e) => {
+                  setNewSiteId(e.target.value);
+                  setNewBusinessUnitId("");
+                }}
                 className={inputClass}
                 disabled={sitesLoading}
               >
@@ -191,15 +205,20 @@ export default function MappingSetupPage() {
                 value={newBusinessUnitId}
                 onChange={(e) => setNewBusinessUnitId(e.target.value)}
                 className={inputClass}
-                disabled={businessUnitsLoading}
+                disabled={businessUnitsLoading || !newSiteId}
               >
                 <option value="">Select a business unit</option>
-                {(businessUnits ?? []).map((b) => (
+                {availableBusinessUnits.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.label}
                   </option>
                 ))}
               </select>
+              {newSiteId && availableBusinessUnits.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  All business units are already mapped to this site.
+                </p>
+              )}
             </div>
           </div>
           <button
