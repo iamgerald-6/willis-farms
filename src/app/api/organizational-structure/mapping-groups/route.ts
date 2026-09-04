@@ -1,11 +1,10 @@
-import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
-import { ORG_STRUCTURE_LISTS } from "@/lib/organizationalStructure";
+import { ORG_STRUCTURE_LISTS, slugifyLabel } from "@/lib/organizationalStructure";
 import {
   parseListRef,
   type OrgListRef,
@@ -136,11 +135,25 @@ export async function POST(req: NextRequest) {
 
     const title = `${parentLabel} & ${childLabel}`;
 
-    // Generate the id ourselves so the table name (derived from it) is
-    // known before the row is inserted — a UUID contains only hex digits
-    // and dashes, so this is always a valid, unique Postgres identifier.
-    const groupId = randomUUID();
-    const tableName = `mapping_${groupId.replace(/-/g, "_")}`;
+    // Human-readable table name from the two list names, e.g.
+    // "mapping_sections_positions" — not the group's id. Postgres
+    // identifiers cap at 63 bytes, so each half is trimmed to leave room
+    // for the "mapping_" prefix and a numeric suffix if there's a
+    // collision (two pairs slugifying to the same name).
+    const baseTableName =
+      `mapping_${slugifyLabel(parentLabel)}_${slugifyLabel(childLabel)}`.slice(0, 55);
+    let tableName = baseTableName;
+    let suffix = 2;
+    for (;;) {
+      const { data: collision } = await supabase
+        .from("org_mapping_groups")
+        .select("id")
+        .eq("table_name", tableName)
+        .maybeSingle();
+      if (!collision) break;
+      tableName = `${baseTableName}_${suffix}`;
+      suffix += 1;
+    }
 
     // Create the physical table first — if this fails, nothing is written
     // to org_mapping_groups at all.
@@ -155,7 +168,6 @@ export async function POST(req: NextRequest) {
       .from("org_mapping_groups")
       .insert([
         {
-          id: groupId,
           parent_list_key: parentListKey,
           child_list_key: childListKey,
           title,
