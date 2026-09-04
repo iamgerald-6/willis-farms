@@ -14,6 +14,7 @@ import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
+  GHANA_REGIONS,
   ORG_STRUCTURE_LISTS,
   isOrgStructureListKey,
   type OrgStructureRow,
@@ -228,13 +229,18 @@ export default function ManageOrgStructureListPage() {
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
                   Region
                 </label>
-                <input
-                  type="text"
+                <select
                   value={newRegion}
                   onChange={(e) => setNewRegion(e.target.value)}
-                  placeholder="e.g. Eastern region"
                   className={inputClass}
-                />
+                >
+                  <option value="">Select a region</option>
+                  {GHANA_REGIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
             <div>
@@ -322,12 +328,18 @@ export default function ManageOrgStructureListPage() {
                   {config.hasRegion && (
                     <td className="px-4 py-2 align-top">
                       {isEditing ? (
-                        <input
-                          type="text"
+                        <select
                           value={editRegion}
                           onChange={(e) => setEditRegion(e.target.value)}
                           className={inputClass}
-                        />
+                        >
+                          <option value="">Select a region</option>
+                          {GHANA_REGIONS.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <span className="text-gray-700">{row.region ?? "—"}</span>
                       )}

@@ -85,6 +85,26 @@ export type OrgStructureRow = {
   updated_at: string;
 };
 
+/** Ghana's 16 administrative regions — used as the Region dropdown options on Sites. */
+export const GHANA_REGIONS = [
+  "Ahafo",
+  "Ashanti",
+  "Bono",
+  "Bono East",
+  "Central",
+  "Eastern",
+  "Greater Accra",
+  "North East",
+  "Northern",
+  "Oti",
+  "Savannah",
+  "Upper East",
+  "Upper West",
+  "Volta",
+  "Western",
+  "Western North",
+] as const;
+
 /** snake_case slug derived from a label, used for the auto-filled `code` column. */
 export function slugifyLabel(label: string): string {
   return label
