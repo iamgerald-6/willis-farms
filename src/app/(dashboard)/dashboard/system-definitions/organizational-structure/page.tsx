@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Building2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
@@ -11,6 +11,7 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
   ORG_STRUCTURE_LIST_KEYS,
   type OrgStructureListKey,
@@ -69,6 +70,9 @@ export default function OrganizationalStructurePage() {
   const canAdd =
     accessProfile &&
     canPerformModuleAction(accessProfile, "sys:definitions", "add", sessionRole, groupPresets);
+  const canEdit =
+    accessProfile &&
+    canPerformModuleAction(accessProfile, "sys:definitions", "edit", sessionRole, groupPresets);
 
   const { data: lists, isLoading: listsLoading } = useQuery<ListCount[]>({
     queryKey: ["organizational_structure_summary"],
@@ -149,6 +153,23 @@ export default function OrganizationalStructurePage() {
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Could not add list.");
+    },
+  });
+
+  const [deleteTarget, setDeleteTarget] = useState<OrgCustomListType | null>(null);
+  const deleteListMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/organizational-structure/custom-list-types/${id}`);
+    },
+    onSuccess: () => {
+      toast.success("List deleted.");
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({
+        queryKey: ["organizational_structure_custom_list_types"],
+      });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not delete list.");
     },
   });
 
@@ -386,18 +407,45 @@ export default function OrganizationalStructurePage() {
                   {customListTypesLoading ? "…" : listType.item_count ?? 0}
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  <Link
-                    href={`/dashboard/system-definitions/organizational-structure/custom/${listType.id}`}
-                    className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Manage
-                  </Link>
+                  <div className="inline-flex items-center gap-2">
+                    <Link
+                      href={`/dashboard/system-definitions/organizational-structure/custom/${listType.id}`}
+                      className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Manage
+                    </Link>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(listType)}
+                        aria-label={`Delete ${listType.label}`}
+                        className="text-gray-400 hover:text-red-600 p-1.5"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete this list?"
+        message={
+          deleteTarget
+            ? `"${deleteTarget.label}" and all ${deleteTarget.item_count ?? 0} of its items will be permanently deleted, along with any mappings that use it. This can't be undone.`
+            : ""
+        }
+        confirmLabel="Delete list"
+        destructive
+        confirming={deleteListMutation.isPending}
+        onConfirm={() => deleteTarget && deleteListMutation.mutate(deleteTarget.id)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
