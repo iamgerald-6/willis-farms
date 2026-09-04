@@ -158,7 +158,9 @@ export default function MappingSetupPage() {
 
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Mapping set up</h2>
+          <h2 className="text-xl font-bold text-gray-900">
+            Organizational structure mapping set up
+          </h2>
           <p className="text-sm text-gray-500 mt-1">
             Link the items set up in Organizational structure to each other. Expand a
             section to add or remove a mapping.

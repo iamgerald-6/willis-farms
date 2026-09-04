@@ -736,7 +736,7 @@ export default function SystemDefinitionsPage() {
                           : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                       }`}
                     >
-                      Set up
+                      Organizational structure set up
                     </Link>
                     <Link
                       href="/dashboard/system-definitions/organizational-structure/mapping-setup"
@@ -746,7 +746,7 @@ export default function SystemDefinitionsPage() {
                           : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                       }`}
                     >
-                      Mapping set up
+                      Organizational structure mapping set up
                     </Link>
                   </div>
                 )}
