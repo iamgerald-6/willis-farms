@@ -484,6 +484,28 @@ export default function CreateJobPostingPage() {
     },
   });
 
+  // One-time (safely re-runnable) migration: copies each currently-open
+  // posting's existing shared interview guide into its own Interview setup,
+  // so nothing breaks for postings already in flight now that real
+  // interviews read from a posting's own setup instead of the shared guide.
+  // Skips any posting that already has Interview setup content, so this
+  // button is harmless to click more than once.
+  const backfillMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post("/careers/postings/backfill-interview-setup");
+      return res.data.data as { total: number; updated: number; skipped: number };
+    },
+    onSuccess: (data) => {
+      toast.success(
+        `Backfilled ${data.updated} posting${data.updated === 1 ? "" : "s"} (${data.skipped} already had Interview setup content).`,
+      );
+      queryClient.invalidateQueries({ queryKey: ["job_postings"] });
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      toast.error(err?.response?.data?.error ?? "Backfill failed.");
+    },
+  });
+
   if (sessionLoading || usersLoading) {
     return (
       <div className="p-4 md:p-6 bg-gray-50 min-h-full">
@@ -526,6 +548,26 @@ export default function CreateJobPostingPage() {
             belong to. Closing and republishing a posting still happens on
             the Recruitment page.
           </p>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Copy each open posting's current interview content into its own Interview setup? Postings that already have Interview setup content are skipped. Safe to run more than once.",
+                  )
+                ) {
+                  backfillMutation.mutate();
+                }
+              }}
+              disabled={backfillMutation.isPending}
+              className="mt-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 underline disabled:opacity-60"
+            >
+              {backfillMutation.isPending
+                ? "Backfilling…"
+                : "Backfill legacy interview setups (one-time)"}
+            </button>
+          )}
         </div>
         {canAdd && activeTab === "active" && (
           <button

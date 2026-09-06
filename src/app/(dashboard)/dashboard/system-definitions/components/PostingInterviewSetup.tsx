@@ -16,7 +16,7 @@ import {
   formatInterviewBenchmarksForPrompt,
   validateInterviewBenchmarks,
 } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
-import { ListEditor } from "./InterviewGuidesEditor";
+import { ListEditor } from "./InterviewListEditor";
 
 // 5-minute increments, 30-60 minutes.
 const DURATION_OPTIONS = [30, 35, 40, 45, 50, 55, 60];
@@ -125,8 +125,20 @@ export default function PostingInterviewSetup({
   // Each tab's own save button persists the full setup, then either moves
   // on to the next tab or — on the last tab — returns to the postings
   // table, so HR never has to jump back up to a single save button after
-  // filling in a page further down.
+  // filling in a page further down. Real interviews now read Description,
+  // Recommended panel members, and Approximate duration straight off this
+  // posting (see fetchPostingInterviewContext.ts), so all three must be
+  // filled in before leaving Interview setup — checked here, at the point
+  // of actually finishing, rather than on every intermediate tab.
   const handleTabSave = () => {
+    if (isLastTab && (!description.trim() || !panelMembers.trim() || durationMinutes === "")) {
+      toast.error(
+        "Fill in Description, Recommended panel members, and Approximate duration on the Overview tab before finishing.",
+      );
+      setActiveTab("overview");
+      return;
+    }
+
     saveMutation.mutate(undefined, {
       onSuccess: () => {
         if (isLastTab) {
@@ -175,7 +187,7 @@ export default function PostingInterviewSetup({
           )}
 
           <label className="block">
-            <span className="text-xs font-medium text-gray-600">Description</span>
+            <span className="text-xs font-medium text-gray-600">Description *</span>
             <textarea
               className="w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 mt-1 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-500"
               rows={4}
@@ -187,7 +199,7 @@ export default function PostingInterviewSetup({
           </label>
 
           <label className="block">
-            <span className="text-xs font-medium text-gray-600">Recommended panel members</span>
+            <span className="text-xs font-medium text-gray-600">Recommended panel members *</span>
             <textarea
               className="w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 mt-1 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-500"
               rows={2}
@@ -199,7 +211,7 @@ export default function PostingInterviewSetup({
           </label>
 
           <label className="block max-w-xs">
-            <span className="text-xs font-medium text-gray-600">Approximate duration</span>
+            <span className="text-xs font-medium text-gray-600">Approximate duration *</span>
             <select
               className="w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 mt-1 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-500"
               value={durationMinutes}

@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
-import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
-import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchPostingInterviewContext } from "@/lib/careers/fetchPostingInterviewContext";
 import { formatInterviewBenchmarksForPrompt } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 import { normalizeInterviewFormData } from "@/lib/careers/types";
 import {
@@ -79,17 +78,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const guideKey = await resolveInterviewGuideKey(supabaseAdmin, application.role_slug);
-    if (!guideKey) {
-      return NextResponse.json({ error: "Unknown role on application." }, { status: 400 });
+    if (!application.job_posting_id) {
+      return NextResponse.json(
+        { error: "This application isn't linked to a job posting." },
+        { status: 400 },
+      );
     }
-    const { guide, benchmarks } = await fetchResolvedInterviewContext(
+    const { guide, benchmarks } = await fetchPostingInterviewContext(
       supabaseAdmin,
-      guideKey,
+      application.job_posting_id,
     );
     if (!guide) {
       return NextResponse.json(
-        { error: "Interview guide not configured for this role." },
+        { error: "Interview setup not configured for this posting." },
         { status: 400 },
       );
     }

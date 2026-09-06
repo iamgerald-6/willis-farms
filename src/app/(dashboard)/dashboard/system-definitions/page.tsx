@@ -41,7 +41,6 @@ import {
   isEditableLeavePolicyModule,
   isEditableRatingSectionModule,
   isEditableRefereeReferenceModule,
-  isEditableInterviewGuidesModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
@@ -58,7 +57,6 @@ import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
 import GradeLevelsEditor from "./components/GradeLevelsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
-import InterviewGuidesEditor from "./components/InterviewGuidesEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import {
   ONBOARDING_DEPARTMENTS_L1L6_LIST,
@@ -428,28 +426,6 @@ function getModuleSections(
           description="Rating lines on the public link referees receive after an application is submitted."
         >
           <RefereeReferenceEditor
-            moduleId={m.id}
-            readOnly={!canEdit}
-            canAdd={canAdd}
-            canEdit={canEdit}
-          />
-        </SectionCard>
-      ),
-    });
-  }
-
-  if (isEditableInterviewGuidesModule(m.id)) {
-    sections.push({
-      key: "interview",
-      label: "Interview",
-      icon: Rows3,
-      render: () => (
-        <SectionCard
-          icon={Rows3}
-          title="Interview"
-          description="Questions, practical scenarios, rating scale, and evaluation checklist per grade level (L1–L7+). Linked to job postings via interview guide key."
-        >
-          <InterviewGuidesEditor
             moduleId={m.id}
             readOnly={!canEdit}
             canAdd={canAdd}

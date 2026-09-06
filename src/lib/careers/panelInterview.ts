@@ -249,6 +249,7 @@ export type PanelTokenLookup = {
     role_title: string;
     reference_number: string;
     role_slug: string;
+    job_posting_id: string | null;
     status: string;
     interview_form_data: InterviewFormData;
   };
