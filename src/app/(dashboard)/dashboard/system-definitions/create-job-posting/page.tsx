@@ -888,10 +888,20 @@ export default function CreateJobPostingPage() {
               })()}
 
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {orderedOrgFieldListTypes
-                  .filter(
-                    (lt) => CHAIN_TABLE_ORDER.includes(lt.table_name) || addedOrgFieldIds.has(lt.id),
-                  )
+                {(() => {
+                  // Site/Business unit/Department/Section/Position always come
+                  // first, in that fixed order. Anything opt-in goes after
+                  // them in the order it was added — not wherever it happens
+                  // to sort on its own list — so a newly added field always
+                  // lands at the end instead of jumping into the middle.
+                  const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
+                    orgFieldListTypes.find((lt) => lt.table_name === tableName),
+                  ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
+                  const addedFields = Array.from(addedOrgFieldIds)
+                    .map((id) => orgFieldListTypes.find((lt) => lt.id === id))
+                    .filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
+                  return [...chainFields, ...addedFields];
+                })()
                   .map((lt) => {
                   const index = indexByListTypeId.get(lt.id) ?? -1;
                   const rawItems = orgFieldItemQueries[index]?.data ?? [];
