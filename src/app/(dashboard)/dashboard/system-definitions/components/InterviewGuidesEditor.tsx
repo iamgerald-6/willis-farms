@@ -875,7 +875,7 @@ export default function InterviewGuidesEditor({
   );
 }
 
-function ListEditor<T extends { id: string }>({
+export function ListEditor<T extends { id: string }>({
   title,
   items,
   onChange,

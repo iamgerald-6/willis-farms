@@ -83,6 +83,9 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           ? null
           : Number(body.interview_duration_minutes);
     }
+    if (body.interview_setup !== undefined) {
+      updates.interview_setup = body.interview_setup ?? {};
+    }
 
     if (body.status === "published" || body.status === "closed") {
       updates.status = body.status as JobPostingStatus;

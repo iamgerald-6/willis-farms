@@ -581,6 +581,7 @@ export default function CreateJobPostingPage() {
             initialDurationMinutes={
               editing?.interview_duration_minutes as number | null | undefined
             }
+            initialInterviewSetup={editing?.interview_setup}
             readOnly={!canEdit}
             onDone={resetForm}
           />

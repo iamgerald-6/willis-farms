@@ -89,6 +89,8 @@ export interface JobPostingBase {
   interview_description?: string | null;
   interview_panel_members?: string | null;
   interview_duration_minutes?: number | null;
+  /** Screening/questions/scenarios/evaluation/ratings/benchmarks/extra stages for this posting's own interview — see @/lib/careers/postingInterviewSetup. */
+  interview_setup?: Record<string, unknown> | null;
 }
 
 /**
