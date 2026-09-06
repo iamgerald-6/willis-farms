@@ -10,10 +10,6 @@ import {
   getReplyToEmail,
 } from "@/lib/email/resendClient";
 import {
-  formatMedicalReportsHtml,
-  formatMedicalReportsPlainText,
-} from "@/lib/systemDefinitions/onboardingMedicalReports";
-import {
   buildIcsEvent,
   googleCalendarLink,
   outlookCalendarLink,
@@ -691,10 +687,6 @@ export async function sendHireOnboardingEmail(params: {
     ? `<p style="margin:0 0 16px;font-size:15px;color:#374151;">Your signed offer letter is attached to this email.</p>`
     : "";
 
-  const medicalReports = params.requiredMedicalReports ?? [];
-  const medicalReportsText = formatMedicalReportsPlainText(medicalReports);
-  const medicalReportsHtml = formatMedicalReportsHtml(medicalReports);
-
   const subject = `Congratulations — ${params.roleTitle} (${params.referenceNumber})`;
 
   const text = [
@@ -710,7 +702,6 @@ export async function sendHireOnboardingEmail(params: {
     "",
     offerLetterText,
     "",
-    ...(medicalReportsText ? [medicalReportsText, ""] : []),
     "Please let us know whether you accept this offer:",
     `Accept offer: ${acceptLink}`,
     `Decline offer: ${declineLink}`,
@@ -720,7 +711,7 @@ export async function sendHireOnboardingEmail(params: {
     "",
     `Link expires: ${expiry}`,
     "",
-    "The onboarding includes personal information, medical declarations (upload proof of the reports listed above), and consent & signature. After submission, our HR team will contact you regarding any follow-up medical steps.",
+    "The onboarding includes personal information, medical declarations, and consent & signature. After submission, our HR team will contact you regarding any follow-up medical steps.",
     "",
     "If you have questions, contact info@willsfarms.com quoting your reference number.",
     "",
@@ -747,7 +738,6 @@ export async function sendHireOnboardingEmail(params: {
         </td></tr>
       </table>
       ${offerLetterHtml}
-      ${medicalReportsHtml}
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
         Please confirm whether you <strong>accept</strong> or <strong>decline</strong> this offer:
       </p>
