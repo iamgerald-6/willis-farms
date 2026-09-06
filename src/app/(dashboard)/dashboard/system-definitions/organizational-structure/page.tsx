@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, Check, Loader2, Pencil, Plus, Power, X } from "lucide-react";
+import { ArrowLeft, Building2, Check, Loader2, Network, Pencil, Plus, Power, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
@@ -230,15 +230,23 @@ export default function OrganizationalStructurePage() {
             and grade levels are managed here.
           </p>
         </div>
-        {canAdd && (
-          <button
-            type="button"
-            onClick={() => setShowNewListForm((prev) => !prev)}
-            className="shrink-0 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2"
+        <div className="shrink-0 flex items-center gap-2">
+          <Link
+            href="/dashboard/system-definitions/organizational-structure/mapping-setup"
+            className="px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
-            <Plus className="w-4 h-4" /> Add new list
-          </button>
-        )}
+            <Network className="w-4 h-4" /> Org structure mapping set up
+          </Link>
+          {canAdd && (
+            <button
+              type="button"
+              onClick={() => setShowNewListForm((prev) => !prev)}
+              className="px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add new list
+            </button>
+          )}
+        </div>
       </div>
 
       {showNewListForm && (

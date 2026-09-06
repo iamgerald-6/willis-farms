@@ -171,6 +171,165 @@ export default function CreateJobPostingPage() {
   const employmentTypeItems =
     employmentTypeIndex >= 0 ? orgFieldItemQueries[employmentTypeIndex]?.data ?? [] : [];
 
+  // --- Org structure mapping set up (cascading Site -> Business unit ->
+  // Department -> Section -> Position) — see Organizational structure ->
+  // Org structure mapping set up. A level whose mapping table is completely
+  // empty (nobody has mapped it yet) falls back to showing every item
+  // unrestricted, so this rolls out one level at a time without breaking
+  // postings that don't use it.
+  const businessUnitListType = orgFieldListTypes.find((lt) => lt.table_name === "business_units");
+  const departmentListType = orgFieldListTypes.find((lt) => lt.table_name === "departments");
+  const sectionListType = orgFieldListTypes.find((lt) => lt.table_name === "sections");
+
+  const { data: siteBuRows = [] } = useQuery<{ site_id: string; business_unit_id: string }[]>({
+    queryKey: ["org_mapping_site_business_units"],
+    queryFn: async () => (await api.get("/organizational-structure/mapping/site-business-units")).data.data,
+    enabled: !!canView,
+  });
+  const { data: buDeptRows = [] } = useQuery<
+    { site_id: string; business_unit_id: string; department_id: string }[]
+  >({
+    queryKey: ["org_mapping_business_unit_departments"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/mapping/business-unit-departments")).data.data,
+    enabled: !!canView,
+  });
+  const { data: deptSectionRows = [] } = useQuery<
+    { site_id: string; business_unit_id: string; department_id: string; section_id: string }[]
+  >({
+    queryKey: ["org_mapping_department_sections"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/mapping/department-sections")).data.data,
+    enabled: !!canView,
+  });
+  const { data: sectionPositionRows = [] } = useQuery<
+    {
+      site_id: string;
+      business_unit_id: string;
+      department_id: string;
+      section_id: string;
+      position_id: string;
+    }[]
+  >({
+    queryKey: ["org_mapping_section_positions"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/mapping/section-positions")).data.data,
+    enabled: !!canView,
+  });
+
+  // Site is always first; Business unit/Department/Section/Position follow
+  // it in that order, then every other org-structure field keeps its
+  // existing relative order.
+  const CHAIN_TABLE_ORDER = [
+    "sites",
+    "business_units",
+    "departments",
+    "sections",
+    "custom_position",
+  ];
+  const orderedOrgFieldListTypes = useMemo(() => {
+    const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
+      orgFieldListTypes.find((lt) => lt.table_name === tableName),
+    ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
+    const chainTableNames = new Set(CHAIN_TABLE_ORDER);
+    const otherFields = orgFieldListTypes.filter((lt) => !chainTableNames.has(lt.table_name));
+    return [...chainFields, ...otherFields];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgFieldListTypes]);
+  const indexByListTypeId = useMemo(
+    () => new Map(orgFieldListTypes.map((lt, i) => [lt.id, i])),
+    [orgFieldListTypes],
+  );
+
+  const chainColumnsInOrder = CHAIN_TABLE_ORDER.map(
+    (t) => orgFieldListTypes.find((lt) => lt.table_name === t)?.job_posting_column,
+  ).filter((c): c is string => !!c);
+
+  function downstreamChainColumnsAfter(column: string): string[] {
+    const idx = chainColumnsInOrder.indexOf(column);
+    if (idx === -1) return [];
+    return chainColumnsInOrder.slice(idx + 1);
+  }
+
+  function itemsForChainField(
+    tableName: string,
+    items: OrgCustomListItem[],
+  ): OrgCustomListItem[] {
+    if (tableName === "sites") return items;
+
+    if (tableName === "business_units") {
+      if (siteBuRows.length === 0) return items;
+      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
+      if (!siteId) return [];
+      const ids = new Set(
+        siteBuRows.filter((r) => r.site_id === siteId).map((r) => r.business_unit_id),
+      );
+      return items.filter((i) => ids.has(i.id));
+    }
+
+    if (tableName === "departments") {
+      if (buDeptRows.length === 0) return items;
+      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
+      const buId = businessUnitListType
+        ? orgFieldValues[businessUnitListType.job_posting_column]
+        : "";
+      if (!siteId || !buId) return [];
+      const ids = new Set(
+        buDeptRows
+          .filter((r) => r.site_id === siteId && r.business_unit_id === buId)
+          .map((r) => r.department_id),
+      );
+      return items.filter((i) => ids.has(i.id));
+    }
+
+    if (tableName === "sections") {
+      if (deptSectionRows.length === 0) return items;
+      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
+      const buId = businessUnitListType
+        ? orgFieldValues[businessUnitListType.job_posting_column]
+        : "";
+      const deptId = departmentListType
+        ? orgFieldValues[departmentListType.job_posting_column]
+        : "";
+      if (!siteId || !buId || !deptId) return [];
+      const ids = new Set(
+        deptSectionRows
+          .filter(
+            (r) => r.site_id === siteId && r.business_unit_id === buId && r.department_id === deptId,
+          )
+          .map((r) => r.section_id),
+      );
+      return items.filter((i) => ids.has(i.id));
+    }
+
+    if (tableName === "custom_position") {
+      if (sectionPositionRows.length === 0) return items;
+      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
+      const buId = businessUnitListType
+        ? orgFieldValues[businessUnitListType.job_posting_column]
+        : "";
+      const deptId = departmentListType
+        ? orgFieldValues[departmentListType.job_posting_column]
+        : "";
+      const sectionId = sectionListType ? orgFieldValues[sectionListType.job_posting_column] : "";
+      if (!siteId || !buId || !deptId || !sectionId) return [];
+      const ids = new Set(
+        sectionPositionRows
+          .filter(
+            (r) =>
+              r.site_id === siteId &&
+              r.business_unit_id === buId &&
+              r.department_id === deptId &&
+              r.section_id === sectionId,
+          )
+          .map((r) => r.position_id),
+      );
+      return items.filter((i) => ids.has(i.id));
+    }
+
+    return items;
+  }
+
   // --- Postings list ---
   const { data: postings = [], isLoading: postingsLoading } = useQuery({
     queryKey: ["job_postings"],
@@ -713,8 +872,10 @@ export default function CreateJobPostingPage() {
                 Organizational structure — all fields required
               </p>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {orgFieldListTypes.map((lt, index) => {
-                  const items = orgFieldItemQueries[index]?.data ?? [];
+                {orderedOrgFieldListTypes.map((lt) => {
+                  const index = indexByListTypeId.get(lt.id) ?? -1;
+                  const rawItems = orgFieldItemQueries[index]?.data ?? [];
+                  const items = itemsForChainField(lt.table_name, rawItems);
                   const loadingItems = orgFieldItemQueries[index]?.isLoading;
                   const mode = orgFieldMode[lt.id] ?? "single";
                   // Range only makes sense for digits-mode numeric lists
@@ -732,12 +893,16 @@ export default function CreateJobPostingPage() {
                     <select
                       className={`${inputClass} mt-1`}
                       value={orgFieldValues[lt.job_posting_column] ?? ""}
-                      onChange={(e) =>
-                        setOrgFieldValues((prev) => ({
-                          ...prev,
-                          [lt.job_posting_column]: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setOrgFieldValues((prev) => {
+                          const next = { ...prev, [lt.job_posting_column]: value };
+                          for (const col of downstreamChainColumnsAfter(lt.job_posting_column)) {
+                            delete next[col];
+                          }
+                          return next;
+                        });
+                      }}
                       disabled={loadingItems}
                     >
                       <option value="">Select {lt.singular.toLowerCase()}…</option>
