@@ -9,6 +9,7 @@ import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { RATING_LABELS } from "@/lib/careers/interviewFormConfigs";
 import {
+  groupBySection,
   normalizePostingInterviewSetup,
   type PostingInterviewSetupContent,
 } from "@/lib/careers/postingInterviewSetup";
@@ -28,24 +29,33 @@ type TabId =
   | "screening"
   | "questions"
   | "scenarios"
+  | "weighting"
   | "evaluation"
   | "ratings"
   | "benchmarks"
   | "extra_stages";
 
-// Same tab set as Interview under Recruitment (InterviewGuidesEditor) —
-// only the Overview tab's content differs, since this is per-posting
-// rather than per grade level.
+// Same tab set as Interview under Recruitment (InterviewGuidesEditor), plus
+// one addition — Score weighting — since the old shared guides had their
+// area weights hand-curated by whoever wrote the guide, but per-posting
+// setup needs its own screen for HR to set them.
 const TAB_LABELS: Record<TabId, string> = {
   overview: "Overview",
   screening: "Stage 1 — Screening",
   questions: "Stage 1 — Questions",
   scenarios: "Stage 2 — Practical",
+  weighting: "Score weighting",
   evaluation: "Evaluation checklist",
   ratings: "Rating scale",
   benchmarks: "Score benchmarks",
   extra_stages: "Extra stages",
 };
+
+/** Rounds to 2dp — every weight percentage in this file goes through this,
+ * so equal-share defaults and totals compare cleanly. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 export type PostingOverviewRow = { label: string; value: string };
 
@@ -155,10 +165,37 @@ function PostingInterviewSetup(
   const currentTabIndex = tabOrder.indexOf(activeTab);
   const isLastTab = currentTabIndex === tabOrder.length - 1;
 
+  // Score weighting — every question section and scenario section (in the
+  // order they appear on their own tabs) becomes one row here that HR gives
+  // a percentage. An area with no explicit percentage yet shows/saves an
+  // equal share, so the total always starts at a valid 100% and editing one
+  // area is the only way to throw it off (the whole point of the control).
+  const questionAreas = groupBySection(setup.questions, "Questions").map((g) => g.area);
+  const scenarioAreas = groupBySection(setup.scenarios, "Practical assessment").map(
+    (g) => g.area,
+  );
+  const weightAreaCount = questionAreas.length + scenarioAreas.length;
+  const equalShare = weightAreaCount > 0 ? round2(100 / weightAreaCount) : 0;
+  const effectiveWeight = (kind: "question" | "scenario", area: string): number => {
+    const bucket =
+      kind === "question" ? setup.weights.questionSections : setup.weights.scenarioSections;
+    return typeof bucket[area] === "number" ? bucket[area] : equalShare;
+  };
+  const totalWeight = round2(
+    questionAreas.reduce((sum, area) => sum + effectiveWeight("question", area), 0) +
+      scenarioAreas.reduce((sum, area) => sum + effectiveWeight("scenario", area), 0),
+  );
+  const weightsBalanced = weightAreaCount === 0 || Math.abs(totalWeight - 100) < 0.5;
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const benchmarkError = validateInterviewBenchmarks(setup.benchmarks);
       if (benchmarkError) throw new Error(benchmarkError);
+      if (!weightsBalanced) {
+        throw new Error(
+          `Score weighting percentages must add up to 100% (currently ${totalWeight}%) — see the Score weighting tab.`,
+        );
+      }
 
       return api.patch(`/careers/postings/${postingId}`, {
         interview_description: description.trim(),
@@ -173,6 +210,17 @@ function PostingInterviewSetup(
           evaluationLabels: setup.evaluationLabels,
           benchmarks: setup.benchmarks,
           extraStages: setup.extraStages.filter((s) => s.label.trim()),
+          // Persist a fully-resolved value for every current area (not just
+          // ones HR touched), so the saved data is self-consistent even if
+          // nothing here was ever edited.
+          weights: {
+            questionSections: Object.fromEntries(
+              questionAreas.map((area) => [area, effectiveWeight("question", area)]),
+            ),
+            scenarioSections: Object.fromEntries(
+              scenarioAreas.map((area) => [area, effectiveWeight("scenario", area)]),
+            ),
+          },
         },
       });
     },
@@ -477,6 +525,98 @@ function PostingInterviewSetup(
             observe: "",
           })}
         />
+      )}
+
+      {activeTab === "weighting" && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            How much each section below counts toward the overall interview
+            score. Percentages across every section must add up to 100%.
+          </p>
+
+          {weightAreaCount === 0 ? (
+            <p className="text-sm text-gray-400">
+              Add questions or practical scenarios first, then come back here to set their weighting.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {questionAreas.map((area) => (
+                <div
+                  key={`q-${area}`}
+                  className="flex items-center gap-3 border border-gray-100 rounded-lg px-3 py-2"
+                >
+                  <span className="flex-1 text-sm text-gray-800">
+                    {area}
+                    <span className="ml-2 text-xs text-gray-400">Stage 1 — question section</span>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={effectiveWeight("question", area)}
+                    onChange={(e) => {
+                      const parsed = Number.parseFloat(e.target.value);
+                      patchSetup({
+                        weights: {
+                          ...setup.weights,
+                          questionSections: {
+                            ...setup.weights.questionSections,
+                            [area]: Number.isFinite(parsed) ? parsed : 0,
+                          },
+                        },
+                      });
+                    }}
+                    disabled={!allowEdit}
+                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right tabular-nums disabled:bg-gray-50 disabled:text-gray-500"
+                  />
+                  <span className="text-xs text-gray-400 w-4">%</span>
+                </div>
+              ))}
+              {scenarioAreas.map((area) => (
+                <div
+                  key={`s-${area}`}
+                  className="flex items-center gap-3 border border-gray-100 rounded-lg px-3 py-2"
+                >
+                  <span className="flex-1 text-sm text-gray-800">
+                    {area}
+                    <span className="ml-2 text-xs text-gray-400">Stage 2 — practical section</span>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={effectiveWeight("scenario", area)}
+                    onChange={(e) => {
+                      const parsed = Number.parseFloat(e.target.value);
+                      patchSetup({
+                        weights: {
+                          ...setup.weights,
+                          scenarioSections: {
+                            ...setup.weights.scenarioSections,
+                            [area]: Number.isFinite(parsed) ? parsed : 0,
+                          },
+                        },
+                      });
+                    }}
+                    disabled={!allowEdit}
+                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right tabular-nums disabled:bg-gray-50 disabled:text-gray-500"
+                  />
+                  <span className="text-xs text-gray-400 w-4">%</span>
+                </div>
+              ))}
+
+              <p
+                className={`text-sm font-medium pt-1 ${
+                  weightsBalanced ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                Total: {totalWeight}% {weightsBalanced ? "✓" : "— must equal 100%"}
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
       {activeTab === "evaluation" && (

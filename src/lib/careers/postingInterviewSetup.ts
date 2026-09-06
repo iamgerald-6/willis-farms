@@ -24,6 +24,19 @@ import {
  * description/panel members/duration fields live in their own top-level
  * columns instead, set on Create job posting's Interview step overview.
  */
+/** How much each question-section area and each scenario-section area
+ * contributes to the overall score, as a percentage — kept as two separate
+ * maps (rather than one, keyed by section name) so a question section and
+ * scenario section that happen to share a name are never double counted.
+ * Percentages across both maps combined must add up to 100 (enforced on
+ * the Score weighting tab); an area missing from its map falls back to an
+ * equal share at read time, so older setups saved before this existed
+ * (or a section added since weights were last saved) still score fine. */
+export type PostingScoreWeights = {
+  questionSections: Record<string, number>;
+  scenarioSections: Record<string, number>;
+};
+
 export type PostingInterviewSetupContent = {
   screening: ScreeningItem[];
   questions: InterviewQuestion[];
@@ -33,6 +46,7 @@ export type PostingInterviewSetupContent = {
   evaluationLabels: InterviewEvaluationConfig;
   benchmarks: ResolvedInterviewBenchmarks;
   extraStages: ExtraInterviewStageDef[];
+  weights: PostingScoreWeights;
 };
 
 export function emptyPostingInterviewSetup(): PostingInterviewSetupContent {
@@ -45,7 +59,28 @@ export function emptyPostingInterviewSetup(): PostingInterviewSetupContent {
     evaluationLabels: {},
     benchmarks: { ...DEFAULT_INTERVIEW_BENCHMARKS },
     extraStages: [],
+    weights: { questionSections: {}, scenarioSections: {} },
   };
+}
+
+/** Groups items (questions or scenarios) by their `section` field, in
+ * first-seen order, for scoring purposes — every id in a group is either
+ * all question ids or all scenario ids, never mixed, since questions and
+ * scenarios are always grouped separately even when a section name is
+ * reused on both sides. Used by both the Score weighting tab (to know
+ * what areas to show) and fetchPostingInterviewContext.ts (to know what
+ * each stored weight refers to when building score rows). */
+export function groupBySection<T extends { id: string; section?: string }>(
+  items: T[],
+  fallbackArea: string,
+): { area: string; ids: string[] }[] {
+  const map = new Map<string, string[]>();
+  for (const item of items) {
+    const key = item.section?.trim() || fallbackArea;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(item.id);
+  }
+  return Array.from(map.entries()).map(([area, ids]) => ({ area, ids }));
 }
 
 /**
@@ -85,5 +120,23 @@ export function normalizePostingInterviewSetup(raw: unknown): PostingInterviewSe
     extraStages: Array.isArray(obj.extraStages)
       ? (obj.extraStages as ExtraInterviewStageDef[])
       : defaults.extraStages,
+    weights: normalizeWeights(obj.weights, defaults.weights),
   };
+}
+
+function normalizeWeights(
+  raw: unknown,
+  fallback: PostingScoreWeights,
+): PostingScoreWeights {
+  if (!raw || typeof raw !== "object") return fallback;
+  const obj = raw as Record<string, unknown>;
+  const questionSections =
+    obj.questionSections && typeof obj.questionSections === "object"
+      ? (obj.questionSections as Record<string, number>)
+      : fallback.questionSections;
+  const scenarioSections =
+    obj.scenarioSections && typeof obj.scenarioSections === "object"
+      ? (obj.scenarioSections as Record<string, number>)
+      : fallback.scenarioSections;
+  return { questionSections, scenarioSections };
 }

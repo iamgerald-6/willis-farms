@@ -1,57 +1,49 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type {
-  InterviewGuideConfig,
-  InterviewQuestion,
-  ScenarioItem,
-  WeightRow,
-} from "@/lib/careers/interviewFormConfigs";
+import type { InterviewGuideConfig, WeightRow } from "@/lib/careers/interviewFormConfigs";
 import type { ResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
-import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
+import {
+  groupBySection,
+  normalizePostingInterviewSetup,
+  type PostingInterviewSetupContent,
+} from "@/lib/careers/postingInterviewSetup";
 import { resolveInterviewEvaluationLabels } from "@/lib/systemDefinitions/interviewEvaluationConfig";
 import { resolveInterviewBenchmarks } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
 
 /**
- * Interview setup never collects explicit area weights the way the old
- * shared guides did (hand-curated `{area, questionIds, weight}` rows) — it
- * only collects a flat list of questions/scenarios, each tagged with a
- * `section`. Score computation (computeStage1Score/computeStage2Score/
- * computeWeightedScore in interviewFormConfigs.ts) requires `weights` to be
- * non-empty or it always returns a null total, so this builds one weight
- * row per section automatically, splitting 100% evenly across sections.
- * Questions and scenarios are grouped separately (never merged into the
- * same row) so a like-named section on both sides can't mix a scenario id
+ * Turns this posting's question/scenario sections into score weight rows,
+ * using the percentages HR set on the Score weighting tab
+ * (setup.weights.questionSections/scenarioSections). An area missing its
+ * own entry (a section added since weights were last saved, or a setup
+ * saved before this feature existed) falls back to an equal share of 100,
+ * so score computation (computeStage1Score/computeStage2Score/
+ * computeWeightedScore in interviewFormConfigs.ts, which divide by the sum
+ * of weights and return a null total when there are none) always has
+ * something to work with. Questions and scenarios are grouped and weighted
+ * separately so a like-named section on both sides can't mix a scenario id
  * into a Stage 1 row or vice versa — computeStage1Score/computeStage2Score
  * both require a row's ids to be ALL scenario ids or ALL non-scenario ids.
  */
-function buildWeightRows(
-  questions: InterviewQuestion[],
-  scenarios: ScenarioItem[],
-): WeightRow[] {
-  const groups: { area: string; questionIds: string[] }[] = [];
+function buildWeightRows(setup: PostingInterviewSetupContent): WeightRow[] {
+  const questionGroups = groupBySection(setup.questions, "Questions");
+  const scenarioGroups = groupBySection(setup.scenarios, "Practical assessment");
 
-  const questionSections = new Map<string, string[]>();
-  for (const q of questions) {
-    const key = q.section?.trim() || "Questions";
-    if (!questionSections.has(key)) questionSections.set(key, []);
-    questionSections.get(key)!.push(q.id);
-  }
-  for (const [area, questionIds] of questionSections) {
-    groups.push({ area, questionIds });
-  }
+  const resolve = (
+    groups: { area: string; ids: string[] }[],
+    configured: Record<string, number>,
+  ): WeightRow[] => {
+    if (groups.length === 0) return [];
+    const equalShare = Math.round((100 / groups.length) * 100) / 100;
+    return groups.map((g) => ({
+      area: g.area,
+      questionIds: g.ids,
+      weight: typeof configured[g.area] === "number" ? configured[g.area] : equalShare,
+    }));
+  };
 
-  const scenarioSections = new Map<string, string[]>();
-  for (const s of scenarios) {
-    const key = s.section?.trim() || "Practical assessment";
-    if (!scenarioSections.has(key)) scenarioSections.set(key, []);
-    scenarioSections.get(key)!.push(s.id);
-  }
-  for (const [area, questionIds] of scenarioSections) {
-    groups.push({ area, questionIds });
-  }
-
-  if (groups.length === 0) return [];
-  const weight = Math.round((100 / groups.length) * 100) / 100;
-  return groups.map((g) => ({ ...g, weight }));
+  return [
+    ...resolve(questionGroups, setup.weights.questionSections),
+    ...resolve(scenarioGroups, setup.weights.scenarioSections),
+  ];
 }
 
 /**
@@ -120,7 +112,7 @@ export async function fetchPostingInterviewContext(
     screening: setup.screening,
     questions: setup.questions,
     scenarios: setup.scenarios,
-    weights: buildWeightRows(setup.questions, setup.scenarios),
+    weights: buildWeightRows(setup),
     interpretation: "",
     disqualifiers: setup.disqualifiers.map((d) => d.label),
     disqualifierItems: setup.disqualifiers,

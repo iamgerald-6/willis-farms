@@ -74,6 +74,26 @@ export async function POST() {
         guide.disqualifierItems ??
         (guide.disqualifiers ?? []).map((label, i) => ({ id: `dq_${i}`, label }));
 
+      // The old shared guide's hand-curated area weights (e.g. "B1 Motivation
+      // & trainability" 20%, "Practical assessment" 15%) carry over here so
+      // a backfilled posting scores exactly as it used to, rather than
+      // falling back to an equal split across sections. Each weight row's
+      // ids are either all scenario ids or all question ids (never mixed),
+      // so which map it belongs in is decided by checking against the
+      // guide's own scenario id set.
+      const scenarioIds = new Set((guide.scenarios ?? []).map((s) => s.id));
+      const questionSections: Record<string, number> = {};
+      const scenarioSections: Record<string, number> = {};
+      for (const row of guide.weights ?? []) {
+        const isScenarioRow =
+          row.questionIds.length > 0 && row.questionIds.every((id) => scenarioIds.has(id));
+        if (isScenarioRow) {
+          scenarioSections[row.area] = row.weight;
+        } else {
+          questionSections[row.area] = row.weight;
+        }
+      }
+
       const { error: updateError } = await supabaseAdmin
         .from("job_postings")
         .update({
@@ -92,6 +112,7 @@ export async function POST() {
             },
             benchmarks,
             extraStages: guidesConfig?.extraStages ?? [],
+            weights: { questionSections, scenarioSections },
           },
         })
         .eq("id", posting.id);
