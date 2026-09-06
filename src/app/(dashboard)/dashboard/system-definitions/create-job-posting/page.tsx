@@ -444,7 +444,16 @@ export default function CreateJobPostingPage() {
                   const items = orgFieldItemQueries[index]?.data ?? [];
                   const loadingItems = orgFieldItemQueries[index]?.isLoading;
                   const mode = orgFieldMode[lt.id] ?? "single";
-                  const canRange = lt.is_numeric_range && lt.job_posting_min_column && lt.job_posting_max_column;
+                  // Range only makes sense for digits-mode numeric lists
+                  // (e.g. Age). Bands-mode lists (e.g. Salary) already
+                  // have each item as its own range, so they never get
+                  // min/max columns in the first place — this check is
+                  // just belt-and-suspenders.
+                  const canRange =
+                    lt.is_numeric_range &&
+                    lt.numeric_range_mode === "digits" &&
+                    lt.job_posting_min_column &&
+                    lt.job_posting_max_column;
 
                   const singleSelect = (
                     <select

@@ -202,12 +202,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: addColumnError.message }, { status: 500 });
     }
 
-    // Numeric-range lists (Age, Salary, ...) also get min/max columns, so
-    // a posting can specify a range instead of one value. Every other
-    // list only ever gets the single column above.
+    // Digits-mode numeric-range lists (e.g. Age: one whole number per
+    // item) also get min/max columns, so a posting can specify a range of
+    // numbers instead of one value. Bands-mode lists (e.g. Salary: each
+    // item is already its own range, like "1000-2000") don't get this —
+    // picking a single band already is the range, a min/max on top of
+    // that wouldn't mean anything. Every other list only ever gets the
+    // single column above.
     let jobPostingMinColumn: string | null = null;
     let jobPostingMaxColumn: string | null = null;
-    if (isNumericRange) {
+    if (isNumericRange && numericRangeMode === "digits") {
       jobPostingMinColumn = `${baseColumn.replace(/_id$/, "")}_min_id`;
       jobPostingMaxColumn = `${baseColumn.replace(/_id$/, "")}_max_id`;
       if (jobPostingMinColumn === jobPostingColumn || jobPostingMaxColumn === jobPostingColumn) {
