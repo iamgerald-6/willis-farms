@@ -192,6 +192,10 @@ export default function CreateJobPostingPage() {
   const [editing, setEditing] = useState<JobPosting | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [orgFieldValues, setOrgFieldValues] = useState<Record<string, string>>({});
+  // Per-list-type choice, keyed by list id — only meaningful for
+  // is_numeric_range lists (Age, Salary, ...), where a posting can pick
+  // one value or a min/max range instead.
+  const [orgFieldMode, setOrgFieldMode] = useState<Record<string, "single" | "range">>({});
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
 
@@ -200,6 +204,7 @@ export default function CreateJobPostingPage() {
     setEditing(null);
     setForm(emptyForm());
     setOrgFieldValues({});
+    setOrgFieldMode({});
   };
 
   const openCreate = () => {
@@ -209,6 +214,7 @@ export default function CreateJobPostingPage() {
       job_title_key: jobPostingOptions[0]?.key ?? "",
     });
     setOrgFieldValues({});
+    setOrgFieldMode({});
     setShowForm(true);
   };
 
@@ -232,11 +238,26 @@ export default function CreateJobPostingPage() {
       jd_file_public_id: posting.jd_file_public_id,
     });
     const nextOrgValues: Record<string, string> = {};
+    const nextOrgMode: Record<string, "single" | "range"> = {};
     for (const lt of orgFieldListTypes) {
       const value = posting[lt.job_posting_column];
       if (typeof value === "string") nextOrgValues[lt.job_posting_column] = value;
+
+      const minValue = lt.job_posting_min_column ? posting[lt.job_posting_min_column] : null;
+      const maxValue = lt.job_posting_max_column ? posting[lt.job_posting_max_column] : null;
+      if (typeof minValue === "string" && lt.job_posting_min_column) {
+        nextOrgValues[lt.job_posting_min_column] = minValue;
+      }
+      if (typeof maxValue === "string" && lt.job_posting_max_column) {
+        nextOrgValues[lt.job_posting_max_column] = maxValue;
+      }
+      if (lt.is_numeric_range) {
+        nextOrgMode[lt.id] =
+          typeof minValue === "string" || typeof maxValue === "string" ? "range" : "single";
+      }
     }
     setOrgFieldValues(nextOrgValues);
+    setOrgFieldMode(nextOrgMode);
     setShowForm(true);
   };
 
@@ -280,6 +301,34 @@ export default function CreateJobPostingPage() {
     }
   };
 
+  // Only send the column(s) matching each field's current mode — e.g. if a
+  // numeric-range field is in "single" mode, its min/max columns are sent
+  // as null so any range picked before switching modes doesn't linger.
+  const effectiveOrgFieldValues = (): Record<string, string | null> => {
+    const values: Record<string, string | null> = {};
+    for (const lt of orgFieldListTypes) {
+      if (!lt.is_numeric_range) {
+        values[lt.job_posting_column] = orgFieldValues[lt.job_posting_column] || null;
+        continue;
+      }
+      const mode = orgFieldMode[lt.id] ?? "single";
+      if (mode === "single") {
+        values[lt.job_posting_column] = orgFieldValues[lt.job_posting_column] || null;
+        if (lt.job_posting_min_column) values[lt.job_posting_min_column] = null;
+        if (lt.job_posting_max_column) values[lt.job_posting_max_column] = null;
+      } else {
+        values[lt.job_posting_column] = null;
+        if (lt.job_posting_min_column) {
+          values[lt.job_posting_min_column] = orgFieldValues[lt.job_posting_min_column] || null;
+        }
+        if (lt.job_posting_max_column) {
+          values[lt.job_posting_max_column] = orgFieldValues[lt.job_posting_max_column] || null;
+        }
+      }
+    }
+    return values;
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -302,7 +351,7 @@ export default function CreateJobPostingPage() {
         status: form.status,
         jd_file_url: form.jd_file_url,
         jd_file_public_id: form.jd_file_public_id,
-        ...orgFieldValues,
+        ...effectiveOrgFieldValues(),
       };
 
       if (editing) {
@@ -394,28 +443,105 @@ export default function CreateJobPostingPage() {
                 {orgFieldListTypes.map((lt, index) => {
                   const items = orgFieldItemQueries[index]?.data ?? [];
                   const loadingItems = orgFieldItemQueries[index]?.isLoading;
+                  const mode = orgFieldMode[lt.id] ?? "single";
+                  const canRange = lt.is_numeric_range && lt.job_posting_min_column && lt.job_posting_max_column;
+
+                  const singleSelect = (
+                    <select
+                      className={`${inputClass} mt-1`}
+                      value={orgFieldValues[lt.job_posting_column] ?? ""}
+                      onChange={(e) =>
+                        setOrgFieldValues((prev) => ({
+                          ...prev,
+                          [lt.job_posting_column]: e.target.value,
+                        }))
+                      }
+                      disabled={loadingItems}
+                    >
+                      <option value="">Select {lt.singular.toLowerCase()}…</option>
+                      {items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  );
+
                   return (
-                    <label key={lt.id} className="block">
-                      <span className="text-xs font-medium text-gray-600">{lt.label}</span>
-                      <select
-                        className={`${inputClass} mt-1`}
-                        value={orgFieldValues[lt.job_posting_column] ?? ""}
-                        onChange={(e) =>
-                          setOrgFieldValues((prev) => ({
-                            ...prev,
-                            [lt.job_posting_column]: e.target.value,
-                          }))
-                        }
-                        disabled={loadingItems}
-                      >
-                        <option value="">Select {lt.singular.toLowerCase()}…</option>
-                        {items.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div key={lt.id} className="block">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-600">{lt.label}</span>
+                        {canRange && (
+                          <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setOrgFieldMode((prev) => ({ ...prev, [lt.id]: "single" }))}
+                              className={`px-2 py-0.5 font-medium transition-colors ${
+                                mode === "single"
+                                  ? "bg-red-600 text-white"
+                                  : "bg-white text-gray-500 hover:bg-gray-50"
+                              }`}
+                            >
+                              Single
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOrgFieldMode((prev) => ({ ...prev, [lt.id]: "range" }))}
+                              className={`px-2 py-0.5 font-medium transition-colors border-l border-gray-200 ${
+                                mode === "range"
+                                  ? "bg-red-600 text-white"
+                                  : "bg-white text-gray-500 hover:bg-gray-50"
+                              }`}
+                            >
+                              Range
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {!canRange || mode === "single" ? (
+                        singleSelect
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          <select
+                            className={inputClass}
+                            value={orgFieldValues[lt.job_posting_min_column as string] ?? ""}
+                            onChange={(e) =>
+                              setOrgFieldValues((prev) => ({
+                                ...prev,
+                                [lt.job_posting_min_column as string]: e.target.value,
+                              }))
+                            }
+                            disabled={loadingItems}
+                          >
+                            <option value="">Min…</option>
+                            {items.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className={inputClass}
+                            value={orgFieldValues[lt.job_posting_max_column as string] ?? ""}
+                            onChange={(e) =>
+                              setOrgFieldValues((prev) => ({
+                                ...prev,
+                                [lt.job_posting_max_column as string]: e.target.value,
+                              }))
+                            }
+                            disabled={loadingItems}
+                          >
+                            <option value="">Max…</option>
+                            {items.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

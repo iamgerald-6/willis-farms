@@ -57,6 +57,15 @@ export type OrgCustomListType = {
    * transiently, if the column failed to create.
    */
   job_posting_column: string | null;
+  /**
+   * Only set for is_numeric_range lists (e.g. Age, Salary) — two more real
+   * foreign key columns on job_postings (e.g. "age_min_id"/"age_max_id"),
+   * letting a posting specify a range instead of one value. See
+   * docs/organizational-structure/job-postings-range-fields.sql. Null for
+   * every non-numeric-range list — the single/range choice doesn't apply.
+   */
+  job_posting_min_column: string | null;
+  job_posting_max_column: string | null;
 };
 
 /**

@@ -99,9 +99,14 @@ export async function DELETE(
     }
     const config = listType as OrgCustomListType;
 
-    if (config.job_posting_column) {
+    for (const column of [
+      config.job_posting_column,
+      config.job_posting_min_column,
+      config.job_posting_max_column,
+    ]) {
+      if (!column) continue;
       const { error: dropColumnError } = await supabase.rpc("drop_job_posting_org_column", {
-        p_column_name: config.job_posting_column,
+        p_column_name: column,
       });
       if (dropColumnError) {
         return NextResponse.json({ error: dropColumnError.message }, { status: 500 });

@@ -202,6 +202,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: addColumnError.message }, { status: 500 });
     }
 
+    // Numeric-range lists (Age, Salary, ...) also get min/max columns, so
+    // a posting can specify a range instead of one value. Every other
+    // list only ever gets the single column above.
+    let jobPostingMinColumn: string | null = null;
+    let jobPostingMaxColumn: string | null = null;
+    if (isNumericRange) {
+      jobPostingMinColumn = `${baseColumn.replace(/_id$/, "")}_min_id`;
+      jobPostingMaxColumn = `${baseColumn.replace(/_id$/, "")}_max_id`;
+      if (jobPostingMinColumn === jobPostingColumn || jobPostingMaxColumn === jobPostingColumn) {
+        // baseColumn already ended in "_min_id"/"_max_id" somehow — fall
+        // back to suffixing off the collision-resolved column instead.
+        jobPostingMinColumn = `${jobPostingColumn}_min`;
+        jobPostingMaxColumn = `${jobPostingColumn}_max`;
+      }
+
+      const { error: addMinError } = await supabase.rpc("add_job_posting_org_column", {
+        p_column_name: jobPostingMinColumn,
+        p_referenced_table: tableName,
+      });
+      const { error: addMaxError } = addMinError
+        ? { error: null }
+        : await supabase.rpc("add_job_posting_org_column", {
+            p_column_name: jobPostingMaxColumn,
+            p_referenced_table: tableName,
+          });
+      if (addMinError || addMaxError) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingColumn });
+        if (!addMinError) {
+          await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMinColumn });
+        }
+        await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
+        return NextResponse.json(
+          { error: (addMinError ?? addMaxError)?.message },
+          { status: 500 },
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("org_custom_list_types")
       .insert([
@@ -216,15 +254,23 @@ export async function POST(req: NextRequest) {
           fields,
           sort_order: count ?? 0,
           job_posting_column: jobPostingColumn,
+          job_posting_min_column: jobPostingMinColumn,
+          job_posting_max_column: jobPostingMaxColumn,
         },
       ])
       .select()
       .single();
 
     if (error) {
-      // Metadata insert failed after the table and column were already
+      // Metadata insert failed after the table and column(s) were already
       // created — clean up so nothing orphaned is left behind.
       await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingColumn });
+      if (jobPostingMinColumn) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMinColumn });
+      }
+      if (jobPostingMaxColumn) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMaxColumn });
+      }
       await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
       if (error.code === "23505") {
         return NextResponse.json(

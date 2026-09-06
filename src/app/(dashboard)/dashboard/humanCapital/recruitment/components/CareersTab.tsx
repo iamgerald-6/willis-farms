@@ -69,9 +69,11 @@ export default function CareersTab({ adminId }: { adminId: string }) {
   });
   const orgFieldColumns = useMemo(
     () =>
-      orgListTypes
-        .map((t) => t.job_posting_column)
-        .filter((c): c is string => typeof c === "string" && c.length > 0),
+      orgListTypes.flatMap((t) =>
+        [t.job_posting_column, t.job_posting_min_column, t.job_posting_max_column].filter(
+          (c): c is string => typeof c === "string" && c.length > 0,
+        ),
+      ),
     [orgListTypes],
   );
 
