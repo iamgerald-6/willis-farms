@@ -5,7 +5,7 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 
-/** GET — every Department set up mapping row (site_id, business_unit_id, department_id, section_id). */
+/** GET — every level currently in the mapping chain, ordered by position, joined with its list's own label/singular/table_name. */
 export async function GET(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "view");
@@ -19,9 +19,11 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await supabase
-      .from("org_department_sections")
-      .select("*")
-      .order("created_at", { ascending: true });
+      .from("org_mapping_levels")
+      .select(
+        "id, position, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
+      )
+      .order("position", { ascending: true });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST — map a section as available under an already-mapped site+business-unit+department chain. */
+/** POST — add a list as a new level, appended to the end of the chain. */
 export async function POST(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "add");
@@ -42,16 +44,9 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const siteId = body.site_id as string | undefined;
-    const businessUnitId = body.business_unit_id as string | undefined;
-    const departmentId = body.department_id as string | undefined;
-    const sectionId = body.section_id as string | undefined;
-
-    if (!siteId || !businessUnitId || !departmentId || !sectionId) {
-      return NextResponse.json(
-        { error: "site_id, business_unit_id, department_id, and section_id are required" },
-        { status: 400 },
-      );
+    const listTypeId = body.list_type_id as string | undefined;
+    if (!listTypeId) {
+      return NextResponse.json({ error: "list_type_id is required" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdminFromAuth();
@@ -59,33 +54,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
+    const { data: last } = await supabase
+      .from("org_mapping_levels")
+      .select("position")
+      .order("position", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const nextPosition = (last?.position ?? 0) + 1;
+
     const { data, error } = await supabase
-      .from("org_department_sections")
-      .insert([
-        {
-          site_id: siteId,
-          business_unit_id: businessUnitId,
-          department_id: departmentId,
-          section_id: sectionId,
-        },
-      ])
-      .select()
+      .from("org_mapping_levels")
+      .insert([{ list_type_id: listTypeId, position: nextPosition }])
+      .select(
+        "id, position, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
+      )
       .single();
 
     if (error) {
       if (error.code === "23505") {
         return NextResponse.json(
-          { error: "That section is already mapped to this site + business unit + department." },
+          { error: "That list is already part of the mapping chain." },
           { status: 409 },
-        );
-      }
-      if (error.code === "23503") {
-        return NextResponse.json(
-          {
-            error:
-              "That site + business unit + department chain hasn't been mapped in Business unit set up yet.",
-          },
-          { status: 400 },
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });

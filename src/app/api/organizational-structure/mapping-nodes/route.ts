@@ -5,7 +5,7 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 
-/** GET — every Section set up mapping row (site_id, business_unit_id, department_id, section_id, position_id). */
+/** GET — every mapping node (small dataset by nature — one row per mapped item — so the client fetches all of them and filters/groups locally rather than the API taking query filters). */
 export async function GET(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "view");
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await supabase
-      .from("org_section_positions")
+      .from("org_mapping_nodes")
       .select("*")
       .order("created_at", { ascending: true });
 
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** POST — map a job position as available under an already-mapped site+business-unit+department+section chain. */
+/** POST — mark one item as valid under a specific parent node (or, for a level-1 item, under no parent at all). */
 export async function POST(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "add");
@@ -42,20 +42,12 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const siteId = body.site_id as string | undefined;
-    const businessUnitId = body.business_unit_id as string | undefined;
-    const departmentId = body.department_id as string | undefined;
-    const sectionId = body.section_id as string | undefined;
-    const positionId = body.position_id as string | undefined;
+    const levelId = body.level_id as string | undefined;
+    const itemId = body.item_id as string | undefined;
+    const parentNodeId = (body.parent_node_id as string | null | undefined) ?? null;
 
-    if (!siteId || !businessUnitId || !departmentId || !sectionId || !positionId) {
-      return NextResponse.json(
-        {
-          error:
-            "site_id, business_unit_id, department_id, section_id, and position_id are required",
-        },
-        { status: 400 },
-      );
+    if (!levelId || !itemId) {
+      return NextResponse.json({ error: "level_id and item_id are required" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdminFromAuth();
@@ -64,35 +56,21 @@ export async function POST(req: NextRequest) {
     }
 
     const { data, error } = await supabase
-      .from("org_section_positions")
-      .insert([
-        {
-          site_id: siteId,
-          business_unit_id: businessUnitId,
-          department_id: departmentId,
-          section_id: sectionId,
-          position_id: positionId,
-        },
-      ])
+      .from("org_mapping_nodes")
+      .insert([{ level_id: levelId, item_id: itemId, parent_node_id: parentNodeId }])
       .select()
       .single();
 
     if (error) {
       if (error.code === "23505") {
         return NextResponse.json(
-          {
-            error:
-              "That position is already mapped to this site + business unit + department + section.",
-          },
+          { error: "That mapping already exists." },
           { status: 409 },
         );
       }
       if (error.code === "23503") {
         return NextResponse.json(
-          {
-            error:
-              "That site + business unit + department + section chain hasn't been mapped in Department set up yet.",
-          },
+          { error: "That parent hasn't been mapped yet." },
           { status: 400 },
         );
       }

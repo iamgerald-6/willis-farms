@@ -179,49 +179,60 @@ export default function CreateJobPostingPage() {
 
   // --- Org structure mapping set up (cascading Site -> Business unit ->
   // Department -> Section -> Position) — see Organizational structure ->
-  // Org structure mapping set up. A level whose mapping table is completely
-  // empty (nobody has mapped it yet) falls back to showing every item
-  // unrestricted, so this rolls out one level at a time without breaking
-  // postings that don't use it.
-  const businessUnitListType = orgFieldListTypes.find((lt) => lt.table_name === "business_units");
-  const departmentListType = orgFieldListTypes.find((lt) => lt.table_name === "departments");
-  const sectionListType = orgFieldListTypes.find((lt) => lt.table_name === "sections");
+  // Org structure mapping set up. That tool is fully general (any list can
+  // be added as a level, in any order, e.g. Salary could be mapped too),
+  // but Create job posting only ever treats these five as its always-shown,
+  // always-required, cascading fields — anything else added to the mapping
+  // chain is irrelevant here and simply ignored for this purpose. A level
+  // that hasn't been added at all yet, or has been added but has zero
+  // mappings under it, falls back to showing every item unrestricted, so
+  // this rolls out one level at a time without breaking postings that
+  // don't use it.
+  type MappingLevel = {
+    id: string;
+    position: number;
+    list_type_id: string;
+    list_type: { id: string; label: string; singular: string; table_name: string };
+  };
+  type MappingNode = { id: string; level_id: string; item_id: string; parent_node_id: string | null };
 
-  const { data: siteBuRows = [] } = useQuery<{ site_id: string; business_unit_id: string }[]>({
-    queryKey: ["org_mapping_site_business_units"],
-    queryFn: async () => (await api.get("/organizational-structure/mapping/site-business-units")).data.data,
+  const { data: mappingLevels = [] } = useQuery<MappingLevel[]>({
+    queryKey: ["org_mapping_levels_list"],
+    queryFn: async () => (await api.get("/organizational-structure/mapping-levels")).data.data,
     enabled: !!canView,
   });
-  const { data: buDeptRows = [] } = useQuery<
-    { site_id: string; business_unit_id: string; department_id: string }[]
-  >({
-    queryKey: ["org_mapping_business_unit_departments"],
-    queryFn: async () =>
-      (await api.get("/organizational-structure/mapping/business-unit-departments")).data.data,
+  const { data: mappingNodes = [] } = useQuery<MappingNode[]>({
+    queryKey: ["org_mapping_nodes_list"],
+    queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
     enabled: !!canView,
   });
-  const { data: deptSectionRows = [] } = useQuery<
-    { site_id: string; business_unit_id: string; department_id: string; section_id: string }[]
-  >({
-    queryKey: ["org_mapping_department_sections"],
-    queryFn: async () =>
-      (await api.get("/organizational-structure/mapping/department-sections")).data.data,
-    enabled: !!canView,
-  });
-  const { data: sectionPositionRows = [] } = useQuery<
-    {
-      site_id: string;
-      business_unit_id: string;
-      department_id: string;
-      section_id: string;
-      position_id: string;
-    }[]
-  >({
-    queryKey: ["org_mapping_section_positions"],
-    queryFn: async () =>
-      (await api.get("/organizational-structure/mapping/section-positions")).data.data,
-    enabled: !!canView,
-  });
+
+  function chainLevel(tableName: string): MappingLevel | undefined {
+    return mappingLevels.find((l) => l.list_type.table_name === tableName);
+  }
+
+  /** The mapping node representing the currently-selected item at `tableName` (one of the
+   * five required fields), resolved by walking the chain from Site down — undefined if
+   * that field isn't mapped at all, hasn't been picked yet, or the picked combination
+   * isn't actually mapped. "sites" is always anchored to its own ROOT node (parent_node_id
+   * null) regardless of whatever else may exist in the wider mapping system. */
+  function resolvedNodeIdForRequiredField(tableName: string): string | undefined {
+    const level = chainLevel(tableName);
+    if (!level) return undefined;
+    const lt = orgFieldListTypes.find((o) => o.table_name === tableName);
+    if (!lt) return undefined;
+    const itemId = orgFieldValues[lt.job_posting_column];
+    if (!itemId) return undefined;
+
+    const idx = CHAIN_TABLE_ORDER.indexOf(tableName);
+    const parentNodeId =
+      idx <= 0 ? null : resolvedNodeIdForRequiredField(CHAIN_TABLE_ORDER[idx - 1]) ?? undefined;
+    if (parentNodeId === undefined) return undefined;
+
+    return mappingNodes.find(
+      (n) => n.level_id === level.id && n.item_id === itemId && n.parent_node_id === parentNodeId,
+    )?.id;
+  }
 
   // Site is always first; Business unit/Department/Section/Position follow
   // it in that order, then every other org-structure field keeps its
@@ -256,77 +267,21 @@ export default function CreateJobPostingPage() {
   ): OrgCustomListItem[] {
     if (tableName === "sites") return items;
 
-    if (tableName === "business_units") {
-      if (siteBuRows.length === 0) return items;
-      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
-      if (!siteId) return [];
-      const ids = new Set(
-        siteBuRows.filter((r) => r.site_id === siteId).map((r) => r.business_unit_id),
-      );
-      return items.filter((i) => ids.has(i.id));
-    }
+    const level = chainLevel(tableName);
+    if (!level) return items;
 
-    if (tableName === "departments") {
-      if (buDeptRows.length === 0) return items;
-      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
-      const buId = businessUnitListType
-        ? orgFieldValues[businessUnitListType.job_posting_column]
-        : "";
-      if (!siteId || !buId) return [];
-      const ids = new Set(
-        buDeptRows
-          .filter((r) => r.site_id === siteId && r.business_unit_id === buId)
-          .map((r) => r.department_id),
-      );
-      return items.filter((i) => ids.has(i.id));
-    }
+    const levelNodes = mappingNodes.filter((n) => n.level_id === level.id);
+    if (levelNodes.length === 0) return items;
 
-    if (tableName === "sections") {
-      if (deptSectionRows.length === 0) return items;
-      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
-      const buId = businessUnitListType
-        ? orgFieldValues[businessUnitListType.job_posting_column]
-        : "";
-      const deptId = departmentListType
-        ? orgFieldValues[departmentListType.job_posting_column]
-        : "";
-      if (!siteId || !buId || !deptId) return [];
-      const ids = new Set(
-        deptSectionRows
-          .filter(
-            (r) => r.site_id === siteId && r.business_unit_id === buId && r.department_id === deptId,
-          )
-          .map((r) => r.section_id),
-      );
-      return items.filter((i) => ids.has(i.id));
-    }
+    const idx = CHAIN_TABLE_ORDER.indexOf(tableName);
+    const parentTable = CHAIN_TABLE_ORDER[idx - 1];
+    const parentNodeId = resolvedNodeIdForRequiredField(parentTable);
+    if (parentNodeId === undefined) return [];
 
-    if (tableName === "custom_position") {
-      if (sectionPositionRows.length === 0) return items;
-      const siteId = siteListType ? orgFieldValues[siteListType.job_posting_column] : "";
-      const buId = businessUnitListType
-        ? orgFieldValues[businessUnitListType.job_posting_column]
-        : "";
-      const deptId = departmentListType
-        ? orgFieldValues[departmentListType.job_posting_column]
-        : "";
-      const sectionId = sectionListType ? orgFieldValues[sectionListType.job_posting_column] : "";
-      if (!siteId || !buId || !deptId || !sectionId) return [];
-      const ids = new Set(
-        sectionPositionRows
-          .filter(
-            (r) =>
-              r.site_id === siteId &&
-              r.business_unit_id === buId &&
-              r.department_id === deptId &&
-              r.section_id === sectionId,
-          )
-          .map((r) => r.position_id),
-      );
-      return items.filter((i) => ids.has(i.id));
-    }
-
-    return items;
+    const ids = new Set(
+      levelNodes.filter((n) => n.parent_node_id === parentNodeId).map((n) => n.item_id),
+    );
+    return items.filter((i) => ids.has(i.id));
   }
 
   // --- Postings list ---

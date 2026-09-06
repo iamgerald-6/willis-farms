@@ -5,7 +5,7 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 
-/** DELETE — remove a Business unit set up mapping row. Cascades down the chain. */
+/** DELETE — remove a level from the mapping chain entirely. Cascades to every mapping node at this level, and (via those nodes' own on-delete-cascade) everything mapped underneath it too. */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -23,7 +23,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
-    const { error } = await supabase.from("org_business_unit_departments").delete().eq("id", id);
+    const { error } = await supabase.from("org_mapping_levels").delete().eq("id", id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
