@@ -171,6 +171,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: createTableError.message }, { status: 500 });
     }
 
+    // Give this list its own real foreign key column on job_postings, so a
+    // posting can reference one row from it — same "job_posting_column"
+    // every list gets, base or custom. Column name derived from the
+    // singular (e.g. "business unit" -> "business_unit_id"), with a
+    // numeric suffix on collision, same convention as mapping table
+    // column names used to follow.
+    const baseColumn = `${slugifyLabel(singular)}_id`;
+    let jobPostingColumn = baseColumn;
+    let colSuffix = 2;
+    for (;;) {
+      const { data: collision } = await supabase
+        .from("org_custom_list_types")
+        .select("id")
+        .eq("job_posting_column", jobPostingColumn)
+        .maybeSingle();
+      if (!collision) break;
+      jobPostingColumn = `${baseColumn}_${colSuffix}`;
+      colSuffix += 1;
+    }
+
+    const { error: addColumnError } = await supabase.rpc("add_job_posting_org_column", {
+      p_column_name: jobPostingColumn,
+      p_referenced_table: tableName,
+    });
+    if (addColumnError) {
+      // Roll back the table we just created — nothing should be left
+      // behind if the job_postings column can't be added.
+      await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
+      return NextResponse.json({ error: addColumnError.message }, { status: 500 });
+    }
+
     const { data, error } = await supabase
       .from("org_custom_list_types")
       .insert([
@@ -184,14 +215,16 @@ export async function POST(req: NextRequest) {
           numeric_range_mode: numericRangeMode,
           fields,
           sort_order: count ?? 0,
+          job_posting_column: jobPostingColumn,
         },
       ])
       .select()
       .single();
 
     if (error) {
-      // Metadata insert failed after the table was already created —
-      // clean up so we don't leave an orphaned table with no registry entry.
+      // Metadata insert failed after the table and column were already
+      // created — clean up so nothing orphaned is left behind.
+      await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingColumn });
       await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
       if (error.code === "23505") {
         return NextResponse.json(

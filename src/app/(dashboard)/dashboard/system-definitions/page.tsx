@@ -553,10 +553,10 @@ export default function SystemDefinitionsPage() {
   const orgStructureActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/organizational-structure",
   );
-  const mappingSetupActive = !!pathname?.startsWith(
-    "/dashboard/system-definitions/organizational-structure/mapping-setup",
+  const createJobPostingActive = !!pathname?.startsWith(
+    "/dashboard/system-definitions/create-job-posting",
   );
-  const setupActive = orgStructureActive && !mappingSetupActive;
+  const setupActive = orgStructureActive;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
@@ -739,14 +739,14 @@ export default function SystemDefinitionsPage() {
                       Organizational structure set up
                     </Link>
                     <Link
-                      href="/dashboard/system-definitions/organizational-structure/mapping-setup"
+                      href="/dashboard/system-definitions/create-job-posting"
                       className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        mappingSetupActive
+                        createJobPostingActive
                           ? "bg-red-50 text-red-600"
                           : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                       }`}
                     >
-                      Organizational structure mapping set up
+                      Create job posting
                     </Link>
                   </div>
                 )}

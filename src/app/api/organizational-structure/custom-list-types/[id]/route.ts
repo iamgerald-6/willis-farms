@@ -5,7 +5,6 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
-import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 
 /**
  * PATCH — rename a custom list. Only `label` (and the `singular` derived
@@ -62,11 +61,10 @@ export async function PATCH(
 }
 
 /**
- * DELETE — remove a custom list type: drops any mapping groups that link
- * to it (their own tables too, same as deleting a mapping group directly),
- * then drops the list's own physical table, then its registry row.
- * Irreversible, same as deleting any of the fixed org structure lists'
- * underlying table would be.
+ * DELETE — remove a custom list type: drops its job_postings foreign key
+ * column first (so no column is left pointing at a table about to
+ * disappear), then the list's own physical table, then its registry row.
+ * Irreversible.
  */
 export async function DELETE(
   req: NextRequest,
@@ -101,29 +99,12 @@ export async function DELETE(
     }
     const config = listType as OrgCustomListType;
 
-    const { data: dependentGroups, error: dependentGroupsError } = await supabase
-      .from("org_mapping_groups")
-      .select("*")
-      .or(`parent_list_key.eq.${id},child_list_key.eq.${id}`);
-
-    if (dependentGroupsError) {
-      return NextResponse.json({ error: dependentGroupsError.message }, { status: 500 });
-    }
-
-    for (const group of (dependentGroups ?? []) as OrgMappingGroup[]) {
-      const { error: dropMappingTableError } = await supabase.rpc(
-        "drop_org_dynamic_mapping_table",
-        { p_table_name: group.table_name },
-      );
-      if (dropMappingTableError) {
-        return NextResponse.json({ error: dropMappingTableError.message }, { status: 500 });
-      }
-      const { error: deleteGroupError } = await supabase
-        .from("org_mapping_groups")
-        .delete()
-        .eq("id", group.id);
-      if (deleteGroupError) {
-        return NextResponse.json({ error: deleteGroupError.message }, { status: 500 });
+    if (config.job_posting_column) {
+      const { error: dropColumnError } = await supabase.rpc("drop_job_posting_org_column", {
+        p_column_name: config.job_posting_column,
+      });
+      if (dropColumnError) {
+        return NextResponse.json({ error: dropColumnError.message }, { status: 500 });
       }
     }
 

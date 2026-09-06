@@ -50,6 +50,13 @@ export type OrgCustomListType = {
   updated_at: string;
   /** Present on the list returned by GET /custom-list-types — item count for the Set up hub table. */
   item_count?: number;
+  /**
+   * Name of the real foreign key column on job_postings that points at
+   * this list's table (e.g. "site_id"), set up by
+   * docs/organizational-structure/job-postings-org-fields.sql. Null only
+   * transiently, if the column failed to create.
+   */
+  job_posting_column: string | null;
 };
 
 /**

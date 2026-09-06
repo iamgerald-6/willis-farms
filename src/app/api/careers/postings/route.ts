@@ -14,6 +14,7 @@ import {
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
 } from "@/lib/careers/jobPostingDb";
+import { extractOrgFieldUpdates, fetchOrgFieldOptions } from "@/lib/careers/jobPostingOrgFields";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -101,6 +102,12 @@ export async function POST(req: NextRequest) {
       by: actor,
     };
 
+    const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
+    const orgFieldUpdates = extractOrgFieldUpdates(
+      body as unknown as Record<string, unknown>,
+      orgFieldOptions,
+    );
+
     const { data, error } = await insertJobPostingWithColumnFallback(supabaseAdmin, {
       slug,
       job_title_key: option.key,
@@ -123,6 +130,7 @@ export async function POST(req: NextRequest) {
       status,
       is_active: status === "published",
       history: [openingEntry],
+      ...orgFieldUpdates,
     });
 
     if (error) {

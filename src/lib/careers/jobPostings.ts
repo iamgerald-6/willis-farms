@@ -46,7 +46,7 @@ export interface PostingHistoryEntry {
   by: PostingHistoryActor;
 }
 
-export interface JobPosting {
+export interface JobPostingBase {
   id: string;
   slug: string;
   job_title_key: string | null;
@@ -79,6 +79,17 @@ export interface JobPosting {
   /** Oldest first: opened/republished, then closed if it happened. */
   history?: PostingHistoryEntry[];
 }
+
+/**
+ * job_postings also carries one real FK column per Organizational Structure
+ * list (site_id, business_unit_id, department_id, etc.) — see
+ * docs/organizational-structure/job-postings-org-fields.sql. The set of
+ * columns isn't fixed (admins add/remove lists from Set up at any time), so
+ * this is a dynamic index signature rather than named fields — mirrors the
+ * pattern used for OrgCustomListItem in
+ * @/lib/organizationalStructureCustomLists.
+ */
+export type JobPosting = JobPostingBase & Record<string, unknown>;
 
 export type JobPostingInput = {
   job_title_key: string;

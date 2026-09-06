@@ -12,6 +12,7 @@ import {
   JOB_POSTINGS_MIGRATION_HINT,
   updateJobPostingWithColumnFallback,
 } from "@/lib/careers/jobPostingDb";
+import { extractOrgFieldUpdates, fetchOrgFieldOptions } from "@/lib/careers/jobPostingOrgFields";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -78,6 +79,9 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       updates.status = statusFromClosingDate(String(body.closes_at));
       updates.is_active = updates.status === "published";
     }
+
+    const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
+    Object.assign(updates, extractOrgFieldUpdates(body, orgFieldOptions));
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
