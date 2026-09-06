@@ -138,6 +138,66 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Shared collapsible sidebar section — one heading you can expand/collapse,
+ * revealing indented children underneath. Used for both Organizational
+ * structure (children are real routed Links) and any module-registry group
+ * rolled into COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS below (children
+ * are in-page module-select buttons) — same look and interaction either
+ * way, so the two stop being visually inconsistent with each other.
+ */
+function CollapsibleNavSection({
+  icon: Icon,
+  label,
+  active,
+  open,
+  onToggle,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const expanded = open || active;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
+          active
+            ? "bg-red-600 text-white shadow-sm"
+            : "text-gray-600 hover:bg-gray-50"
+        }`}
+      >
+        <Icon
+          className={`w-4 h-4 shrink-0 ${
+            active ? "text-white" : "text-gray-400"
+          }`}
+        />
+        <span className="flex-1 text-left truncate">{label}</span>
+        {expanded ? (
+          <ChevronDown
+            className={`w-3.5 h-3.5 shrink-0 ${
+              active ? "text-white/70" : "text-gray-400"
+            }`}
+          />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+        )}
+      </button>
+      {expanded && (
+        <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModuleDetail({
   module: m,
   canAdd,
@@ -546,10 +606,37 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
   "mod:system-definitions",
 ]);
 
+/** Organizational structure isn't a module-registry group (its two links are
+ * real routed pages, not in-page module selectors), so it needs its own key
+ * for the shared open/closed state below. */
+const ORG_STRUCTURE_SECTION_ID = "sys-def:organizational-structure";
+
+/**
+ * Which module-registry groups render as a collapsible section here (same
+ * look as Organizational structure) instead of the old flat list every
+ * group used to render as. Rolling this out one group at a time — add a
+ * group's id here when it's ready, no other code changes needed.
+ *
+ * This is intentionally separate from that group's own `sidebar.mode` in
+ * moduleRegistry/groups.ts, which drives the real app sidebar (a different
+ * surface, already collapsible there for some groups) — conflating the two
+ * would flip groups over here before they're actually ready.
+ */
+const COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS = new Set<string>([
+  "grp:human-capital",
+]);
+
 export default function SystemDefinitionsPage() {
   const pathname = usePathname();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [orgStructureOpen, setOrgStructureOpen] = useState(false);
+  const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
+  const toggleSectionOpen = (id: string) =>
+    setOpenSectionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const orgStructureActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/organizational-structure",
   );
@@ -699,92 +786,113 @@ export default function SystemDefinitionsPage() {
                   />
                   <span className="truncate">Audit log</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setOrgStructureOpen((prev) => !prev)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
-                    orgStructureActive
-                      ? "bg-red-600 text-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-50"
-                  }`}
+                <CollapsibleNavSection
+                  icon={Building2}
+                  label="Organizational structure"
+                  active={orgStructureActive || createJobPostingActive}
+                  open={openSectionIds.has(ORG_STRUCTURE_SECTION_ID)}
+                  onToggle={() => toggleSectionOpen(ORG_STRUCTURE_SECTION_ID)}
                 >
-                  <Building2
-                    className={`w-4 h-4 shrink-0 ${
-                      orgStructureActive ? "text-white" : "text-gray-400"
+                  <Link
+                    href="/dashboard/system-definitions/organizational-structure"
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      setupActive
+                        ? "bg-red-50 text-red-600"
+                        : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
                     }`}
-                  />
-                  <span className="flex-1 text-left truncate">
-                    Organizational structure
-                  </span>
-                  {orgStructureOpen || orgStructureActive ? (
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 shrink-0 ${
-                        orgStructureActive ? "text-white/70" : "text-gray-400"
-                      }`}
-                    />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                  )}
-                </button>
-                {(orgStructureOpen || orgStructureActive) && (
-                  <div className="mt-1 ml-3 pl-3 border-l-2 border-gray-100 space-y-0.5">
-                    <Link
-                      href="/dashboard/system-definitions/organizational-structure"
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        setupActive
-                          ? "bg-red-50 text-red-600"
-                          : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                      }`}
-                    >
-                      Organizational structure set up
-                    </Link>
-                    <Link
-                      href="/dashboard/system-definitions/create-job-posting"
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                        createJobPostingActive
-                          ? "bg-red-50 text-red-600"
-                          : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                      }`}
-                    >
-                      Create job posting
-                    </Link>
-                  </div>
-                )}
+                  >
+                    Organizational structure set up
+                  </Link>
+                  <Link
+                    href="/dashboard/system-definitions/create-job-posting"
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      createJobPostingActive
+                        ? "bg-red-50 text-red-600"
+                        : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                    }`}
+                  >
+                    Create job posting
+                  </Link>
+                </CollapsibleNavSection>
               </div>
               <div className="border-t border-gray-100 my-2" />
             </div>
-            {groupedModules.map(({ group, modules: groupModules }) => (
-              <div key={group.id}>
-                <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  {group.label}
-                </p>
-                <div className="space-y-0.5">
-                  {groupModules.map((m) => {
-                    const Icon = resolveNavIcon(m.sidebar.icon);
-                    const active = selectedModule?.id === m.id;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setSelectedModuleId(m.id)}
-                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
-                          active
-                            ? "bg-red-600 text-white shadow-sm"
-                            : "text-gray-600 hover:bg-gray-50"
-                        }`}
-                      >
-                        <Icon
-                          className={`w-4 h-4 shrink-0 ${
-                            active ? "text-white" : "text-gray-400"
+            {groupedModules.map(({ group, modules: groupModules }) => {
+              const isCollapsible = COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS.has(
+                group.id,
+              );
+              const groupActive = groupModules.some(
+                (m) => m.id === selectedModule?.id,
+              );
+
+              if (isCollapsible) {
+                const GroupIcon = resolveNavIcon(group.sidebar?.icon ?? "user-check");
+                return (
+                  <div key={group.id}>
+                    <CollapsibleNavSection
+                      icon={GroupIcon}
+                      label={group.label}
+                      active={groupActive}
+                      open={openSectionIds.has(group.id)}
+                      onToggle={() => toggleSectionOpen(group.id)}
+                    >
+                      {groupModules.map((m) => {
+                        const ModuleIcon = resolveNavIcon(m.sidebar.icon);
+                        const active = selectedModule?.id === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setSelectedModuleId(m.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                              active
+                                ? "bg-red-50 text-red-600"
+                                : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                            }`}
+                          >
+                            <ModuleIcon className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{m.label}</span>
+                          </button>
+                        );
+                      })}
+                    </CollapsibleNavSection>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={group.id}>
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                    {group.label}
+                  </p>
+                  <div className="space-y-0.5">
+                    {groupModules.map((m) => {
+                      const Icon = resolveNavIcon(m.sidebar.icon);
+                      const active = selectedModule?.id === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setSelectedModuleId(m.id)}
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-all text-left ${
+                            active
+                              ? "bg-red-600 text-white shadow-sm"
+                              : "text-gray-600 hover:bg-gray-50"
                           }`}
-                        />
-                        <span className="truncate">{m.label}</span>
-                      </button>
-                    );
-                  })}
+                        >
+                          <Icon
+                            className={`w-4 h-4 shrink-0 ${
+                              active ? "text-white" : "text-gray-400"
+                            }`}
+                          />
+                          <span className="truncate">{m.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </nav>
         </div>
 
