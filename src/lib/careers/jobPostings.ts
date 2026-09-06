@@ -78,6 +78,8 @@ export interface JobPostingBase {
   superseded_by?: string | null;
   /** Oldest first: opened/republished, then closed if it happened. */
   history?: PostingHistoryEntry[];
+  /** When set, this posting is archived — hidden from Recruitment and Create job posting's main table, reachable only from the Archive tab. Null means not archived. */
+  archived_at?: string | null;
 }
 
 /**

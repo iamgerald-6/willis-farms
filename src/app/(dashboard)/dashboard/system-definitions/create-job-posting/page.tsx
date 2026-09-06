@@ -186,13 +186,37 @@ export default function CreateJobPostingPage() {
     enabled: !!canView,
   });
 
+  // --- Active / Archive tab ---
+  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
+
   const sorted = useMemo(
     () =>
       [...postings]
-        .filter((p) => !p.superseded_by)
+        .filter((p) => !p.superseded_by && !p.archived_at)
         .sort((a, b) => +new Date(b.created_at as string) - +new Date(a.created_at as string)),
     [postings],
   );
+
+  const archived = useMemo(
+    () =>
+      [...postings]
+        .filter((p) => !!p.archived_at)
+        .sort((a, b) => +new Date(b.archived_at as string) - +new Date(a.archived_at as string)),
+    [postings],
+  );
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, archived: shouldArchive }: { id: string; archived: boolean }) => {
+      await api.patch(`/careers/postings/${id}`, { archived: shouldArchive });
+    },
+    onSuccess: (_data, variables) => {
+      toast.success(variables.archived ? "Posting archived." : "Posting unarchived.");
+      queryClient.invalidateQueries({ queryKey: ["job_postings"] });
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      toast.error(err?.response?.data?.error ?? "Could not update posting.");
+    },
+  });
 
   // --- Form state ---
   const [showForm, setShowForm] = useState(false);
@@ -444,7 +468,7 @@ export default function CreateJobPostingPage() {
             the Recruitment page.
           </p>
         </div>
-        {canAdd && (
+        {canAdd && activeTab === "active" && (
           <button
             type="button"
             onClick={() => (showForm ? resetForm() : openCreate())}
@@ -456,7 +480,34 @@ export default function CreateJobPostingPage() {
         )}
       </div>
 
-      {showForm && (
+      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 mb-5">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("active");
+            resetForm();
+          }}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "active" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
+          }`}
+        >
+          Active
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("archived");
+            resetForm();
+          }}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "archived" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
+          }`}
+        >
+          Archive{archived.length > 0 ? ` (${archived.length})` : ""}
+        </button>
+      </div>
+
+      {activeTab === "active" && showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <p className="text-sm font-semibold text-gray-800 mb-4">
             {editing ? "Edit job posting" : "New job posting"}
@@ -774,55 +825,114 @@ export default function CreateJobPostingPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {postingsLoading || listTypesLoading ? (
-          <div className="py-12 flex justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-          </div>
-        ) : sorted.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">
-            No job postings yet. Add one to show it on the public careers page.
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                <th className="px-4 py-2.5 font-medium">Title</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Closing date</th>
-                <th className="px-4 py-2.5 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((posting) => (
-                <tr key={posting.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2.5 text-gray-900">
-                    <p className="font-medium">{formatPublicJobTitle(posting.title)}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{posting.location}</p>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-600 border-gray-200">
-                      {JOB_POSTING_STATUS_LABELS[normalizePostingStatus(posting)]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-gray-500">{formatDate(posting.closes_at)}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => openEdit(posting)}
-                        className="text-xs font-medium text-red-700 hover:underline"
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </td>
+      {activeTab === "active" ? (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {postingsLoading || listTypesLoading ? (
+            <div className="py-12 flex justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-500">
+              No job postings yet. Add one to show it on the public careers page.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                  <th className="px-4 py-2.5 font-medium">Title</th>
+                  <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="px-4 py-2.5 font-medium">Closing date</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {sorted.map((posting) => (
+                  <tr key={posting.id} className="border-t border-gray-100">
+                    <td className="px-4 py-2.5 text-gray-900">
+                      <p className="font-medium">{formatPublicJobTitle(posting.title)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{posting.location}</p>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-600 border-gray-200">
+                        {JOB_POSTING_STATUS_LABELS[normalizePostingStatus(posting)]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">{formatDate(posting.closes_at)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      {canEdit && (
+                        <div className="inline-flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(posting)}
+                            className="text-xs font-medium text-red-700 hover:underline"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => archiveMutation.mutate({ id: posting.id, archived: true })}
+                            disabled={archiveMutation.isPending}
+                            className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-60"
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {postingsLoading ? (
+            <div className="py-12 flex justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : archived.length === 0 ? (
+            <div className="p-10 text-center text-sm text-gray-500">
+              No archived postings.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                  <th className="px-4 py-2.5 font-medium">Title</th>
+                  <th className="px-4 py-2.5 font-medium">Archived on</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archived.map((posting) => (
+                  <tr key={posting.id} className="border-t border-gray-100">
+                    <td className="px-4 py-2.5 text-gray-900">
+                      <p className="font-medium">{formatPublicJobTitle(posting.title)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{posting.location}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-500">
+                      {posting.archived_at ? formatDate(posting.archived_at) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => archiveMutation.mutate({ id: posting.id, archived: false })}
+                          disabled={archiveMutation.isPending}
+                          className="text-xs font-medium text-green-700 hover:underline disabled:opacity-60"
+                        >
+                          Unarchive
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }

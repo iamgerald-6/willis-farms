@@ -153,10 +153,12 @@ export default function CareersTab({ adminId }: { adminId: string }) {
   // Once a closed posting has been reopened as a new one, hide it here — it
   // would otherwise sit alongside its replacement looking like a duplicate.
   // Nothing is deleted; it's still reachable via its own applicants' pages.
+  // Archived postings are hidden here too — they're only reachable from
+  // the Archive tab under Create job posting.
   const sorted = useMemo(
     () =>
       postings
-        .filter((p) => !p.superseded_by)
+        .filter((p) => !p.superseded_by && !p.archived_at)
         .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     [postings],
   );

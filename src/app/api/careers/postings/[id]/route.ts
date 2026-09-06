@@ -80,6 +80,10 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       updates.is_active = updates.status === "published";
     }
 
+    if (typeof body.archived === "boolean") {
+      updates.archived_at = body.archived ? new Date().toISOString() : null;
+    }
+
     const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
     Object.assign(updates, extractOrgFieldUpdates(body, orgFieldOptions));
 
