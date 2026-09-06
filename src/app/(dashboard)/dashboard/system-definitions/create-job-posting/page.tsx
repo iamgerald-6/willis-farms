@@ -45,6 +45,12 @@ import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSe
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
+// The org structure mapping cascade (see Org structure mapping set up) —
+// Site is always first, then Business unit, Department, Section, Position
+// in that order. These five are always shown on Create job posting and
+// always required; every other org-structure field is opt-in per posting.
+const CHAIN_TABLE_ORDER = ["sites", "business_units", "departments", "sections", "custom_position"];
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
     day: "numeric",
@@ -220,13 +226,6 @@ export default function CreateJobPostingPage() {
   // Site is always first; Business unit/Department/Section/Position follow
   // it in that order, then every other org-structure field keeps its
   // existing relative order.
-  const CHAIN_TABLE_ORDER = [
-    "sites",
-    "business_units",
-    "departments",
-    "sections",
-    "custom_position",
-  ];
   const orderedOrgFieldListTypes = useMemo(() => {
     const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
       orgFieldListTypes.find((lt) => lt.table_name === tableName),
@@ -381,6 +380,14 @@ export default function CreateJobPostingPage() {
   // is_numeric_range lists (Age, Salary, ...), where a posting can pick
   // one value or a min/max range instead.
   const [orgFieldMode, setOrgFieldMode] = useState<Record<string, "single" | "range">>({});
+  // Site, Business unit, Department, Section, and Position (the mapping
+  // cascade — see Org structure mapping set up) are always on the form and
+  // always required, since the posting's title/location/interview-setup
+  // linkage all key off Position/Site. Every other org-structure list
+  // (Grade level, Employment Type, Age, Salary, future custom lists) is
+  // opt-in per posting — this tracks which of those the HR has chosen to
+  // add, by org_custom_list_types.id.
+  const [addedOrgFieldIds, setAddedOrgFieldIds] = useState<Set<string>>(new Set());
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
   // After Save, the form moves from the posting-details step to an
@@ -444,6 +451,7 @@ export default function CreateJobPostingPage() {
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
+    setAddedOrgFieldIds(new Set());
     setPostingStep("details");
     setInterviewPostingId(null);
   };
@@ -453,6 +461,7 @@ export default function CreateJobPostingPage() {
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
+    setAddedOrgFieldIds(new Set());
     setPostingStep("details");
     setInterviewPostingId(null);
     setShowForm(true);
@@ -478,6 +487,7 @@ export default function CreateJobPostingPage() {
     });
     const nextOrgValues: Record<string, string> = {};
     const nextOrgMode: Record<string, "single" | "range"> = {};
+    const nextAddedIds = new Set<string>();
     for (const lt of orgFieldListTypes) {
       const value = posting[lt.job_posting_column];
       if (typeof value === "string") nextOrgValues[lt.job_posting_column] = value;
@@ -494,9 +504,18 @@ export default function CreateJobPostingPage() {
         nextOrgMode[lt.id] =
           typeof minValue === "string" || typeof maxValue === "string" ? "range" : "single";
       }
+      // Site/Business unit/Department/Section/Position are always shown
+      // regardless of this set. Every other field that already has a saved
+      // value on this posting was clearly added before — keep it visible.
+      const hasValue =
+        typeof value === "string" || typeof minValue === "string" || typeof maxValue === "string";
+      if (hasValue && !CHAIN_TABLE_ORDER.includes(lt.table_name)) {
+        nextAddedIds.add(lt.id);
+      }
     }
     setOrgFieldValues(nextOrgValues);
     setOrgFieldMode(nextOrgMode);
+    setAddedOrgFieldIds(nextAddedIds);
     setShowForm(true);
   };
 
@@ -549,11 +568,14 @@ export default function CreateJobPostingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgFieldListTypes, orgFieldItemQueries, orgFieldValues]);
 
-  // Every active org-structure list is required on a job posting — a
+  // Site/Business unit/Department/Section/Position are always required.
+  // Every other org-structure field is only required once the HR has
+  // chosen to add it to this posting (see addedOrgFieldIds) — a
   // numeric-range list (e.g. Age) counts as filled in if either its single
   // value is set, or both its min and max are set, depending on which mode
   // it's currently in.
   const missingOrgFieldLabels = orgFieldListTypes
+    .filter((lt) => CHAIN_TABLE_ORDER.includes(lt.table_name) || addedOrgFieldIds.has(lt.id))
     .filter((lt) => {
       if (!lt.is_numeric_range) {
         return !orgFieldValues[lt.job_posting_column];
@@ -869,10 +891,47 @@ export default function CreateJobPostingPage() {
           {orgFieldListTypes.length > 0 && (
             <div className="mb-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Organizational structure — all fields required
+                Organizational structure
               </p>
+              <p className="text-xs text-gray-500 mb-3">
+                Site, Business unit, Department, Section, and Position are always required. Add
+                any other org-structure field this posting needs below.
+              </p>
+
+              {(() => {
+                const optionalNotAdded = orderedOrgFieldListTypes.filter(
+                  (lt) => !CHAIN_TABLE_ORDER.includes(lt.table_name) && !addedOrgFieldIds.has(lt.id),
+                );
+                if (optionalNotAdded.length === 0) return null;
+                return (
+                  <label className="block max-w-xs mb-3">
+                    <span className="text-xs font-medium text-gray-600">+ Add field</span>
+                    <select
+                      className={`${inputClass} mt-1`}
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) return;
+                        setAddedOrgFieldIds((prev) => new Set(prev).add(id));
+                      }}
+                    >
+                      <option value="">Choose a field to add…</option>
+                      {optionalNotAdded.map((lt) => (
+                        <option key={lt.id} value={lt.id}>
+                          {lt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })()}
+
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {orderedOrgFieldListTypes.map((lt) => {
+                {orderedOrgFieldListTypes
+                  .filter(
+                    (lt) => CHAIN_TABLE_ORDER.includes(lt.table_name) || addedOrgFieldIds.has(lt.id),
+                  )
+                  .map((lt) => {
                   const index = indexByListTypeId.get(lt.id) ?? -1;
                   const rawItems = orgFieldItemQueries[index]?.data ?? [];
                   const items = itemsForChainField(lt.table_name, rawItems);
@@ -914,10 +973,13 @@ export default function CreateJobPostingPage() {
                     </select>
                   );
 
+                  const isChainField = CHAIN_TABLE_ORDER.includes(lt.table_name);
+
                   return (
                     <div key={lt.id} className="block">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-gray-600">{lt.label} *</span>
+                        <div className="inline-flex items-center gap-1.5">
                         {canRange && (
                           <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[11px]">
                             <button
@@ -944,6 +1006,35 @@ export default function CreateJobPostingPage() {
                             </button>
                           </div>
                         )}
+                        {!isChainField && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddedOrgFieldIds((prev) => {
+                                const next = new Set(prev);
+                                next.delete(lt.id);
+                                return next;
+                              });
+                              setOrgFieldValues((prev) => {
+                                const next = { ...prev };
+                                delete next[lt.job_posting_column];
+                                if (lt.job_posting_min_column) delete next[lt.job_posting_min_column];
+                                if (lt.job_posting_max_column) delete next[lt.job_posting_max_column];
+                                return next;
+                              });
+                              setOrgFieldMode((prev) => {
+                                const next = { ...prev };
+                                delete next[lt.id];
+                                return next;
+                              });
+                            }}
+                            aria-label={`Remove ${lt.label}`}
+                            className="text-gray-400 hover:text-red-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        </div>
                       </div>
 
                       {!canRange || mode === "single" ? (
