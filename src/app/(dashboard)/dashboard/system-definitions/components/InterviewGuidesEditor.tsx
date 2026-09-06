@@ -898,19 +898,7 @@ export function ListEditor<T extends { id: string }>({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-800">{title}</p>
-        {allowEdit && (
-          <button
-            type="button"
-            onClick={() => onChange([...safeItems, onAdd()])}
-            className="inline-flex items-center gap-1 text-xs font-medium text-red-700"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add row
-          </button>
-        )}
-      </div>
+      <p className="text-sm font-medium text-gray-800">{title}</p>
       <div className="space-y-2">
         {safeItems.length === 0 && (
           <p className="text-sm text-gray-400 italic text-center py-4">No rows yet.</p>
@@ -929,6 +917,18 @@ export function ListEditor<T extends { id: string }>({
           </Fragment>
         ))}
       </div>
+      {/* Placed right after the rows, not above them, so adding another row
+          after scrolling down doesn't require scrolling back to the top. */}
+      {allowEdit && (
+        <button
+          type="button"
+          onClick={() => onChange([...safeItems, onAdd()])}
+          className="inline-flex items-center gap-1 text-xs font-medium text-red-700"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add row
+        </button>
+      )}
     </div>
   );
 }

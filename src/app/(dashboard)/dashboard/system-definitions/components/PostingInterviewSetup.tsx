@@ -85,6 +85,10 @@ export default function PostingInterviewSetup({
   const patchSetup = (patch: Partial<PostingInterviewSetupContent>) =>
     setSetup((prev) => ({ ...prev, ...patch }));
 
+  const tabOrder = Object.keys(TAB_LABELS) as TabId[];
+  const currentTabIndex = tabOrder.indexOf(activeTab);
+  const isLastTab = currentTabIndex === tabOrder.length - 1;
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const benchmarkError = validateInterviewBenchmarks(setup.benchmarks);
@@ -108,7 +112,6 @@ export default function PostingInterviewSetup({
     },
     onSuccess: () => {
       toast.success("Interview setup saved.");
-      onDone();
     },
     onError: (err: unknown) => {
       const message =
@@ -118,6 +121,22 @@ export default function PostingInterviewSetup({
       toast.error(message ?? "Could not save interview setup.");
     },
   });
+
+  // Each tab's own save button persists the full setup, then either moves
+  // on to the next tab or — on the last tab — returns to the postings
+  // table, so HR never has to jump back up to a single save button after
+  // filling in a page further down.
+  const handleTabSave = () => {
+    saveMutation.mutate(undefined, {
+      onSuccess: () => {
+        if (isLastTab) {
+          onDone();
+        } else {
+          setActiveTab(tabOrder[currentTabIndex + 1]);
+        }
+      },
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -579,12 +598,12 @@ export default function PostingInterviewSetup({
         <div className="flex justify-end pt-2 border-t border-gray-100">
           <button
             type="button"
-            onClick={() => saveMutation.mutate()}
+            onClick={handleTabSave}
             disabled={saveMutation.isPending}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
           >
             {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save and return to postings
+            {isLastTab ? "Save and return to postings" : "Save and continue"}
           </button>
         </div>
       )}
