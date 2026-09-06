@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -47,6 +47,18 @@ const TAB_LABELS: Record<TabId, string> = {
 
 export type PostingOverviewRow = { label: string; value: string };
 
+/** Everything "Reuse interview setup" copies in from another posting — the full Interview setup screen (Overview's Description/Recommended panel members/Approximate duration plus every other tab). */
+export type PostingInterviewReusePayload = {
+  description: string;
+  panelMembers: string;
+  durationMinutes: number | null;
+  setup: PostingInterviewSetupContent;
+};
+
+export type PostingInterviewSetupHandle = {
+  applyReuse: (payload: PostingInterviewReusePayload) => void;
+};
+
 type Props = {
   postingId: string;
   /** Read-only summary of this posting's own org-structure fields — Position, Sites, Business units, Departments/divisions, Sections, Grade levels, Employment Type (Salary, Salary Band, and Age are deliberately left out). */
@@ -60,16 +72,19 @@ type Props = {
   onDone: () => void;
 };
 
-export default function PostingInterviewSetup({
-  postingId,
-  overview,
-  initialDescription,
-  initialPanelMembers,
-  initialDurationMinutes,
-  initialInterviewSetup,
-  readOnly = false,
-  onDone,
-}: Props) {
+function PostingInterviewSetup(
+  {
+    postingId,
+    overview,
+    initialDescription,
+    initialPanelMembers,
+    initialDurationMinutes,
+    initialInterviewSetup,
+    readOnly = false,
+    onDone,
+  }: Props,
+  ref: React.ForwardedRef<PostingInterviewSetupHandle>,
+) {
   const allowEdit = !readOnly;
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -81,6 +96,20 @@ export default function PostingInterviewSetup({
   const [setup, setSetup] = useState<PostingInterviewSetupContent>(() =>
     normalizePostingInterviewSetup(initialInterviewSetup),
   );
+
+  // "Reuse interview setup" (in the parent page, next to the Active/Archive
+  // tabs) picks another posting and calls this to replace everything here —
+  // Overview included — with that posting's content. Editing/deleting/
+  // adding rows afterwards works exactly as normal.
+  useImperativeHandle(ref, () => ({
+    applyReuse: (payload) => {
+      setDescription(payload.description);
+      setPanelMembers(payload.panelMembers);
+      setDurationMinutes(payload.durationMinutes ?? "");
+      setSetup(payload.setup);
+      setActiveTab("overview");
+    },
+  }));
 
   const patchSetup = (patch: Partial<PostingInterviewSetupContent>) =>
     setSetup((prev) => ({ ...prev, ...patch }));
@@ -622,3 +651,5 @@ export default function PostingInterviewSetup({
     </div>
   );
 }
+
+export default forwardRef(PostingInterviewSetup);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -37,8 +37,10 @@ import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { SectionTextEditor } from "@/components/SectionTextEditor";
 import PostingInterviewSetup, {
+  type PostingInterviewSetupHandle,
   type PostingOverviewRow,
 } from "../components/PostingInterviewSetup";
+import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -230,6 +232,52 @@ export default function CreateJobPostingPage() {
   // returns, since there's no id before that).
   const [postingStep, setPostingStep] = useState<"details" | "interview">("details");
   const [interviewPostingId, setInterviewPostingId] = useState<string | null>(null);
+  const postingInterviewSetupRef = useRef<PostingInterviewSetupHandle>(null);
+  const [reuseSelection, setReuseSelection] = useState("");
+
+  // "Reuse interview setup" options — any posting (active or archived) that
+  // already has interview content filled in, one entry per title (the most
+  // recent posting wins when a title repeats — postings is already newest
+  // first), excluding whichever posting the Interview step is currently
+  // open for.
+  const reusablePostings = useMemo(() => {
+    const seenTitles = new Set<string>();
+    const options: { id: string; title: string }[] = [];
+    for (const p of postings) {
+      if (p.id === interviewPostingId) continue;
+      const hasOverviewContent =
+        !!p.interview_description?.trim() ||
+        !!p.interview_panel_members?.trim() ||
+        p.interview_duration_minutes != null;
+      const setup = normalizePostingInterviewSetup(p.interview_setup);
+      const hasSetupContent =
+        setup.screening.length > 0 ||
+        setup.questions.length > 0 ||
+        setup.scenarios.length > 0 ||
+        setup.disqualifiers.length > 0 ||
+        setup.extraStages.length > 0;
+      if (!hasOverviewContent && !hasSetupContent) continue;
+
+      const title = formatPublicJobTitle(p.title) || p.title;
+      if (!title || seenTitles.has(title)) continue;
+      seenTitles.add(title);
+      options.push({ id: p.id, title });
+    }
+    return options;
+  }, [postings, interviewPostingId]);
+
+  const handleReuseInterviewSetup = (sourcePostingId: string) => {
+    const source = postings.find((p) => p.id === sourcePostingId);
+    if (!source) return;
+    postingInterviewSetupRef.current?.applyReuse({
+      description: (source.interview_description as string | null) ?? "",
+      panelMembers: (source.interview_panel_members as string | null) ?? "",
+      durationMinutes: (source.interview_duration_minutes as number | null) ?? null,
+      setup: normalizePostingInterviewSetup(source.interview_setup),
+    });
+    toast.success(`Reused interview setup from "${formatPublicJobTitle(source.title)}".`);
+    setReuseSelection("");
+  };
 
   const resetForm = () => {
     setShowForm(false);
@@ -581,31 +629,52 @@ export default function CreateJobPostingPage() {
         )}
       </div>
 
-      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 mb-5">
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab("active");
-            resetForm();
-          }}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "active" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
-          }`}
-        >
-          Active
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab("archived");
-            resetForm();
-          }}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "archived" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
-          }`}
-        >
-          Archive{archived.length > 0 ? ` (${archived.length})` : ""}
-        </button>
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("active");
+              resetForm();
+            }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "active" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("archived");
+              resetForm();
+            }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "archived" ? "bg-red-600 text-white" : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            Archive{archived.length > 0 ? ` (${archived.length})` : ""}
+          </button>
+        </div>
+
+        {activeTab === "active" && showForm && postingStep === "interview" && canEdit && (
+          <select
+            value={reuseSelection}
+            onChange={(e) => {
+              const id = e.target.value;
+              setReuseSelection(id);
+              if (id) handleReuseInterviewSetup(id);
+            }}
+            className="h-9 rounded-lg border border-gray-200 px-3 text-sm text-gray-600 bg-white"
+          >
+            <option value="">Reuse interview setup…</option>
+            {reusablePostings.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.title}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {activeTab === "active" && showForm && postingStep === "interview" && interviewPostingId && (
@@ -616,6 +685,7 @@ export default function CreateJobPostingPage() {
             below.
           </p>
           <PostingInterviewSetup
+            ref={postingInterviewSetupRef}
             postingId={interviewPostingId}
             overview={interviewOverviewRows}
             initialDescription={editing?.interview_description as string | null | undefined}
