@@ -16,7 +16,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 export type LevelChainRow = {
-  position: number;
+  seq: number;
   level_id: string;
   column_name: string;
   ref_table: string;

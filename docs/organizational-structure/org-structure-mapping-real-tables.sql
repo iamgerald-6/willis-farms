@@ -47,7 +47,7 @@ alter table org_mapping_levels add column if not exists mapping_columns text[];
 -- that level needs. Used both by the one-time migration below and by the
 -- app every time a level is added or reparented.
 create or replace function org_mapping_level_chain(p_level_id uuid)
-returns table(position int, level_id uuid, column_name text, ref_table text) as $$
+returns table(seq int, level_id uuid, column_name text, ref_table text) as $$
   with recursive chain as (
     select l.id, l.parent_level_id, 0 as depth
     from org_mapping_levels l
@@ -58,14 +58,14 @@ returns table(position int, level_id uuid, column_name text, ref_table text) as 
     join chain c on p.id = c.parent_level_id
   )
   select
-    row_number() over (order by c.depth desc) as position,
+    row_number() over (order by c.depth desc) as seq,
     c.id as level_id,
     lt.job_posting_column as column_name,
     lt.table_name as ref_table
   from chain c
   join org_mapping_levels ml on ml.id = c.id
   join org_custom_list_types lt on lt.id = ml.list_type_id
-  order by position;
+  order by seq;
 $$ language sql stable;
 
 -- A mapping node's full ancestor chain (old shared-table model) — one
@@ -189,8 +189,8 @@ begin
       and l.table_name is null
   loop
     select
-      jsonb_agg(jsonb_build_object('column_name', column_name, 'ref_table', ref_table) order by position),
-      array_agg(column_name order by position)
+      jsonb_agg(jsonb_build_object('column_name', column_name, 'ref_table', ref_table) order by seq),
+      array_agg(column_name order by seq)
     into chain_cols, chain_names
     from org_mapping_level_chain(lvl.id);
 
@@ -217,7 +217,7 @@ begin
       col_names := '';
       col_values := '';
       for chain_row in
-        select cc.position, cc.level_id, cc.column_name
+        select cc.seq, cc.level_id, cc.column_name
         from org_mapping_level_chain(lvl.id) cc
       loop
         val := item_map ->> chain_row.level_id::text;
