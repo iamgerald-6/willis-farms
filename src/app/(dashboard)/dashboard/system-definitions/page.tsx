@@ -220,88 +220,161 @@ function getModuleSections(
   const Icon = resolveNavIcon(m.sidebar.icon);
   const group = getModuleGroupForModule(m);
 
+  // Overview bundles the module's basic info together with the three
+  // "standard" panels every module has — Dropdown options & categories,
+  // How records are shown, and What can be done here — rather than giving
+  // each its own sub-nav entry, since none of them are substantial enough
+  // on their own to warrant a separate click.
   sections.push({
     key: "overview",
     label: "Overview",
     icon: Icon,
     render: () => (
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
-            <Icon className="w-5 h-5 text-red-600" />
+      <div className="space-y-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+              <Icon className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold text-gray-900">{m.label}</h2>
+                {!m.enabled && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                    Turned off
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Part of: {group?.label ?? "General"}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-gray-900">{m.label}</h2>
-              {!m.enabled && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
-                  Turned off
+
+          <p className="text-xs text-gray-400 mt-3 mb-1.5">
+            What people can do here:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {m.supportedActions.map((a) => (
+              <span
+                key={a}
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[a]}`}
+              >
+                {ACTION_LABELS[a]}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <SectionCard
+          icon={Tag}
+          title="Dropdown options & categories"
+          description="The preset choices people can pick from in this section's forms and filters."
+        >
+          {(() => {
+            const editableRefs = (m.taxonomyRefs ?? []).filter((ref) =>
+              isEditableOptionList(m.id, registryRefToOptionList(ref)),
+            );
+            if (editableRefs.length === 0) {
+              return (
+                <EmptyRow>
+                  No editable dropdown lists for this section yet.
+                </EmptyRow>
+              );
+            }
+            return (
+              <div className="space-y-4">
+                {editableRefs.map((ref) => {
+                  const optionList = registryRefToOptionList(ref);
+                  return (
+                    <OptionsEditor
+                      key={ref}
+                      moduleId={m.id}
+                      optionList={optionList}
+                      title={humanizeKey(ref)}
+                      canAdd={canAdd}
+                      canEdit={canEdit}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </SectionCard>
+
+        <SectionCard
+          icon={ListChecks}
+          title="How records are shown"
+          description="What people see when they browse the list for this section."
+        >
+          {m.listView ? (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Shown as:{" "}
+                <span className="font-medium text-gray-700">
+                  {m.listView.type === "table" ? "a table" : "a grid of cards"}
                 </span>
+                {m.listView.mobileFallback && (
+                  <> · On phones: cards</>
+                )}
+              </p>
+              {m.listView.columns && m.listView.columns.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1.5">
+                    Columns shown:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {m.listView.columns
+                      .filter((c) => c.label)
+                      .map((c) => (
+                        <span
+                          key={c.id}
+                          className="px-2.5 py-1 rounded-lg text-xs bg-gray-50 text-gray-600 border border-gray-200"
+                        >
+                          {c.label}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {m.listView.filters && m.listView.filters.length > 0 && (
+                <p className="text-xs text-gray-400">
+                  Ways to narrow the list:{" "}
+                  {m.listView.filters.map(filterLabel).join(", ")}
+                </p>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Part of: {group?.label ?? "General"}
-            </p>
-          </div>
-        </div>
+          ) : (
+            <EmptyRow>No list display set up for this section.</EmptyRow>
+          )}
+        </SectionCard>
 
-        <p className="text-xs text-gray-400 mt-3 mb-1.5">
-          What people can do here:
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {m.supportedActions.map((a) => (
-            <span
-              key={a}
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[a]}`}
-            >
-              {ACTION_LABELS[a]}
-            </span>
-          ))}
-        </div>
+        <SectionCard
+          icon={ToggleRight}
+          title="What can be done here"
+          description="Each action and the permission someone needs to use it."
+        >
+          {m.features && m.features.length > 0 ? (
+            <ul className="space-y-1.5">
+              {m.features.map((f) => (
+                <li
+                  key={f.id}
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <span className="text-gray-700">{f.label}</span>
+                  <span className="text-gray-400">
+                    {Object.keys(f.requires)
+                      .map((k) => ACTION_LABELS[k as PermissionAction])
+                      .join(", ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyRow>No specific actions listed for this section.</EmptyRow>
+          )}
+        </SectionCard>
       </div>
-    ),
-  });
-
-  sections.push({
-    key: "dropdown-options",
-    label: "Dropdown options & categories",
-    icon: Tag,
-    render: () => (
-      <SectionCard
-        icon={Tag}
-        title="Dropdown options & categories"
-        description="The preset choices people can pick from in this section's forms and filters."
-      >
-        {(() => {
-          const editableRefs = (m.taxonomyRefs ?? []).filter((ref) =>
-            isEditableOptionList(m.id, registryRefToOptionList(ref)),
-          );
-          if (editableRefs.length === 0) {
-            return (
-              <EmptyRow>
-                No editable dropdown lists for this section yet.
-              </EmptyRow>
-            );
-          }
-          return (
-            <div className="space-y-4">
-              {editableRefs.map((ref) => {
-                const optionList = registryRefToOptionList(ref);
-                return (
-                  <OptionsEditor
-                    key={ref}
-                    moduleId={m.id}
-                    optionList={optionList}
-                    title={humanizeKey(ref)}
-                    canAdd={canAdd}
-                    canEdit={canEdit}
-                  />
-                );
-              })}
-            </div>
-          );
-        })()}
-      </SectionCard>
     ),
   });
 
@@ -321,93 +394,6 @@ function getModuleSections(
       ),
     });
   }
-
-  sections.push({
-    key: "list-view",
-    label: "How records are shown",
-    icon: ListChecks,
-    render: () => (
-      <SectionCard
-        icon={ListChecks}
-        title="How records are shown"
-        description="What people see when they browse the list for this section."
-      >
-        {m.listView ? (
-          <div className="space-y-3">
-            <p className="text-xs text-gray-500">
-              Shown as:{" "}
-              <span className="font-medium text-gray-700">
-                {m.listView.type === "table" ? "a table" : "a grid of cards"}
-              </span>
-              {m.listView.mobileFallback && (
-                <> · On phones: cards</>
-              )}
-            </p>
-            {m.listView.columns && m.listView.columns.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-400 mb-1.5">
-                  Columns shown:
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {m.listView.columns
-                    .filter((c) => c.label)
-                    .map((c) => (
-                      <span
-                        key={c.id}
-                        className="px-2.5 py-1 rounded-lg text-xs bg-gray-50 text-gray-600 border border-gray-200"
-                      >
-                        {c.label}
-                      </span>
-                    ))}
-                </div>
-              </div>
-            )}
-            {m.listView.filters && m.listView.filters.length > 0 && (
-              <p className="text-xs text-gray-400">
-                Ways to narrow the list:{" "}
-                {m.listView.filters.map(filterLabel).join(", ")}
-              </p>
-            )}
-          </div>
-        ) : (
-          <EmptyRow>No list display set up for this section.</EmptyRow>
-        )}
-      </SectionCard>
-    ),
-  });
-
-  sections.push({
-    key: "features",
-    label: "What can be done here",
-    icon: ToggleRight,
-    render: () => (
-      <SectionCard
-        icon={ToggleRight}
-        title="What can be done here"
-        description="Each action and the permission someone needs to use it."
-      >
-        {m.features && m.features.length > 0 ? (
-          <ul className="space-y-1.5">
-            {m.features.map((f) => (
-              <li
-                key={f.id}
-                className="flex items-center justify-between gap-3 text-xs"
-              >
-                <span className="text-gray-700">{f.label}</span>
-                <span className="text-gray-400">
-                  {Object.keys(f.requires)
-                    .map((k) => ACTION_LABELS[k as PermissionAction])
-                    .join(", ")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyRow>No specific actions listed for this section.</EmptyRow>
-        )}
-      </SectionCard>
-    ),
-  });
 
   if (isEditableApplicationFormModule(m.id)) {
     sections.push({
