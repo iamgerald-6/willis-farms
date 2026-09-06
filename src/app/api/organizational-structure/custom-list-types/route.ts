@@ -152,10 +152,13 @@ export async function POST(req: NextRequest) {
       .from("org_custom_list_types")
       .select("id", { count: "exact", head: true });
 
-    // Naive singular: strip a trailing "s". Good enough for the "Add ___"
-    // button text; admins can't rename it after creation (same as `code`
-    // on the fixed lists).
-    const singular = label.trim().replace(/s$/i, "") || label.trim();
+    // No singularization — a naive "strip a trailing s" guess (e.g. for
+    // "Add ___" button text) mangled words like "Status", "Series", or
+    // "Business" that already end in "s" without being plural. Using the
+    // label as-is means "Add Sites" instead of "Add Site", but it's never
+    // wrong, unlike the guess. Admins can't rename it after creation (same
+    // as `code` on the fixed lists).
+    const singular = label.trim();
     const code = slugifyLabel(label);
     const tableName = `custom_${code}`;
 
