@@ -53,18 +53,7 @@ function formatDate(iso: string) {
   });
 }
 
-function resolvePostingJobTitleKey(
-  posting: JobPosting,
-  options: JobPostingOption[],
-): string {
-  if (posting.job_title_key) return posting.job_title_key;
-  const byTitle = options.find((o) => o.label === posting.title);
-  return byTitle?.key ?? "";
-}
-
 type FormState = {
-  job_title_key: string;
-  location: string;
   employment_type: string;
   description: string;
   role_scope: string;
@@ -81,8 +70,6 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
-  job_title_key: "",
-  location: "Eastern Region, Ghana",
   employment_type: "Full-time",
   description: "",
   role_scope: "",
@@ -160,6 +147,16 @@ export default function CreateJobPostingPage() {
     })),
   });
 
+  // Position and Site drive title/interview-guide and location instead of
+  // their own separate fields — found by table_name since that never
+  // changes (unlike label, which an admin can rename).
+  const positionIndex = orgFieldListTypes.findIndex((lt) => lt.table_name === "custom_position");
+  const siteIndex = orgFieldListTypes.findIndex((lt) => lt.table_name === "sites");
+  const positionListType = positionIndex >= 0 ? orgFieldListTypes[positionIndex] : null;
+  const siteListType = siteIndex >= 0 ? orgFieldListTypes[siteIndex] : null;
+  const positionItems = positionIndex >= 0 ? orgFieldItemQueries[positionIndex]?.data ?? [] : [];
+  const siteItems = siteIndex >= 0 ? orgFieldItemQueries[siteIndex]?.data ?? [] : [];
+
   // --- Job title options + postings list ---
   const { data: jobPostingOptions = [] } = useQuery({
     queryKey: ["careers_job_postings"],
@@ -209,10 +206,7 @@ export default function CreateJobPostingPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({
-      ...emptyForm(),
-      job_title_key: jobPostingOptions[0]?.key ?? "",
-    });
+    setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
     setShowForm(true);
@@ -221,8 +215,6 @@ export default function CreateJobPostingPage() {
   const openEdit = (posting: JobPosting) => {
     setEditing(posting);
     setForm({
-      job_title_key: resolvePostingJobTitleKey(posting, jobPostingOptions),
-      location: posting.location,
       employment_type: posting.employment_type,
       description: posting.description,
       role_scope: posting.role_scope ?? "",
@@ -260,6 +252,27 @@ export default function CreateJobPostingPage() {
     setOrgFieldMode(nextOrgMode);
     setShowForm(true);
   };
+
+  // Title, job title key, and interview guide all come from the selected
+  // Position instead of their own field — matched to an existing job
+  // title option by label. Location comes from the selected Site's name
+  // and region, instead of its own free-text field.
+  const selectedPosition = positionListType
+    ? positionItems.find((p) => p.id === orgFieldValues[positionListType.job_posting_column])
+    : undefined;
+  const selectedSite = siteListType
+    ? siteItems.find((s) => s.id === orgFieldValues[siteListType.job_posting_column])
+    : undefined;
+
+  const matchedJobTitleOption = selectedPosition
+    ? jobPostingOptions.find(
+        (o) => o.label.trim().toLowerCase() === selectedPosition.label.trim().toLowerCase(),
+      )
+    : undefined;
+
+  const derivedLocation = selectedSite
+    ? [selectedSite.label, selectedSite.region].filter(Boolean).join(", ")
+    : "";
 
   const handleExtract = async () => {
     if (!form.jd_file_url) return;
@@ -332,8 +345,8 @@ export default function CreateJobPostingPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = {
-        job_title_key: form.job_title_key,
-        location: form.location.trim(),
+        job_title_key: matchedJobTitleOption?.key ?? "",
+        location: derivedLocation,
         employment_type: form.employment_type.trim(),
         summary: previewDescription(form.description.trim()),
         description: form.description.trim(),
@@ -559,31 +572,29 @@ export default function CreateJobPostingPage() {
 
           {/* Job posting fields */}
           <div className="space-y-4">
-            <label className="block">
-              <span className="text-xs font-medium text-gray-600">Job title *</span>
-              <select
-                className={`${inputClass} mt-1`}
-                value={form.job_title_key}
-                onChange={(e) => setForm((f) => ({ ...f, job_title_key: e.target.value }))}
-              >
-                <option value="">Select a job title…</option>
-                {jobPostingOptions.map((role) => (
-                  <option key={role.key} value={role.key}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {(selectedPosition || selectedSite) && (
+              <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-500 space-y-1">
+                {selectedPosition && (
+                  <p>
+                    Job title:{" "}
+                    <span className="font-medium text-gray-700">{selectedPosition.label}</span>
+                    {!matchedJobTitleOption && (
+                      <span className="text-red-600 ml-1">
+                        — no matching job title option found. Add "{selectedPosition.label}" as a
+                        job title under System Definitions before saving.
+                      </span>
+                    )}
+                  </p>
+                )}
+                {selectedSite && (
+                  <p>
+                    Location: <span className="font-medium text-gray-700">{derivedLocation}</span>
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-xs font-medium text-gray-600">Location</span>
-                <input
-                  className={`${inputClass} mt-1`}
-                  value={form.location}
-                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                />
-              </label>
               <label className="block">
                 <span className="text-xs font-medium text-gray-600">Employment type</span>
                 <input
@@ -735,7 +746,7 @@ export default function CreateJobPostingPage() {
             <button
               type="button"
               onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !form.job_title_key}
+              disabled={saveMutation.isPending || !matchedJobTitleOption || !selectedSite}
               className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
             >
               {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
