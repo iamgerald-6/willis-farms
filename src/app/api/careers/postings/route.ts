@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as JobPostingInput & {
       interview_guide_key?: string;
+      optional_org_field_order?: string[];
     };
     const summary = body.summary?.trim();
     const description = body.description?.trim();
@@ -163,6 +164,9 @@ export async function POST(req: NextRequest) {
       status,
       is_active: status === "published",
       history: [openingEntry],
+      optional_org_field_order: Array.isArray(body.optional_org_field_order)
+        ? body.optional_org_field_order
+        : [],
       ...orgFieldUpdates,
     });
 

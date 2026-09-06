@@ -91,6 +91,16 @@ export interface JobPostingBase {
   interview_duration_minutes?: number | null;
   /** Screening/questions/scenarios/evaluation/ratings/benchmarks/extra stages for this posting's own interview — see @/lib/careers/postingInterviewSetup. */
   interview_setup?: Record<string, unknown> | null;
+  /**
+   * Which optional org-structure fields (org_custom_list_types.id) this
+   * posting has, in the order the HR added them on Create job posting — not
+   * derived from each list's own sort_order, so a field always stays where
+   * it was put instead of jumping around by whichever list it belongs to.
+   * Site/Business unit/Department/Section/Position are never in here — they're
+   * always shown and always required. Null/absent on postings saved before
+   * this existed; those fall back to sort_order for their optional fields.
+   */
+  optional_org_field_order?: string[] | null;
 }
 
 /**

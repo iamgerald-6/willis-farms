@@ -448,7 +448,11 @@ export default function CreateJobPostingPage() {
     });
     const nextOrgValues: Record<string, string> = {};
     const nextOrgMode: Record<string, "single" | "range"> = {};
-    const nextAddedIds = new Set<string>();
+    // Every optional field currently holding a value, in each list's own
+    // sort_order — only used as a fallback below, for a populated field that
+    // isn't in the posting's saved add-order (e.g. a posting saved before
+    // optional_org_field_order existed).
+    const populatedIds = new Set<string>();
     for (const lt of orgFieldListTypes) {
       const value = posting[lt.job_posting_column];
       if (typeof value === "string") nextOrgValues[lt.job_posting_column] = value;
@@ -471,8 +475,23 @@ export default function CreateJobPostingPage() {
       const hasValue =
         typeof value === "string" || typeof minValue === "string" || typeof maxValue === "string";
       if (hasValue && !CHAIN_TABLE_ORDER.includes(lt.table_name)) {
-        nextAddedIds.add(lt.id);
+        populatedIds.add(lt.id);
       }
+    }
+    // Reopening for edit should show fields in the order the HR actually
+    // added them (saved on the posting), not wherever each field's own list
+    // happens to sort — otherwise a field like Salary, set up early in Org
+    // structure Set up, would always jump back to the front on every reopen
+    // regardless of when it was really added to this posting.
+    const storedOrder = Array.isArray(posting.optional_org_field_order)
+      ? (posting.optional_org_field_order as string[])
+      : [];
+    const nextAddedIds = new Set<string>();
+    for (const id of storedOrder) {
+      if (populatedIds.has(id)) nextAddedIds.add(id);
+    }
+    for (const id of populatedIds) {
+      if (!nextAddedIds.has(id)) nextAddedIds.add(id);
     }
     setOrgFieldValues(nextOrgValues);
     setOrgFieldMode(nextOrgMode);
@@ -648,6 +667,7 @@ export default function CreateJobPostingPage() {
         status: form.status,
         jd_file_url: form.jd_file_url,
         jd_file_public_id: form.jd_file_public_id,
+        optional_org_field_order: Array.from(addedOrgFieldIds),
         ...effectiveOrgFieldValues(),
       };
 

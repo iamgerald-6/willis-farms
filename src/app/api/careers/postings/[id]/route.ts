@@ -86,6 +86,11 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     if (body.interview_setup !== undefined) {
       updates.interview_setup = body.interview_setup ?? {};
     }
+    if (body.optional_org_field_order !== undefined) {
+      updates.optional_org_field_order = Array.isArray(body.optional_org_field_order)
+        ? body.optional_org_field_order
+        : [];
+    }
 
     if (body.status === "published" || body.status === "closed") {
       updates.status = body.status as JobPostingStatus;
