@@ -196,21 +196,35 @@ function CollapsibleNavSection({
   );
 }
 
-function ModuleDetail({
-  module: m,
-  canAdd,
-  canEdit,
-}: {
-  module: ModuleRecord;
-  canAdd: boolean;
-  canEdit: boolean;
-}) {
+type ModuleSection = {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  render: () => React.ReactNode;
+};
+
+/**
+ * Every section a module's detail view can show, in display order. Used
+ * two ways: ModuleDetail concatenates all of them (the whole-page view,
+ * still used for modules in a non-collapsible group), and — for modules in
+ * a COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS group — the sidebar lists
+ * these as a second-level sub-nav, and ModuleSectionDetail renders just the
+ * one picked.
+ */
+function getModuleSections(
+  m: ModuleRecord,
+  canAdd: boolean,
+  canEdit: boolean,
+): ModuleSection[] {
+  const sections: ModuleSection[] = [];
   const Icon = resolveNavIcon(m.sidebar.icon);
   const group = getModuleGroupForModule(m);
 
-  return (
-    <div className="space-y-4">
-      {/* Overview */}
+  sections.push({
+    key: "overview",
+    label: "Overview",
+    icon: Icon,
+    render: () => (
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
@@ -245,8 +259,14 @@ function ModuleDetail({
           ))}
         </div>
       </div>
+    ),
+  });
 
-      {/* Dropdown options — only lists editable in System Definitions */}
+  sections.push({
+    key: "dropdown-options",
+    label: "Dropdown options & categories",
+    icon: Tag,
+    render: () => (
       <SectionCard
         icon={Tag}
         title="Dropdown options & categories"
@@ -282,8 +302,15 @@ function ModuleDetail({
           );
         })()}
       </SectionCard>
+    ),
+  });
 
-      {isEditableLeavePolicyModule(m.id) && (
+  if (isEditableLeavePolicyModule(m.id)) {
+    sections.push({
+      key: "leave-policy",
+      label: "Leave policy",
+      icon: Settings2,
+      render: () => (
         <SectionCard
           icon={Settings2}
           title="Leave policy"
@@ -291,9 +318,15 @@ function ModuleDetail({
         >
           <LeavePolicyEditor moduleId={m.id} readOnly={!canEdit} />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {/* List view */}
+  sections.push({
+    key: "list-view",
+    label: "How records are shown",
+    icon: ListChecks,
+    render: () => (
       <SectionCard
         icon={ListChecks}
         title="How records are shown"
@@ -340,8 +373,14 @@ function ModuleDetail({
           <EmptyRow>No list display set up for this section.</EmptyRow>
         )}
       </SectionCard>
+    ),
+  });
 
-      {/* Features */}
+  sections.push({
+    key: "features",
+    label: "What can be done here",
+    icon: ToggleRight,
+    render: () => (
       <SectionCard
         icon={ToggleRight}
         title="What can be done here"
@@ -367,8 +406,15 @@ function ModuleDetail({
           <EmptyRow>No specific actions listed for this section.</EmptyRow>
         )}
       </SectionCard>
+    ),
+  });
 
-      {isEditableApplicationFormModule(m.id) && (
+  if (isEditableApplicationFormModule(m.id)) {
+    sections.push({
+      key: "application-form",
+      label: "Job application form",
+      icon: Rows3,
+      render: () => (
         <SectionCard
           icon={Rows3}
           title="Job application form"
@@ -380,9 +426,16 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {isEditableRefereeReferenceModule(m.id) && (
+  if (isEditableRefereeReferenceModule(m.id)) {
+    sections.push({
+      key: "referee-reference",
+      label: "Referee reference form",
+      icon: Rows3,
+      render: () => (
         <SectionCard
           icon={Rows3}
           title="Referee reference form"
@@ -395,9 +448,16 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {isEditableInterviewGuidesModule(m.id) && (
+  if (isEditableInterviewGuidesModule(m.id)) {
+    sections.push({
+      key: "interview",
+      label: "Interview",
+      icon: Rows3,
+      render: () => (
         <SectionCard
           icon={Rows3}
           title="Interview"
@@ -410,98 +470,138 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {isEditableOnboardingFormModule(m.id) && (
-        <>
-          <SectionCard
-            icon={Rows3}
-            title="Employee onboarding form"
-            description="Fields on the post-hire onboarding link sent to candidates. Add inputs, set type (text, select, phone, date, etc.), and conditional visibility."
-          >
-            <OnboardingFormEditor
+  if (isEditableOnboardingFormModule(m.id)) {
+    sections.push({
+      key: "onboarding-form",
+      label: "Employee onboarding form",
+      icon: Rows3,
+      render: () => (
+        <SectionCard
+          icon={Rows3}
+          title="Employee onboarding form"
+          description="Fields on the post-hire onboarding link sent to candidates. Add inputs, set type (text, select, phone, date, etc.), and conditional visibility."
+        >
+          <OnboardingFormEditor
+            moduleId={m.id}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      ),
+    });
+
+    sections.push({
+      key: "onboarding-hr-fields",
+      label: "HR onboarding — Section O",
+      icon: Rows3,
+      render: () => (
+        <SectionCard
+          icon={Rows3}
+          title="HR onboarding — Section O"
+          description="HR-only fields on the recruitment onboarding tab (not shown to candidates). Configure placement, employee ID, grade, and notes."
+        >
+          <OnboardingHrFieldsEditor
+            moduleId={m.id}
+            canAdd={canAdd}
+            canEdit={canEdit}
+          />
+        </SectionCard>
+      ),
+    });
+
+    sections.push({
+      key: "onboarding-dropdowns",
+      label: "HR onboarding dropdown lists",
+      icon: Tag,
+      render: () => (
+        <SectionCard
+          icon={Tag}
+          title="HR onboarding dropdown lists"
+          description="Work locations, departments, and employment types used in HR Section O."
+        >
+          <div className="space-y-4">
+            <OptionsEditor
               moduleId={m.id}
+              optionList={ONBOARDING_LOCATIONS_LIST}
+              title="Work locations"
               canAdd={canAdd}
               canEdit={canEdit}
             />
-          </SectionCard>
-
-          <SectionCard
-            icon={Rows3}
-            title="HR onboarding — Section O"
-            description="HR-only fields on the recruitment onboarding tab (not shown to candidates). Configure placement, employee ID, grade, and notes."
-          >
-            <OnboardingHrFieldsEditor
+            <OptionsEditor
               moduleId={m.id}
+              optionList={ONBOARDING_DEPARTMENTS_L1L6_LIST}
+              title="Departments (L1–L6 and junior grades)"
               canAdd={canAdd}
               canEdit={canEdit}
             />
-          </SectionCard>
+            <OptionsEditor
+              moduleId={m.id}
+              optionList={ONBOARDING_DEPARTMENTS_L7_LIST}
+              title="Departments (L7+ senior grades)"
+              canAdd={canAdd}
+              canEdit={canEdit}
+            />
+            <OptionsEditor
+              moduleId={m.id}
+              optionList={ONBOARDING_EMPLOYMENT_TYPES_LIST}
+              title="Employment types"
+              canAdd={canAdd}
+              canEdit={canEdit}
+            />
+            <OptionsEditor
+              moduleId={m.id}
+              optionList={ONBOARDING_MEDICAL_REPORTS_LIST}
+              title="Required medical reports"
+              description="Shown on the onboarding medical step and in the congratulations / onboarding email."
+              canAdd={canAdd}
+              canEdit={canEdit}
+            />
+          </div>
+        </SectionCard>
+      ),
+    });
 
-          <SectionCard
-            icon={Tag}
-            title="HR onboarding dropdown lists"
-            description="Work locations, departments, and employment types used in HR Section O."
-          >
-            <div className="space-y-4">
-              <OptionsEditor
-                moduleId={m.id}
-                optionList={ONBOARDING_LOCATIONS_LIST}
-                title="Work locations"
-                canAdd={canAdd}
-                canEdit={canEdit}
-              />
-              <OptionsEditor
-                moduleId={m.id}
-                optionList={ONBOARDING_DEPARTMENTS_L1L6_LIST}
-                title="Departments (L1–L6 and junior grades)"
-                canAdd={canAdd}
-                canEdit={canEdit}
-              />
-              <OptionsEditor
-                moduleId={m.id}
-                optionList={ONBOARDING_DEPARTMENTS_L7_LIST}
-                title="Departments (L7+ senior grades)"
-                canAdd={canAdd}
-                canEdit={canEdit}
-              />
-              <OptionsEditor
-                moduleId={m.id}
-                optionList={ONBOARDING_EMPLOYMENT_TYPES_LIST}
-                title="Employment types"
-                canAdd={canAdd}
-                canEdit={canEdit}
-              />
-              <OptionsEditor
-                moduleId={m.id}
-                optionList={ONBOARDING_MEDICAL_REPORTS_LIST}
-                title="Required medical reports"
-                description="Shown on the onboarding medical step and in the congratulations / onboarding email."
-                canAdd={canAdd}
-                canEdit={canEdit}
-              />
-            </div>
-          </SectionCard>
+    sections.push({
+      key: "company-email-domain",
+      label: "Company email domain",
+      icon: Settings2,
+      render: () => (
+        <SectionCard
+          icon={Settings2}
+          title="Company email domain"
+          description="Domain for HR-assigned company emails in Section O (e.g. willsfarms.com)."
+        >
+          <CompanyEmailDomainEditor moduleId={m.id} readOnly={!canEdit} />
+        </SectionCard>
+      ),
+    });
 
-          <SectionCard
-            icon={Settings2}
-            title="Company email domain"
-            description="Domain for HR-assigned company emails in Section O (e.g. willsfarms.com)."
-          >
-            <CompanyEmailDomainEditor moduleId={m.id} readOnly={!canEdit} />
-          </SectionCard>
+    sections.push({
+      key: "grade-levels",
+      label: "Grade levels & linked roles",
+      icon: Settings2,
+      render: () => (
+        <SectionCard
+          icon={Settings2}
+          title="Grade levels & linked roles"
+          description="L1–L7 are built in. Add L8 or higher with a job posting role (e.g. L1 → Junior Swine Technician)."
+        >
+          <GradeLevelsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
+        </SectionCard>
+      ),
+    });
+  }
 
-          <SectionCard
-            icon={Settings2}
-            title="Grade levels & linked roles"
-            description="L1–L7 are built in. Add L8 or higher with a job posting role (e.g. L1 → Junior Swine Technician)."
-          >
-            <GradeLevelsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
-          </SectionCard>
-        </>
-      )}
-
-      {isEditableCompetencySectionModule(m.id) && (
+  if (isEditableCompetencySectionModule(m.id)) {
+    sections.push({
+      key: "competency-sections",
+      label: "Competency sections",
+      icon: Rows3,
+      render: () => (
         <SectionCard
           icon={Rows3}
           title="Competency sections"
@@ -514,9 +614,16 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {isEditableRatingSectionModule(m.id) && (
+  if (isEditableRatingSectionModule(m.id)) {
+    sections.push({
+      key: "appraisal-scope",
+      label: "Appraisal scope",
+      icon: Settings2,
+      render: () => (
         <SectionCard
           icon={Settings2}
           title="Appraisal scope"
@@ -524,9 +631,14 @@ function ModuleDetail({
         >
           <AppraisalScopeEditor moduleId={m.id} readOnly={!canEdit} />
         </SectionCard>
-      )}
+      ),
+    });
 
-      {isEditableRatingSectionModule(m.id) && (
+    sections.push({
+      key: "rating-sections",
+      label: "Rating sections",
+      icon: Rows3,
+      render: () => (
         <SectionCard
           icon={Rows3}
           title="Rating sections"
@@ -539,9 +651,16 @@ function ModuleDetail({
             canEdit={canEdit}
           />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {isEditableBusinessLogicModule(m.id) && (
+  if (isEditableBusinessLogicModule(m.id)) {
+    sections.push({
+      key: "rating-weights",
+      label: "Rating section weights",
+      icon: Settings2,
+      render: () => (
         <SectionCard
           icon={Settings2}
           title="Rating section weights"
@@ -549,10 +668,16 @@ function ModuleDetail({
         >
           <SectionWeightsEditor moduleId={m.id} readOnly={!canEdit} />
         </SectionCard>
-      )}
+      ),
+    });
+  }
 
-      {/* Conditional business rules */}
-      {(isEditableBusinessLogicModule(m.id) || m.businessLogic.length > 0) && (
+  if (isEditableBusinessLogicModule(m.id) || m.businessLogic.length > 0) {
+    sections.push({
+      key: "extra-rules",
+      label: "Extra rules by grade",
+      icon: Settings2,
+      render: () => (
         <SectionCard
           icon={Settings2}
           title="Extra rules by grade"
@@ -580,9 +705,65 @@ function ModuleDetail({
             </ul>
           )}
         </SectionCard>
-      )}
+      ),
+    });
+  }
+
+  return sections;
+}
+
+/** Whole-page view — every section for this module, concatenated. Still
+ * used for modules in a non-collapsible group (General, Operations,
+ * System); collapsible-group modules use ModuleSectionDetail instead, one
+ * section at a time, picked from the sidebar's sub-nav. */
+function ModuleDetail({
+  module: m,
+  canAdd,
+  canEdit,
+}: {
+  module: ModuleRecord;
+  canAdd: boolean;
+  canEdit: boolean;
+}) {
+  const sections = useMemo(
+    () => getModuleSections(m, canAdd, canEdit),
+    [m, canAdd, canEdit],
+  );
+  return (
+    <div className="space-y-4">
+      {sections.map((s) => (
+        <div key={s.key}>{s.render()}</div>
+      ))}
     </div>
   );
+}
+
+/** Renders just one of a module's sections — the collapsible-group
+ * counterpart to ModuleDetail above. */
+function ModuleSectionDetail({
+  module: m,
+  sectionKey,
+  canAdd,
+  canEdit,
+}: {
+  module: ModuleRecord;
+  sectionKey: string;
+  canAdd: boolean;
+  canEdit: boolean;
+}) {
+  const sections = useMemo(
+    () => getModuleSections(m, canAdd, canEdit),
+    [m, canAdd, canEdit],
+  );
+  const section = sections.find((s) => s.key === sectionKey) ?? sections[0];
+  if (!section) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
+        Nothing to show yet.
+      </div>
+    );
+  }
+  return <div className="space-y-4">{section.render()}</div>;
 }
 
 const AUDIT_LOG_ID = "__audit_log__";
@@ -617,6 +798,10 @@ const COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS = new Set<string>([
 export default function SystemDefinitionsPage() {
   const pathname = usePathname();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  // Only meaningful when the selected module belongs to a collapsible group
+  // (see COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS) — which of that
+  // module's own sections (Job application form, Interview, ...) is picked.
+  const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null);
   const [openSectionIds, setOpenSectionIds] = useState<Set<string>>(new Set());
   const toggleSectionOpen = (id: string) =>
     setOpenSectionIds((prev) => {
@@ -705,6 +890,13 @@ export default function SystemDefinitionsPage() {
     if (selectedModuleId === AUDIT_LOG_ID) return null;
     return groupedModules[0]?.modules[0] ?? null;
   }, [modules, groupedModules, selectedModuleId]);
+
+  const selectedModuleIsSectioned = !!(
+    selectedModule &&
+    COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS.has(
+      getModuleGroupForModule(selectedModule)?.id ?? "",
+    )
+  );
 
   if (sessionLoading || usersLoading) {
     return (
@@ -826,21 +1018,43 @@ export default function SystemDefinitionsPage() {
                     >
                       {groupModules.map((m) => {
                         const ModuleIcon = resolveNavIcon(m.sidebar.icon);
-                        const active = selectedModule?.id === m.id;
+                        const moduleActive = selectedModule?.id === m.id;
+                        const moduleSections = getModuleSections(
+                          m,
+                          !!canAdd,
+                          !!canEdit,
+                        );
                         return (
-                          <button
+                          <CollapsibleNavSection
                             key={m.id}
-                            type="button"
-                            onClick={() => setSelectedModuleId(m.id)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
-                              active
-                                ? "bg-red-50 text-red-600"
-                                : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                            }`}
+                            icon={ModuleIcon}
+                            label={m.label}
+                            active={moduleActive}
+                            open={openSectionIds.has(m.id)}
+                            onToggle={() => toggleSectionOpen(m.id)}
                           >
-                            <ModuleIcon className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">{m.label}</span>
-                          </button>
+                            {moduleSections.map((s) => {
+                              const sectionActive =
+                                moduleActive && selectedSectionKey === s.key;
+                              return (
+                                <button
+                                  key={s.key}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedModuleId(m.id);
+                                    setSelectedSectionKey(s.key);
+                                  }}
+                                  className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-left ${
+                                    sectionActive
+                                      ? "bg-red-50 text-red-600"
+                                      : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                                  }`}
+                                >
+                                  <span className="truncate">{s.label}</span>
+                                </button>
+                              );
+                            })}
+                          </CollapsibleNavSection>
                         );
                       })}
                     </CollapsibleNavSection>
@@ -888,6 +1102,19 @@ export default function SystemDefinitionsPage() {
         <div className="flex-1 min-w-0 w-full">
           {showAuditLog ? (
             <AuditLogPanel />
+          ) : selectedModule && selectedModuleIsSectioned ? (
+            selectedSectionKey ? (
+              <ModuleSectionDetail
+                module={selectedModule}
+                sectionKey={selectedSectionKey}
+                canAdd={!!canAdd}
+                canEdit={!!canEdit}
+              />
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
+                Pick a section from {selectedModule.label} to view it here.
+              </div>
+            )
           ) : selectedModule ? (
             <ModuleDetail
               module={selectedModule}
