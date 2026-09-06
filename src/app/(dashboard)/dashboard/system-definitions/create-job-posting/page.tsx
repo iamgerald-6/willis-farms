@@ -36,8 +36,9 @@ import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { SectionTextEditor } from "@/components/SectionTextEditor";
-import InterviewGuidesEditor from "../components/InterviewGuidesEditor";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
+import PostingInterviewSetup, {
+  type PostingOverviewRow,
+} from "../components/PostingInterviewSetup";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -315,6 +316,32 @@ export default function CreateJobPostingPage() {
     ? [selectedSite.label, selectedSite.region].filter(Boolean).join(", ")
     : "";
 
+  // Read-only overview shown on the Interview step — an explicit allow-list
+  // by table_name (not exclusion), so Salary, Salary Band, Age, and any
+  // future custom list an admin adds never show up here even though they're
+  // required fields on the Details step.
+  const INTERVIEW_OVERVIEW_TABLE_NAMES = [
+    "custom_position",
+    "sites",
+    "business_units",
+    "departments",
+    "sections",
+    "grade_levels",
+    "custom_employment_type",
+  ];
+  const interviewOverviewRows: PostingOverviewRow[] = useMemo(() => {
+    return INTERVIEW_OVERVIEW_TABLE_NAMES.map((tableName) => {
+      const index = orgFieldListTypes.findIndex((lt) => lt.table_name === tableName);
+      if (index === -1) return null;
+      const lt = orgFieldListTypes[index];
+      const items = orgFieldItemQueries[index]?.data ?? [];
+      const selectedId = orgFieldValues[lt.job_posting_column];
+      const item = items.find((i) => i.id === selectedId);
+      return { label: lt.label, value: item?.label ?? "—" };
+    }).filter((row): row is PostingOverviewRow => row !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgFieldListTypes, orgFieldItemQueries, orgFieldValues]);
+
   // Every active org-structure list is required on a job posting — a
   // numeric-range list (e.g. Age) counts as filled in if either its single
   // value is set, or both its min and max are set, depending on which mode
@@ -539,28 +566,24 @@ export default function CreateJobPostingPage() {
         </button>
       </div>
 
-      {activeTab === "active" && showForm && postingStep === "interview" && (
+      {activeTab === "active" && showForm && postingStep === "interview" && interviewPostingId && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <p className="text-sm font-semibold text-gray-800 mb-1">Interview setup</p>
           <p className="text-xs text-gray-500 mb-4">
-            Posting saved. Next, set up the interview questions and scoring
-            for this role.
+            Posting saved. Set the interview details for this specific role
+            below.
           </p>
-          <InterviewGuidesEditor
-            moduleId={RECRUITMENT_MODULE_ID}
+          <PostingInterviewSetup
+            postingId={interviewPostingId}
+            overview={interviewOverviewRows}
+            initialDescription={editing?.interview_description as string | null | undefined}
+            initialPanelMembers={editing?.interview_panel_members as string | null | undefined}
+            initialDurationMinutes={
+              editing?.interview_duration_minutes as number | null | undefined
+            }
             readOnly={!canEdit}
-            canAdd={!!canAdd}
-            canEdit={!!canEdit}
+            onDone={resetForm}
           />
-          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-            >
-              Save and return to postings
-            </button>
-          </div>
         </div>
       )}
 

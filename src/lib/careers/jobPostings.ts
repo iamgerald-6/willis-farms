@@ -80,6 +80,15 @@ export interface JobPostingBase {
   history?: PostingHistoryEntry[];
   /** When set, this posting is archived — hidden from Recruitment and Create job posting's main table, reachable only from the Archive tab. Null means not archived. */
   archived_at?: string | null;
+  /**
+   * Per-posting interview setup, filled in on the Interview step right
+   * after Save (see create-job-posting/page.tsx and
+   * PostingInterviewSetup.tsx) — distinct from interview_guide_key, which
+   * points at the shared, grade-level interview guide library.
+   */
+  interview_description?: string | null;
+  interview_panel_members?: string | null;
+  interview_duration_minutes?: number | null;
 }
 
 /**

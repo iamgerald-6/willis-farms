@@ -64,6 +64,26 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       updates.jd_file_public_id = body.jd_file_public_id;
     }
 
+    // Per-posting interview setup — filled in on the Interview step right
+    // after Save, distinct from the shared grade-level interview guide
+    // library (interview_guide_key).
+    if (body.interview_description !== undefined) {
+      updates.interview_description = body.interview_description
+        ? String(body.interview_description).trim()
+        : null;
+    }
+    if (body.interview_panel_members !== undefined) {
+      updates.interview_panel_members = body.interview_panel_members
+        ? String(body.interview_panel_members).trim()
+        : null;
+    }
+    if (body.interview_duration_minutes !== undefined) {
+      updates.interview_duration_minutes =
+        body.interview_duration_minutes === null || body.interview_duration_minutes === ""
+          ? null
+          : Number(body.interview_duration_minutes);
+    }
+
     if (body.status === "published" || body.status === "closed") {
       updates.status = body.status as JobPostingStatus;
       updates.is_active = body.status === "published";
