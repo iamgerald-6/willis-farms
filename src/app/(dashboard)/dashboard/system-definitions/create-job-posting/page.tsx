@@ -54,7 +54,6 @@ function formatDate(iso: string) {
 }
 
 type FormState = {
-  employment_type: string;
   description: string;
   role_scope: string;
   key_responsibilities: string;
@@ -70,7 +69,6 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
-  employment_type: "Full-time",
   description: "",
   role_scope: "",
   key_responsibilities: "",
@@ -147,15 +145,23 @@ export default function CreateJobPostingPage() {
     })),
   });
 
-  // Position and Site drive title/interview-guide and location instead of
-  // their own separate fields — found by table_name since that never
-  // changes (unlike label, which an admin can rename).
+  // Position, Site, and Employment type drive title/interview-guide,
+  // location, and employment type instead of their own separate fields —
+  // found by table_name since that never changes (unlike label, which an
+  // admin can rename).
   const positionIndex = orgFieldListTypes.findIndex((lt) => lt.table_name === "custom_position");
   const siteIndex = orgFieldListTypes.findIndex((lt) => lt.table_name === "sites");
+  const employmentTypeIndex = orgFieldListTypes.findIndex(
+    (lt) => lt.table_name === "custom_employment_type",
+  );
   const positionListType = positionIndex >= 0 ? orgFieldListTypes[positionIndex] : null;
   const siteListType = siteIndex >= 0 ? orgFieldListTypes[siteIndex] : null;
+  const employmentTypeListType =
+    employmentTypeIndex >= 0 ? orgFieldListTypes[employmentTypeIndex] : null;
   const positionItems = positionIndex >= 0 ? orgFieldItemQueries[positionIndex]?.data ?? [] : [];
   const siteItems = siteIndex >= 0 ? orgFieldItemQueries[siteIndex]?.data ?? [] : [];
+  const employmentTypeItems =
+    employmentTypeIndex >= 0 ? orgFieldItemQueries[employmentTypeIndex]?.data ?? [] : [];
 
   // --- Job title options + postings list ---
   const { data: jobPostingOptions = [] } = useQuery({
@@ -215,7 +221,6 @@ export default function CreateJobPostingPage() {
   const openEdit = (posting: JobPosting) => {
     setEditing(posting);
     setForm({
-      employment_type: posting.employment_type,
       description: posting.description,
       role_scope: posting.role_scope ?? "",
       key_responsibilities: posting.key_responsibilities ?? "",
@@ -256,12 +261,19 @@ export default function CreateJobPostingPage() {
   // Title, job title key, and interview guide all come from the selected
   // Position instead of their own field — matched to an existing job
   // title option by label. Location comes from the selected Site's name
-  // and region, instead of its own free-text field.
+  // and region. Employment type comes from the selected Employment type
+  // item's label. None of these have their own free-text/select field
+  // anymore — all three are org-structure lists.
   const selectedPosition = positionListType
     ? positionItems.find((p) => p.id === orgFieldValues[positionListType.job_posting_column])
     : undefined;
   const selectedSite = siteListType
     ? siteItems.find((s) => s.id === orgFieldValues[siteListType.job_posting_column])
+    : undefined;
+  const selectedEmploymentType = employmentTypeListType
+    ? employmentTypeItems.find(
+        (e) => e.id === orgFieldValues[employmentTypeListType.job_posting_column],
+      )
     : undefined;
 
   const matchedJobTitleOption = selectedPosition
@@ -347,7 +359,7 @@ export default function CreateJobPostingPage() {
       const payload = {
         job_title_key: matchedJobTitleOption?.key ?? "",
         location: derivedLocation,
-        employment_type: form.employment_type.trim(),
+        employment_type: selectedEmploymentType?.label ?? "",
         summary: previewDescription(form.description.trim()),
         description: form.description.trim(),
         role_scope: form.role_scope,
@@ -572,7 +584,7 @@ export default function CreateJobPostingPage() {
 
           {/* Job posting fields */}
           <div className="space-y-4">
-            {(selectedPosition || selectedSite) && (
+            {(selectedPosition || selectedSite || selectedEmploymentType) && (
               <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs text-gray-500 space-y-1">
                 {selectedPosition && (
                   <p>
@@ -591,19 +603,14 @@ export default function CreateJobPostingPage() {
                     Location: <span className="font-medium text-gray-700">{derivedLocation}</span>
                   </p>
                 )}
+                {selectedEmploymentType && (
+                  <p>
+                    Employment type:{" "}
+                    <span className="font-medium text-gray-700">{selectedEmploymentType.label}</span>
+                  </p>
+                )}
               </div>
             )}
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-xs font-medium text-gray-600">Employment type</span>
-                <input
-                  className={`${inputClass} mt-1`}
-                  value={form.employment_type}
-                  onChange={(e) => setForm((f) => ({ ...f, employment_type: e.target.value }))}
-                />
-              </label>
-            </div>
 
             <div>
               <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
