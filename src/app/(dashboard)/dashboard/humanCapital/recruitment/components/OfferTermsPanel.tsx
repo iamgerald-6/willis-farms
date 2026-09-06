@@ -63,20 +63,55 @@ export default function OfferTermsPanel({
         salary_tier: string | null;
         salary_range: string | null;
         salary_ghs: string | null;
+        salary_band_min: string | null;
+        salary_band_max: string | null;
+        position_title: string | null;
+        employment_type: string | null;
+        department: string | null;
+        work_location: string | null;
       };
     },
   });
 
+  // Fields the linked job posting can source directly (see
+  // resolveOfferTermsFromPosting) — locked here (shown read-only below)
+  // rather than typed by HR, so the offer letter always matches the
+  // posting. Salary amount itself stays HR-entered; only the tier/range
+  // hint it's validated against comes from the posting. Only actually
+  // lock a field once the posting has supplied a value for it — an
+  // application with no linked posting (from before this existed) falls
+  // back to the old HR-fillable behavior instead of locking onto nothing.
+  const postingLockedFields = (
+    [
+      ["position_title", suggestions?.position_title],
+      ["employment_type", suggestions?.employment_type],
+      ["department", suggestions?.department],
+      ["work_location", suggestions?.work_location],
+      ["grade_level", suggestions?.grade_level],
+      ["salary_tier", suggestions?.salary_tier],
+    ] as const
+  )
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+
   useEffect(() => {
-    if (!suggestions || data?.offer_terms_saved_at) return;
+    if (!suggestions) return;
     setHrData((prev) => ({
       ...prev,
-      grade_level: prev.grade_level?.trim() || suggestions.grade_level || prev.grade_level,
-      salary_tier: prev.salary_tier?.trim() || suggestions.salary_tier || prev.salary_tier,
-      salary_range: prev.salary_range?.trim() || suggestions.salary_range || prev.salary_range,
+      position_title: suggestions.position_title || prev.position_title,
+      employment_type: suggestions.employment_type || prev.employment_type,
+      department: suggestions.department || prev.department,
+      work_location: suggestions.work_location || prev.work_location,
+      grade_level: suggestions.grade_level || prev.grade_level,
+      salary_tier: suggestions.salary_tier || prev.salary_tier,
+      salary_range: suggestions.salary_range || prev.salary_range,
+      salary_band_min: suggestions.salary_band_min || prev.salary_band_min,
+      salary_band_max: suggestions.salary_band_max || prev.salary_band_max,
+      // salary_ghs is the one number HR actually enters — only default it
+      // once, never overwrite something HR (or a saved offer) already has.
       salary_ghs: prev.salary_ghs?.trim() || suggestions.salary_ghs || prev.salary_ghs,
     }));
-  }, [suggestions, data?.offer_terms_saved_at]);
+  }, [suggestions]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -129,9 +164,10 @@ export default function OfferTermsPanel({
       <div>
         <p className="text-sm font-semibold text-gray-900">Offer terms</p>
         <p className="text-xs text-gray-500 mt-1">
-          Set role, compensation, and employment placement before creating the
-          offer letter. These details will be prefilled and locked during
-          onboarding.
+          Role, grade, salary tier, department, employment type, and work location come
+          straight from the job posting this applicant applied to — to change one of those,
+          edit the job posting itself. Fill in everything else below before creating the offer
+          letter. All of it will be locked once saved and prefilled during onboarding.
         </p>
       </div>
 
@@ -146,6 +182,7 @@ export default function OfferTermsPanel({
         hrData={hrData}
         setHrData={setHrData}
         includeFieldKeys={[...OFFER_TERMS_FIELD_KEYS]}
+        readOnlyFields={postingLockedFields}
         hideFieldHints
       />
 

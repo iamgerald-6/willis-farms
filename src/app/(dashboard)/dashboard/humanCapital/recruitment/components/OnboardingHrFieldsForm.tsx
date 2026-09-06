@@ -24,6 +24,7 @@ import {
   SALARY_TIER_IDS,
   SALARY_TIER_LABELS,
   resolveSalaryForGradeTier,
+  validateGrossSalaryAgainstBand,
   validateGrossSalaryInBand,
 } from "@/lib/systemDefinitions/salaryRanges";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
@@ -190,6 +191,9 @@ export default function OnboardingHrFieldsForm({
   }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
 
   useEffect(() => {
+    // The posting's own Salary field already set salary_range/salary_tier
+    // — don't let the old grade-level pay-tier table overwrite it.
+    if (hrData.salary_band_min != null || hrData.salary_band_max != null) return;
     if (!hrData.grade_level?.trim()) return;
     if (hrData.salary_range?.trim() && hrData.salary_ghs?.trim()) return;
     applySalaryFromSystem(
@@ -203,6 +207,8 @@ export default function OnboardingHrFieldsForm({
     hrData.salary_tier,
     hrData.salary_range,
     hrData.salary_ghs,
+    hrData.salary_band_min,
+    hrData.salary_band_max,
   ]);
 
   const departmentOptions = useMemo(() => {
@@ -587,15 +593,17 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldKey === "salary_ghs") {
-      const bandCheck = validateGrossSalaryInBand(
-        value,
-        hrData.grade_level,
-        hrData.salary_tier,
-        gradeConfig,
-      );
+      // The posting's own Salary field (salary_band_min/max) is the
+      // source of truth going forward — only fall back to the old
+      // grade-level pay-tier table for hr_data saved before a
+      // posting-sourced band was available.
+      const hasPostingBand = hrData.salary_band_min != null || hrData.salary_band_max != null;
+      const bandCheck = hasPostingBand
+        ? validateGrossSalaryAgainstBand(value, hrData.salary_band_min, hrData.salary_band_max)
+        : validateGrossSalaryInBand(value, hrData.grade_level, hrData.salary_tier, gradeConfig);
       const bandText =
         hrData.salary_range?.trim() ||
-        (hrData.grade_level
+        (!hasPostingBand && hrData.grade_level
           ? resolveSalaryForGradeTier(
               hrData.grade_level,
               hrData.salary_tier ?? "mid",

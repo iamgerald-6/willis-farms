@@ -51,6 +51,16 @@ const inputClass =
 // always required; every other org-structure field is opt-in per posting.
 const CHAIN_TABLE_ORDER = ["sites", "business_units", "departments", "sections", "custom_position"];
 
+// Grade level and Salary are also always required — every posting needs
+// both so Offer Terms can source them directly (see OfferTermsPanel) —
+// but they don't cascade the way the chain above does, so they're kept
+// separate rather than folded into CHAIN_TABLE_ORDER.
+const ALWAYS_REQUIRED_EXTRA_TABLES = ["grade_levels", "custom_salary"];
+
+function isAlwaysRequiredTable(tableName: string): boolean {
+  return CHAIN_TABLE_ORDER.includes(tableName) || ALWAYS_REQUIRED_EXTRA_TABLES.includes(tableName);
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
     day: "numeric",
@@ -469,12 +479,13 @@ export default function CreateJobPostingPage() {
         nextOrgMode[lt.id] =
           typeof minValue === "string" || typeof maxValue === "string" ? "range" : "single";
       }
-      // Site/Business unit/Department/Section/Position are always shown
-      // regardless of this set. Every other field that already has a saved
-      // value on this posting was clearly added before — keep it visible.
+      // Site/Business unit/Department/Section/Position/Grade level/Salary
+      // are always shown regardless of this set. Every other field that
+      // already has a saved value on this posting was clearly added
+      // before — keep it visible.
       const hasValue =
         typeof value === "string" || typeof minValue === "string" || typeof maxValue === "string";
-      if (hasValue && !CHAIN_TABLE_ORDER.includes(lt.table_name)) {
+      if (hasValue && !isAlwaysRequiredTable(lt.table_name)) {
         populatedIds.add(lt.id);
       }
     }
@@ -548,14 +559,14 @@ export default function CreateJobPostingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgFieldListTypes, orgFieldItemQueries, orgFieldValues]);
 
-  // Site/Business unit/Department/Section/Position are always required.
-  // Every other org-structure field is only required once the HR has
-  // chosen to add it to this posting (see addedOrgFieldIds) — a
-  // numeric-range list (e.g. Age) counts as filled in if either its single
-  // value is set, or both its min and max are set, depending on which mode
-  // it's currently in.
+  // Site/Business unit/Department/Section/Position/Grade level/Salary are
+  // always required. Every other org-structure field is only required
+  // once the HR has chosen to add it to this posting (see
+  // addedOrgFieldIds) — a numeric-range list (e.g. Age) counts as filled
+  // in if either its single value is set, or both its min and max are
+  // set, depending on which mode it's currently in.
   const missingOrgFieldLabels = orgFieldListTypes
-    .filter((lt) => CHAIN_TABLE_ORDER.includes(lt.table_name) || addedOrgFieldIds.has(lt.id))
+    .filter((lt) => isAlwaysRequiredTable(lt.table_name) || addedOrgFieldIds.has(lt.id))
     .filter((lt) => {
       if (!lt.is_numeric_range) {
         return !orgFieldValues[lt.job_posting_column];
@@ -875,13 +886,13 @@ export default function CreateJobPostingPage() {
                 Organizational structure
               </p>
               <p className="text-xs text-gray-500 mb-3">
-                Site, Business unit, Department, Section, and Position are always required. Add
-                any other org-structure field this posting needs below.
+                Site, Business unit, Department, Section, Position, Grade level, and Salary are
+                always required. Add any other org-structure field this posting needs below.
               </p>
 
               {(() => {
                 const optionalNotAdded = orderedOrgFieldListTypes.filter(
-                  (lt) => !CHAIN_TABLE_ORDER.includes(lt.table_name) && !addedOrgFieldIds.has(lt.id),
+                  (lt) => !isAlwaysRequiredTable(lt.table_name) && !addedOrgFieldIds.has(lt.id),
                 );
                 if (optionalNotAdded.length === 0) return null;
                 return (
@@ -910,17 +921,22 @@ export default function CreateJobPostingPage() {
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {(() => {
                   // Site/Business unit/Department/Section/Position always come
-                  // first, in that fixed order. Anything opt-in goes after
-                  // them in the order it was added — not wherever it happens
-                  // to sort on its own list — so a newly added field always
-                  // lands at the end instead of jumping into the middle.
+                  // first, in that fixed order, then Grade level and Salary
+                  // (also always required, but not part of the cascade).
+                  // Anything opt-in goes after them in the order it was
+                  // added — not wherever it happens to sort on its own list
+                  // — so a newly added field always lands at the end
+                  // instead of jumping into the middle.
                   const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
+                    orgFieldListTypes.find((lt) => lt.table_name === tableName),
+                  ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
+                  const extraRequiredFields = ALWAYS_REQUIRED_EXTRA_TABLES.map((tableName) =>
                     orgFieldListTypes.find((lt) => lt.table_name === tableName),
                   ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
                   const addedFields = Array.from(addedOrgFieldIds)
                     .map((id) => orgFieldListTypes.find((lt) => lt.id === id))
                     .filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
-                  return [...chainFields, ...addedFields];
+                  return [...chainFields, ...extraRequiredFields, ...addedFields];
                 })()
                   .map((lt) => {
                   const index = indexByListTypeId.get(lt.id) ?? -1;
@@ -964,7 +980,7 @@ export default function CreateJobPostingPage() {
                     </select>
                   );
 
-                  const isChainField = CHAIN_TABLE_ORDER.includes(lt.table_name);
+                  const isChainField = isAlwaysRequiredTable(lt.table_name);
 
                   return (
                     <div key={lt.id} className="block">
