@@ -28,6 +28,7 @@ type Item = { id: string; label: string; is_active?: boolean; sort_order?: numbe
 type MappingLevel = {
   id: string;
   position: number;
+  parent_level_id: string | null;
   list_type_id: string;
   list_type: { id: string; label: string; singular: string; table_name: string };
 };
@@ -87,7 +88,40 @@ export default function OrgStructureMappingSetupPage() {
     queryFn: async () => (await api.get("/organizational-structure/mapping-levels")).data.data,
     enabled: !!canView,
   });
-  const levels = [...levelsRaw].sort((a, b) => a.position - b.position);
+  // Display order: depth-first from the roots (levels with no parent), siblings
+  // ordered by `position`. This just decides how the Level dropdown lists
+  // things — the actual hierarchy is parent_level_id, not this order.
+  function orderLevelsAsTree(all: MappingLevel[]): MappingLevel[] {
+    const byParent = new Map<string | null, MappingLevel[]>();
+    for (const lvl of all) {
+      const key = lvl.parent_level_id;
+      const list = byParent.get(key) ?? [];
+      list.push(lvl);
+      byParent.set(key, list);
+    }
+    for (const list of byParent.values()) list.sort((a, b) => a.position - b.position);
+    const seen = new Set<string>();
+    const ordered: MappingLevel[] = [];
+    function visit(parentId: string | null) {
+      for (const lvl of byParent.get(parentId) ?? []) {
+        if (seen.has(lvl.id)) continue;
+        seen.add(lvl.id);
+        ordered.push(lvl);
+        visit(lvl.id);
+      }
+    }
+    visit(null);
+    // Anything orphaned (parent_level_id pointing at a level that got removed
+    // from the list somehow) still needs to show up somewhere.
+    for (const lvl of all) {
+      if (!seen.has(lvl.id)) {
+        seen.add(lvl.id);
+        ordered.push(lvl);
+      }
+    }
+    return ordered;
+  }
+  const levels = orderLevelsAsTree(levelsRaw);
 
   const { data: nodes = [] } = useQuery<MappingNode[]>({
     queryKey: NODES_QUERY_KEY,
@@ -116,12 +150,24 @@ export default function OrgStructureMappingSetupPage() {
     const missing = REQUIRED_TABLE_ORDER.filter((t) => !existingTableNames.has(t));
     if (missing.length === 0) return;
     (async () => {
+      // Site -> Business unit -> Department -> Section -> Position, each one
+      // parented under whichever of these came right before it (Site itself
+      // has no parent — it's the root of the required chain).
+      let previousLevelId: string | null = null;
       for (const tableName of REQUIRED_TABLE_ORDER) {
-        if (existingTableNames.has(tableName)) continue;
+        const already = levels.find((l) => l.list_type.table_name === tableName);
+        if (already) {
+          previousLevelId = already.id;
+          continue;
+        }
         const lt = allListTypes.find((o) => o.table_name === tableName);
         if (!lt) continue;
         try {
-          await api.post("/organizational-structure/mapping-levels", { list_type_id: lt.id });
+          const res = await api.post("/organizational-structure/mapping-levels", {
+            list_type_id: lt.id,
+            parent_level_id: previousLevelId,
+          });
+          previousLevelId = res.data.data.id as string;
         } catch {
           // best-effort — an admin can still add it manually below if this fails
         }
@@ -151,7 +197,24 @@ export default function OrgStructureMappingSetupPage() {
   const activeLevelId = selectedLevelId || levels[0]?.id || "";
   const activeIndex = levels.findIndex((l) => l.id === activeLevelId);
   const activeLevel = activeIndex >= 0 ? levels[activeIndex] : null;
-  const ancestorLevels = activeIndex > 0 ? levels.slice(0, activeIndex) : [];
+
+  /** Walk parent_level_id up from `level` to the root, returning root-first order. */
+  function ancestorChainFor(level: MappingLevel | null): MappingLevel[] {
+    if (!level) return [];
+    const chain: MappingLevel[] = [];
+    let current: MappingLevel | null = level;
+    const guard = new Set<string>();
+    while (current?.parent_level_id) {
+      if (guard.has(current.parent_level_id)) break; // defend against any accidental cycle
+      guard.add(current.parent_level_id);
+      const parent = levelsRaw.find((l) => l.id === current!.parent_level_id) ?? null;
+      if (!parent) break;
+      chain.unshift(parent);
+      current = parent;
+    }
+    return chain;
+  }
+  const ancestorLevels = ancestorChainFor(activeLevel);
 
   function nodesForLevel(levelId: string): MappingNode[] {
     return nodes.filter((n) => n.level_id === levelId);
@@ -263,7 +326,7 @@ export default function OrgStructureMappingSetupPage() {
   // --- "+ Add level" form ---
   const [showAddLevel, setShowAddLevel] = useState(false);
   const [newLevelListTypeId, setNewLevelListTypeId] = useState("");
-  const [parentLevelIds, setParentLevelIds] = useState<Set<string>>(new Set());
+  const [newLevelParentId, setNewLevelParentId] = useState<string>(""); // "" = top level (no parent)
   const [childLevelIds, setChildLevelIds] = useState<Set<string>>(new Set());
 
   const usedListTypeIds = new Set(levels.map((l) => l.list_type_id));
@@ -274,37 +337,41 @@ export default function OrgStructureMappingSetupPage() {
   const resetAddLevelForm = () => {
     setShowAddLevel(false);
     setNewLevelListTypeId("");
-    setParentLevelIds(new Set());
+    setNewLevelParentId("");
     setChildLevelIds(new Set());
   };
 
   const addLevelMutation = useMutation({
     mutationFn: async () => {
       if (!newLevelListTypeId) throw new Error("Choose a list to add.");
-      if (parentLevelIds.size === 0 && childLevelIds.size === 0) {
+      if (!newLevelParentId && childLevelIds.size === 0) {
         throw new Error("Select at least one parent or child level.");
-      }
-      const parentPositions = levels
-        .filter((l) => parentLevelIds.has(l.id))
-        .map((l) => l.position);
-      const childPositions = levels.filter((l) => childLevelIds.has(l.id)).map((l) => l.position);
-
-      let position: number;
-      if (parentPositions.length > 0) {
-        position = Math.max(...parentPositions) + 1;
-      } else {
-        position = Math.min(...childPositions);
       }
 
       const res = await api.post("/organizational-structure/mapping-levels", {
         list_type_id: newLevelListTypeId,
-        position,
+        parent_level_id: newLevelParentId || null,
       });
-      return res.data.data as MappingLevel;
+      const newLevel = res.data.data as MappingLevel;
+
+      // Any level picked as a "child" now sits under the new level instead of
+      // wherever it was before — reparent each one onto it.
+      for (const childId of childLevelIds) {
+        await api.patch(`/organizational-structure/mapping-levels/${childId}`, {
+          parent_level_id: newLevel.id,
+        });
+      }
+
+      return newLevel;
     },
     onSuccess: (data) => {
-      toast.success(`${data.list_type.label} added to the mapping chain.`);
+      const reparented = childLevelIds.size > 0;
+      toast.success(
+        `${data.list_type.label} added to the mapping chain.` +
+          (reparented ? " Existing mappings under the levels below it were cleared." : ""),
+      );
       queryClient.invalidateQueries({ queryKey: LEVELS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: NODES_QUERY_KEY });
       resetAddLevelForm();
       handleLevelChange(data.id);
     },
@@ -405,60 +472,63 @@ export default function OrgStructureMappingSetupPage() {
           </label>
 
           <p className="text-xs text-gray-500 mb-3">
-            Select at least one — either which levels come before it (its parents) or which come
-            after it (its children). You don&apos;t need both.
+            Select at least one — where it comes after (its one parent) or which existing levels
+            should move under it (its children). You don&apos;t need both. A level can only have
+            one parent, but any number of children.
           </p>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Comes after (parents)
-              </p>
-              <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-48 overflow-y-auto">
-                {levels.map((lvl) => (
-                  <label key={lvl.id} className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={parentLevelIds.has(lvl.id)}
-                      onChange={(e) => {
-                        setParentLevelIds((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(lvl.id);
-                          else next.delete(lvl.id);
-                          return next;
-                        });
-                      }}
-                    />
-                    {lvl.list_type.label}
-                  </label>
-                ))}
-                {levels.length === 0 && <p className="text-xs text-gray-400">No levels yet.</p>}
-              </div>
-            </div>
+            <label className="block">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">
+                Comes after (parent)
+              </span>
+              <select
+                value={newLevelParentId}
+                onChange={(e) => setNewLevelParentId(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">Top level (no parent)</option>
+                {levels
+                  .filter((lvl) => !childLevelIds.has(lvl.id))
+                  .map((lvl) => (
+                    <option key={lvl.id} value={lvl.id}>
+                      {lvl.list_type.label}
+                    </option>
+                  ))}
+              </select>
+            </label>
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                 Comes before (children)
               </p>
               <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-48 overflow-y-auto">
-                {levels.map((lvl) => (
-                  <label key={lvl.id} className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={childLevelIds.has(lvl.id)}
-                      onChange={(e) => {
-                        setChildLevelIds((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(lvl.id);
-                          else next.delete(lvl.id);
-                          return next;
-                        });
-                      }}
-                    />
-                    {lvl.list_type.label}
-                  </label>
-                ))}
+                {levels
+                  .filter((lvl) => lvl.id !== newLevelParentId)
+                  .map((lvl) => (
+                    <label key={lvl.id} className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={childLevelIds.has(lvl.id)}
+                        onChange={(e) => {
+                          setChildLevelIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(lvl.id);
+                            else next.delete(lvl.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      {lvl.list_type.label}
+                    </label>
+                  ))}
                 {levels.length === 0 && <p className="text-xs text-gray-400">No levels yet.</p>}
               </div>
+              {childLevelIds.size > 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Existing mappings under the selected levels (and everything beneath them) will
+                  be cleared, since they were only valid under the old parent.
+                </p>
+              )}
             </div>
           </div>
 

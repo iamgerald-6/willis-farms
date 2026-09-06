@@ -5,7 +5,7 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 
-/** GET — every level currently in the mapping chain, ordered by position, joined with its list's own label/singular/table_name. */
+/** GET — every level currently in the mapping tree, joined with its list's own label/singular/table_name. `position` is only a display tie-breaker among siblings now — the hierarchy itself lives in parent_level_id. */
 export async function GET(req: NextRequest) {
   try {
     const caller = await requireSystemDefinitionsAccess(req, "view");
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("org_mapping_levels")
       .select(
-        "id, position, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
+        "id, position, parent_level_id, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
       )
       .order("position", { ascending: true });
 
@@ -36,13 +36,10 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST — add a list as a new level. If `position` isn't given, it's
- * appended to the end of the chain. If it is given (the mapping set up
- * page computes this from whichever levels the admin picked as "parents"
- * — one past the last of them — or "children" — the first of them, if no
- * parents were picked), every existing level at or after that position is
- * shifted back by one to make room, so the new level is inserted exactly
- * where the admin meant it to go rather than always at the end.
+ * POST — add a list as a new level, with its own single parent level (or
+ * null, for a top-level list). Appended to the end for display purposes
+ * (`position`) — that has no bearing on the hierarchy, so nothing needs
+ * shifting the way it used to.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -53,8 +50,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const listTypeId = body.list_type_id as string | undefined;
-    const requestedPosition =
-      typeof body.position === "number" && Number.isFinite(body.position) ? body.position : null;
+    const parentLevelId = (body.parent_level_id as string | null | undefined) ?? null;
     if (!listTypeId) {
       return NextResponse.json({ error: "list_type_id is required" }, { status: 400 });
     }
@@ -64,30 +60,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
-    const { data: existingLevels } = await supabase
+    const { data: last } = await supabase
       .from("org_mapping_levels")
-      .select("id, position")
-      .order("position", { ascending: false });
-
-    let position: number;
-    if (requestedPosition != null) {
-      position = requestedPosition;
-      const toShift = (existingLevels ?? []).filter((l) => l.position >= position);
-      for (const lvl of toShift) {
-        await supabase
-          .from("org_mapping_levels")
-          .update({ position: lvl.position + 1 })
-          .eq("id", lvl.id);
-      }
-    } else {
-      position = ((existingLevels ?? [])[0]?.position ?? 0) + 1;
-    }
+      .select("position")
+      .order("position", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const position = (last?.position ?? 0) + 1;
 
     const { data, error } = await supabase
       .from("org_mapping_levels")
-      .insert([{ list_type_id: listTypeId, position }])
+      .insert([{ list_type_id: listTypeId, parent_level_id: parentLevelId, position }])
       .select(
-        "id, position, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
+        "id, position, parent_level_id, list_type_id, list_type:org_custom_list_types(id, label, singular, table_name)",
       )
       .single();
 

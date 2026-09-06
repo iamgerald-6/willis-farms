@@ -191,6 +191,7 @@ export default function CreateJobPostingPage() {
   type MappingLevel = {
     id: string;
     position: number;
+    parent_level_id: string | null;
     list_type_id: string;
     list_type: { id: string; label: string; singular: string; table_name: string };
   };
@@ -212,10 +213,10 @@ export default function CreateJobPostingPage() {
   }
 
   /** The mapping node representing the currently-selected item at `tableName` (one of the
-   * five required fields), resolved by walking the chain from Site down — undefined if
-   * that field isn't mapped at all, hasn't been picked yet, or the picked combination
-   * isn't actually mapped. "sites" is always anchored to its own ROOT node (parent_node_id
-   * null) regardless of whatever else may exist in the wider mapping system. */
+   * five required fields), resolved by walking the level's own parent_level_id up —
+   * undefined if that field isn't mapped at all, hasn't been picked yet, or the picked
+   * combination isn't actually mapped. A level with no parent_level_id (Site, in practice)
+   * is always anchored to its own ROOT node (parent_node_id null). */
   function resolvedNodeIdForRequiredField(tableName: string): string | undefined {
     const level = chainLevel(tableName);
     if (!level) return undefined;
@@ -224,9 +225,13 @@ export default function CreateJobPostingPage() {
     const itemId = orgFieldValues[lt.job_posting_column];
     if (!itemId) return undefined;
 
-    const idx = CHAIN_TABLE_ORDER.indexOf(tableName);
-    const parentNodeId =
-      idx <= 0 ? null : resolvedNodeIdForRequiredField(CHAIN_TABLE_ORDER[idx - 1]) ?? undefined;
+    let parentNodeId: string | null | undefined = null;
+    if (level.parent_level_id) {
+      const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
+      parentNodeId = parentLevel
+        ? resolvedNodeIdForRequiredField(parentLevel.list_type.table_name)
+        : undefined;
+    }
     if (parentNodeId === undefined) return undefined;
 
     return mappingNodes.find(
@@ -273,9 +278,10 @@ export default function CreateJobPostingPage() {
     const levelNodes = mappingNodes.filter((n) => n.level_id === level.id);
     if (levelNodes.length === 0) return items;
 
-    const idx = CHAIN_TABLE_ORDER.indexOf(tableName);
-    const parentTable = CHAIN_TABLE_ORDER[idx - 1];
-    const parentNodeId = resolvedNodeIdForRequiredField(parentTable);
+    if (!level.parent_level_id) return items; // no recorded parent — fail open rather than hide everything
+    const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
+    if (!parentLevel) return items;
+    const parentNodeId = resolvedNodeIdForRequiredField(parentLevel.list_type.table_name);
     if (parentNodeId === undefined) return [];
 
     const ids = new Set(
