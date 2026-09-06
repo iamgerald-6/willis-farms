@@ -1,9 +1,58 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
+import type {
+  InterviewGuideConfig,
+  InterviewQuestion,
+  ScenarioItem,
+  WeightRow,
+} from "@/lib/careers/interviewFormConfigs";
 import type { ResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
 import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
 import { resolveInterviewEvaluationLabels } from "@/lib/systemDefinitions/interviewEvaluationConfig";
 import { resolveInterviewBenchmarks } from "@/lib/systemDefinitions/interviewBenchmarksConfig";
+
+/**
+ * Interview setup never collects explicit area weights the way the old
+ * shared guides did (hand-curated `{area, questionIds, weight}` rows) — it
+ * only collects a flat list of questions/scenarios, each tagged with a
+ * `section`. Score computation (computeStage1Score/computeStage2Score/
+ * computeWeightedScore in interviewFormConfigs.ts) requires `weights` to be
+ * non-empty or it always returns a null total, so this builds one weight
+ * row per section automatically, splitting 100% evenly across sections.
+ * Questions and scenarios are grouped separately (never merged into the
+ * same row) so a like-named section on both sides can't mix a scenario id
+ * into a Stage 1 row or vice versa — computeStage1Score/computeStage2Score
+ * both require a row's ids to be ALL scenario ids or ALL non-scenario ids.
+ */
+function buildWeightRows(
+  questions: InterviewQuestion[],
+  scenarios: ScenarioItem[],
+): WeightRow[] {
+  const groups: { area: string; questionIds: string[] }[] = [];
+
+  const questionSections = new Map<string, string[]>();
+  for (const q of questions) {
+    const key = q.section?.trim() || "Questions";
+    if (!questionSections.has(key)) questionSections.set(key, []);
+    questionSections.get(key)!.push(q.id);
+  }
+  for (const [area, questionIds] of questionSections) {
+    groups.push({ area, questionIds });
+  }
+
+  const scenarioSections = new Map<string, string[]>();
+  for (const s of scenarios) {
+    const key = s.section?.trim() || "Practical assessment";
+    if (!scenarioSections.has(key)) scenarioSections.set(key, []);
+    scenarioSections.get(key)!.push(s.id);
+  }
+  for (const [area, questionIds] of scenarioSections) {
+    groups.push({ area, questionIds });
+  }
+
+  if (groups.length === 0) return [];
+  const weight = Math.round((100 / groups.length) * 100) / 100;
+  return groups.map((g) => ({ ...g, weight }));
+}
 
 /**
  * Real interview execution (panel scoring form, Stage 1/2/3 wizard, AI
@@ -71,7 +120,7 @@ export async function fetchPostingInterviewContext(
     screening: setup.screening,
     questions: setup.questions,
     scenarios: setup.scenarios,
-    weights: [],
+    weights: buildWeightRows(setup.questions, setup.scenarios),
     interpretation: "",
     disqualifiers: setup.disqualifiers.map((d) => d.label),
     disqualifierItems: setup.disqualifiers,
