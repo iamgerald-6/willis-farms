@@ -840,6 +840,7 @@ export default function CreateJobPostingPage() {
       )}
 
       {activeTab === "active" ? (
+        !showForm && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {postingsLoading || listTypesLoading ? (
             <div className="py-12 flex justify-center">
@@ -899,6 +900,7 @@ export default function CreateJobPostingPage() {
             </table>
           )}
         </div>
+        )
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {postingsLoading ? (
