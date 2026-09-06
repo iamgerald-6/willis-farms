@@ -897,13 +897,6 @@ export default function CreateJobPostingPage() {
               {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
               {editing ? "Save changes" : "Create posting"}
             </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              Cancel
-            </button>
             {editing && (
               <button
                 type="button"
@@ -911,11 +904,18 @@ export default function CreateJobPostingPage() {
                   setInterviewPostingId(editing.id);
                   setPostingStep("interview");
                 }}
-                className="px-4 py-2.5 text-sm font-medium text-red-700 hover:underline"
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
               >
                 Go to interview set up
               </button>
             )}
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
