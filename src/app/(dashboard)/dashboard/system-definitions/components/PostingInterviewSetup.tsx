@@ -1,10 +1,12 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
+import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { RATING_LABELS } from "@/lib/careers/interviewFormConfigs";
 import {
   normalizePostingInterviewSetup,
@@ -114,6 +116,41 @@ function PostingInterviewSetup(
   const patchSetup = (patch: Partial<PostingInterviewSetupContent>) =>
     setSetup((prev) => ({ ...prev, ...patch }));
 
+  // "Autofill with AI" — upload an existing interview guide document (Word
+  // or PDF) and have Claude read it straight into every tab here, the same
+  // way the CV screening and JD auto-fill features read a document. Local
+  // state only, same as any other edit — nothing is saved until the usual
+  // Save button is clicked.
+  const [autofilling, setAutofilling] = useState(false);
+  const handleAutofillFile = async (file: File) => {
+    setAutofilling(true);
+    try {
+      const uploaded = await uploadCareersFile(file, "CareersInterviewGuide", ACCEPT_JD);
+      const res = await api.post("/careers/interview-setup/extract", {
+        file_url: uploaded.secure_url,
+        file_name: uploaded.original_name,
+      });
+      const extracted = res.data.data as {
+        description: string;
+        panelMembers: string;
+        durationMinutes: number | null;
+        setup: unknown;
+      };
+      if (extracted.description) setDescription(extracted.description);
+      if (extracted.panelMembers) setPanelMembers(extracted.panelMembers);
+      if (extracted.durationMinutes != null) setDurationMinutes(extracted.durationMinutes);
+      setSetup(normalizePostingInterviewSetup(extracted.setup));
+      toast.success("Interview setup filled in from the document — review before saving.");
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err instanceof Error ? err.message : undefined);
+      toast.error(message ?? "Couldn't read that document.");
+    } finally {
+      setAutofilling(false);
+    }
+  };
+
   const tabOrder = Object.keys(TAB_LABELS) as TabId[];
   const currentTabIndex = tabOrder.indexOf(activeTab);
   const isLastTab = currentTabIndex === tabOrder.length - 1;
@@ -212,6 +249,36 @@ function PostingInterviewSetup(
                   </p>
                 ))}
               </div>
+            </div>
+          )}
+
+          {allowEdit && (
+            <div className="rounded-lg border border-dashed border-gray-300 p-3">
+              <label className="flex flex-wrap items-center gap-2 cursor-pointer">
+                {autofilling ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-red-600" />
+                )}
+                <span className="text-sm font-medium text-red-700">
+                  {autofilling ? "Reading document…" : "Autofill with AI"}
+                </span>
+                <span className="text-xs text-gray-400">
+                  — upload an existing interview guide document (Word or PDF)
+                </span>
+                <input
+                  type="file"
+                  className="sr-only"
+                  accept={ACCEPT_JD}
+                  disabled={autofilling}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    await handleAutofillFile(file);
+                  }}
+                />
+              </label>
             </div>
           )}
 
