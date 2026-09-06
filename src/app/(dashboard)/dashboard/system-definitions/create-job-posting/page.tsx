@@ -36,6 +36,8 @@ import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import { SectionTextEditor } from "@/components/SectionTextEditor";
+import InterviewGuidesEditor from "../components/InterviewGuidesEditor";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -544,11 +546,12 @@ export default function CreateJobPostingPage() {
             Posting saved. Next, set up the interview questions and scoring
             for this role.
           </p>
-          <div className="rounded-lg bg-gray-50 border border-gray-100 p-6 text-center text-sm text-gray-400">
-            Interview setup for this posting isn't wired up yet — coming
-            soon. For now, use Recruitment → Interview under System
-            Definitions.
-          </div>
+          <InterviewGuidesEditor
+            moduleId={RECRUITMENT_MODULE_ID}
+            readOnly={!canEdit}
+            canAdd={!!canAdd}
+            canEdit={!!canEdit}
+          />
           <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
             <button
               type="button"
