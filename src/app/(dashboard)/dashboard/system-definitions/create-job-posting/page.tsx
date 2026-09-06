@@ -904,6 +904,18 @@ export default function CreateJobPostingPage() {
             >
               Cancel
             </button>
+            {editing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInterviewPostingId(editing.id);
+                  setPostingStep("interview");
+                }}
+                className="px-4 py-2.5 text-sm font-medium text-red-700 hover:underline"
+              >
+                Go to interview set up
+              </button>
+            )}
           </div>
         </div>
       )}
