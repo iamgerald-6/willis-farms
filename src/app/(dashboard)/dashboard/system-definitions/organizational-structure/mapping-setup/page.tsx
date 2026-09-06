@@ -487,23 +487,21 @@ export default function OrgStructureMappingSetupPage() {
           <p className="text-sm text-gray-400">Setting up the required levels…</p>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 mb-4">
-              <div className="flex flex-wrap gap-1">
-                {levels.map((lvl) => (
-                  <button
-                    key={lvl.id}
-                    type="button"
-                    onClick={() => handleLevelChange(lvl.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                      activeLevelId === lvl.id
-                        ? "bg-red-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {lvl.list_type.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-end justify-between gap-2 border-b border-gray-100 pb-4 mb-4">
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">Level</span>
+                <select
+                  value={activeLevelId}
+                  onChange={(e) => handleLevelChange(e.target.value)}
+                  className={`${selectClass} min-w-[220px]`}
+                >
+                  {levels.map((lvl) => (
+                    <option key={lvl.id} value={lvl.id}>
+                      {lvl.list_type.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {canEdit && activeLevel && !activeIsRequired && (
                 <button
                   type="button"
