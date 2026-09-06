@@ -33,6 +33,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // No onboarding_submissions row exists until HR first saves offer terms
+    // (or the candidate later starts onboarding) — that includes the very
+    // first time this panel is opened, which is exactly when the
+    // posting-sourced suggestions are needed most. So a missing row here
+    // falls back to the linked application directly instead of 404ing,
+    // matching how /careers/onboarding/offer-letter already behaves.
     const { data: row, error } = await supabaseAdmin
       .from("onboarding_submissions")
       .select(
@@ -52,23 +58,32 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    if (!row) {
-      return NextResponse.json({ error: "Onboarding record not found." }, { status: 404 });
-    }
 
-    const rawApp = row.job_applications;
-    const app = (Array.isArray(rawApp) ? rawApp[0] : rawApp) as {
+    type AppInfo = {
       full_name: string;
       role_slug: string;
       job_posting_id: string | null;
-    } | null;
+    };
+    let app: AppInfo | null = null;
+
+    if (row) {
+      const rawApp = row.job_applications;
+      app = (Array.isArray(rawApp) ? rawApp[0] : rawApp) as AppInfo | null;
+    } else {
+      const { data: directApp } = await supabaseAdmin
+        .from("job_applications")
+        .select("full_name, role_slug, job_posting_id")
+        .eq("id", applicationId)
+        .maybeSingle();
+      app = directApp;
+    }
 
     if (!app?.full_name) {
       return NextResponse.json({ error: "Linked application not found." }, { status: 404 });
     }
 
-    const hr = (row.hr_data ?? {}) as OnboardingHrData;
-    const form = mergeOnboardingForm(row.form_data as OnboardingFormData);
+    const hr = (row?.hr_data ?? {}) as OnboardingHrData;
+    const form = mergeOnboardingForm((row?.form_data ?? {}) as OnboardingFormData);
     const parsed = parseApplicantName(app.full_name);
 
     const firstName = form.personal?.first_name?.trim() || parsed.first_name;
