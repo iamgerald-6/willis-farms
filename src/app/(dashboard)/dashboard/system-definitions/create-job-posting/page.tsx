@@ -32,7 +32,6 @@ import {
   normalizePostingStatus,
   previewDescription,
 } from "@/lib/careers/jobPostings";
-import type { JobPostingOption } from "@/lib/careers/jobPostingOptions";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
@@ -167,16 +166,7 @@ export default function CreateJobPostingPage() {
   const employmentTypeItems =
     employmentTypeIndex >= 0 ? orgFieldItemQueries[employmentTypeIndex]?.data ?? [] : [];
 
-  // --- Job title options + postings list ---
-  const { data: jobPostingOptions = [] } = useQuery({
-    queryKey: ["careers_job_postings"],
-    queryFn: async () => {
-      const res = await api.get("/careers/job-postings");
-      return res.data.data as JobPostingOption[];
-    },
-    enabled: !!canView,
-  });
-
+  // --- Postings list ---
   const { data: postings = [], isLoading: postingsLoading } = useQuery({
     queryKey: ["job_postings"],
     queryFn: async () => {
@@ -286,12 +276,13 @@ export default function CreateJobPostingPage() {
     setShowForm(true);
   };
 
-  // Title, job title key, and interview guide all come from the selected
-  // Position instead of their own field — matched to an existing job
-  // title option by label. Location comes from the selected Site's name
-  // and region. Employment type comes from the selected Employment type
-  // item's label. None of these have their own free-text/select field
-  // anymore — all three are org-structure lists.
+  // Title and interview guide come from the selected Position instead of
+  // their own field — the server generates the posting's title and web
+  // address directly from the Position's label (see postings API routes).
+  // Location comes from the selected Site's name and region. Employment
+  // type comes from the selected Employment type item's label. None of
+  // these have their own free-text/select field anymore — all three are
+  // org-structure lists.
   const selectedPosition = positionListType
     ? positionItems.find((p) => p.id === orgFieldValues[positionListType.job_posting_column])
     : undefined;
@@ -301,12 +292,6 @@ export default function CreateJobPostingPage() {
   const selectedEmploymentType = employmentTypeListType
     ? employmentTypeItems.find(
         (e) => e.id === orgFieldValues[employmentTypeListType.job_posting_column],
-      )
-    : undefined;
-
-  const matchedJobTitleOption = selectedPosition
-    ? jobPostingOptions.find(
-        (o) => o.label.trim().toLowerCase() === selectedPosition.label.trim().toLowerCase(),
       )
     : undefined;
 
@@ -409,7 +394,9 @@ export default function CreateJobPostingPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = {
-        job_title_key: matchedJobTitleOption?.key ?? "",
+        // No job_title_key here — the server derives the posting's title
+        // and web address straight from the selected Position (position_id
+        // is already included via effectiveOrgFieldValues() below).
         location: derivedLocation,
         employment_type: selectedEmploymentType?.label ?? "",
         summary: previewDescription(form.description.trim()),
@@ -669,12 +656,6 @@ export default function CreateJobPostingPage() {
                   <p>
                     Job title:{" "}
                     <span className="font-medium text-gray-700">{selectedPosition.label}</span>
-                    {!matchedJobTitleOption && (
-                      <span className="text-red-600 ml-1">
-                        — no matching job title option found. Add "{selectedPosition.label}" as a
-                        job title under System Definitions before saving.
-                      </span>
-                    )}
                   </p>
                 )}
                 {selectedSite && (
@@ -828,18 +809,12 @@ export default function CreateJobPostingPage() {
             </div>
           </div>
 
-          {(missingOrgFieldLabels.length > 0 ||
-            (selectedPosition && !matchedJobTitleOption)) && (
+          {missingOrgFieldLabels.length > 0 && (
             <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-              {missingOrgFieldLabels.length > 0 && (
-                <p>
-                  All organizational structure fields are required. Still missing:{" "}
-                  <span className="font-medium">{missingOrgFieldLabels.join(", ")}</span>.
-                </p>
-              )}
-              {selectedPosition && !matchedJobTitleOption && (
-                <p>No matching job title found for the selected position.</p>
-              )}
+              <p>
+                All organizational structure fields are required. Still missing:{" "}
+                <span className="font-medium">{missingOrgFieldLabels.join(", ")}</span>.
+              </p>
             </div>
           )}
 
@@ -847,12 +822,7 @@ export default function CreateJobPostingPage() {
             <button
               type="button"
               onClick={() => saveMutation.mutate()}
-              disabled={
-                saveMutation.isPending ||
-                !matchedJobTitleOption ||
-                !selectedSite ||
-                !orgFieldsComplete
-              }
+              disabled={saveMutation.isPending || !orgFieldsComplete}
               className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
             >
               {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

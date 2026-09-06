@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { slugifyJobTitle } from "@/lib/careers/jobPostings";
 
 /**
  * Job postings carry one real foreign key column per Organizational
@@ -126,6 +127,57 @@ export function extractOrgFieldUpdates(
     updates[column] = typeof raw === "string" && raw.trim() ? raw.trim() : null;
   }
   return updates;
+}
+
+/**
+ * Resolves a job posting's title straight from its selected Position —
+ * Create job posting no longer has its own separate job-title-options list
+ * (retired along with the "Job posting" editor under Recruitment in System
+ * Definitions). `positionId` is whatever value is in the request body for
+ * the Position org-structure column (see allOrgFieldColumns/
+ * extractOrgFieldUpdates above); the caller is expected to have already
+ * validated it's present via findMissingOrgFields.
+ */
+export async function resolveTitleFromPosition(
+  supabase: SupabaseClient,
+  options: OrgFieldOption[],
+  updates: Record<string, unknown>,
+): Promise<{ title: string } | null> {
+  const positionOption = options.find((o) => o.tableName === "custom_position");
+  if (!positionOption) return null;
+  const positionId = updates[positionOption.column];
+  if (typeof positionId !== "string" || !positionId) return null;
+
+  const { data } = await supabase
+    .from(positionOption.tableName)
+    .select("label")
+    .eq("id", positionId)
+    .maybeSingle();
+  if (!data?.label) return null;
+
+  return { title: data.label as string };
+}
+
+/**
+ * Turns a Position's label into a unique job posting slug/key, the same way
+ * the old job-title-options "Key" field used to — checked against every
+ * existing slug and, on collision, suffixed with a short timestamp (mirrors
+ * the dedupe logic previously inline in the postings POST route).
+ */
+export async function generateUniquePostingSlug(
+  supabase: SupabaseClient,
+  title: string,
+): Promise<string> {
+  const base = slugifyJobTitle(title);
+  const { data: existing } = await supabase
+    .from("job_postings")
+    .select("slug")
+    .like("slug", `${base}%`);
+
+  if (existing?.some((r) => r.slug === base)) {
+    return `${base}_${Date.now().toString(36)}`;
+  }
+  return base;
 }
 
 /**

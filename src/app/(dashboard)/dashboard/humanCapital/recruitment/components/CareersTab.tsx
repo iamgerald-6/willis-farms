@@ -104,7 +104,14 @@ export default function CareersTab({ adminId }: { adminId: string }) {
     mutationFn: async () => {
       if (!republishTarget) return;
       const payload = {
-        job_title_key: republishTarget.job_title_key,
+        // Title is normally re-derived server-side from the org-structure
+        // Position column carried forward below. This is only a fallback
+        // for a legacy posting from before org-structure fields existed
+        // (no position_id) — same for interview_guide_key, which otherwise
+        // stays on whatever this posting was already using rather than
+        // resetting to the server's default.
+        title: republishTarget.title,
+        interview_guide_key: republishTarget.interview_guide_key,
         location: republishTarget.location,
         employment_type: republishTarget.employment_type,
         summary: republishTarget.summary,

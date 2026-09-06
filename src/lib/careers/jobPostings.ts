@@ -94,7 +94,8 @@ export interface JobPostingBase {
 export type JobPosting = JobPostingBase & Record<string, unknown>;
 
 export type JobPostingInput = {
-  job_title_key: string;
+  /** @deprecated title is now derived server-side from the selected Position — see resolveTitleFromPosition in jobPostingOrgFields.ts. Only used as a fallback when republishing a legacy posting with no Position set. */
+  title?: string;
   location?: string;
   employment_type?: string;
   summary: string;

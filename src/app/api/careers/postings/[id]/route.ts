@@ -5,17 +5,18 @@ import {
   type JobPostingStatus,
   type PostingHistoryEntry,
 } from "@/lib/careers/jobPostings";
-import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
 import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
   updateJobPostingWithColumnFallback,
 } from "@/lib/careers/jobPostingDb";
+import { slugifyJobTitle } from "@/lib/careers/jobPostings";
 import {
   extractOrgFieldUpdates,
   fetchOrgFieldOptions,
   findMissingOrgFields,
+  resolveTitleFromPosition,
 } from "@/lib/careers/jobPostingOrgFields";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -31,19 +32,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const body = await req.json();
     const updates: Record<string, unknown> = {};
-
-    if (body.job_title_key !== undefined) {
-      const resolved = await resolveJobTitleKey(
-        supabaseAdmin,
-        String(body.job_title_key),
-      );
-      if ("error" in resolved) {
-        return NextResponse.json({ error: resolved.error }, { status: 400 });
-      }
-      updates.job_title_key = resolved.option.key;
-      updates.title = resolved.option.label;
-      updates.interview_guide_key = resolved.option.interviewGuideKey;
-    }
 
     if (body.location !== undefined) updates.location = String(body.location).trim();
     if (body.employment_type !== undefined) {
@@ -110,6 +98,20 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           },
           { status: 400 },
         );
+      }
+
+      // Same full-form save from Create job posting's edit form — the
+      // title tracks whichever Position was (re)selected. The posting's
+      // slug/web address, set once at creation, is deliberately left
+      // untouched here.
+      const positionTitle = await resolveTitleFromPosition(
+        supabaseAdmin,
+        orgFieldOptions,
+        orgFieldUpdates,
+      );
+      if (positionTitle) {
+        updates.title = positionTitle.title;
+        updates.job_title_key = slugifyJobTitle(positionTitle.title);
       }
     }
 

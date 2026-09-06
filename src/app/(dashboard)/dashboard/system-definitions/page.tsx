@@ -37,7 +37,6 @@ import {
   isEditableBusinessLogicModule,
   isEditableApplicationFormModule,
   isEditableOnboardingFormModule,
-  isEditableJobPostingModule,
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
   isEditableRatingSectionModule,
@@ -58,7 +57,6 @@ import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
 import GradeLevelsEditor from "./components/GradeLevelsEditor";
-import JobPostingsEditor from "./components/JobPostingsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import InterviewGuidesEditor from "./components/InterviewGuidesEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
@@ -369,16 +367,6 @@ function ModuleDetail({
           <EmptyRow>No specific actions listed for this section.</EmptyRow>
         )}
       </SectionCard>
-
-      {isEditableJobPostingModule(m.id) && (
-        <SectionCard
-          icon={Tag}
-          title="Job posting"
-          description="Roles HR can publish on the careers page. Add or remove roles here — interview guide is set internally."
-        >
-          <JobPostingsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
-        </SectionCard>
-      )}
 
       {isEditableApplicationFormModule(m.id) && (
         <SectionCard
