@@ -46,6 +46,8 @@ export type OrgCustomListType = {
   numeric_range_mode: NumericRangeMode;
   fields: CustomFieldDef[];
   sort_order: number;
+  /** Disabled lists are hidden from anywhere they'd be picked for new use (e.g. Create job posting's org-structure fields) — the table, its data, and existing references are untouched. */
+  is_active: boolean;
   created_at: string;
   updated_at: string;
   /** Present on the list returned by GET /custom-list-types — item count for the Set up hub table. */

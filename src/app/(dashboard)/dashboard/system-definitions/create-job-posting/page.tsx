@@ -128,9 +128,13 @@ export default function CreateJobPostingPage() {
   });
 
   const orgFieldListTypes = useMemo(
-    () => listTypes.filter((lt): lt is OrgCustomListType & { job_posting_column: string } =>
-      typeof lt.job_posting_column === "string" && lt.job_posting_column.length > 0,
-    ),
+    () =>
+      listTypes.filter(
+        (lt): lt is OrgCustomListType & { job_posting_column: string } =>
+          typeof lt.job_posting_column === "string" &&
+          lt.job_posting_column.length > 0 &&
+          lt.is_active !== false,
+      ),
     [listTypes],
   );
 

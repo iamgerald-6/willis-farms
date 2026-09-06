@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, Check, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, Building2, Check, Loader2, Pencil, Plus, Power, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
@@ -11,7 +11,6 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
   CUSTOM_FIELD_TYPES,
   type CustomFieldDef,
@@ -145,20 +144,22 @@ export default function OrganizationalStructurePage() {
     },
   });
 
-  const [deleteTarget, setDeleteTarget] = useState<OrgCustomListType | null>(null);
-  const deleteListMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/organizational-structure/custom-list-types/${id}`);
+  // Disabling a list hides it from anywhere it'd be picked for new use
+  // (e.g. Create job posting's org-structure fields) without touching its
+  // table or data — replaces the old permanent-delete action, which was
+  // too easy to lose data with by accident.
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
+      await api.patch(`/organizational-structure/custom-list-types/${id}`, { is_active });
     },
-    onSuccess: () => {
-      toast.success("List deleted.");
-      setDeleteTarget(null);
+    onSuccess: (_data, variables) => {
+      toast.success(variables.is_active ? "List enabled." : "List disabled.");
       queryClient.invalidateQueries({
         queryKey: ["organizational_structure_custom_list_types"],
       });
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "Could not delete list.");
+      toast.error(error?.response?.data?.error ?? "Could not update list.");
     },
   });
 
@@ -423,8 +424,12 @@ export default function OrganizationalStructurePage() {
           <tbody>
             {(customListTypes ?? []).map((listType) => {
               const isEditingList = editingListId === listType.id;
+              const isDisabled = listType.is_active === false;
               return (
-                <tr key={listType.id} className="border-t border-gray-100">
+                <tr
+                  key={listType.id}
+                  className={`border-t border-gray-100 ${isDisabled ? "opacity-60" : ""}`}
+                >
                   <td className="px-4 py-2.5 text-gray-900">
                     {isEditingList ? (
                       <input
@@ -435,7 +440,14 @@ export default function OrganizationalStructurePage() {
                         autoFocus
                       />
                     ) : (
-                      listType.label
+                      <span className="inline-flex items-center gap-2">
+                        {listType.label}
+                        {isDisabled && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-500 border border-gray-200">
+                            Disabled
+                          </span>
+                        )}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500">
@@ -482,11 +494,22 @@ export default function OrganizationalStructurePage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setDeleteTarget(listType)}
-                              aria-label={`Delete ${listType.label}`}
-                              className="text-gray-400 hover:text-red-600 p-1.5"
+                              onClick={() =>
+                                toggleActiveMutation.mutate({
+                                  id: listType.id,
+                                  is_active: isDisabled,
+                                })
+                              }
+                              disabled={toggleActiveMutation.isPending}
+                              aria-label={isDisabled ? `Enable ${listType.label}` : `Disable ${listType.label}`}
+                              title={isDisabled ? "Enable list" : "Disable list"}
+                              className={`p-1.5 disabled:opacity-60 ${
+                                isDisabled
+                                  ? "text-gray-400 hover:text-green-600"
+                                  : "text-gray-400 hover:text-red-600"
+                              }`}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Power className="w-4 h-4" />
                             </button>
                           </>
                         )}
@@ -499,21 +522,6 @@ export default function OrganizationalStructurePage() {
           </tbody>
         </table>
       </div>
-
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete this list?"
-        message={
-          deleteTarget
-            ? `"${deleteTarget.label}" and all ${deleteTarget.item_count ?? 0} of its items will be permanently deleted, along with any mappings that use it. This can't be undone.`
-            : ""
-        }
-        confirmLabel="Delete list"
-        destructive
-        confirming={deleteListMutation.isPending}
-        onConfirm={() => deleteTarget && deleteListMutation.mutate(deleteTarget.id)}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   );
 }

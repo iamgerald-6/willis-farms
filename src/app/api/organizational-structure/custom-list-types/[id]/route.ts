@@ -7,10 +7,12 @@ import {
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 
 /**
- * PATCH — rename a custom list. Only `label` (and the `singular` derived
- * from it) can change — `code` and `table_name` stay put, same as `code`
- * being immutable on the fixed lists, since the physical table is already
- * named after it.
+ * PATCH — rename a custom list and/or toggle it active/disabled. Renaming
+ * only changes `label` (and the `singular` derived from it) — `code` and
+ * `table_name` stay put, since the physical table is already named after
+ * it. Disabling a list doesn't touch its table or data at all — it just
+ * hides it from anywhere it'd be picked for new use (see is_active on
+ * OrgCustomListType).
  */
 export async function PATCH(
   req: NextRequest,
@@ -22,14 +24,29 @@ export async function PATCH(
     const caller = await requireSystemDefinitionsAccess(req, "edit");
     if (!caller) {
       return jsonForbidden(
-        "System Definitions edit access is required to rename a list.",
+        "System Definitions edit access is required to edit a list.",
       );
     }
 
     const body = await req.json();
-    const label = (body.label as string | undefined)?.trim();
-    if (!label) {
-      return NextResponse.json({ error: "List name is required" }, { status: 400 });
+    const updates: Record<string, unknown> = {};
+
+    if (body.label !== undefined) {
+      const label = (body.label as string | undefined)?.trim();
+      if (!label) {
+        return NextResponse.json({ error: "List name is required" }, { status: 400 });
+      }
+      updates.label = label;
+      // Same naive singular derivation used at creation time.
+      updates.singular = label.replace(/s$/i, "") || label;
+    }
+
+    if (typeof body.is_active === "boolean") {
+      updates.is_active = body.is_active;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdminFromAuth();
@@ -40,12 +57,9 @@ export async function PATCH(
       );
     }
 
-    // Same naive singular derivation used at creation time.
-    const singular = label.replace(/s$/i, "") || label;
-
     const { data, error } = await supabase
       .from("org_custom_list_types")
-      .update({ label, singular })
+      .update(updates)
       .eq("id", id)
       .select()
       .single();
