@@ -219,6 +219,14 @@ export default function CreateJobPostingPage() {
   const [orgFieldMode, setOrgFieldMode] = useState<Record<string, "single" | "range">>({});
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  // After Save, the form moves from the posting-details step to an
+  // Interview step for that same posting (create and edit both go through
+  // this) — postingStep tracks which one is showing, and
+  // interviewPostingId is the posting the Interview step now applies to
+  // (known immediately on edit; only known once the create request
+  // returns, since there's no id before that).
+  const [postingStep, setPostingStep] = useState<"details" | "interview">("details");
+  const [interviewPostingId, setInterviewPostingId] = useState<string | null>(null);
 
   const resetForm = () => {
     setShowForm(false);
@@ -226,6 +234,8 @@ export default function CreateJobPostingPage() {
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
+    setPostingStep("details");
+    setInterviewPostingId(null);
   };
 
   const openCreate = () => {
@@ -233,11 +243,15 @@ export default function CreateJobPostingPage() {
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
+    setPostingStep("details");
+    setInterviewPostingId(null);
     setShowForm(true);
   };
 
   const openEdit = (posting: JobPosting) => {
     setEditing(posting);
+    setPostingStep("details");
+    setInterviewPostingId(null);
     setForm({
       description: posting.description,
       role_scope: posting.role_scope ?? "",
@@ -426,10 +440,15 @@ export default function CreateJobPostingPage() {
         created_by: session?.user?.id,
       });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success(editing ? "Posting updated." : "Job posting created.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
-      resetForm();
+      // Move on to the Interview step for this same posting instead of
+      // closing the form — editing.id is already known when updating an
+      // existing posting; for a brand-new one, the id only exists once
+      // this response comes back.
+      setInterviewPostingId(editing?.id ?? res?.data?.data?.id ?? null);
+      setPostingStep("interview");
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
       toast.error(err?.response?.data?.error ?? "Could not save posting.");
@@ -518,7 +537,31 @@ export default function CreateJobPostingPage() {
         </button>
       </div>
 
-      {activeTab === "active" && showForm && (
+      {activeTab === "active" && showForm && postingStep === "interview" && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
+          <p className="text-sm font-semibold text-gray-800 mb-1">Interview setup</p>
+          <p className="text-xs text-gray-500 mb-4">
+            Posting saved. Next, set up the interview questions and scoring
+            for this role.
+          </p>
+          <div className="rounded-lg bg-gray-50 border border-gray-100 p-6 text-center text-sm text-gray-400">
+            Interview setup for this posting isn't wired up yet — coming
+            soon. For now, use Recruitment → Interview under System
+            Definitions.
+          </div>
+          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              Save and return to postings
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "active" && showForm && postingStep === "details" && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5">
           <p className="text-sm font-semibold text-gray-800 mb-4">
             {editing ? "Edit job posting" : "New job posting"}
