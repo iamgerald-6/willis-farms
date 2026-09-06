@@ -683,13 +683,11 @@ function ApplicationDetail({
                     <div className="mb-3 pb-3 border-b border-purple-200">
                       <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
                         Age eligibility
-                        {application.ai_screening.grade_level &&
-                          application.ai_screening.age_min != null &&
+                        {application.ai_screening.age_min != null &&
                           application.ai_screening.age_max != null && (
                             <span className="font-normal normal-case text-purple-700">
                               {" "}
-                              ({application.ai_screening.grade_level}:{" "}
-                              {application.ai_screening.age_min}–
+                              ({application.ai_screening.age_min}–
                               {application.ai_screening.age_max} years)
                             </span>
                           )}

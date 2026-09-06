@@ -14,7 +14,11 @@ import {
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
 } from "@/lib/careers/jobPostingDb";
-import { extractOrgFieldUpdates, fetchOrgFieldOptions } from "@/lib/careers/jobPostingOrgFields";
+import {
+  extractOrgFieldUpdates,
+  fetchOrgFieldOptions,
+  findMissingOrgFields,
+} from "@/lib/careers/jobPostingOrgFields";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -107,6 +111,25 @@ export async function POST(req: NextRequest) {
       body as unknown as Record<string, unknown>,
       orgFieldOptions,
     );
+
+    // Every active org-structure list is required on a genuinely new
+    // posting created from Create job posting. Recruitment's Republish
+    // action (supersedes_id set) only asks HR for a new closing date and
+    // carries the old posting's org fields forward as-is, whatever they
+    // are — it isn't the "open it and edit it" path this rule targets, so
+    // a legacy posting missing a field can still be republished without
+    // being blocked here.
+    if (!body.supersedes_id) {
+      const missingOrgFields = findMissingOrgFields(orgFieldOptions, orgFieldUpdates);
+      if (missingOrgFields.length > 0) {
+        return NextResponse.json(
+          {
+            error: `All organizational structure fields are required. Missing: ${missingOrgFields.join(", ")}.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     const { data, error } = await insertJobPostingWithColumnFallback(supabaseAdmin, {
       slug,

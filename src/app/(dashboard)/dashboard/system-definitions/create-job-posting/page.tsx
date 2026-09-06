@@ -314,6 +314,30 @@ export default function CreateJobPostingPage() {
     ? [selectedSite.label, selectedSite.region].filter(Boolean).join(", ")
     : "";
 
+  // Every active org-structure list is required on a job posting — a
+  // numeric-range list (e.g. Age) counts as filled in if either its single
+  // value is set, or both its min and max are set, depending on which mode
+  // it's currently in.
+  const missingOrgFieldLabels = orgFieldListTypes
+    .filter((lt) => {
+      if (!lt.is_numeric_range) {
+        return !orgFieldValues[lt.job_posting_column];
+      }
+      const mode = orgFieldMode[lt.id] ?? "single";
+      const canRangeHere =
+        lt.numeric_range_mode === "digits" && lt.job_posting_min_column && lt.job_posting_max_column;
+      if (!canRangeHere || mode === "single") {
+        return !orgFieldValues[lt.job_posting_column];
+      }
+      return (
+        !orgFieldValues[lt.job_posting_min_column as string] ||
+        !orgFieldValues[lt.job_posting_max_column as string]
+      );
+    })
+    .map((lt) => lt.label);
+
+  const orgFieldsComplete = missingOrgFieldLabels.length === 0;
+
   const handleExtract = async () => {
     if (!form.jd_file_url) return;
     setExtracting(true);
@@ -517,7 +541,7 @@ export default function CreateJobPostingPage() {
           {orgFieldListTypes.length > 0 && (
             <div className="mb-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                Organizational structure
+                Organizational structure — all fields required
               </p>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {orgFieldListTypes.map((lt, index) => {
@@ -559,7 +583,7 @@ export default function CreateJobPostingPage() {
                   return (
                     <div key={lt.id} className="block">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-gray-600">{lt.label}</span>
+                        <span className="text-xs font-medium text-gray-600">{lt.label} *</span>
                         {canRange && (
                           <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[11px]">
                             <button
@@ -804,11 +828,31 @@ export default function CreateJobPostingPage() {
             </div>
           </div>
 
+          {(missingOrgFieldLabels.length > 0 ||
+            (selectedPosition && !matchedJobTitleOption)) && (
+            <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              {missingOrgFieldLabels.length > 0 && (
+                <p>
+                  All organizational structure fields are required. Still missing:{" "}
+                  <span className="font-medium">{missingOrgFieldLabels.join(", ")}</span>.
+                </p>
+              )}
+              {selectedPosition && !matchedJobTitleOption && (
+                <p>No matching job title found for the selected position.</p>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
             <button
               type="button"
               onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !matchedJobTitleOption || !selectedSite}
+              disabled={
+                saveMutation.isPending ||
+                !matchedJobTitleOption ||
+                !selectedSite ||
+                !orgFieldsComplete
+              }
               className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
             >
               {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

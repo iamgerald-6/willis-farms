@@ -12,7 +12,11 @@ import {
   JOB_POSTINGS_MIGRATION_HINT,
   updateJobPostingWithColumnFallback,
 } from "@/lib/careers/jobPostingDb";
-import { extractOrgFieldUpdates, fetchOrgFieldOptions } from "@/lib/careers/jobPostingOrgFields";
+import {
+  extractOrgFieldUpdates,
+  fetchOrgFieldOptions,
+  findMissingOrgFields,
+} from "@/lib/careers/jobPostingOrgFields";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -85,7 +89,29 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
-    Object.assign(updates, extractOrgFieldUpdates(body, orgFieldOptions));
+    const orgFieldUpdates = extractOrgFieldUpdates(body, orgFieldOptions);
+    Object.assign(updates, orgFieldUpdates);
+
+    // Only Create job posting's own edit form ever sends org-structure
+    // columns, and it always sends the complete set (see
+    // effectiveOrgFieldValues on that page) — so if any showed up here,
+    // this is a full-form save and every active list must be filled in.
+    // This is also how an old posting that predates this rule gets forced
+    // to catch up: the moment it's opened and saved again, it's saving the
+    // complete set, and this check applies. A Close/Archive/Republish
+    // action from Recruitment never touches these columns, so it's
+    // unaffected.
+    if (Object.keys(orgFieldUpdates).length > 0) {
+      const missingOrgFields = findMissingOrgFields(orgFieldOptions, orgFieldUpdates);
+      if (missingOrgFields.length > 0) {
+        return NextResponse.json(
+          {
+            error: `All organizational structure fields are required. Missing: ${missingOrgFields.join(", ")}.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
