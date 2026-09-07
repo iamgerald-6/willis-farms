@@ -372,6 +372,20 @@ export default function AppraisalForm({
     },
   });
 
+  // Org-structure Sections list — used to resolve the employee's own
+  // section (users.section_id, copied from their hiring posting) into a
+  // label, so Section Authorisations Held can auto-fill from the section
+  // actually attached to their role instead of always starting blank.
+  const { data: orgSections = [] } = useQuery<{ id: string; label: string }[]>(
+    {
+      queryKey: ["appraisal_org_sections"],
+      queryFn: async () => {
+        const res = await api.get("/appraisal/sections");
+        return res.data.data as { id: string; label: string }[];
+      },
+    },
+  );
+
   const { data: moduleConfig } = useQuery<{
     businessLogic: ModuleBusinessLogic;
   }>({
@@ -706,6 +720,42 @@ export default function AppraisalForm({
       setValue("employee_email", currentUserProfile.email);
     }
   }, [fillingForSelf, currentUserProfile, setValue]);
+
+  // Auto-fill Section Authorisations Held from the section attached to the
+  // employee's role (users.section_id, copied from their hiring posting —
+  // see resolveEmployeeOrgPlacement.ts), rather than leaving it blank for
+  // HR/supervisors to guess at. Only runs on fresh fills, only fires once
+  // per employee selection (doesn't fight a manual edit afterward — see the
+  // `alreadyAutoFilledFor` guard), and leaves the field blank exactly as
+  // before if the employee has no section on record, falling back to the
+  // manual dropdown below.
+  const employeeSectionLabel = useMemo(() => {
+    if (!selectedEmployee?.section_id) return null;
+    return (
+      orgSections.find((s) => s.id === selectedEmployee.section_id)?.label ??
+      null
+    );
+  }, [selectedEmployee, orgSections]);
+
+  const [autoFilledSectionFor, setAutoFilledSectionFor] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    if (isFillingSecond || !selectedEmployee || !employeeSectionLabel) return;
+    if (autoFilledSectionFor === selectedEmployee.user_id) return;
+    if (!watch("section_authorisations_held")) {
+      setValue("section_authorisations_held", employeeSectionLabel);
+    }
+    setAutoFilledSectionFor(selectedEmployee.user_id);
+  }, [
+    isFillingSecond,
+    selectedEmployee,
+    employeeSectionLabel,
+    autoFilledSectionFor,
+    setValue,
+    watch,
+  ]);
 
   // Supervisor fill: derive the form band from the selected employee's grade.
   useEffect(() => {
@@ -1202,6 +1252,16 @@ export default function AppraisalForm({
                   className={inputCls()}
                 >
                   <option value="">Select section authorisation</option>
+                  {employeeSectionLabel &&
+                    !sectionAuthOptions.some(
+                      (opt) =>
+                        (opt.legacy_value ?? opt.label) ===
+                        employeeSectionLabel,
+                    ) && (
+                      <option value={employeeSectionLabel}>
+                        {employeeSectionLabel} (from employee record)
+                      </option>
+                    )}
                   {sectionAuthOptions.map((opt) => (
                     <option
                       key={opt.id}
@@ -1211,6 +1271,12 @@ export default function AppraisalForm({
                     </option>
                   ))}
                 </select>
+                {employeeSectionLabel && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Auto-filled from {selectedEmployee?.first_name}&apos;s
+                    section on record — change it if this isn&apos;t right.
+                  </p>
+                )}
               </>
             )}
           </div>
