@@ -23,6 +23,7 @@ import {
 import {
   Ratings,
   SectionRatings,
+  SectionDef,
   computeWeightedScore,
   ITEM_RATING_MIN,
   ITEM_RATING_MAX,
@@ -33,6 +34,7 @@ import {
   canAppraiseOthers,
   supervisableGradeBands,
   sectionsFor,
+  sectionSetForQuarter,
 } from "@/lib/appraisal/sections";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
@@ -629,7 +631,49 @@ export default function AppraisalForm({
     gradeConfig,
   ]);
 
+  // Appraisal grade templates — one question set per exact Site/Business
+  // unit/Department/Section/Position/Grade level combination, matched
+  // against the appraised employee's own stored org placement (replaces
+  // the old global L1-L7 grade-band system for any combination that's been
+  // configured). Falls back to the old band-based sectionsFor/overrides
+  // chain below when no template exists yet for this employee's exact
+  // combination — keeps in-flight appraisals created before this change,
+  // or employees whose position hasn't been configured yet, working.
+  const employeeOrgPlacement = useMemo(
+    () => ({
+      site_id: selectedEmployee?.site_id ?? null,
+      business_unit_id: selectedEmployee?.business_unit_id ?? null,
+      department_id: selectedEmployee?.department_id ?? null,
+      section_id: selectedEmployee?.section_id ?? null,
+      position_id: selectedEmployee?.position_id ?? null,
+      grade_level_id: selectedEmployee?.grade_level_id ?? null,
+    }),
+    [selectedEmployee],
+  );
+  const hasCompleteOrgPlacement = Object.values(employeeOrgPlacement).every(Boolean);
+
+  const { data: gradeTemplate } = useQuery<{
+    id: string;
+    quarterly: SectionDef[];
+    annual: SectionDef[];
+  } | null>({
+    queryKey: ["appraisal_grade_template", employeeOrgPlacement],
+    queryFn: async () => {
+      const res = await api.get("/appraisal/grade-template", {
+        params: employeeOrgPlacement,
+      });
+      return res.data.data;
+    },
+    enabled: hasCompleteOrgPlacement,
+  });
+
   const sections = useMemo(() => {
+    if (gradeTemplate) {
+      return sectionSetForQuarter(quarter) === "quarterly"
+        ? gradeTemplate.quarterly
+        : gradeTemplate.annual;
+    }
+
     const base = sectionsFor(gradeBand, quarter);
     const withContent = applySectionContentOverrides(
       base,
@@ -650,6 +694,7 @@ export default function AppraisalForm({
       weightRules,
     );
   }, [
+    gradeTemplate,
     gradeBand,
     quarter,
     selectedEmployee?.grade_level,
@@ -1419,7 +1464,11 @@ export default function AppraisalForm({
 
         {visibleSections.length === 0 && (
           <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-            Select an employee above to load the rating sections
+            {(isFillingSecond || fillingForSelf || selectedEmployee) &&
+            hasCompleteOrgPlacement &&
+            !gradeTemplate
+              ? "No appraisal question set has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions."
+              : "Select an employee above to load the rating sections"}
           </div>
         )}
 
