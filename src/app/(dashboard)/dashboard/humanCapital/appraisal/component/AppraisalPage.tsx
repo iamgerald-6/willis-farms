@@ -31,7 +31,6 @@ import {
 import {
   Quarter,
   canRate,
-  canAppraiseOthers,
   supervisableGradeBands,
   sectionsFor,
   sectionSetForQuarter,
@@ -42,6 +41,7 @@ import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeC
 import { resolveAppraisalSupervisorFields } from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
+import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   computeDeadline,
   getActiveAppraisalPeriod,
@@ -403,7 +403,7 @@ export default function AppraisalForm({
   );
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
-  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.role);
+  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.user_role_label);
   const isConsultantViewer = isConsultantEmployee(currentUserGrade, gradeConfig);
 
   // ── Which side of the form am I filling? ──
@@ -434,10 +434,6 @@ export default function AppraisalForm({
   const hasSubject = isFillingSecond || !!selectedEmployee;
   const supervisorMode = hasSubject && !isOwnAppraisal(viewer, subject);
   const selfAppraisalMode = hasSubject && !supervisorMode;
-
-  // Can this viewer appraise anyone other than themselves at all? (L4+)
-  const canSelectForOthers =
-    !isFillingSecond && (canAppraiseOthers(currentUserGrade) || isSuperAdmin);
 
   const watchedSupervisorName = watch("immediate_supervisor");
   const watchedSupervisorEmail = watch("supervisor_email");
@@ -605,31 +601,24 @@ export default function AppraisalForm({
   ]);
 
   // ── Filter employees for a fresh supervisor fill ──
+  // Who shows up here must match who canSuperviseAppraisal (appraisal/roles.ts)
+  // actually lets this viewer appraise: Super Admin sees every eligible
+  // subject; everyone else sees only the people actually assigned to them as
+  // supervisor_id — never a grade-rank or role-only comparison.
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
-    const allowedGrades = new Set<string>();
-    for (const band of allowedGradeBands) {
-      for (const grade of appraisalFormKeyCovers[band.value] ?? []) {
-        allowedGrades.add(grade);
-      }
-    }
     return allUsers.filter((u) => {
       if (!canParticipateAsProgramSubject(u.grade_level, gradeConfig)) return false;
-      if (!u.grade_level || !allowedGrades.has(u.grade_level)) return false;
       if (u.user_id === userId) return false;
-      return isSuperAdmin || canRate(currentUserGrade, u.grade_level, gradeConfig);
+      return isSuperAdmin || isAssignedSupervisorOf(userId, u);
     });
-  }, [
-    allUsers,
-    allowedGradeBands,
-    appraisalFormKeyCovers,
-    userId,
-    currentUserGrade,
-    isSuperAdmin,
-    fillingForSelf,
-    isFillingSecond,
-    gradeConfig,
-  ]);
+  }, [allUsers, userId, isSuperAdmin, fillingForSelf, isFillingSecond, gradeConfig]);
+
+  // Can this viewer appraise anyone other than themselves at all? Super
+  // Admin always can; everyone else only if they have at least one person
+  // actually assigned to them as supervisor_id (see filteredEmployees above).
+  const canSelectForOthers =
+    !isFillingSecond && (isSuperAdmin || filteredEmployees.length > 0);
 
   // Appraisal grade templates — one question set per exact Site/Business
   // unit/Department/Section/Position/Grade level combination, matched
