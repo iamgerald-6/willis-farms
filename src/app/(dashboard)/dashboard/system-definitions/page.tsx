@@ -52,7 +52,6 @@ import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
-import GradeLevelsEditor from "./components/GradeLevelsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import {
@@ -547,20 +546,6 @@ function getModuleSections(
       ),
     });
 
-    sections.push({
-      key: "grade-levels",
-      label: "Grade levels & linked roles",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Grade levels & linked roles"
-          description="L1–L7 are built in. Add L8 or higher with a job posting role (e.g. L1 → Junior Swine Technician)."
-        >
-          <GradeLevelsEditor moduleId={m.id} canAdd={canAdd} canEdit={canEdit} />
-        </SectionCard>
-      ),
-    });
   }
 
   if (isEditableCompetencySectionModule(m.id)) {
