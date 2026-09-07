@@ -10,7 +10,6 @@ import {
   OFFER_TERMS_FIELD_KEYS,
   validateOfferTerms,
 } from "@/lib/careers/offerTerms";
-import { resolveSalaryForGradeTier } from "@/lib/systemDefinitions/salaryRanges";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
@@ -119,18 +118,14 @@ export default function OfferTermsPanel({
       if (!validation.valid) {
         throw new Error(validation.message ?? "Offer terms incomplete.");
       }
-      const salaryMeta = hrData.grade_level
-        ? resolveSalaryForGradeTier(
-            hrData.grade_level,
-            hrData.salary_tier ?? "mid",
-            gradeConfig,
-          )
-        : null;
+      // salary_range comes exclusively from the linked job posting's own
+      // Salary field (see resolveOfferTermsFromPosting) — never recomputed
+      // from the legacy grade-tier table here. If hrData already has one
+      // (posting-sourced, or blank), it's kept as-is.
       const payload: OnboardingHrData = {
         ...data?.hr_data,
         ...hrData,
         position_title: hrData.position_title?.trim() || roleTitle,
-        salary_range: salaryMeta?.formatted || hrData.salary_range,
         offer_terms_saved_at: new Date().toISOString(),
       };
       await api.patch("/careers/onboarding", {

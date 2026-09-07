@@ -1,8 +1,3 @@
-import {
-  normalizeGradeSalaryTiers,
-  type GradeSalaryTiers,
-} from "./salaryRanges";
-
 export type GradeRoleKind = "ranked" | "consultant";
 
 export type GradeLevelDef = {
@@ -14,8 +9,6 @@ export type GradeLevelDef = {
   builtIn?: boolean;
   /** Ranked L1–L7+ vs consultant (no numeric level). */
   roleKind?: GradeRoleKind;
-  /** Low / mid / high salary bands (GHS) for HR Section O. */
-  salaryTiers?: GradeSalaryTiers;
   /** Internal HR age band for shortlisting — not shown to applicants. */
   ageMin?: number;
   ageMax?: number;
@@ -122,7 +115,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (isConsultant) {
       if (!/^[a-z][a-z0-9_]*$/.test(id) || usedIds.has(id)) continue;
       usedIds.add(id);
-      const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
       const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
       const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
       levels.push({
@@ -132,7 +124,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
         roleKind: "consultant",
         roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
         builtIn: row.builtIn === true,
-        ...(salaryTiers ? { salaryTiers } : {}),
         ...(ageMin != null ? { ageMin } : {}),
         ...(ageMax != null ? { ageMax } : {}),
       });
@@ -142,7 +133,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (!/^L\d+$/.test(id) || !Number.isFinite(rank) || rank < 1) continue;
     if (usedIds.has(id)) continue;
     usedIds.add(id);
-    const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
     const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
     const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
     levels.push({
@@ -152,7 +142,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
       roleKind: "ranked",
       roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
       builtIn: row.builtIn === true,
-      ...(salaryTiers ? { salaryTiers } : {}),
       ...(ageMin != null ? { ageMin } : {}),
       ...(ageMax != null ? { ageMax } : {}),
     });

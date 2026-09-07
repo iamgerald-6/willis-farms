@@ -14,7 +14,6 @@ import {
 } from "@/lib/careers/onboardingTypes";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
 import { resolveCompanyEmailDomain } from "@/lib/systemDefinitions/companyEmailDomain";
-import { resolveSalaryForGradeTier } from "@/lib/systemDefinitions/salaryRanges";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import { resolveOfferTermsFromPosting } from "@/lib/careers/resolveOfferTermsFromPosting";
 
@@ -122,16 +121,17 @@ export async function GET(req: NextRequest) {
       domain: emailDomain,
     });
 
-    // Same priority as grade level: the posting's own Salary field wins
-    // over the old grade-level pay-tier table.
-    const salaryTier =
-      salaryTierOverride?.trim().toLowerCase() ||
-      hr.salary_tier?.trim().toLowerCase() ||
-      "mid";
-    const legacySalary = resolveSalaryForGradeTier(gradeLevel, salaryTier, gradeConfig);
-    const salaryTierOut = postingTerms?.salary_tier ?? legacySalary.tier ?? salaryTier;
-    const salaryRangeOut = postingTerms?.salary_range ?? legacySalary.formatted ?? null;
-    const salaryGhsOut = hr.salary_ghs?.trim() || legacySalary.salaryGhs || null;
+    // Salary is sourced exclusively from the linked job posting's own
+    // Salary field (see resolveOfferTermsFromPosting). If the posting has
+    // no salary band, these fields are simply left blank — no fallback to
+    // the legacy grade-tier pay table.
+    const salaryTierOut =
+      postingTerms?.salary_tier ??
+      salaryTierOverride?.trim().toLowerCase() ??
+      hr.salary_tier?.trim().toLowerCase() ??
+      null;
+    const salaryRangeOut = postingTerms?.salary_range ?? null;
+    const salaryGhsOut = hr.salary_ghs?.trim() || null;
 
     return NextResponse.json({
       success: true,

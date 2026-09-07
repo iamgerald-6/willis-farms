@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
@@ -20,13 +20,7 @@ import {
   ONBOARDING_HR_FIELDS_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
-import {
-  SALARY_TIER_IDS,
-  SALARY_TIER_LABELS,
-  resolveSalaryForGradeTier,
-  validateGrossSalaryAgainstBand,
-  validateGrossSalaryInBand,
-} from "@/lib/systemDefinitions/salaryRanges";
+import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
 import {
@@ -129,23 +123,6 @@ export default function OnboardingHrFieldsForm({
   const { domain: companyEmailDomain } = useCompanyEmailDomain();
   const salaryGhsTouched = useRef(false);
 
-  const applySalaryFromSystem = useCallback(
-    (gradeLevel: string, tierInput?: string, forceSalary = false) => {
-      const tier = tierInput?.trim() || "mid";
-      const resolved = resolveSalaryForGradeTier(gradeLevel, tier, gradeConfig);
-      setHrData((prev) => ({
-        ...prev,
-        salary_tier: tier,
-        salary_range: resolved.formatted || undefined,
-        salary_ghs:
-          forceSalary || !salaryGhsTouched.current
-            ? resolved.salaryGhs || prev.salary_ghs
-            : prev.salary_ghs,
-      }));
-    },
-    [gradeConfig, setHrData],
-  );
-
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
@@ -186,27 +163,6 @@ export default function OnboardingHrFieldsForm({
       }));
     }
   }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
-
-  useEffect(() => {
-    // The posting's own Salary field already set salary_range/salary_tier
-    // — don't let the old grade-level pay-tier table overwrite it.
-    if (hrData.salary_band_min != null || hrData.salary_band_max != null) return;
-    if (!hrData.grade_level?.trim()) return;
-    if (hrData.salary_range?.trim() && hrData.salary_ghs?.trim()) return;
-    applySalaryFromSystem(
-      hrData.grade_level,
-      hrData.salary_tier,
-      !hrData.salary_ghs?.trim(),
-    );
-  }, [
-    applySalaryFromSystem,
-    hrData.grade_level,
-    hrData.salary_tier,
-    hrData.salary_range,
-    hrData.salary_ghs,
-    hrData.salary_band_min,
-    hrData.salary_band_max,
-  ]);
 
   const departmentOptions = useMemo(() => {
     const lists = optionLists ?? {};
@@ -366,20 +322,15 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldType === "salary_range") {
-      const rangeText =
-        hrData.salary_range?.trim() ||
-        (hrData.grade_level
-          ? resolveSalaryForGradeTier(
-              hrData.grade_level,
-              hrData.salary_tier ?? "mid",
-              gradeConfig,
-            ).formatted
-          : "");
+      // Sourced exclusively from the linked job posting's Salary field.
+      // Left blank (no legacy grade-tier substitution) when the posting
+      // has no salary band.
+      const rangeText = hrData.salary_range?.trim() || "";
       return (
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
           <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-            {rangeText || "Select grade and salary tier first."}
+            {rangeText || "Not set on the linked job posting."}
           </div>
         </label>
       );
@@ -579,23 +530,15 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldKey === "salary_ghs") {
-      // The posting's own Salary field (salary_band_min/max) is the
-      // source of truth going forward — only fall back to the old
-      // grade-level pay-tier table for hr_data saved before a
-      // posting-sourced band was available.
+      // The posting's own Salary field (salary_band_min/max) is the sole
+      // source of truth for a validation band. If the posting has no band,
+      // there's nothing to validate against — skip band validation rather
+      // than falling back to the old grade-level pay-tier table.
       const hasPostingBand = hrData.salary_band_min != null || hrData.salary_band_max != null;
       const bandCheck = hasPostingBand
         ? validateGrossSalaryAgainstBand(value, hrData.salary_band_min, hrData.salary_band_max)
-        : validateGrossSalaryInBand(value, hrData.grade_level, hrData.salary_tier, gradeConfig);
-      const bandText =
-        hrData.salary_range?.trim() ||
-        (!hasPostingBand && hrData.grade_level
-          ? resolveSalaryForGradeTier(
-              hrData.grade_level,
-              hrData.salary_tier ?? "mid",
-              gradeConfig,
-            ).formatted
-          : "");
+        : { valid: true, message: null };
+      const bandText = hrData.salary_range?.trim() || "";
 
       return (
         <label key={field.id} className={`block ${spanClass}`}>

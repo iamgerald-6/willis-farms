@@ -1,9 +1,6 @@
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import type { GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
-import {
-  validateGrossSalaryAgainstBand,
-  validateGrossSalaryInBand,
-} from "@/lib/systemDefinitions/salaryRanges";
+import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
 
 /** HR fields captured on the Offer tab before generating the offer letter. */
 export const OFFER_TERMS_FIELD_KEYS = [
@@ -102,7 +99,9 @@ const FIELD_LABELS: Record<OfferTermsFieldKey, string> = {
 
 export function validateOfferTerms(
   hr: OnboardingHrData | null | undefined,
-  gradeConfig?: GradeLevelsConfig,
+  // Kept for call-site compatibility; no longer used — salary-band
+  // validation only ever runs against the posting-sourced band (see below).
+  _gradeConfig?: GradeLevelsConfig,
 ): {
   valid: boolean;
   missing: OfferTermsFieldKey[];
@@ -120,19 +119,23 @@ export function validateOfferTerms(
     };
   }
 
-  // The posting's own Salary field is the source of truth going forward —
-  // only fall back to the old grade-level pay-tier table for hr_data
-  // saved before a posting-sourced band was available.
-  const bandCheck =
-    hr?.salary_band_min != null || hr?.salary_band_max != null
-      ? validateGrossSalaryAgainstBand(hr?.salary_ghs, hr?.salary_band_min, hr?.salary_band_max)
-      : validateGrossSalaryInBand(hr?.salary_ghs, hr?.grade_level, hr?.salary_tier, gradeConfig);
-  if (!bandCheck.valid) {
-    return {
-      valid: false,
-      missing: [],
-      message: bandCheck.message,
-    };
+  // The posting's own Salary field is the sole source of truth for a
+  // salary band. If the posting has no band, there's nothing to validate
+  // against — skip band validation entirely rather than falling back to
+  // the legacy grade-tier pay table.
+  if (hr?.salary_band_min != null || hr?.salary_band_max != null) {
+    const bandCheck = validateGrossSalaryAgainstBand(
+      hr?.salary_ghs,
+      hr?.salary_band_min,
+      hr?.salary_band_max,
+    );
+    if (!bandCheck.valid) {
+      return {
+        valid: false,
+        missing: [],
+        message: bandCheck.message,
+      };
+    }
   }
 
   return { valid: true, missing: [], message: null };

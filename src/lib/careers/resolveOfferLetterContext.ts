@@ -3,7 +3,7 @@ import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/t
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { inferGradeLevel } from "@/lib/careers/hrEmployeeDefaults";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
-import { resolveSalaryForGradeTier, formatGrossSalaryAmount } from "@/lib/systemDefinitions/salaryRanges";
+import { formatGrossSalaryAmount } from "@/lib/systemDefinitions/salaryRanges";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 
@@ -71,14 +71,9 @@ export async function resolveOfferLetterContext(
     inferGradeLevel(application.role_slug, hr, gradeConfig) ||
     undefined;
 
-  const salaryTier = hr.salary_tier?.trim().toLowerCase() || "mid";
-  const salary = gradeLevel
-    ? resolveSalaryForGradeTier(gradeLevel, salaryTier, gradeConfig)
-    : { salaryGhs: "", formatted: "", tier: salaryTier };
-
   const medicalReports = await fetchRequiredMedicalReports(supabase);
 
-  const salaryGhs = hr.salary_ghs?.trim() || salary.salaryGhs || undefined;
+  const salaryGhs = hr.salary_ghs?.trim() || undefined;
   const payFrequency = hr.pay_frequency?.trim() || undefined;
 
   const acceptanceDeadline = formatDisplayDate(hr.acceptance_deadline);
@@ -98,8 +93,8 @@ export async function resolveOfferLetterContext(
     recommendedStartDate,
     gradeLevel,
     salaryGhs,
-    salaryRange: hr.salary_range?.trim() || salary.formatted || undefined,
-    salaryTier: hr.salary_tier?.trim() || salary.tier || salaryTier,
+    salaryRange: hr.salary_range?.trim() || undefined,
+    salaryTier: hr.salary_tier?.trim() || undefined,
     payFrequency,
     employmentType: hr.employment_type?.trim() || undefined,
     department: hr.department?.trim() || undefined,
