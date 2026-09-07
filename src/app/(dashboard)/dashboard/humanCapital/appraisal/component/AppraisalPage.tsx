@@ -30,7 +30,6 @@ import {
 } from "@/lib/appraisal/scoring";
 import {
   Quarter,
-  canRate,
   supervisableGradeBands,
   sectionsFor,
   sectionSetForQuarter,
@@ -520,34 +519,6 @@ export default function AppraisalForm({
     }
   }, [existingAppraisal, allUsers, setValue]);
 
-  // ── Immediate Supervisor dropdown — every user eligible to rate the
-  // employee actually being appraised (self, or whoever's picked in "Select
-  // Employee" below), same L4+/strictly-senior rule the rest of the
-  // appraisal system already uses (canRate). Picking a name here writes
-  // BOTH immediate_supervisor and supervisor_email together (see
-  // handleSupervisorSelect) — there's no longer a way to attach a
-  // supervisor's name without their email coming along with it, which is
-  // what actually routes the "please complete your evaluation" notification. ──
-  const employeeGradeForSupervisorList = fillingForSelf
-    ? currentUserGrade
-    : selectedEmployee?.grade_level;
-  const eligibleSupervisors = useMemo(() => {
-    if (isFillingSecond || !employeeGradeForSupervisorList) return [];
-    const employeeId = fillingForSelf ? userId : selectedEmployee?.user_id;
-    return allUsers.filter(
-      (u) =>
-        u.user_id !== employeeId &&
-        canRate(u.grade_level, employeeGradeForSupervisorList),
-    );
-  }, [
-    allUsers,
-    isFillingSecond,
-    employeeGradeForSupervisorList,
-    fillingForSelf,
-    userId,
-    selectedEmployee,
-  ]);
-
   const assignedSupervisor = useMemo(() => {
     const id = currentUserProfile?.supervisor_id;
     if (!id) return null;
@@ -555,16 +526,6 @@ export default function AppraisalForm({
   }, [allUsers, currentUserProfile?.supervisor_id]);
 
   const hasAssignedSupervisor = !!assignedSupervisor;
-
-  const handleSupervisorSelect = (supervisorUserId: string) => {
-    setSelectedSupervisorId(supervisorUserId);
-    const sup = eligibleSupervisors.find((u) => u.user_id === supervisorUserId);
-    setValue(
-      "immediate_supervisor",
-      sup ? `${sup.first_name} ${sup.last_name}` : "",
-    );
-    setValue("supervisor_email", sup?.email ?? "");
-  };
 
   // Filling for someone I supervise — lock to my own name+email.
   // Self-appraisal: use assigned supervisor from User Management when set.
@@ -1299,24 +1260,21 @@ export default function AppraisalForm({
                 />
               </div>
             ) : (
+              // No supervisor assigned in User Management yet. Only the
+              // actual assigned supervisor (users.supervisor_id) is allowed
+              // to complete the evaluation now (see canSuperviseAppraisal),
+              // so there's no safe way to let someone pick an arbitrary
+              // person here — picking the wrong one would just route the
+              // notification to someone who'd be rejected at submit time.
+              // The required hidden inputs stay empty, which blocks
+              // submission until a supervisor is actually assigned.
               <div>
                 <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
-                <select
-                  value={selectedSupervisorId}
-                  onChange={(e) => handleSupervisorSelect(e.target.value)}
-                  className={inputCls(!!errors.immediate_supervisor)}
-                >
-                  <option value="">
-                    {eligibleSupervisors.length === 0
-                      ? "No eligible supervisors found"
-                      : "Select supervisor's name"}
-                  </option>
-                  {eligibleSupervisors.map((u) => (
-                    <option key={u.user_id} value={u.user_id}>
-                      {u.first_name} {u.last_name} ({u.grade_level ?? "?"})
-                    </option>
-                  ))}
-                </select>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  No supervisor is assigned to you yet. Ask an admin to set
+                  your Assigned supervisor in Manage User before this
+                  appraisal can be completed.
+                </div>
                 <input
                   type="hidden"
                   {...register("immediate_supervisor", { required: true })}
