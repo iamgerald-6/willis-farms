@@ -22,6 +22,9 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import ConfirmDeleteDialog from "./components/deletModal";
 import UploadManualModal from "./components/uploadModal";
 import EditManualModal from "./components/editModal";
@@ -636,12 +639,23 @@ export default function PoliciesPage() {
 
   const currentUserId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === currentUserId);
-  const currentUserRole = profile?.role ?? session?.user?.user_metadata?.role;
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
-  const isAdmin =
-    currentUserRole === "admin" ||
-    currentUserRole === "super_admin" ||
-    currentUserRole === "manager";
+  // Manage rights (upload/edit/delete) — same real permission system as
+  // everywhere else, instead of a hardcoded pre-migration role list.
+  const isAdmin = Boolean(
+    accessProfile &&
+      canPerformModuleAction(
+        accessProfile,
+        "policies",
+        "add",
+        sessionRole,
+        groupPresets,
+      ),
+  );
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [activeCategory, setActiveCategory] = useState<string>("All");

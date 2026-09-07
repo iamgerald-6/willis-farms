@@ -5,7 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
-import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canViewOthers } from "@/lib/accessControl";
 import LeavePage from "./components/LeavePag";
 import LeaveRequestsAdminPage from "./components/LeaveRequestsAdminPage";
 
@@ -30,8 +31,14 @@ const Leave = () => {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
-  const role = profile?.role ?? session?.user?.user_metadata?.role;
-  const isAdminOrManager = isFullRoleAccess(role);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const role = accessProfile?.role ?? sessionRole;
+  const hasSupervisees = !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
+  // "All Requests" toggle — same rule as everywhere else someone else's
+  // records become visible: Super Admin, the broad HR/Executive/System
+  // roles, or a Supervisory Role account with at least one supervisee.
+  const isAdminOrManager = canViewOthers(role, hasSupervisees);
 
   return (
     <div>

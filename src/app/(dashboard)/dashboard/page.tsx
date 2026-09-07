@@ -543,8 +543,6 @@ export default function DashboardPage() {
 
   const userId = session?.user?.id;
   const metaRole = session?.user?.user_metadata?.role as string | undefined;
-  const isLikelyAdmin =
-    metaRole === "admin" || metaRole === "super_admin" || metaRole === "manager";
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["get_users"],
@@ -569,7 +567,7 @@ export default function DashboardPage() {
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],
     queryFn: async () => {
-      if (isAdmin || isLikelyAdmin) {
+      if (isAdmin) {
         const res = await api.get("/leave/all");
         return Array.isArray(res.data) ? res.data : (res.data.data ?? []);
       }

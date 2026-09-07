@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { Archive, FileText, PenLine } from "lucide-react";
 import { Quarter, canAppraiseOthers } from "@/lib/appraisal/sections";
+import { isSystemAdministratorRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   getActiveAppraisalPeriod,
   periodLabel as activePeriodLabel,
@@ -344,7 +345,7 @@ export default function AppraisalLandingPage({
               <Archive className="w-3.5 h-3.5" />
               {viewingArchived ? "Viewing archived" : "Archived"}
             </button>
-            {viewer.role === "admin" && !canArchive && (
+            {isSystemAdministratorRoleLabel(viewer.role) && !canArchive && (
               <span className="text-xs text-gray-400">
                 Archiving requires Edit on Appraisal in Manage User
               </span>
