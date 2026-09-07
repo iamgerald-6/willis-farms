@@ -299,7 +299,7 @@ export default function AppraisalDetail({
     appraisal.locked_reason === "supervisor_incomplete" &&
     !appraisal.appeal_exhausted &&
     (viewer.userId === appraisal.supervisor_id ||
-      hasFullAppraisalAccess(viewer.role, viewer.gradeLevel));
+      hasFullAppraisalAccess(viewer.role));
 
   const queryClient = useQueryClient();
   const { mutate: setArchived, isPending: archivePending } = useMutation({

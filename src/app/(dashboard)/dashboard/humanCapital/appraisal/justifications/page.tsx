@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 import {
   Loader2,
   CheckCircle2,
@@ -275,8 +276,9 @@ export default function JustificationsInboxPage() {
   });
 
   const profile = users?.find((u) => u.user_id === session?.user?.id);
-  const role = profile?.role ?? (session?.user?.user_metadata?.role as string | undefined);
-  const canReview = hasFullAppraisalAccess(role, profile?.grade_level);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const role = resolveAccessProfile(profile, sessionRole)?.role ?? sessionRole;
+  const canReview = hasFullAppraisalAccess(role);
   const reviewerId = session?.user?.id ?? "";
 
   const { data: justifications, isLoading } = useQuery<Justification[]>({

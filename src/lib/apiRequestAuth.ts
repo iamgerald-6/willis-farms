@@ -249,7 +249,7 @@ export async function requireFullAppraisalAccess(
   req: NextRequest,
 ): Promise<ApiRequestUser | null> {
   const user = await getApiRequestUser(req);
-  if (!user || !hasFullAppraisalAccess(user.role, user.grade_level)) return null;
+  if (!user || !hasFullAppraisalAccess(user.role)) return null;
   return user;
 }
 
@@ -308,7 +308,7 @@ export function canAccessAppraisalRecord(
     supervisor_id?: string | null;
   },
 ): boolean {
-  if (hasFullAppraisalAccess(user.role, user.grade_level)) return true;
+  if (hasFullAppraisalAccess(user.role)) return true;
   if (user.id && record.employee_user_id === user.id) return true;
   if (user.id && record.supervisor_id === user.id) return true;
   if (user.company_id && record.company_id === user.company_id) return true;

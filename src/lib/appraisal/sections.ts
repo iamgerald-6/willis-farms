@@ -4,7 +4,6 @@ import {
   canRateGradeLevel,
   gradeBandForGrade as gradeBandForGradeFromConfig,
   gradeIndexInOrder,
-  isSupervisorRank,
   resolveAppraisalGradeBandCovers,
   resolveAppraisalGradeBandLabels,
   resolveAppraisalGradeOptions,
@@ -12,6 +11,7 @@ import {
   type AppraisalGradeBandId,
   type GradeLevelsConfig,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { isSuperAdminRoleLabel, isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   gitTemplateKeyForFormKey,
   resolveAppraisalFormKeyCovers,
@@ -56,11 +56,17 @@ export function canRate(
   return canRateGradeLevel(raterGrade, targetGrade, config);
 }
 
+/** Broad "does this person appraise anyone at all" gate — decides whether
+ * to show the "New appraisal" vs. self-assessment-only button. Not a
+ * per-employee check (that's canSuperviseAppraisal in appraisal/roles.ts,
+ * gated on the actual supervisor_id assignment) — this is Super Admin, or
+ * Supervisory Role with at least one person actually assigned to them
+ * (hasSupervisees, computed by the caller from the loaded user list). */
 export function canAppraiseOthers(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
+  role: string | null | undefined,
+  hasSupervisees: boolean,
 ): boolean {
-  return isSupervisorRank(grade, config);
+  return isSuperAdminRoleLabel(role) || (isSupervisoryRoleLabel(role) && hasSupervisees);
 }
 
 export const GRADE_OPTIONS = resolveAppraisalGradeOptions().map((o) => ({

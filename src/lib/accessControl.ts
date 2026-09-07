@@ -1,25 +1,24 @@
 /**
  * Centralised access-control helpers for the HR module.
  *
- * Grade thresholds use rank from System Definitions (mod:recruitment → gradeLevelsConfig).
- * L4+ (rank ≥ 4) = supervisor. L5+ (rank ≥ 5) = full appraisal access for employees.
+ * Grade rank is no longer used for access decisions here — see
+ * userRoleAccessControl.ts. "Supervisor" standing now comes from the new
+ * role system (Supervisory Role, or broader Super Admin/Executive
+ * Role/Human Resource) COMBINED with actually having at least one person
+ * assigned to you (users.supervisor_id) — same rule already applied to
+ * skill-log sign-off (see hasAssignedSupervisees in skillLogAccess.ts).
+ * Holding the role alone, with nobody assigned, does not count: these are
+ * broad "does this person supervise anyone at all" checks, not
+ * per-employee ones — per-employee actions always go through
+ * isAssignedSupervisorOf (see supervisorAssignment.ts) instead.
  */
 
-import {
-  canRateGradeLevel,
-  canSignOffSkillLogGrade,
-  gradeIndexInOrder,
-  gradesBelowViewer,
-  isFullAppraisalRank,
-  isSupervisorRank,
-  MIN_FULL_APPRAISAL_RANK,
-  MIN_SUPERVISOR_RANK,
-  resolveGradeOrder,
-  type GradeLevelsConfig,
-} from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { resolveGradeOrder, gradeIndexInOrder } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import type { GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import {
   hasBroadElevatedAccessByRoleLabel,
   isSuperAdminRoleLabel,
+  isSupervisoryRoleLabel,
 } from "@/lib/userRoleAccessControl";
 
 /** @deprecated Use resolveGradeOrder(config) — kept for registry compatibility. */
@@ -36,12 +35,15 @@ export function gradeIndex(
   return gradeIndexInOrder(g, config);
 }
 
-/** L4+ is a supervisor. Grade alone determines this — role is irrelevant. */
+/** Supervisory standing: Super Admin unconditionally, or Supervisory Role
+ * AND at least one person actually assigned to them. `hasSupervisees` is
+ * computed by the caller from the loaded user list (or a DB query
+ * server-side) — see the module docstring above. */
 export function isSupervisor(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
+  role: string | null | undefined,
+  hasSupervisees: boolean,
 ): boolean {
-  return isSupervisorRank(grade, config);
+  return isSuperAdminRoleLabel(role) || (isSupervisoryRoleLabel(role) && hasSupervisees);
 }
 
 export function isSuperAdmin(role: string | null | undefined): boolean {
@@ -50,46 +52,25 @@ export function isSuperAdmin(role: string | null | undefined): boolean {
 
 export function canViewOthers(
   role: string | null | undefined,
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
+  hasSupervisees: boolean,
 ): boolean {
   if (isSuperAdmin(role)) return true;
-  if (role === "admin" || role === "manager") return true;
-  return isSupervisor(grade, config);
+  if (hasBroadElevatedAccessByRoleLabel(role)) return true;
+  return isSupervisor(role, hasSupervisees);
 }
 
 export function canActOnOthers(
   role: string | null | undefined,
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
+  hasSupervisees: boolean,
 ): boolean {
   if (isSuperAdmin(role)) return true;
-  return isSupervisor(grade, config);
-}
-
-export function canRateGrade(
-  viewerGrade: string | null | undefined,
-  targetGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  return canRateGradeLevel(viewerGrade, targetGrade, config);
-}
-
-/** Grades the viewer may appraise/fill for (strictly below their rank, L4+ only). */
-export function gradeBandsBelow(
-  viewerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): Grade[] {
-  return gradesBelowViewer(viewerGrade, config);
+  return isSupervisor(role, hasSupervisees);
 }
 
 export function hasFullAppraisalAccess(
   role: string | null | undefined,
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
 ): boolean {
-  if (hasBroadElevatedAccessByRoleLabel(role)) return true;
-  return isFullAppraisalRank(grade, config);
+  return hasBroadElevatedAccessByRoleLabel(role);
 }
 
 export function canViewAllAppraisalPeriods(
@@ -107,13 +88,3 @@ export function canArchiveAppraisal(
 }
 
 export const canReviewJustification = hasFullAppraisalAccess;
-
-export function canSignOffSkillLog(
-  viewerGrade: string | null | undefined,
-  fillerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  return canSignOffSkillLogGrade(viewerGrade, fillerGrade, config);
-}
-
-export { MIN_SUPERVISOR_RANK, MIN_FULL_APPRAISAL_RANK };

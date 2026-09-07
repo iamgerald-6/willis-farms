@@ -29,7 +29,8 @@ import {
   type PromotionFormConfig,
   type SkillSignoffStage,
 } from "./promotionFormConfigs";
-import { isSupervisorRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { isSupervisor } from "@/lib/accessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
 interface Appraisal {
@@ -63,6 +64,9 @@ interface UserProfile {
   company_id: string;
   grade_level: string;
   job_position: string;
+  role?: string;
+  user_role_label?: string | null;
+  supervisor_id?: string | null;
 }
 
 type EligibilityAnswer = "yes" | "no" | "";
@@ -336,7 +340,12 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     [allUsers, userId],
   );
   const currentUserGrade = currentUserProfile?.grade_level ?? null;
-  const canFillPromotion = isSupervisorRank(currentUserGrade, gradeConfig);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const currentUserRole =
+    resolveAccessProfile(currentUserProfile, sessionRole)?.role ?? sessionRole ?? "";
+  const currentUserHasSupervisees =
+    !!userId && allUsers.some((u) => u.supervisor_id === userId);
+  const canFillPromotion = isSupervisor(currentUserRole, currentUserHasSupervisees);
 
   const { data: promotionAppraisals = [], isLoading } = useQuery<Appraisal[]>({
     queryKey: ["promotion_appraisals"],

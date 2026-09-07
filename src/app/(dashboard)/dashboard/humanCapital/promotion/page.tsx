@@ -19,6 +19,7 @@ import {
   canActOnOthers as canActOnOthersAccess,
   canViewOthers,
 } from "@/lib/accessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 import PromotionFormPage from "./component/promotionForm";
 import { PromotionFormSections } from "./component/PromotionDetailSections";
 import type { PromotionFormData } from "./component/promotionFormConfigs";
@@ -633,6 +634,8 @@ interface UserProfile {
   last_name: string;
   grade_level: string;
   role: string;
+  user_role_label?: string | null;
+  supervisor_id?: string | null;
   company_id: string;
 }
 
@@ -664,15 +667,14 @@ export default function PromotionViewPage() {
   });
 
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
-  const viewerRole =
-    currentUser?.role ??
-    (session?.user?.user_metadata?.role as string | undefined) ??
-    "";
-  const viewerGradeLevel = currentUser?.grade_level ?? null;
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const viewerRole = resolveAccessProfile(currentUser, sessionRole)?.role ?? sessionRole ?? "";
+  const viewerHasSupervisees =
+    !!userId && allUsers.some((u) => u.supervisor_id === userId);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
 
-  const canActOnOthers = canActOnOthersAccess(viewerRole, viewerGradeLevel);
-  const canViewAll = canViewOthers(viewerRole, viewerGradeLevel);
+  const canActOnOthers = canActOnOthersAccess(viewerRole, viewerHasSupervisees);
+  const canViewAll = canViewOthers(viewerRole, viewerHasSupervisees);
 
   // Fetch completed promotions from promotions table
   const { data: completedRaw = [], isLoading: loadingCompleted } = useQuery<

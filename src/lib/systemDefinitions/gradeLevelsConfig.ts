@@ -312,21 +312,6 @@ export function isKnownGrade(
   );
 }
 
-export function isSupervisorRank(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const rank = gradeLevelToRank(grade, config);
-  return rank != null && rank >= MIN_SUPERVISOR_RANK;
-}
-
-export function isFullAppraisalRank(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const rank = gradeLevelToRank(grade, config);
-  return rank != null && rank >= MIN_FULL_APPRAISAL_RANK;
-}
 
 export function formatGradeListLabel(gradeIds: string[]): string {
   if (gradeIds.length === 0) return "";
@@ -405,17 +390,6 @@ export function nextGradeInOrder(
   return order[idx + 1];
 }
 
-export function gradesBelowViewer(
-  viewerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): string[] {
-  const viewerRank = gradeLevelToRank(viewerGrade, config);
-  if (viewerRank == null || viewerRank < MIN_SUPERVISOR_RANK) return [];
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank < viewerRank)
-    .map((l) => l.id);
-}
-
 export function canRateGradeLevel(
   raterGrade: string | null | undefined,
   targetGrade: string | null | undefined,
@@ -426,18 +400,5 @@ export function canRateGradeLevel(
   if (raterRank == null || targetRank == null) return false;
   if (raterRank < MIN_SUPERVISOR_RANK) return false;
   return raterRank > targetRank;
-}
-
-export function canSignOffSkillLogGrade(
-  viewerGrade: string | null | undefined,
-  fillerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const viewerRank = gradeLevelToRank(viewerGrade, config);
-  const fillerRank = gradeLevelToRank(fillerGrade, config);
-  if (viewerRank == null || fillerRank == null) return false;
-  if (viewerRank < MIN_SUPERVISOR_RANK) return false;
-  if (viewerRank >= MIN_FULL_APPRAISAL_RANK) return true;
-  return viewerRank === MIN_SUPERVISOR_RANK && fillerRank === MIN_SUPERVISOR_RANK - 1;
 }
 
