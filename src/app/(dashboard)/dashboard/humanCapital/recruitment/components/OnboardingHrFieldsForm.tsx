@@ -33,9 +33,6 @@ import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
-import {
-  eligibleSupervisorsForEmployee,
-} from "@/lib/supervisorAssignment";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
@@ -157,25 +154,25 @@ export default function OnboardingHrFieldsForm({
     },
   });
 
-  const employeeGradeStub = useMemo(
-    () => ({
-      user_id: "pending",
-      role: "employee" as const,
-      grade_level: hrData.grade_level ?? null,
-    }),
-    [hrData.grade_level],
-  );
-
+  // Assigned supervisor is scoped to whoever currently holds the "Reporting
+  // to" role/title picked above — not a grade-based lookup — since HR is
+  // choosing which specific person (among possibly several with the same
+  // title) this hire will actually report to. Only currently-employed staff
+  // (not disabled) are eligible.
   const eligibleSupervisors = useMemo(() => {
-    if (!hrData.grade_level) return [];
-    return eligibleSupervisorsForEmployee(
-      employeeGradeStub,
-      allUsers,
-      gradeConfig,
-    );
-  }, [allUsers, employeeGradeStub, gradeConfig, hrData.grade_level]);
+    const roleTitle = hrData.reporting_to?.trim();
+    if (!roleTitle) return [];
+    return allUsers
+      .filter((u) => !u.is_disabled && u.job_position?.trim() === roleTitle)
+      .sort((a, b) => {
+        const nameA = `${a.first_name} ${a.last_name}`.trim();
+        const nameB = `${b.first_name} ${b.last_name}`.trim();
+        return nameA.localeCompare(nameB);
+      });
+  }, [allUsers, hrData.reporting_to]);
 
-  // Clear supervisor when grade changes and current pick is no longer valid.
+  // Clear supervisor when the reporting-to role changes and current pick is
+  // no longer among the people holding that role.
   useEffect(() => {
     if (!hrData.supervisor_id) return;
     const stillValid = eligibleSupervisors.some(
@@ -226,7 +223,7 @@ export default function OnboardingHrFieldsForm({
   // opening. HR picks the applicable one per offer.
   const reportingToOptions = useMemo(() => {
     const titles = allUsers
-      .filter((u) => isSeniorManagement(u.role))
+      .filter((u) => !u.is_disabled && isSeniorManagement(u.role))
       .map((u) => u.job_position?.trim())
       .filter((title): title is string => Boolean(title));
     return [...new Set(titles)].sort((a, b) => a.localeCompare(b));
@@ -278,9 +275,9 @@ export default function OnboardingHrFieldsForm({
       return (
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
-          {!hrData.grade_level ? (
+          {!hrData.reporting_to?.trim() ? (
             <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              Select a grade level first to see eligible supervisors.
+              Select who this hire reports to first to see who currently holds that role.
             </p>
           ) : (
             <select
@@ -301,7 +298,7 @@ export default function OnboardingHrFieldsForm({
             >
               <option value="">
                 {eligibleSupervisors.length === 0
-                  ? "No eligible supervisors for this grade"
+                  ? "No one currently holds that role"
                   : "Select supervisor…"}
               </option>
               {eligibleSupervisors.map((sup) => (
