@@ -209,6 +209,12 @@ type ModuleSection = {
  * these as a second-level sub-nav, and ModuleSectionDetail renders just the
  * one picked.
  */
+/** Modules whose System Definitions detail intentionally has no Overview
+ * section — e.g. Appraisal, where the generic Overview panels (dropdown
+ * options, how records are shown, what can be done here) don't add anything
+ * beyond its own dedicated sections (Appraisal scope, Rating sections, ...). */
+const HIDE_OVERVIEW_SECTION_MODULE_IDS = new Set(["mod:appraisal"]);
+
 function getModuleSections(
   m: ModuleRecord,
   canAdd: boolean,
@@ -223,7 +229,8 @@ function getModuleSections(
   // How records are shown, and What can be done here — rather than giving
   // each its own sub-nav entry, since none of them are substantial enough
   // on their own to warrant a separate click.
-  sections.push({
+  if (!HIDE_OVERVIEW_SECTION_MODULE_IDS.has(m.id)) {
+    sections.push({
     key: "overview",
     label: "Overview",
     icon: Icon,
@@ -374,7 +381,8 @@ function getModuleSections(
         </SectionCard>
       </div>
     ),
-  });
+    });
+  }
 
   if (isEditableLeavePolicyModule(m.id)) {
     sections.push({
