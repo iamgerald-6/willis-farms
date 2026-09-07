@@ -196,7 +196,7 @@ function SectionBlock({
       >
         <div className="flex items-center gap-3">
           <span>
-            {section.key}. {section.title}
+            Section {section.key}: {section.title}
           </span>
           <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full text-white/70">
             Weight: {Math.round(section.weight * 100)}%

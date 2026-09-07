@@ -102,6 +102,30 @@ function rebalanceSectionWeights(
   });
 }
 
+/**
+ * Repairs sections saved with the old sec-<timestamp> keys (from before
+ * section keys were made sequential letters) and/or a broken weight split
+ * (e.g. a newly added section stuck at 0% next to an old one at 100%) —
+ * applied at read time everywhere sections are displayed or resolved, so
+ * already-saved templates render correctly without needing a DB migration.
+ * Cosmetic key renumbering always happens; weights are only rebalanced
+ * evenly when they look broken (any zero, or the total isn't ~100%).
+ */
+export function normalizeTemplateSections(sections: SectionDef[]): SectionDef[] {
+  if (sections.length === 0) return sections;
+
+  const hasZeroWeight = sections.some((s) => !s.weight || s.weight <= 0);
+  const total = sections.reduce((sum, s) => sum + (s.weight || 0), 0);
+  const needsRebalance = hasZeroWeight || Math.abs(total - 1) > 0.02;
+  const evenWeight = 1 / sections.length;
+
+  return sections.map((s, i) => ({
+    ...s,
+    key: i < 26 ? String.fromCharCode(65 + i) : `S${i + 1}`,
+    weight: needsRebalance ? evenWeight : s.weight,
+  }));
+}
+
 export function applyExtraWeightRules(
   sections: SectionDef[],
   rules: ExtraWeightRule[],
@@ -118,7 +142,8 @@ export function resolveTemplateSections(
   sectionSet: "quarterly" | "annual",
 ): SectionDef[] | null {
   if (!template) return null;
-  const base =
-    sectionSet === "quarterly" ? template.quarterly_sections : template.annual_sections;
+  const base = normalizeTemplateSections(
+    sectionSet === "quarterly" ? template.quarterly_sections : template.annual_sections,
+  );
   return applyExtraWeightRules(base, template.extra_rules);
 }

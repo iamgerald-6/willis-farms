@@ -7,9 +7,10 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import type { SectionDef } from "@/lib/appraisal/scoring";
-import type {
-  AppraisalGradeTemplate,
-  ExtraWeightRule,
+import {
+  normalizeTemplateSections,
+  type AppraisalGradeTemplate,
+  type ExtraWeightRule,
 } from "@/lib/appraisal/gradeTemplates";
 import type {
   OrgCustomListItem,
@@ -540,7 +541,7 @@ function ScopeTab({
 type SectionDraft = { key: string; title: string; items: string[]; weight: number };
 
 function toDraft(sections: SectionDef[]): SectionDraft[] {
-  return sections.map((s) => ({ ...s, items: [...s.items] }));
+  return normalizeTemplateSections(sections).map((s) => ({ ...s, items: [...s.items] }));
 }
 
 async function patchTemplate(id: string, updates: Record<string, unknown>) {
