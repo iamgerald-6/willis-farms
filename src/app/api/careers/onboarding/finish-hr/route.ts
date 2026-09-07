@@ -24,6 +24,7 @@ import {
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { collectExistingEmployeeIds } from "@/lib/careers/hrEmployeeDefaults";
 import { invitePlatformEmployee } from "@/lib/careers/invitePlatformEmployee";
+import { resolveEmployeeOrgPlacementFromPosting } from "@/lib/careers/resolveEmployeeOrgPlacement";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
 
@@ -80,7 +81,8 @@ export async function POST(req: NextRequest) {
         role_title,
         role_slug,
         reference_number,
-        status
+        status,
+        job_posting_id
       )
     `,
     )
@@ -146,6 +148,7 @@ export async function POST(req: NextRequest) {
     role_slug: string;
     reference_number: string;
     status: string;
+    job_posting_id: string | null;
   } | null;
 
   if (!app?.full_name) {
@@ -225,6 +228,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const orgPlacement = await resolveEmployeeOrgPlacementFromPosting(
+    supabaseAdmin,
+    app.job_posting_id,
+  );
+
   const inviteResult = await invitePlatformEmployee(supabaseAdmin, {
     email: prefill.email,
     invite_delivery_email: prefill.delivery_email,
@@ -238,6 +246,7 @@ export async function POST(req: NextRequest) {
     supervisor_id: prefill.supervisor_id ?? null,
     application_id,
     created_by: caller.id,
+    ...orgPlacement,
   });
 
   if (!inviteResult.ok) {
