@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, UserCheck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, UserCheck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
@@ -70,6 +70,11 @@ export default function SystemDefinitionsAccessControlPage() {
     setNewItemName("");
     setShowAddForm(false);
     toast.success("Item added.");
+  };
+
+  const removeItem = (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    toast.success("Item removed.");
   };
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -223,24 +228,34 @@ export default function SystemDefinitionsAccessControlPage() {
                   <td className="px-4 py-2.5 text-gray-900">{item.name}</td>
                   <td className="px-4 py-2.5 text-gray-500">0</td>
                   <td className="px-4 py-2.5 text-right">
-                    {item.hasSubMenu ? (
+                    <div className="inline-flex items-center gap-2">
+                      {item.hasSubMenu ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
+                        >
+                          Manage
+                        </button>
+                      ) : (
+                        <Link
+                          href={`/dashboard/system-definitions/access-control/${encodeURIComponent(
+                            item.name,
+                          )}`}
+                          className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Manage
+                        </Link>
+                      )}
                       <button
                         type="button"
-                        disabled
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
+                        onClick={() => removeItem(item.id)}
+                        title="Remove"
+                        className="inline-flex items-center p-1.5 border border-gray-200 text-gray-400 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
                       >
-                        Manage
+                        <Trash2 className="w-4 h-4" />
                       </button>
-                    ) : (
-                      <Link
-                        href={`/dashboard/system-definitions/access-control/${encodeURIComponent(
-                          item.name,
-                        )}`}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        Manage
-                      </Link>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))

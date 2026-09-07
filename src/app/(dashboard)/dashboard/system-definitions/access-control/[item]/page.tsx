@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, UserCheck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, UserCheck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
@@ -49,6 +49,11 @@ export default function AccessControlItemSetupPage() {
     setSelectedActions((prev) => [...prev, { id: crypto.randomUUID(), name }]);
     setNewAction("");
     toast.success("Added.");
+  };
+
+  const removeAction = (id: string) => {
+    setSelectedActions((prev) => prev.filter((action) => action.id !== id));
+    toast.success("Removed.");
   };
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -171,13 +176,23 @@ export default function AccessControlItemSetupPage() {
                 <tr key={action.id} className="border-t border-gray-100">
                   <td className="px-4 py-2.5 text-gray-900">{action.name}</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
-                    >
-                      Manage
-                    </button>
+                    <div className="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
+                      >
+                        Manage
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeAction(action.id)}
+                        title="Remove"
+                        className="inline-flex items-center p-1.5 border border-gray-200 text-gray-400 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
