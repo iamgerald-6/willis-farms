@@ -1,52 +1,45 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
 import {
-  defaultAdminActions,
   defaultFullAccessActions,
+  defaultFullAccessActionsFor,
   defaultStandardEmployeeActions,
-  emptyPermissionActions,
-  gradeBandGroup,
   roleGroup,
   sanitizePermissionActions,
   type UserListGroup,
 } from "@/lib/permissionActions";
 import {
-  resolveGroupPresetLabels,
-  type GradeLevelsConfig,
-} from "@/lib/systemDefinitions/gradeLevelsConfig";
+  HUMAN_RESOURCE_FULL_ACCESS_KEYS,
+  USER_ROLE_GROUP_KEYS,
+  userRoleGroupKeyLabel,
+  type UserRoleGroupKey,
+} from "@/lib/userRoleAccessControl";
 import type { AccessProfile } from "@/lib/pagePermissions";
+import type { PagePermissionKey } from "@/lib/pagePermissions";
 
-/** Groups that have a shared permission preset (excludes "all" list filter). */
-export type GroupPresetKey = Exclude<UserListGroup, "all">;
+/** One shared permission preset per role in the new 7-role system. Replaces
+ * the old role-literal + grade-band groups ("employees"/"managers"/
+ * "admins"/"grade_l1_l3"/"grade_l4_l7") now that access control is driven
+ * entirely by the new role system — see userRoleAccessControl.ts. */
+export type GroupPresetKey = UserRoleGroupKey;
 
-export const GROUP_PRESET_KEYS: GroupPresetKey[] = [
-  "employees",
-  "managers",
-  "admins",
-  "grade_l1_l3",
-  "grade_l4_l7",
-];
+export const GROUP_PRESET_KEYS: GroupPresetKey[] = USER_ROLE_GROUP_KEYS;
 
 export const GROUP_PRESET_LABELS: Record<GroupPresetKey, string> = {
-  employees: "All Employees",
-  managers: "All Managers",
-  admins: "All Admins",
-  grade_l1_l3: "All L1–L3",
-  grade_l4_l7: "All L4–L7",
+  standard_role: userRoleGroupKeyLabel("standard_role"),
+  executive_role: userRoleGroupKeyLabel("executive_role"),
+  human_resource: userRoleGroupKeyLabel("human_resource"),
+  supervisory_role: userRoleGroupKeyLabel("supervisory_role"),
+  system_administrator: userRoleGroupKeyLabel("system_administrator"),
+  consultant: userRoleGroupKeyLabel("consultant"),
+  super_admin: userRoleGroupKeyLabel("super_admin"),
 };
 
-/** Dynamic labels reflecting configured grade range (e.g. All L4–L8). */
-export function getGroupPresetLabels(
-  config?: GradeLevelsConfig,
-): Record<GroupPresetKey, string> {
-  const dynamic = resolveGroupPresetLabels(config);
-  return {
-    employees: GROUP_PRESET_LABELS.employees,
-    managers: GROUP_PRESET_LABELS.managers,
-    admins: GROUP_PRESET_LABELS.admins,
-    grade_l1_l3: dynamic.grade_l1_l3,
-    grade_l4_l7: dynamic.grade_l4_l7,
-  };
+/** No grade-band variant anymore, so this is just the fixed labels — kept
+ * as a function (rather than exporting the constant directly) so call
+ * sites that used to pass a grade config don't all need reshaping at once. */
+export function getGroupPresetLabels(): Record<GroupPresetKey, string> {
+  return GROUP_PRESET_LABELS;
 }
 
 export type GroupPresetsMap = Partial<Record<GroupPresetKey, PagePermissionActions>>;
@@ -62,20 +55,31 @@ export function isGroupPresetKey(key: string): key is GroupPresetKey {
   return (GROUP_PRESET_KEYS as readonly string[]).includes(key);
 }
 
-/** Built-in defaults when no DB row exists yet. */
+/** Built-in defaults when no DB row exists yet for a role. Super Admin and
+ * Executive Role always get unconditional full access regardless of what's
+ * saved here (see isFullRoleAccess bypass in getEffectivePermissionActions)
+ * — their preset content is shown for completeness but has no effect.
+ * System Administrator's sys:definitions/users access and Human Resource's
+ * Human Capital/Task Manager access are likewise unconditional bypasses
+ * (see canPerformModuleAction) — pre-ticking them here just keeps the
+ * matrix consistent with what they actually already have. */
 export function getDefaultGroupPreset(key: GroupPresetKey): PagePermissionActions {
   switch (key) {
-    case "employees":
+    case "standard_role":
+    case "consultant":
+    case "supervisory_role":
       return defaultStandardEmployeeActions();
-    case "managers":
+    case "human_resource":
+      return defaultFullAccessActionsFor(
+        HUMAN_RESOURCE_FULL_ACCESS_KEYS as readonly PagePermissionKey[],
+      );
+    case "system_administrator":
+      return defaultFullAccessActionsFor(["sys:definitions", "users"]);
+    case "executive_role":
+    case "super_admin":
       return defaultFullAccessActions();
-    case "admins":
-      return defaultAdminActions();
-    case "grade_l1_l3":
-    case "grade_l4_l7":
-      return emptyPermissionActions();
     default:
-      return emptyPermissionActions();
+      return {};
   }
 }
 
@@ -91,27 +95,16 @@ export function mergePermissionActions(
   return out;
 }
 
-/** Merge role-group preset + grade-band preset for a user profile. */
+/** This role's saved preset, if any. */
 export function resolveGroupPresetActions(
   profile: AccessProfile,
   presets: GroupPresetsMap,
 ): PagePermissionActions {
-  let merged = emptyPermissionActions();
-  let hasAny = false;
-
   const rg = roleGroup(profile.role);
   if (rg && presets[rg]) {
-    merged = mergePermissionActions(merged, presets[rg]!);
-    hasAny = true;
+    return presets[rg]!;
   }
-
-  const gg = gradeBandGroup(profile.grade_level);
-  if (gg && presets[gg]) {
-    merged = mergePermissionActions(merged, presets[gg]!);
-    hasAny = true;
-  }
-
-  return hasAny ? merged : emptyPermissionActions();
+  return {};
 }
 
 export function hasIndividualPermissionOverride(
@@ -158,12 +151,14 @@ export async function fetchGroupPresetsFromDb(
     return { presets, rows: [] };
   }
 
-  const rows: GroupPresetRow[] = (data ?? []).map((row) => ({
-    group_key: row.group_key as GroupPresetKey,
-    page_permission_actions: sanitizePermissionActions(row.page_permission_actions),
-    updated_at: row.updated_at ?? null,
-    updated_by: row.updated_by ?? null,
-  }));
+  const rows: GroupPresetRow[] = (data ?? [])
+    .filter((row) => isGroupPresetKey(row.group_key as string))
+    .map((row) => ({
+      group_key: row.group_key as GroupPresetKey,
+      page_permission_actions: sanitizePermissionActions(row.page_permission_actions),
+      updated_at: row.updated_at ?? null,
+      updated_by: row.updated_by ?? null,
+    }));
 
   return { presets: normalizeGroupPresetsMap(rows), rows };
 }

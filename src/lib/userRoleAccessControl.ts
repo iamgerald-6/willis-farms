@@ -115,6 +115,84 @@ export function isKnownUserRoleLabel(label: string | null | undefined): boolean 
   return !!n && (Object.values(ROLE) as string[]).includes(n);
 }
 
+/** The 7 roles in the order they're documented above — for anywhere the UI
+ * needs to list/iterate them consistently (e.g. the Access Control group
+ * picker). Display label exactly as configured in the "User role" list. */
+export const USER_ROLE_LABELS = [
+  "Standard Role",
+  "Executive Role",
+  "Human Resource",
+  "Supervisory Role",
+  "System Administrator",
+  "Consultant",
+  "Super Admin",
+] as const;
+
+/** Stable, URL/DB-safe key per role — used as the `group_key` for a role's
+ * shared permission preset (access_group_presets) and as the value for the
+ * Access Control group-filter dropdown. Replaces the old role-literal +
+ * grade-band keys ("employees"/"managers"/"admins"/"grade_l1_l3"/
+ * "grade_l4_l7") now that access control is driven entirely by the new role
+ * system — see the module docstring above. */
+export type UserRoleGroupKey =
+  | "standard_role"
+  | "executive_role"
+  | "human_resource"
+  | "supervisory_role"
+  | "system_administrator"
+  | "consultant"
+  | "super_admin";
+
+export const USER_ROLE_GROUP_KEYS: UserRoleGroupKey[] = [
+  "standard_role",
+  "executive_role",
+  "human_resource",
+  "supervisory_role",
+  "system_administrator",
+  "consultant",
+  "super_admin",
+];
+
+const ROLE_LABEL_BY_GROUP_KEY: Record<UserRoleGroupKey, string> = {
+  standard_role: "Standard Role",
+  executive_role: "Executive Role",
+  human_resource: "Human Resource",
+  supervisory_role: "Supervisory Role",
+  system_administrator: "System Administrator",
+  consultant: "Consultant",
+  super_admin: "Super Admin",
+};
+
+export function userRoleGroupKeyLabel(key: UserRoleGroupKey): string {
+  return ROLE_LABEL_BY_GROUP_KEY[key];
+}
+
+/** Resolves any role label (in whatever case) to its stable group key, or
+ * null if it isn't one of the 7 recognized roles. */
+export function userRoleGroupKeyFromLabel(
+  label: string | null | undefined,
+): UserRoleGroupKey | null {
+  const n = normalizeUserRoleLabel(label);
+  switch (n) {
+    case ROLE.STANDARD:
+      return "standard_role";
+    case ROLE.EXECUTIVE:
+      return "executive_role";
+    case ROLE.HUMAN_RESOURCE:
+      return "human_resource";
+    case ROLE.SUPERVISORY:
+      return "supervisory_role";
+    case ROLE.SYSTEM_ADMINISTRATOR:
+      return "system_administrator";
+    case ROLE.CONSULTANT:
+      return "consultant";
+    case ROLE.SUPER_ADMIN:
+      return "super_admin";
+    default:
+      return null;
+  }
+}
+
 /** Broad, org-wide elevated access for Task Manager / Leave / appraisal
  * admin (viewing all periods, archiving) — Super Admin, Executive Role, or
  * Human Resource. NOT used for deciding who personally appraises or fills

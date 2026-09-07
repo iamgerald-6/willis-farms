@@ -10,7 +10,6 @@ import {
   getGroupPresetLabels,
   type GroupPresetKey,
 } from "@/lib/groupPermissionPresets";
-import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { permissionActionModuleCount } from "@/lib/permissionActions";
 import PermissionMatrix from "./PermissionMatrix";
 import { Loader2, Users } from "lucide-react";
@@ -41,8 +40,7 @@ export default function GroupPermissionPanel({
     setInitialized(false);
   }, [groupKey]);
 
-  const { config: gradeConfig } = useGradeLevelsConfig();
-  const presetLabels = getGroupPresetLabels(gradeConfig);
+  const presetLabels = getGroupPresetLabels();
   const moduleCount = permissionActionModuleCount(actions);
   const label = presetLabels[groupKey];
 

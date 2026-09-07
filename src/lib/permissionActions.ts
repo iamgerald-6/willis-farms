@@ -1,5 +1,4 @@
 import { gradeIndex, isSuperAdmin } from "@/lib/accessControl";
-import { gradeBandGroupForGrade, type GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { getModuleRegistrySync } from "@/lib/moduleRegistry";
 import type {
   ModuleActions,
@@ -27,6 +26,8 @@ import {
   hasSystemAccessByRoleLabel,
   HUMAN_RESOURCE_FULL_ACCESS_KEYS,
   isHumanResourceRoleLabel,
+  userRoleGroupKeyFromLabel,
+  type UserRoleGroupKey,
 } from "@/lib/userRoleAccessControl";
 
 export type { ModuleActions, PagePermissionActions, PermissionAction };
@@ -292,6 +293,25 @@ export function defaultAdminActions(): PagePermissionActions {
   return out;
 }
 
+/** Full (every supported action) access, but only for the given keys —
+ * everything else left blank. Used to seed a role's built-in default group
+ * preset from a fixed key list (e.g. HUMAN_RESOURCE_FULL_ACCESS_KEYS). */
+export function defaultFullAccessActionsFor(
+  keys: readonly PagePermissionKey[],
+): PagePermissionActions {
+  const allowed = new Set<string>(keys);
+  const out: PagePermissionActions = {};
+  for (const row of getPermissionMatrixModules()) {
+    if (!allowed.has(row.key)) continue;
+    const actions: ModuleActions = {};
+    for (const action of row.supportedActions) {
+      actions[action] = true;
+    }
+    out[row.key] = actions;
+  }
+  return out;
+}
+
 export function defaultFullAccessActions(): PagePermissionActions {
   const out: PagePermissionActions = {};
   for (const row of getPermissionMatrixModules()) {
@@ -502,29 +522,15 @@ export function permissionActionSetsEqual(
   return true;
 }
 
-/** User list grouping helpers */
-export type UserListGroup =
-  | "all"
-  | "employees"
-  | "managers"
-  | "admins"
-  | "grade_l1_l3"
-  | "grade_l4_l7";
-
-export function gradeBandGroup(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): "grade_l1_l3" | "grade_l4_l7" | null {
-  return gradeBandGroupForGrade(grade, config);
-}
+/** User list grouping helpers — one group per role in the new 7-role
+ * system (see userRoleAccessControl.ts). Grade-band grouping was removed:
+ * access control groups by role only now. */
+export type UserListGroup = "all" | UserRoleGroupKey;
 
 export function roleGroup(
   role: string | null | undefined,
-): "employees" | "managers" | "admins" | null {
-  if (role === "employee") return "employees";
-  if (role === "manager") return "managers";
-  if (role === "admin") return "admins";
-  return null;
+): UserRoleGroupKey | null {
+  return userRoleGroupKeyFromLabel(role);
 }
 
 export function actionHelpFor(

@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
-import { isSuperAdmin } from "@/lib/accessControl";
+import { isSuperAdminRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   canManageUserAccounts,
   getEffectivePermissionActionsForProfile,
@@ -20,11 +20,7 @@ import {
 } from "@/lib/groupPermissionPresets";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
-import {
-  gradeBandGroup,
-  permissionActionModuleCount,
-  roleGroup,
-} from "@/lib/permissionActions";
+import { permissionActionModuleCount, roleGroup } from "@/lib/permissionActions";
 import PermissionMatrix from "../components/PermissionMatrix";
 import {
   ArrowLeft,
@@ -224,12 +220,19 @@ export default function ManageUserAccessPage() {
     [users, userId],
   );
 
+  // Resolved through the same path every other page uses — the new
+  // user_role_label, never the stale raw `role` column.
+  const targetProfile = useMemo(
+    () => (target ? resolveAccessProfile(target, undefined) : null),
+    [target],
+  );
+
   const isSelf = session?.user?.id === userId;
 
   useEffect(() => {
-    if (!target || initialized) return;
+    if (!target || !targetProfile || initialized) return;
     setPermissionActions(
-      getEffectivePermissionActionsForProfile(target, groupPresets),
+      getEffectivePermissionActionsForProfile(targetProfile, groupPresets),
     );
     setPermissionMode(
       hasIndividualPermissionOverride(target) ? "individual" : "group",
@@ -248,27 +251,17 @@ export default function ManageUserAccessPage() {
       user_role_id: target.user_role_id ?? "",
     });
     setInitialized(true);
-  }, [target, initialized, groupPresets]);
+  }, [target, targetProfile, initialized, groupPresets]);
 
   const groupBaselineActions = useMemo(() => {
-    if (!target) return {};
-    return resolveGroupPresetActions(
-      { role: target.role, grade_level: target.grade_level },
-      groupPresets ?? {},
-    );
-  }, [target, groupPresets]);
+    if (!targetProfile) return {};
+    return resolveGroupPresetActions(targetProfile, groupPresets ?? {});
+  }, [targetProfile, groupPresets]);
 
-  const presetLabels = useMemo(
-    () => getGroupPresetLabels(gradeConfig),
-    [gradeConfig],
-  );
-  const roleGroupKey = target ? roleGroup(target.role) : null;
-  const gradeGroupKey = target
-    ? gradeBandGroup(target.grade_level, gradeConfig)
-    : null;
+  const presetLabels = useMemo(() => getGroupPresetLabels(), []);
+  const roleGroupKey = targetProfile ? roleGroup(targetProfile.role) : null;
   const groupLabelParts = [
     roleGroupKey ? presetLabels[roleGroupKey] : null,
-    gradeGroupKey ? presetLabels[gradeGroupKey] : null,
   ].filter((v): v is string => !!v);
 
   const supervisorOptions = useMemo(() => {
@@ -420,7 +413,7 @@ export default function ManageUserAccessPage() {
     return <AccessControlManageSkeleton />;
   }
 
-  if (!target || isSuperAdmin(target.role)) {
+  if (!target || isSuperAdminRoleLabel(targetProfile?.role)) {
     return (
       <div className="p-6">
         <Link

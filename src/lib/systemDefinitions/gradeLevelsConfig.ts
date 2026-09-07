@@ -40,8 +40,6 @@ export type AppraisalGradeBandId = (typeof APPRAISAL_GRADE_BAND_IDS)[number];
 export const MIN_SUPERVISOR_RANK = 4;
 /** L5+ gets full appraisal access (non-manager roles). */
 export const MIN_FULL_APPRAISAL_RANK = 5;
-/** Access-control junior band: ranks 1–3. */
-export const JUNIOR_BAND_MAX_RANK = 3;
 
 export const SPECIALIST_INTERVIEW_GUIDE_KEYS = ["data_analyst", "veterinarian"] as const;
 
@@ -330,28 +328,10 @@ export function isFullAppraisalRank(
   return rank != null && rank >= MIN_FULL_APPRAISAL_RANK;
 }
 
-export function gradesUpToRank(maxRank: number, config?: GradeLevelsConfig): string[] {
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank <= maxRank)
-    .map((l) => l.id);
-}
-
-export function gradesFromRank(minRank: number, config?: GradeLevelsConfig): string[] {
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank >= minRank)
-    .map((l) => l.id);
-}
-
 export function formatGradeListLabel(gradeIds: string[]): string {
   if (gradeIds.length === 0) return "";
   if (gradeIds.length === 1) return gradeIds[0];
   return gradeIds.join(" / ");
-}
-
-export function formatGradeRangeLabel(gradeIds: string[]): string {
-  if (gradeIds.length === 0) return "";
-  if (gradeIds.length === 1) return gradeIds[0];
-  return `${gradeIds[0]}–${gradeIds[gradeIds.length - 1]}`;
 }
 
 /** Appraisal rating band for a single employee grade (stable band id). */
@@ -411,38 +391,6 @@ export function resolveAppraisalGradeOptions(
     value: id,
     label: labels[id],
   }));
-}
-
-export type AccessControlGradeGroup = "grade_l1_l3" | "grade_l4_l7";
-
-export function gradeBandGroupForGrade(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): AccessControlGradeGroup | null {
-  const rank = gradeLevelToRank(grade, config);
-  if (rank == null) return null;
-  return rank >= MIN_SUPERVISOR_RANK ? "grade_l4_l7" : "grade_l1_l3";
-}
-
-export function resolveAccessControlBandLabels(
-  config?: GradeLevelsConfig,
-): Record<AccessControlGradeGroup, string> {
-  const junior = gradesUpToRank(JUNIOR_BAND_MAX_RANK, config);
-  const senior = gradesFromRank(MIN_SUPERVISOR_RANK, config);
-  return {
-    grade_l1_l3: junior.length ? formatGradeRangeLabel(junior) : "L1–L3",
-    grade_l4_l7: senior.length ? formatGradeRangeLabel(senior) : "L4–L7",
-  };
-}
-
-export function resolveGroupPresetLabels(
-  config?: GradeLevelsConfig,
-): Record<AccessControlGradeGroup, string> {
-  const bands = resolveAccessControlBandLabels(config);
-  return {
-    grade_l1_l3: `All ${bands.grade_l1_l3}`,
-    grade_l4_l7: `All ${bands.grade_l4_l7}`,
-  };
 }
 
 export function nextGradeInOrder(
