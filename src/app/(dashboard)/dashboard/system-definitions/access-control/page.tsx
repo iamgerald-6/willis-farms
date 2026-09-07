@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ArrowLeft, Plus, UserCheck } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
@@ -43,7 +44,13 @@ export default function SystemDefinitionsAccessControlPage() {
   const [items, setItems] = useState<PlaceholderItem[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newItemName, setNewItemName] = useState("");
-  const sidebarNavOptions = useMemo(() => getSidebarNavItemOptions(), []);
+  const allSidebarNavOptions = useMemo(() => getSidebarNavItemOptions(), []);
+  // Same rule as Organizational structure's "Add new list" — an item
+  // already added can't be picked again.
+  const sidebarNavOptions = useMemo(
+    () => allSidebarNavOptions.filter((option) => !items.some((item) => item.name === option)),
+    [allSidebarNavOptions, items],
+  );
 
   const addItem = () => {
     const name = newItemName.trim();
@@ -51,6 +58,7 @@ export default function SystemDefinitionsAccessControlPage() {
     setItems((prev) => [...prev, { id: crypto.randomUUID(), name }]);
     setNewItemName("");
     setShowAddForm(false);
+    toast.success("Item added.");
   };
 
   const { data: session, isLoading: sessionLoading } = useQuery({
