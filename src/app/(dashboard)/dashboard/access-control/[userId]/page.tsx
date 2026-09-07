@@ -192,29 +192,31 @@ export default function ManageUserAccessPage() {
     )?.id;
   }
 
-  /** Filters a field's dropdown options down to whatever's mapped under its
-   * parent field's current selection — always fails OPEN (shows every item)
-   * whenever the chain isn't fully resolved or nothing is configured, so an
-   * unmapped list, a still-empty parent, or a partial mapping setup never
-   * silently empties out the dropdown. */
+  /** Filters a field's dropdown options strictly to whatever's mapped under
+   * its parent field's current selection — no fallback. A field that isn't
+   * part of the mapping tree at all (or sits at its root, with no parent
+   * level) shows its full list, same as before. But once a field IS mapped
+   * under another one, it shows ONLY items with a mapping node for the
+   * parent's current selection — nothing selected on the parent, no
+   * matching mapping configured, or no items mapped at all for that
+   * combination all mean an empty dropdown, not "show everything". */
   function itemsForList(list: OrgPlacementList): { id: string; label: string }[] {
     const level = chainLevel(list.tableName);
     if (!level) return list.items;
-
-    const levelNodes = mappingNodes.filter((n) => n.level_id === level.id);
-    if (levelNodes.length === 0) return list.items;
-
     if (!level.parent_level_id) return list.items;
+
     const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
-    if (!parentLevel) return list.items;
+    if (!parentLevel) return [];
+
     const parentNodeId = resolvedNodeIdFor(parentLevel.list_type.table_name);
-    if (parentNodeId === undefined) return list.items;
+    if (parentNodeId === undefined) return [];
 
     const ids = new Set(
-      levelNodes.filter((n) => n.parent_node_id === parentNodeId).map((n) => n.item_id),
+      mappingNodes
+        .filter((n) => n.level_id === level.id && n.parent_node_id === parentNodeId)
+        .map((n) => n.item_id),
     );
-    const filtered = list.items.filter((i) => ids.has(i.id));
-    return filtered.length > 0 ? filtered : list.items;
+    return list.items.filter((i) => ids.has(i.id));
   }
 
   const target = useMemo(
