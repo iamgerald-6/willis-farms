@@ -339,6 +339,18 @@ export function getEffectivePermissionActions(
   const role = profile.role ?? sessionRole;
   if (isSuperAdmin(role)) return defaultFullAccessActions();
 
+  // Executive Role (new role system) is meant to be unconditional full
+  // access — same breadth as Super Admin — regardless of any stale
+  // per-user delegated override or legacy grade-band/role-group preset
+  // left over from before the role migration. Checking this here, before
+  // those, matches System Administrator/Human Resource's unconditional
+  // bypasses in canPerformModuleAction above; checking it further down (as
+  // before) let an old grade-band group preset silently narrow an
+  // Executive Role account's access.
+  if (isFullRoleAccess(role)) {
+    return defaultFullAccessActions();
+  }
+
   const tier = (profile.access_tier ?? "standard") as AccessTier;
   const stored = mergeStoredActions(profile);
 
@@ -357,10 +369,6 @@ export function getEffectivePermissionActions(
   if (role === "admin") {
     if (Object.keys(stored).length > 0) return stored;
     return defaultAdminActions();
-  }
-
-  if (isFullRoleAccess(role)) {
-    return defaultFullAccessActions();
   }
 
   if (tier === "delegated") {
