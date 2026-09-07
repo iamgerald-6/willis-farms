@@ -71,7 +71,6 @@ export const modAppraisal: ModuleRecord = {
   },
   table: "appraisals",
   supportedActions: ["view", "add", "edit", "review"],
-  taxonomyRefs: ["taxonomy.appraisal.sectionAuthorisations"],
   businessLogic: [
     {
       id: "l4-leadership-weight",
