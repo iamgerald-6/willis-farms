@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
+import type { PagePermissionKey } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
@@ -785,10 +786,24 @@ export default function SystemDefinitionsPage() {
         modules: modules
           .filter((m) => m.groupId === group.id)
           .filter((m) => !HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS.has(m.id))
+          .filter((m) => {
+            // A module's own config section shouldn't appear here unless the
+            // viewer actually has view access to that module elsewhere in
+            // the app (mirrors how the main Sidebar hides items via legacyKey).
+            if (!m.legacyKey) return true;
+            if (!accessProfile) return false;
+            return canPerformModuleAction(
+              accessProfile,
+              m.legacyKey as PagePermissionKey,
+              "view",
+              sessionRole,
+              groupPresets,
+            );
+          })
           .sort((a, b) => a.sortOrder - b.sortOrder),
       }))
       .filter((g) => g.modules.length > 0);
-  }, [modules]);
+  }, [modules, accessProfile, sessionRole, groupPresets]);
 
   const showAuditLog = selectedModuleId === AUDIT_LOG_ID;
 
