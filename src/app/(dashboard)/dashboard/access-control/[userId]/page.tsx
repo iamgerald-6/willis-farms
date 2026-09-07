@@ -45,6 +45,30 @@ import {
 const inputClass =
   "w-full border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
+type OrgPlacementField =
+  | "site_id"
+  | "business_unit_id"
+  | "department_id"
+  | "section_id"
+  | "position_id"
+  | "grade_level_id";
+
+const ORG_PLACEMENT_FIELDS: OrgPlacementField[] = [
+  "site_id",
+  "business_unit_id",
+  "department_id",
+  "section_id",
+  "position_id",
+  "grade_level_id",
+];
+
+type OrgPlacementList = {
+  field: OrgPlacementField;
+  tableName: string;
+  label: string;
+  items: { id: string; label: string }[];
+};
+
 export default function ManageUserAccessPage() {
   const params = useParams();
   const router = useRouter();
@@ -60,6 +84,16 @@ export default function ManageUserAccessPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [supervisorId, setSupervisorId] = useState<string>("");
+  const [orgPlacement, setOrgPlacement] = useState<
+    Record<OrgPlacementField, string>
+  >({
+    site_id: "",
+    business_unit_id: "",
+    department_id: "",
+    section_id: "",
+    position_id: "",
+    grade_level_id: "",
+  });
   const [initialized, setInitialized] = useState(false);
 
   const { config: gradeConfig } = useGradeLevelsConfig();
@@ -88,6 +122,14 @@ export default function ManageUserAccessPage() {
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
+  const { data: orgPlacementLists = [] } = useQuery<OrgPlacementList[]>({
+    queryKey: ["access_control_org_placement_options"],
+    queryFn: async () => {
+      const res = await api.get("/access-control/org-placement/options");
+      return res.data?.data ?? [];
+    },
+  });
+
   const target = useMemo(
     () => users.find((u) => u.user_id === userId),
     [users, userId],
@@ -107,6 +149,14 @@ export default function ManageUserAccessPage() {
     setFirstName(target.first_name ?? "");
     setLastName(target.last_name ?? "");
     setSupervisorId(target.supervisor_id ?? "");
+    setOrgPlacement({
+      site_id: target.site_id ?? "",
+      business_unit_id: target.business_unit_id ?? "",
+      department_id: target.department_id ?? "",
+      section_id: target.section_id ?? "",
+      position_id: target.position_id ?? "",
+      grade_level_id: target.grade_level_id ?? "",
+    });
     setInitialized(true);
   }, [target, initialized, groupPresets]);
 
@@ -152,6 +202,12 @@ export default function ManageUserAccessPage() {
 
   const supervisorDirty =
     !!target && (supervisorId || "") !== (target.supervisor_id ?? "");
+
+  const orgPlacementDirty =
+    !!target &&
+    ORG_PLACEMENT_FIELDS.some(
+      (field) => (orgPlacement[field] || "") !== (target[field] ?? ""),
+    );
 
   const permissionModuleCount = permissionActionModuleCount(permissionActions);
 
@@ -205,6 +261,30 @@ export default function ManageUserAccessPage() {
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Failed to update supervisor.");
+    },
+  });
+
+  const saveOrgPlacementMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.patch("/access-control/org-placement", {
+        target_user_id: userId,
+        ...Object.fromEntries(
+          ORG_PLACEMENT_FIELDS.map((field) => [
+            field,
+            orgPlacement[field] || null,
+          ]),
+        ),
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Org placement updated.");
+      queryClient.invalidateQueries({ queryKey: ["get_users"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(
+        error?.response?.data?.error ?? "Failed to update org placement.",
+      );
     },
   });
 
@@ -368,10 +448,77 @@ export default function ManageUserAccessPage() {
 
           <div className="pt-2 border-t border-gray-100">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-              Grade level
+              Org placement
             </label>
-            <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
-              {target.grade_level ?? "Not set"}
+            <p className="text-xs text-gray-500 mb-2">
+              Copied from the job posting at hire time. Editable for
+              transfers, promotions, or corrections.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {ORG_PLACEMENT_FIELDS.map((field) => {
+                const list = orgPlacementLists.find((l) => l.field === field);
+                return (
+                  <div key={field}>
+                    <label
+                      htmlFor={`org-${field}`}
+                      className="text-xs font-medium text-gray-600 block mb-1"
+                    >
+                      {list?.label ?? field}
+                    </label>
+                    <select
+                      id={`org-${field}`}
+                      value={orgPlacement[field]}
+                      onChange={(e) =>
+                        setOrgPlacement((prev) => ({
+                          ...prev,
+                          [field]: e.target.value,
+                        }))
+                      }
+                      className={inputClass}
+                    >
+                      <option value="">Not set</option>
+                      {(list?.items ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <button
+                type="button"
+                onClick={() => saveOrgPlacementMutation.mutate()}
+                disabled={
+                  saveOrgPlacementMutation.isPending || !orgPlacementDirty
+                }
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+              >
+                {saveOrgPlacementMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                Save org placement
+              </button>
+              {orgPlacementDirty && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOrgPlacement({
+                      site_id: target.site_id ?? "",
+                      business_unit_id: target.business_unit_id ?? "",
+                      department_id: target.department_id ?? "",
+                      section_id: target.section_id ?? "",
+                      position_id: target.position_id ?? "",
+                      grade_level_id: target.grade_level_id ?? "",
+                    })
+                  }
+                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
 
