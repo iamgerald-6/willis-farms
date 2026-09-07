@@ -52,12 +52,10 @@ import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
 import {
   APPRAISAL_MODULE_ID_CONST,
-  APPRAISAL_SECTION_AUTH_LIST,
   applySectionBaseWeights,
   applySectionContentOverrides,
   applySectionWeightRules,
   type ModuleBusinessLogic,
-  type SystemOption,
 } from "@/lib/systemDefinitions";
 import { useAppraisalFormProgress } from "@/lib/appraisal/appraisalFormProgress";
 import {
@@ -356,19 +354,6 @@ export default function AppraisalForm({
     queryFn: async () => {
       const res = await api.get("/get_user");
       return res.data;
-    },
-  });
-
-  const { data: sectionAuthOptions = [] } = useQuery<SystemOption[]>({
-    queryKey: ["appraisal_section_authorisations"],
-    queryFn: async () => {
-      const res = await api.get("/system-definitions/options", {
-        params: {
-          module_id: APPRAISAL_MODULE_ID_CONST,
-          option_list: APPRAISAL_SECTION_AUTH_LIST,
-        },
-      });
-      return res.data.data as SystemOption[];
     },
   });
 
@@ -721,14 +706,14 @@ export default function AppraisalForm({
     }
   }, [fillingForSelf, currentUserProfile, setValue]);
 
-  // Auto-fill Section Authorisations Held from the section attached to the
-  // employee's role (users.section_id, copied from their hiring posting —
-  // see resolveEmployeeOrgPlacement.ts), rather than leaving it blank for
-  // HR/supervisors to guess at. Only runs on fresh fills, only fires once
-  // per employee selection (doesn't fight a manual edit afterward — see the
-  // `alreadyAutoFilledFor` guard), and leaves the field blank exactly as
-  // before if the employee has no section on record, falling back to the
-  // manual dropdown below.
+  // Section Authorisations Held is a locked field, always driven by the
+  // section attached to the selected employee's role (users.section_id,
+  // copied from their hiring posting — see resolveEmployeeOrgPlacement.ts),
+  // never a manual pick. Resolves against the org-structure Sections list
+  // itself (not the old generic system-definitions option list), and keeps
+  // the underlying form value in sync with whichever employee is currently
+  // selected so it still submits correctly even though there's no visible
+  // input for it.
   const employeeSectionLabel = useMemo(() => {
     if (!selectedEmployee?.section_id) return null;
     return (
@@ -737,25 +722,10 @@ export default function AppraisalForm({
     );
   }, [selectedEmployee, orgSections]);
 
-  const [autoFilledSectionFor, setAutoFilledSectionFor] = useState<
-    string | null
-  >(null);
-
   useEffect(() => {
-    if (isFillingSecond || !selectedEmployee || !employeeSectionLabel) return;
-    if (autoFilledSectionFor === selectedEmployee.user_id) return;
-    if (!watch("section_authorisations_held")) {
-      setValue("section_authorisations_held", employeeSectionLabel);
-    }
-    setAutoFilledSectionFor(selectedEmployee.user_id);
-  }, [
-    isFillingSecond,
-    selectedEmployee,
-    employeeSectionLabel,
-    autoFilledSectionFor,
-    setValue,
-    watch,
-  ]);
+    if (isFillingSecond) return;
+    setValue("section_authorisations_held", employeeSectionLabel ?? "");
+  }, [isFillingSecond, employeeSectionLabel, setValue]);
 
   // Supervisor fill: derive the form band from the selected employee's grade.
   useEffect(() => {
@@ -1239,46 +1209,14 @@ export default function AppraisalForm({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            {isFillingSecond ? (
-              <ReadOnlyField
-                label="Section Authorisations Held"
-                value={existingAppraisal?.section_authorisations_held}
-              />
-            ) : (
-              <>
-                <FieldLabel>Section Authorisations Held</FieldLabel>
-                <select
-                  {...register("section_authorisations_held")}
-                  className={inputCls()}
-                >
-                  <option value="">Select section authorisation</option>
-                  {employeeSectionLabel &&
-                    !sectionAuthOptions.some(
-                      (opt) =>
-                        (opt.legacy_value ?? opt.label) ===
-                        employeeSectionLabel,
-                    ) && (
-                      <option value={employeeSectionLabel}>
-                        {employeeSectionLabel} (from employee record)
-                      </option>
-                    )}
-                  {sectionAuthOptions.map((opt) => (
-                    <option
-                      key={opt.id}
-                      value={opt.legacy_value ?? opt.label}
-                    >
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                {employeeSectionLabel && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Auto-filled from {selectedEmployee?.first_name}&apos;s
-                    section on record — change it if this isn&apos;t right.
-                  </p>
-                )}
-              </>
-            )}
+            <ReadOnlyField
+              label="Section Authorisations Held"
+              value={
+                isFillingSecond
+                  ? existingAppraisal?.section_authorisations_held
+                  : (employeeSectionLabel ?? "Not set on employee record")
+              }
+            />
           </div>
           <div>
             {isFillingSecond ? (
