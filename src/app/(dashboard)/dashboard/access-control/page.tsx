@@ -230,21 +230,18 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {groupTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setListGroup(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-              listGroup === tab.id
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <select
+          value={listGroup}
+          onChange={(e) => setListGroup(e.target.value as UserListGroup)}
+          className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400"
+        >
+          {groupTabs.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {activeGroupKey && activeGroupActions && (
