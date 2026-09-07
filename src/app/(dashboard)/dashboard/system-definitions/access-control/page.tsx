@@ -22,6 +22,10 @@ const inputClass =
 type PlaceholderItem = {
   id: string;
   name: string;
+  // Whether this sidebar item expands into its own sub-menu (e.g. Human
+  // Capital, Task Manager). Manage only opens a setup page for items that
+  // don't — a submenu item's own permissions setup isn't built yet.
+  hasSubMenu: boolean;
 };
 
 /**
@@ -30,8 +34,11 @@ type PlaceholderItem = {
  * Sub-menu items nested under a collapsible group (e.g. Human Capital's
  * children) are intentionally excluded.
  */
-function getSidebarNavItemOptions(): string[] {
-  return buildSidebarNav().map((item) => item.label);
+function getSidebarNavItemOptions(): { label: string; hasSubMenu: boolean }[] {
+  return buildSidebarNav().map((item) => ({
+    label: item.label,
+    hasSubMenu: !!item.children && item.children.length > 0,
+  }));
 }
 
 /**
@@ -48,14 +55,18 @@ export default function SystemDefinitionsAccessControlPage() {
   // Same rule as Organizational structure's "Add new list" — an item
   // already added can't be picked again.
   const sidebarNavOptions = useMemo(
-    () => allSidebarNavOptions.filter((option) => !items.some((item) => item.name === option)),
+    () => allSidebarNavOptions.filter((option) => !items.some((item) => item.name === option.label)),
     [allSidebarNavOptions, items],
   );
 
   const addItem = () => {
     const name = newItemName.trim();
     if (!name) return;
-    setItems((prev) => [...prev, { id: crypto.randomUUID(), name }]);
+    const match = allSidebarNavOptions.find((option) => option.label === name);
+    setItems((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name, hasSubMenu: match?.hasSubMenu ?? false },
+    ]);
     setNewItemName("");
     setShowAddForm(false);
     toast.success("Item added.");
@@ -160,8 +171,8 @@ export default function SystemDefinitionsAccessControlPage() {
             >
               <option value="">Select a sidebar item…</option>
               {sidebarNavOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+                <option key={option.label} value={option.label}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -212,13 +223,24 @@ export default function SystemDefinitionsAccessControlPage() {
                   <td className="px-4 py-2.5 text-gray-900">{item.name}</td>
                   <td className="px-4 py-2.5 text-gray-500">0</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
-                    >
-                      Manage
-                    </button>
+                    {item.hasSubMenu ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-400 text-sm font-medium rounded-lg cursor-not-allowed"
+                      >
+                        Manage
+                      </button>
+                    ) : (
+                      <Link
+                        href={`/dashboard/system-definitions/access-control/${encodeURIComponent(
+                          item.name,
+                        )}`}
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Manage
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))
