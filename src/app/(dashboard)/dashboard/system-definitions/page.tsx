@@ -588,93 +588,90 @@ function getModuleSections(
     });
   }
 
-  if (isEditableRatingSectionModule(m.id)) {
+  // Appraisal scope, Rating sections, Rating section weights, and Extra
+  // rules by grade are four related pieces of the same appraisal-form
+  // configuration — combined into one "Appraisal scope" sub-nav entry
+  // rather than four separate clicks, each still gated by its own
+  // isEditable*Module check exactly as before.
+  const hasAppraisalScope = isEditableRatingSectionModule(m.id);
+  const hasRatingWeights = isEditableBusinessLogicModule(m.id);
+  const hasExtraRules =
+    isEditableBusinessLogicModule(m.id) || m.businessLogic.length > 0;
+
+  if (hasAppraisalScope || hasRatingWeights || hasExtraRules) {
     sections.push({
       key: "appraisal-scope",
       label: "Appraisal scope",
       icon: Settings2,
       render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Appraisal scope"
-          description="Use shared grade bands or a separate appraisal form for each grade level."
-        >
-          <AppraisalScopeEditor moduleId={m.id} readOnly={!canEdit} />
-        </SectionCard>
-      ),
-    });
-
-    sections.push({
-      key: "rating-sections",
-      label: "Rating sections",
-      icon: Rows3,
-      render: () => (
-        <SectionCard
-          icon={Rows3}
-          title="Rating sections"
-          description="Section titles and rating line items for each grade band — Quarterly or Annual."
-        >
-          <RatingSectionsEditor
-            moduleId={m.id}
-            readOnly={!canEdit}
-            canAdd={canAdd}
-            canEdit={canEdit}
-          />
-        </SectionCard>
-      ),
-    });
-  }
-
-  if (isEditableBusinessLogicModule(m.id)) {
-    sections.push({
-      key: "rating-weights",
-      label: "Rating section weights",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Rating section weights"
-          description="How much each rating section counts in the score — for all staff or per grade band."
-        >
-          <SectionWeightsEditor moduleId={m.id} readOnly={!canEdit} />
-        </SectionCard>
-      ),
-    });
-  }
-
-  if (isEditableBusinessLogicModule(m.id) || m.businessLogic.length > 0) {
-    sections.push({
-      key: "extra-rules",
-      label: "Extra rules by grade",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Extra rules by grade"
-          description="Conditional weight boosts when the employee being appraised is at a certain grade level."
-        >
-          {isEditableBusinessLogicModule(m.id) ? (
-            <BusinessLogicEditor
-              moduleId={m.id}
-              canAdd={canAdd}
-              canEdit={canEdit}
-            />
-          ) : (
-            <ul className="space-y-2">
-              {m.businessLogic.map((rule) => (
-                <li
-                  key={rule.id}
-                  className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs"
-                >
-                  <p className="font-medium text-gray-700">{rule.label}</p>
-                  {rule.description && (
-                    <p className="text-gray-400 mt-0.5">{rule.description}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
+        <div className="space-y-4">
+          {hasAppraisalScope && (
+            <SectionCard
+              icon={Settings2}
+              title="Appraisal scope"
+              description="Use shared grade bands or a separate appraisal form for each grade level."
+            >
+              <AppraisalScopeEditor moduleId={m.id} readOnly={!canEdit} />
+            </SectionCard>
           )}
-        </SectionCard>
+
+          {hasAppraisalScope && (
+            <SectionCard
+              icon={Rows3}
+              title="Rating sections"
+              description="Section titles and rating line items for each grade band — Quarterly or Annual."
+            >
+              <RatingSectionsEditor
+                moduleId={m.id}
+                readOnly={!canEdit}
+                canAdd={canAdd}
+                canEdit={canEdit}
+              />
+            </SectionCard>
+          )}
+
+          {hasRatingWeights && (
+            <SectionCard
+              icon={Settings2}
+              title="Rating section weights"
+              description="How much each rating section counts in the score — for all staff or per grade band."
+            >
+              <SectionWeightsEditor moduleId={m.id} readOnly={!canEdit} />
+            </SectionCard>
+          )}
+
+          {hasExtraRules && (
+            <SectionCard
+              icon={Settings2}
+              title="Extra rules by grade"
+              description="Conditional weight boosts when the employee being appraised is at a certain grade level."
+            >
+              {isEditableBusinessLogicModule(m.id) ? (
+                <BusinessLogicEditor
+                  moduleId={m.id}
+                  canAdd={canAdd}
+                  canEdit={canEdit}
+                />
+              ) : (
+                <ul className="space-y-2">
+                  {m.businessLogic.map((rule) => (
+                    <li
+                      key={rule.id}
+                      className="px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    >
+                      <p className="font-medium text-gray-700">{rule.label}</p>
+                      {rule.description && (
+                        <p className="text-gray-400 mt-0.5">
+                          {rule.description}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+          )}
+        </div>
       ),
     });
   }
