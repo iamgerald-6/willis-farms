@@ -16,10 +16,6 @@ import {
 import { getModuleByIdSync } from "@/lib/moduleRegistry";
 
 const BUSINESS_LOGIC_KEYS = [
-  "sectionWeightRules",
-  "sectionBaseWeights",
-  "globalSectionWeights",
-  "sectionContentOverrides",
   "competencyContentOverrides",
   "refereeReferenceConfig",
   "applicationFormConfig",

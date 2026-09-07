@@ -5,10 +5,7 @@ export type {
   SystemOptionUpdate,
 } from "./types";
 
-export {
-  APPRAISAL_MODULE_ID_CONST,
-  DEFAULT_APPRAISAL_SECTION_WEIGHT_RULES,
-} from "./appraisalDefaults";
+export { APPRAISAL_MODULE_ID_CONST } from "./appraisalDefaults";
 
 import { EDITABLE_BUSINESS_LOGIC_MODULES } from "./optionListKeys";
 
@@ -50,40 +47,9 @@ export {
   type ModuleSystemConfig,
 } from "./getModuleConfig";
 
-export {
-  applySectionWeightRules,
-  normalizeSectionWeightRules,
-  parseModuleBusinessLogic,
-} from "./sectionWeightRules";
+export { parseModuleBusinessLogic } from "./sectionWeightRules";
 
-export type {
-  ModuleBusinessLogic,
-  SectionWeightRule,
-} from "./sectionWeightRules";
-
-export {
-  applySectionBaseWeights,
-  getGitSectionWeightDefaults,
-  normalizeGlobalSectionWeights,
-  normalizeSectionBaseWeights,
-  resolveSectionWeight,
-} from "./sectionBaseWeights";
-
-export type {
-  GlobalSectionWeights,
-  SectionBaseWeights,
-} from "./sectionBaseWeights";
-
-export {
-  applySectionContentOverrides,
-  mergeSectionContentPatches,
-  normalizeSectionContentOverrides,
-} from "./sectionContentOverrides";
-
-export type {
-  SectionContentOverrides,
-  SectionContentPatch,
-} from "./sectionContentOverrides";
+export type { ModuleBusinessLogic } from "./sectionWeightRules";
 
 export {
   SKILL_LOG_MODULE_ID,

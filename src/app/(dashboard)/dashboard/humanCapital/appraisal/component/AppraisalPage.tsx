@@ -31,7 +31,6 @@ import {
 import {
   Quarter,
   supervisableGradeBands,
-  sectionsFor,
   sectionSetForQuarter,
 } from "@/lib/appraisal/sections";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
@@ -51,13 +50,6 @@ import {
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
-import {
-  APPRAISAL_MODULE_ID_CONST,
-  applySectionBaseWeights,
-  applySectionContentOverrides,
-  applySectionWeightRules,
-  type ModuleBusinessLogic,
-} from "@/lib/systemDefinitions";
 import { useAppraisalFormProgress } from "@/lib/appraisal/appraisalFormProgress";
 import {
   canParticipateAsProgramSubject,
@@ -372,27 +364,6 @@ export default function AppraisalForm({
     },
   );
 
-  const { data: moduleConfig } = useQuery<{
-    businessLogic: ModuleBusinessLogic;
-  }>({
-    queryKey: ["appraisal_module_config"],
-    queryFn: async () => {
-      const res = await api.get(
-        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
-      );
-      return {
-        businessLogic: (res.data.data?.businessLogic ??
-          {}) as ModuleBusinessLogic,
-      };
-    },
-  });
-
-  const weightRules = moduleConfig?.businessLogic?.sectionWeightRules ?? [];
-  const globalSectionWeights =
-    moduleConfig?.businessLogic?.globalSectionWeights;
-  const sectionBaseWeights = moduleConfig?.businessLogic?.sectionBaseWeights;
-  const sectionContentOverrides =
-    moduleConfig?.businessLogic?.sectionContentOverrides;
   const allUsers = usersData ?? [];
 
   // ── Current viewer profile ──
@@ -583,12 +554,11 @@ export default function AppraisalForm({
 
   // Appraisal grade templates — one question set per exact Site/Business
   // unit/Department/Section/Position/Grade level combination, matched
-  // against the appraised employee's own stored org placement (replaces
-  // the old global L1-L7 grade-band system for any combination that's been
-  // configured). Falls back to the old band-based sectionsFor/overrides
-  // chain below when no template exists yet for this employee's exact
-  // combination — keeps in-flight appraisals created before this change,
-  // or employees whose position hasn't been configured yet, working.
+  // against the appraised employee's own stored org placement (this fully
+  // replaces the old global L1-L7 grade-band system — no fallback). If no
+  // template has been built yet for this employee's exact combination, they
+  // have no sections to fill until HR builds one under System Definitions
+  // > Appraisal > Appraisal scope.
   const employeeOrgPlacement = useMemo(
     () => ({
       site_id: selectedEmployee?.site_id ?? null,
@@ -618,42 +588,11 @@ export default function AppraisalForm({
   });
 
   const sections = useMemo(() => {
-    if (gradeTemplate) {
-      return sectionSetForQuarter(quarter) === "quarterly"
-        ? gradeTemplate.quarterly
-        : gradeTemplate.annual;
-    }
-
-    const base = sectionsFor(gradeBand, quarter);
-    const withContent = applySectionContentOverrides(
-      base,
-      gradeBand,
-      quarter,
-      sectionContentOverrides,
-    );
-    const withBaseWeights = applySectionBaseWeights(
-      withContent,
-      gradeBand,
-      quarter,
-      globalSectionWeights,
-      sectionBaseWeights,
-    );
-    return applySectionWeightRules(
-      withBaseWeights,
-      selectedEmployee?.grade_level ?? currentUserGrade,
-      weightRules,
-    );
-  }, [
-    gradeTemplate,
-    gradeBand,
-    quarter,
-    selectedEmployee?.grade_level,
-    currentUserGrade,
-    weightRules,
-    globalSectionWeights,
-    sectionBaseWeights,
-    sectionContentOverrides,
-  ]);
+    if (!gradeTemplate) return [];
+    return sectionSetForQuarter(quarter) === "quarterly"
+      ? gradeTemplate.quarterly
+      : gradeTemplate.annual;
+  }, [gradeTemplate, quarter]);
 
   const visibleSections =
     !isFillingSecond && !fillingForSelf && !selectedEmployee ? [] : sections;
@@ -853,6 +792,14 @@ export default function AppraisalForm({
     if (supervisorMode && !reviewDate) {
       errs.reviewDate = "Please schedule a final review date";
       toast.error("Please schedule a final review date");
+    }
+
+    if (selectedEmployee && visibleSections.length === 0) {
+      errs.sections =
+        "No appraisal question set is configured for this employee yet — ask HR to set one up under System Definitions before this can be submitted.";
+      toast.error(
+        "No appraisal question set is configured for this employee yet.",
+      );
     }
 
     let missingRatings = false;
@@ -1411,11 +1358,11 @@ export default function AppraisalForm({
 
         {visibleSections.length === 0 && (
           <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-            {(isFillingSecond || fillingForSelf || selectedEmployee) &&
-            hasCompleteOrgPlacement &&
-            !gradeTemplate
-              ? "No appraisal question set has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions."
-              : "Select an employee above to load the rating sections"}
+            {!(isFillingSecond || fillingForSelf || selectedEmployee)
+              ? "Select an employee above to load the rating sections"
+              : !hasCompleteOrgPlacement
+                ? "This employee's org placement (Site/Business unit/Department/Section/Position/Grade level) isn't fully set up yet — ask HR to complete it in Manage User before an appraisal can be filled."
+                : "No appraisal question set has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions > Appraisal > Appraisal scope."}
           </div>
         )}
 

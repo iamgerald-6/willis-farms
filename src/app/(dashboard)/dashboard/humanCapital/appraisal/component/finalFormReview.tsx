@@ -21,21 +21,17 @@ import {
   itemRatingMeta,
   ITEM_RATING_MIN,
   ITEM_RATING_MAX,
+  type SectionDef,
 } from "@/lib/appraisal/scoring";
-import { Quarter, sectionsFor } from "@/lib/appraisal/sections";
-import {
-  APPRAISAL_MODULE_ID_CONST,
-  applySectionBaseWeights,
-  applySectionContentOverrides,
-  applySectionWeightRules,
-  type ModuleBusinessLogic,
-} from "@/lib/systemDefinitions";
+import { Quarter, sectionSetForQuarter } from "@/lib/appraisal/sections";
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
+import type { User } from "@/types";
 
 interface Appraisal {
   id: string | number;
+  employee_user_id?: string | null;
   employee_name: string;
   job_title: string;
   current_grade: string;
@@ -180,39 +176,86 @@ export default function FinalReviewForm({
     setFinalRatings(JSON.parse(JSON.stringify(appraisal.supervisor_ratings ?? {})));
   }
 
-  const { data: moduleConfig } = useQuery({
-    queryKey: ["appraisal_module_config"],
+  // Same exact-match Appraisal Scope template the employee's form was
+  // originally filled against (see AppraisalPage.tsx) — resolved from the
+  // employee's own stored org placement, not their grade band.
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["get_users"],
     queryFn: async () => {
-      const res = await api.get(
-        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
-      );
-      return (res.data.data?.businessLogic ?? {}) as ModuleBusinessLogic;
+      const res = await api.get("/get_user");
+      return res.data;
     },
   });
 
-  const sections = useMemo(() => {
-    const formKey = appraisal?.grade_band ?? "L1";
-    const quarter = appraisal?.review_quarter ?? "Q1";
-    const base = sectionsFor(formKey, quarter);
-    const withContent = applySectionContentOverrides(
-      base,
-      formKey,
-      quarter,
-      moduleConfig?.sectionContentOverrides,
-    );
-    const withBaseWeights = applySectionBaseWeights(
-      withContent,
-      formKey,
-      quarter,
-      moduleConfig?.globalSectionWeights,
-      moduleConfig?.sectionBaseWeights,
-    );
-    return applySectionWeightRules(
-      withBaseWeights,
-      appraisal?.current_grade,
-      moduleConfig?.sectionWeightRules,
-    );
-  }, [appraisal, moduleConfig]);
+  const employee = useMemo(
+    () => allUsers.find((u) => u.user_id === appraisal?.employee_user_id),
+    [allUsers, appraisal?.employee_user_id],
+  );
+
+  const employeeOrgPlacement = useMemo(
+    () => ({
+      site_id: employee?.site_id ?? null,
+      business_unit_id: employee?.business_unit_id ?? null,
+      department_id: employee?.department_id ?? null,
+      section_id: employee?.section_id ?? null,
+      position_id: employee?.position_id ?? null,
+      grade_level_id: employee?.grade_level_id ?? null,
+    }),
+    [employee],
+  );
+  const hasCompleteOrgPlacement = Object.values(employeeOrgPlacement).every(
+    Boolean,
+  );
+
+  const { data: gradeTemplate } = useQuery<{
+    id: string;
+    quarterly: SectionDef[];
+    annual: SectionDef[];
+  } | null>({
+    queryKey: ["appraisal_grade_template", employeeOrgPlacement],
+    queryFn: async () => {
+      const res = await api.get("/appraisal/grade-template", {
+        params: employeeOrgPlacement,
+      });
+      return res.data.data;
+    },
+    enabled: hasCompleteOrgPlacement,
+  });
+
+  // Legacy safety net: an appraisal already filled before Appraisal Scope
+  // templates existed has no template to re-resolve here. Rather than ever
+  // falling back to the retired grade-band question sets (which could
+  // silently show different items than what was actually rated), rebuild a
+  // section list directly from whatever keys are already saved on the
+  // record, so the supervisor can still see and finalize what was submitted.
+  const sections = useMemo((): SectionDef[] => {
+    if (gradeTemplate) {
+      return sectionSetForQuarter(appraisal?.review_quarter ?? "Q1") ===
+        "quarterly"
+        ? gradeTemplate.quarterly
+        : gradeTemplate.annual;
+    }
+    if (!appraisal) return [];
+    const savedKeys = new Set([
+      ...Object.keys(appraisal.employee_ratings ?? {}),
+      ...Object.keys(appraisal.supervisor_ratings ?? {}),
+    ]);
+    // No real weights survive for a record with no resolvable template, so
+    // split evenly across whatever sections were actually saved — keeps the
+    // live score a meaningful percentage rather than always reading 0.
+    const equalWeight = savedKeys.size > 0 ? 100 / savedKeys.size : 0;
+    return Array.from(savedKeys).map((key) => ({
+      key,
+      title: key,
+      weight: equalWeight,
+      items: Array.from(
+        new Set([
+          ...Object.keys(appraisal.employee_ratings?.[key] ?? {}),
+          ...Object.keys(appraisal.supervisor_ratings?.[key] ?? {}),
+        ]),
+      ),
+    }));
+  }, [gradeTemplate, appraisal]);
 
   const liveScore = useMemo(() => {
     if (!finalRatings) return null;
