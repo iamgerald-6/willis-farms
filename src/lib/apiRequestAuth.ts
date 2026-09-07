@@ -15,7 +15,10 @@ import {
 import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { PermissionAction } from "@/lib/moduleRegistry/types";
-import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
+import {
+  resolveEffectiveUserRoleLabel,
+  resolveUserRoleLabelById,
+} from "@/lib/userRoleAccessControl";
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -127,15 +130,17 @@ export async function getApiRequestUser(
     console.error("[getApiRequestUser] users lookup failed", err);
   }
 
+  // Kept only for display/reference — access decisions never use this.
   const legacyRole = profile?.role ?? metadataRole(authUser);
-  // Resolved "User role" label takes over as the effective role for
-  // access-control purposes once set — see userRoleAccessControl.ts. Falls
-  // back to the old role/metadata value for anyone not yet migrated.
+  // Resolved "User role" label is the sole source of truth for access
+  // control — see userRoleAccessControl.ts. We never fall back to the old
+  // employee/manager/admin/super_admin role column; an unassigned "User
+  // role" defaults to Standard Role.
   const userRoleLabel = await resolveUserRoleLabelById(
     supabaseAdmin,
     profile?.user_role_id,
   );
-  const role = userRoleLabel ?? legacyRole;
+  const role = resolveEffectiveUserRoleLabel(userRoleLabel);
   const email = profile?.email ?? authUser.email ?? null;
   const name = profile
     ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || (email ?? "Unknown")

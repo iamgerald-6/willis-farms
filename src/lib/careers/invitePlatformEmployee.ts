@@ -109,11 +109,7 @@ export async function invitePlatformEmployee(
       return { ok: false, error: "Supervisor not found", status: 404 };
     }
 
-    const employeeStub = {
-      user_id: "pending",
-      role,
-      grade_level: grade_level ?? null,
-    };
+    const employeeStub = { user_id: "pending" };
 
     const supervisorRoleLabel = await resolveUserRoleLabelById(
       supabaseAdmin,
@@ -124,13 +120,12 @@ export async function invitePlatformEmployee(
       !canAssignAsSupervisor(
         { ...supervisor, user_role_label: supervisorRoleLabel },
         employeeStub,
-        gradeConfig,
+        "onboarding",
       )
     ) {
       return {
         ok: false,
-        error:
-          "Invalid supervisor — must be L4 or above and strictly senior to the employee's grade.",
+        error: "Invalid supervisor — must have the Supervisory Role User role.",
         status: 400,
       };
     }

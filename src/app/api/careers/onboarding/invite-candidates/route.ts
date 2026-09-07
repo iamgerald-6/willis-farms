@@ -14,6 +14,7 @@ import {
 } from "@/lib/careers/hrEmployeeDefaults";
 import { buildOnboardingInvitePrefill } from "@/lib/careers/buildOnboardingInvitePrefill";
 import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
+import { fetchUserRoleLabelMap } from "@/lib/userRoleAccessControl";
 
 export type OnboardedInviteCandidate = {
   application_id: string;
@@ -67,11 +68,17 @@ export async function GET(req: NextRequest) {
 
     const { data: existingUsers, error: usersError } = await supabaseAdmin
       .from("users")
-      .select("user_id, email, first_name, last_name, grade_level, role");
+      .select("user_id, email, first_name, last_name, grade_level, role, user_role_id");
 
     if (usersError) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });
     }
+
+    const userRoleLabels = await fetchUserRoleLabelMap(supabaseAdmin);
+    const existingUsersWithRoleLabel = (existingUsers ?? []).map((u) => ({
+      ...u,
+      user_role_label: u.user_role_id ? userRoleLabels.get(u.user_role_id) ?? null : null,
+    }));
 
     const { companyIds, companyEmails } = await collectExistingEmployeeIds(supabaseAdmin);
 
@@ -132,7 +139,7 @@ export async function GET(req: NextRequest) {
         app,
         form_data: row.form_data as OnboardingFormData,
         hr_data: { ...hr, employee_id: company_id } as OnboardingHrData,
-        existingUsers: existingUsers ?? [],
+        existingUsers: existingUsersWithRoleLabel,
         existingEmails: [...invitedEmails],
         gradeConfig,
         emailDomain,

@@ -18,12 +18,7 @@ import {
  * (see scopeTasksForViewer in the API routes).
  */
 export function isSeniorManagement(role: string | null | undefined): boolean {
-  return (
-    role === "admin" ||
-    role === "manager" ||
-    role === "super_admin" ||
-    hasBroadElevatedAccessByRoleLabel(role)
-  );
+  return hasBroadElevatedAccessByRoleLabel(role);
 }
 
 /**
@@ -39,7 +34,7 @@ export function isSeniorManagement(role: string | null | undefined): boolean {
  * newly given one of those roles.
  */
 export function canViewAllTasks(role: string | null | undefined, tmCanViewAllTasks: boolean | null | undefined): boolean {
-  return role === "super_admin" || isSuperAdminRoleLabel(role) || !!tmCanViewAllTasks;
+  return isSuperAdminRoleLabel(role) || !!tmCanViewAllTasks;
 }
 
 /**

@@ -88,9 +88,6 @@ export function hasFullAppraisalAccess(
   grade: string | null | undefined,
   config?: GradeLevelsConfig,
 ): boolean {
-  if (role === "manager" || role === "admin" || role === "super_admin") {
-    return true;
-  }
   if (hasBroadElevatedAccessByRoleLabel(role)) return true;
   return isFullAppraisalRank(grade, config);
 }
@@ -98,24 +95,15 @@ export function hasFullAppraisalAccess(
 export function canViewAllAppraisalPeriods(
   role: string | null | undefined,
 ): boolean {
-  return (
-    role === "manager" ||
-    role === "admin" ||
-    role === "super_admin" ||
-    hasBroadElevatedAccessByRoleLabel(role)
-  );
+  return hasBroadElevatedAccessByRoleLabel(role);
 }
 
 export function canArchiveAppraisal(
   role: string | null | undefined,
   pagePermissionLevels?: Partial<Record<string, "view" | "add" | "edit">> | null,
 ): boolean {
-  if (role === "super_admin" || role === "manager") return true;
   if (hasBroadElevatedAccessByRoleLabel(role)) return true;
-  if (role === "admin") {
-    return pagePermissionLevels?.["hc:appraisal"] === "edit";
-  }
-  return false;
+  return pagePermissionLevels?.["hc:appraisal"] === "edit";
 }
 
 export const canReviewJustification = hasFullAppraisalAccess;

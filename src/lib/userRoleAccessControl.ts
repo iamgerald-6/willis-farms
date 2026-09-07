@@ -1,58 +1,62 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * New role taxonomy, replacing users.role ("employee" | "manager" | "admin" |
- * "super_admin") as the source of truth for access control. Backed by the
- * "User role" custom org-structure list — users.user_role_id (see
- * docs/access-control/users-org-placement-user-role.sql) — a normal
- * user-editable list rather than a fixed DB enum, so role names are matched
- * case-insensitively by label instead of a hardcoded value set.
+ * New role taxonomy — the ONLY source of truth for access control now. The
+ * old users.role ("employee" | "manager" | "admin" | "super_admin") and
+ * grade-rank thresholds are no longer consulted anywhere; anyone without a
+ * resolved User role (user_role_id unset, or the list/row missing) is
+ * treated as Standard Role, not as whatever their old role/grade happened
+ * to be. Backed by the "User role" custom org-structure list —
+ * users.user_role_id (see docs/access-control/users-org-placement-user-
+ * role.sql) — a normal user-editable list rather than a fixed DB enum, so
+ * role names are matched case-insensitively by label instead of a
+ * hardcoded value set. Exact labels as configured in that list: "Standard
+ * Role", "Executive Role", "Human Resource", "Supervisory Role", "System
+ * Administrator", "Consultant", "Super Admin".
  *
  * The 7 roles and what each one means for access control:
- *   Standard              - same access as the old "employee".
- *   Executive             - same access as the old "manager" (full breadth,
- *                            unchanged — see isFullRoleAccess in
- *                            pagePermissions.ts).
- *   Consultant             - same access as Standard. Kept as its own label
- *                            because gradeLevelsConfig.ts already tracks
- *                            "Consultant" separately for other things
- *                            (program eligibility, salary tiers) — nothing
- *                            to do with access control.
- *   Human Resource         - full access to every Human Capital + Task
+ *   Standard Role          - baseline access, nothing elevated. Default for
+ *                            anyone with no User role assigned.
+ *   Executive Role          - full role access (User Management, System
+ *                            Definitions, everything) — see isFullRoleAccess
+ *                            in pagePermissions.ts.
+ *   Consultant             - same access as Standard Role. Kept as its own
+ *                            label because gradeLevelsConfig.ts already
+ *                            tracks "Consultant" separately for other
+ *                            things (program eligibility, salary tiers) —
+ *                            nothing to do with access control.
+ *   Human Resource          - full access to every Human Capital + Task
  *                            Manager page. No User Management / System
  *                            Definitions access by default.
  *   System Administrator   - System Definitions + User Management access.
  *                            Explicitly NOT granted appraise / approve leave
  *                            / fill skill log / create tasks for others —
  *                            deliberately narrower than "full role access".
- *   Supervisory             - replaces the old L4-L7 grade-rank threshold.
- *                            Not a broad grant by itself — combined with the
- *                            existing users.supervisor_id assignment (see
- *                            supervisorAssignment.ts), a Supervisory-role
- *                            person can appraise, approve leave for, fill
- *                            the skill log of, and create tasks for
- *                            whoever's supervisor_id points at them.
- *   Super Admin             - same as the old "super_admin". Bypasses
- *                            everything.
- *
- * Transition plan: every predicate below only fires once a user has a
- * resolved User role label. Anyone without one yet (user_role_id unset, the
- * "User role" list not created, or the label just not one of the 7 above)
- * falls through to whatever old role/grade logic already existed at each
- * call site — see the dual (new-first, old-fallback) checks in
- * accessControl.ts, pagePermissions.ts, taskAccessControl.ts,
- * supervisorAssignment.ts, permissionActions.ts, and appraisal/roles.ts.
- * Once every account has a User role assigned, the old role/grade paths can
- * be retired (tracked separately — not part of this change).
+ *   Supervisory Role        - who can be assigned (via users.supervisor_id,
+ *                            see supervisorAssignment.ts) as someone's
+ *                            reporting supervisor during onboarding.
+ *                            Appraising, approving leave, filling the skill
+ *                            log of, and creating tasks for a specific
+ *                            employee is always done by whoever is
+ *                            *actually assigned* as their supervisor_id
+ *                            (set during onboarding or from Manage User) —
+ *                            not by role name alone. In Manage User, the
+ *                            assignable pool is wider: Executive Role,
+ *                            Human Resource, or Supervisory Role.
+ *   Super Admin             - bypasses everything.
  */
 
 export const USER_ROLE_LIST_LABEL = "user role";
 
+/** Canonical label shown to admins when nothing is picked — see
+ * resolveEffectiveUserRoleLabel below. */
+export const DEFAULT_USER_ROLE_LABEL = "Standard Role";
+
 const ROLE = {
-  STANDARD: "standard",
-  EXECUTIVE: "executive",
+  STANDARD: "standard role",
+  EXECUTIVE: "executive role",
   HUMAN_RESOURCE: "human resource",
-  SUPERVISORY: "supervisory",
+  SUPERVISORY: "supervisory role",
   SYSTEM_ADMINISTRATOR: "system administrator",
   CONSULTANT: "consultant",
   SUPER_ADMIN: "super admin",
@@ -63,6 +67,16 @@ export function normalizeUserRoleLabel(
 ): string | null {
   const trimmed = label?.trim().toLowerCase();
   return trimmed || null;
+}
+
+/** The label to actually use for access-control decisions: the resolved
+ * User role when there is one, else Standard Role — never the old
+ * role/grade fields. Apply this at the point a user's role is loaded
+ * (getApiRequestUser, resolveAccessProfile) rather than at every call site. */
+export function resolveEffectiveUserRoleLabel(
+  userRoleLabel: string | null | undefined,
+): string {
+  return userRoleLabel?.trim() || DEFAULT_USER_ROLE_LABEL;
 }
 
 export function isStandardRoleLabel(label: string | null | undefined): boolean {
@@ -95,19 +109,18 @@ export function isSuperAdminRoleLabel(label: string | null | undefined): boolean
   return normalizeUserRoleLabel(label) === ROLE.SUPER_ADMIN;
 }
 
-/** Whether this string is any recognized new-system role label at all —
- * used to decide whether to trust the new system for a given user, or fall
- * back to their old role/grade (not yet migrated). */
+/** Whether this string is any recognized new-system role label at all. */
 export function isKnownUserRoleLabel(label: string | null | undefined): boolean {
   const n = normalizeUserRoleLabel(label);
   return !!n && (Object.values(ROLE) as string[]).includes(n);
 }
 
-/** Broad, org-wide elevated access (task creation, leave approval, full
- * appraisal access) — not limited to specific supervisees. Executive is the
- * old "manager" equivalent (unchanged breadth); Human Resource's breadth is
- * scoped to Human Capital + Task Manager specifically, handled separately
- * in permissionActions.ts rather than here. */
+/** Broad, org-wide elevated access for Task Manager / Leave / appraisal
+ * admin (viewing all periods, archiving) — Super Admin, Executive Role, or
+ * Human Resource. NOT used for deciding who personally appraises or fills
+ * a skill log for a SPECIFIC employee — that's always the actual assigned
+ * supervisor (supervisor_id), see canSuperviseAppraisal in appraisal/roles.ts
+ * and canFillSkillLogForEmployee in skillLogAccess.ts. */
 export function hasBroadElevatedAccessByRoleLabel(
   label: string | null | undefined,
 ): boolean {
@@ -123,9 +136,10 @@ export function hasSystemAccessByRoleLabel(label: string | null | undefined): bo
   return isSuperAdminRoleLabel(label) || isSystemAdministratorRoleLabel(label);
 }
 
-/** Who can be picked as someone's Assigned supervisor — Supervisory,
- * Executive, or Human Resource (Standard/Consultant/System Administrator
- * are not eligible). */
+/** Who can be picked as someone's Assigned supervisor from Manage User —
+ * Executive Role, Human Resource, or Supervisory Role (Standard, Consultant,
+ * System Administrator are not eligible). Onboarding uses a narrower pool —
+ * see canBeAssignedAsSupervisorAtOnboardingByRoleLabel below. */
 export function canBeAssignedAsSupervisorByRoleLabel(
   label: string | null | undefined,
 ): boolean {
@@ -135,6 +149,15 @@ export function canBeAssignedAsSupervisorByRoleLabel(
     isExecutiveRoleLabel(label) ||
     isHumanResourceRoleLabel(label)
   );
+}
+
+/** Who can be picked as a new hire's supervisor during onboarding —
+ * Supervisory Role only (narrower than the Manage User pool above, which
+ * also allows Executive Role / Human Resource). */
+export function canBeAssignedAsSupervisorAtOnboardingByRoleLabel(
+  label: string | null | undefined,
+): boolean {
+  return isSuperAdminRoleLabel(label) || isSupervisoryRoleLabel(label);
 }
 
 /** Module keys Human Resource gets full (edit-equivalent) access to by

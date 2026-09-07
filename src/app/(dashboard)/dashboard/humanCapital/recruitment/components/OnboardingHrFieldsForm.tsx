@@ -33,7 +33,7 @@ import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
 
@@ -217,13 +217,17 @@ export default function OnboardingHrFieldsForm({
     return lists[ONBOARDING_DEPARTMENTS_L1L6_LIST] ?? [];
   }, [hrData.grade_level, optionLists, gradeConfig]);
 
-  // Real position titles currently held by senior staff (manager/admin/
-  // super_admin) — not the recruitment job-postings catalog, since "Reporting
+  // Real position titles currently held by staff with the Supervisory Role
+  // User role — not the recruitment job-postings catalog, since "Reporting
   // to" should reflect who's actually in the org today, not a hypothetical
-  // opening. HR picks the applicable one per offer.
+  // opening. Onboarding only ever assigns a new hire's supervisor to someone
+  // with Supervisory Role (narrower than Manage User's pool, which also
+  // allows Executive Role / Human Resource) — see
+  // canBeAssignedAsSupervisorAtOnboardingByRoleLabel. HR picks the
+  // applicable one per offer.
   const reportingToOptions = useMemo(() => {
     const titles = allUsers
-      .filter((u) => !u.is_disabled && isSeniorManagement(u.role))
+      .filter((u) => !u.is_disabled && isSupervisoryRoleLabel(u.user_role_label))
       .map((u) => u.job_position?.trim())
       .filter((title): title is string => Boolean(title));
     return [...new Set(titles)].sort((a, b) => a.localeCompare(b));

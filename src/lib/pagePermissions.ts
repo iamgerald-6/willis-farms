@@ -1,10 +1,10 @@
 import {
   isSuperAdmin,
 } from "@/lib/accessControl";
-import { isFullAppraisalRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import {
   hasSystemAccessByRoleLabel,
   isExecutiveRoleLabel,
+  resolveEffectiveUserRoleLabel,
 } from "@/lib/userRoleAccessControl";
 
 /** Granular page keys — editable only via Access Control */
@@ -82,13 +82,7 @@ export const PAGE_PERMISSION_LABELS: Record<
  * userRoleAccessControl.ts and canManageAccessControl below).
  */
 export function isFullRoleAccess(role: string | null | undefined): boolean {
-  return (
-    role === "super_admin" ||
-    role === "admin" ||
-    role === "manager" ||
-    isSuperAdmin(role) ||
-    isExecutiveRoleLabel(role)
-  );
+  return isSuperAdmin(role) || isExecutiveRoleLabel(role);
 }
 
 /**
@@ -102,12 +96,10 @@ export function isFullRoleAccess(role: string | null | undefined): boolean {
  */
 export function canManageAccessControl(
   role: string | null | undefined,
-  grade: string | null | undefined,
 ): boolean {
   if (isSuperAdmin(role)) return true;
   if (hasSystemAccessByRoleLabel(role)) return true;
   if (isExecutiveRoleLabel(role)) return true;
-  if (role === "manager" && isFullAppraisalRank(grade)) return true;
   return false;
 }
 
@@ -181,9 +173,9 @@ export function resolveAccessProfile(
   dbUser: AccessProfile | null | undefined,
   sessionRole?: string | null,
 ): AccessProfile | null {
-  if (dbUser?.role || dbUser?.user_role_label) {
+  if (dbUser) {
     return {
-      role: dbUser.user_role_label || dbUser.role,
+      role: resolveEffectiveUserRoleLabel(dbUser.user_role_label),
       user_role_label: dbUser.user_role_label ?? null,
       grade_level: dbUser.grade_level,
       access_tier: dbUser.access_tier ?? "standard",

@@ -273,7 +273,7 @@ export default function ManageUserAccessPage() {
 
   const supervisorOptions = useMemo(() => {
     if (!target) return [];
-    return eligibleSupervisorsForEmployee(target, users, gradeConfig);
+    return eligibleSupervisorsForEmployee(target, users);
   }, [target, users, gradeConfig]);
 
   const assignedSupervisorName = supervisorDisplayName(

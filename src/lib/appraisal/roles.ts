@@ -1,15 +1,13 @@
-import { canRate } from "./sections";
-import {
-  hasBroadElevatedAccessByRoleLabel,
-  isSupervisoryRoleLabel,
-} from "@/lib/userRoleAccessControl";
+import { isSuperAdminRoleLabel } from "@/lib/userRoleAccessControl";
 
 /**
  * Which side of an appraisal a given person occupies.
  *
- * The side is a property of the RECORD, not of the viewer's grade: everyone,
+ * The side is a property of the RECORD, not of the viewer's role: everyone,
  * supervisors included, completes their own self-assessment, and the
- * supervisor side is always filled by someone strictly senior (L3 minimum).
+ * supervisor side is always filled by whoever is actually assigned as that
+ * employee's supervisor (users.supervisor_id, set at onboarding or from
+ * Manage User) — see canSuperviseAppraisal below.
  */
 export type AppraisalSide = "employee" | "supervisor" | "observer";
 
@@ -45,23 +43,21 @@ export function isOwnAppraisal(
 }
 
 /**
- * Super Admin, Executive, and Human Resource are broad role-based
- * exceptions (see hasBroadElevatedAccessByRoleLabel) — the highest grade
- * (L7) also has nobody above them under the old rank system, so without a
- * role-based bypass their supervisor side could never be filled. Supervisory
- * role is narrower: only for whoever's supervisor_id points at them.
+ * Super Admin bypasses everything. Everyone else — regardless of role —
+ * supervises an appraisal only if they're the employee's actual assigned
+ * supervisor (users.supervisor_id, set during onboarding or from Manage
+ * User). Being eligible to BE assigned as a supervisor (Executive Role,
+ * Human Resource, Supervisory Role — see canBeAssignedAsSupervisorByRoleLabel
+ * in supervisorAssignment.ts) is a separate, earlier check; it doesn't by
+ * itself grant appraisal access to anyone who wasn't actually assigned.
  */
 export function canSuperviseAppraisal(
   viewer: AppraisalViewer,
   subject: AppraisalSubject,
 ): boolean {
   if (isOwnAppraisal(viewer, subject)) return false;
-  if (viewer.role === "super_admin") return true;
-  if (hasBroadElevatedAccessByRoleLabel(viewer.role)) return true;
-  if (isSupervisoryRoleLabel(viewer.role)) {
-    return !!viewer.userId && subject.supervisor_id === viewer.userId;
-  }
-  return canRate(viewer.gradeLevel, subject.current_grade);
+  if (isSuperAdminRoleLabel(viewer.role)) return true;
+  return !!viewer.userId && subject.supervisor_id === viewer.userId;
 }
 
 export function appraisalSideFor(

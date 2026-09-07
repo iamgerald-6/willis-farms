@@ -1,4 +1,3 @@
-import { canSignOffSkillLog } from "@/lib/accessControl";
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
@@ -7,7 +6,6 @@ import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   canBeAssignedAsSupervisorByRoleLabel,
   hasBroadElevatedAccessByRoleLabel,
-  isKnownUserRoleLabel,
 } from "@/lib/userRoleAccessControl";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -28,9 +26,6 @@ function supervisorId(log: SkillLogRecord): string | undefined {
   return log.supervisor?.user_id ?? log.supervisor_id;
 }
 
-function fillerGrade(log: SkillLogRecord): string | null | undefined {
-  return log.supervisor?.grade_level;
-}
 
 export function canViewSkillLogRecord(
   profile: AccessProfile | null | undefined,
@@ -64,10 +59,7 @@ export function canViewSkillLogRecord(
     canPerformModuleAction(profile, "hc:skillLog", "approve", sessionRole, groupPresets)
   ) {
     if (log.status === "signed_off") return true;
-    if (
-      log.status === "submitted" &&
-      canSignOffSkillLogEffective(profile, fillerGrade(log))
-    ) {
+    if (log.status === "submitted" && canSignOffSkillLogEffective(profile)) {
       return true;
     }
   }
@@ -76,19 +68,14 @@ export function canViewSkillLogRecord(
 }
 
 /**
- * Whether `profile` may sign off a log filled by someone at `fillerGrade` —
- * Super Admin/Executive/Human Resource always can (broad, new role system);
- * everyone else not yet migrated to a resolved User role falls back to the
- * old grade-rank comparison. Supervisory role's sign-off is not yet scoped
- * to specific supervisees here (falls back to grade rank too) — narrowing
- * this to supervisor_id like fill/appraise/leave is a known follow-up.
+ * Whether `profile` may sign off a submitted log — Super Admin, Executive
+ * Role, or Human Resource (see hasBroadElevatedAccessByRoleLabel). This is a
+ * distinct admin/review capability, separate from who actually FILLS a
+ * specific employee's log (always their assigned supervisor — see
+ * canFillSkillLogForEmployee below).
  */
-function canSignOffSkillLogEffective(
-  profile: AccessProfile,
-  fillerGrade: string | null | undefined,
-): boolean {
-  if (hasBroadElevatedAccessByRoleLabel(profile.role)) return true;
-  return canSignOffSkillLog(profile.grade_level, fillerGrade);
+function canSignOffSkillLogEffective(profile: AccessProfile): boolean {
+  return hasBroadElevatedAccessByRoleLabel(profile.role);
 }
 
 export function canApproveSkillLogRecord(
@@ -108,7 +95,7 @@ export function canApproveSkillLogRecord(
     return false;
   }
 
-  return canSignOffSkillLogEffective(profile, fillerGrade(log));
+  return canSignOffSkillLogEffective(profile);
 }
 
 export function canEditSkillLogDraft(
@@ -131,22 +118,13 @@ export function canFillSkillLog(
   if (!profile) return false;
 
   const role = profile.role ?? sessionRole;
-  if (isKnownUserRoleLabel(role)) {
-    // New role system: Super Admin/Executive/Human Resource fill broadly;
-    // Supervisory fills for their supervisees (checked per-employee in
-    // canFillSkillLogForEmployee below, via the same eligible-supervisor
-    // role set). Standard/Consultant/System Administrator don't fill at all.
-    if (
-      !hasBroadElevatedAccessByRoleLabel(role) &&
-      !canBeAssignedAsSupervisorByRoleLabel(role)
-    ) {
-      return false;
-    }
-  } else {
-    if (isConsultantGrade(profile.grade_level)) return false;
-    const gradeNum = parseInt(String(profile.grade_level ?? "").replace(/\D/g, ""), 10) || 0;
-    if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
-  }
+  // Only roles ever eligible to be someone's assigned supervisor (Executive
+  // Role, Human Resource, Supervisory Role, or Super Admin) can fill a skill
+  // log at all — WHICH employee's log they can actually fill is checked
+  // separately per-employee in canFillSkillLogForEmployee below, via the
+  // supervisor_id assignment. Standard, Consultant, and System Administrator
+  // never fill logs.
+  if (!canBeAssignedAsSupervisorByRoleLabel(role)) return false;
 
   return canPerformModuleAction(profile, "hc:skillLog", "add", sessionRole, groupPresets);
 }
