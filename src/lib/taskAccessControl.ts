@@ -1,17 +1,29 @@
 import type { DisplayStatus, LifecycleStatus } from "@/types/taskManager";
+import {
+  hasBroadElevatedAccessByRoleLabel,
+  isSuperAdminRoleLabel,
+} from "@/lib/userRoleAccessControl";
 
 /**
- * Senior Management = admin, manager, or super_admin.
- * Same set of roles the Leave page already treats as "admin/manager" for its
- * my-view/admin-view toggle — kept consistent rather than inventing a new
- * permission tier.
+ * Senior Management = admin, manager, or super_admin — or, under the new
+ * role system, Executive/Human Resource/Super Admin (see
+ * hasBroadElevatedAccessByRoleLabel). System Administrator and Supervisory
+ * are deliberately NOT included: System Administrator is explicitly barred
+ * from creating tasks/approving leave/etc, and Supervisory's equivalent
+ * capability is scoped to their own supervisees via supervisor_id rather
+ * than broad like this.
  *
  * Only Senior Management can create, edit, archive, delete, or restore
  * tasks and projects. Everyone else is read-only, scoped to their own tasks
  * (see scopeTasksForViewer in the API routes).
  */
 export function isSeniorManagement(role: string | null | undefined): boolean {
-  return role === "admin" || role === "manager" || role === "super_admin";
+  return (
+    role === "admin" ||
+    role === "manager" ||
+    role === "super_admin" ||
+    hasBroadElevatedAccessByRoleLabel(role)
+  );
 }
 
 /**
@@ -27,7 +39,7 @@ export function isSeniorManagement(role: string | null | undefined): boolean {
  * newly given one of those roles.
  */
 export function canViewAllTasks(role: string | null | undefined, tmCanViewAllTasks: boolean | null | undefined): boolean {
-  return role === "super_admin" || !!tmCanViewAllTasks;
+  return role === "super_admin" || isSuperAdminRoleLabel(role) || !!tmCanViewAllTasks;
 }
 
 /**

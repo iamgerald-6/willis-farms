@@ -4,6 +4,11 @@ import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermis
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { AccessProfile } from "@/lib/pagePermissions";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
+import {
+  canBeAssignedAsSupervisorByRoleLabel,
+  hasBroadElevatedAccessByRoleLabel,
+  isKnownUserRoleLabel,
+} from "@/lib/userRoleAccessControl";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type SkillLogRecord = {
@@ -61,13 +66,29 @@ export function canViewSkillLogRecord(
     if (log.status === "signed_off") return true;
     if (
       log.status === "submitted" &&
-      canSignOffSkillLog(profile.grade_level, fillerGrade(log))
+      canSignOffSkillLogEffective(profile, fillerGrade(log))
     ) {
       return true;
     }
   }
 
   return false;
+}
+
+/**
+ * Whether `profile` may sign off a log filled by someone at `fillerGrade` —
+ * Super Admin/Executive/Human Resource always can (broad, new role system);
+ * everyone else not yet migrated to a resolved User role falls back to the
+ * old grade-rank comparison. Supervisory role's sign-off is not yet scoped
+ * to specific supervisees here (falls back to grade rank too) — narrowing
+ * this to supervisor_id like fill/appraise/leave is a known follow-up.
+ */
+function canSignOffSkillLogEffective(
+  profile: AccessProfile,
+  fillerGrade: string | null | undefined,
+): boolean {
+  if (hasBroadElevatedAccessByRoleLabel(profile.role)) return true;
+  return canSignOffSkillLog(profile.grade_level, fillerGrade);
 }
 
 export function canApproveSkillLogRecord(
@@ -87,7 +108,7 @@ export function canApproveSkillLogRecord(
     return false;
   }
 
-  return canSignOffSkillLog(profile.grade_level, fillerGrade(log));
+  return canSignOffSkillLogEffective(profile, fillerGrade(log));
 }
 
 export function canEditSkillLogDraft(
@@ -108,10 +129,25 @@ export function canFillSkillLog(
   sessionRole?: string | null,
 ): boolean {
   if (!profile) return false;
-  if (isConsultantGrade(profile.grade_level)) return false;
-  const grade = profile.grade_level;
-  const gradeNum = parseInt(String(grade ?? "").replace(/\D/g, ""), 10) || 0;
-  if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
+
+  const role = profile.role ?? sessionRole;
+  if (isKnownUserRoleLabel(role)) {
+    // New role system: Super Admin/Executive/Human Resource fill broadly;
+    // Supervisory fills for their supervisees (checked per-employee in
+    // canFillSkillLogForEmployee below, via the same eligible-supervisor
+    // role set). Standard/Consultant/System Administrator don't fill at all.
+    if (
+      !hasBroadElevatedAccessByRoleLabel(role) &&
+      !canBeAssignedAsSupervisorByRoleLabel(role)
+    ) {
+      return false;
+    }
+  } else {
+    if (isConsultantGrade(profile.grade_level)) return false;
+    const gradeNum = parseInt(String(profile.grade_level ?? "").replace(/\D/g, ""), 10) || 0;
+    if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
+  }
+
   return canPerformModuleAction(profile, "hc:skillLog", "add", sessionRole, groupPresets);
 }
 

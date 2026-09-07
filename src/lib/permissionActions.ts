@@ -23,6 +23,11 @@ import {
   type AccessTier,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
+import {
+  hasSystemAccessByRoleLabel,
+  HUMAN_RESOURCE_FULL_ACCESS_KEYS,
+  isHumanResourceRoleLabel,
+} from "@/lib/userRoleAccessControl";
 
 export type { ModuleActions, PagePermissionActions, PermissionAction };
 
@@ -381,6 +386,28 @@ export function canPerformModuleAction(
   sessionRole?: string | null,
   groupPresets?: GroupPresetsMap | null,
 ): boolean {
+  const role = profile?.role ?? sessionRole;
+
+  // System Definitions + User Management: unconditional for System
+  // Administrator / Super Admin (new role system) — deliberately not routed
+  // through the matrix below, since neither role should need per-user
+  // customization to reach what's supposed to be their default.
+  if ((key === "sys:definitions" || key === "users") && hasSystemAccessByRoleLabel(role)) {
+    return true;
+  }
+
+  // Human Resource: full (edit-equivalent) access to every Human Capital
+  // page plus Task Manager, by default — see
+  // HUMAN_RESOURCE_FULL_ACCESS_KEYS in userRoleAccessControl.ts. Deliberately
+  // does NOT cover "users"/"sys:definitions" (Human Resource has no default
+  // access there) or anything else outside that list.
+  if (
+    isHumanResourceRoleLabel(role) &&
+    (HUMAN_RESOURCE_FULL_ACCESS_KEYS as readonly string[]).includes(key)
+  ) {
+    return true;
+  }
+
   const effective = getEffectivePermissionActions(
     profile,
     sessionRole,

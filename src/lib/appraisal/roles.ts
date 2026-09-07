@@ -1,4 +1,8 @@
 import { canRate } from "./sections";
+import {
+  hasBroadElevatedAccessByRoleLabel,
+  isSupervisoryRoleLabel,
+} from "@/lib/userRoleAccessControl";
 
 /**
  * Which side of an appraisal a given person occupies.
@@ -21,6 +25,9 @@ export interface AppraisalSubject {
   company_id?: string | null;
   /** The appraised person's grade, e.g. "L5". */
   current_grade?: string | null;
+  /** The appraised person's assigned reporting supervisor — see
+   * supervisorAssignment.ts. Used for the new Supervisory-role check below. */
+  supervisor_id?: string | null;
 }
 
 /** Rows seeded before employee_user_id existed fall back to company_id. */
@@ -38,8 +45,11 @@ export function isOwnAppraisal(
 }
 
 /**
- * Super Admin is the only role-based exception — the highest grade (L7) has
- * nobody above them, so without it their supervisor side could never be filled.
+ * Super Admin, Executive, and Human Resource are broad role-based
+ * exceptions (see hasBroadElevatedAccessByRoleLabel) — the highest grade
+ * (L7) also has nobody above them under the old rank system, so without a
+ * role-based bypass their supervisor side could never be filled. Supervisory
+ * role is narrower: only for whoever's supervisor_id points at them.
  */
 export function canSuperviseAppraisal(
   viewer: AppraisalViewer,
@@ -47,6 +57,10 @@ export function canSuperviseAppraisal(
 ): boolean {
   if (isOwnAppraisal(viewer, subject)) return false;
   if (viewer.role === "super_admin") return true;
+  if (hasBroadElevatedAccessByRoleLabel(viewer.role)) return true;
+  if (isSupervisoryRoleLabel(viewer.role)) {
+    return !!viewer.userId && subject.supervisor_id === viewer.userId;
+  }
   return canRate(viewer.gradeLevel, subject.current_grade);
 }
 

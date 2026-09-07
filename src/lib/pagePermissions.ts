@@ -2,6 +2,10 @@ import {
   isSuperAdmin,
 } from "@/lib/accessControl";
 import { isFullAppraisalRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import {
+  hasSystemAccessByRoleLabel,
+  isExecutiveRoleLabel,
+} from "@/lib/userRoleAccessControl";
 
 /** Granular page keys — editable only via Access Control */
 export const PAGE_PERMISSION_KEYS = [
@@ -30,6 +34,12 @@ export type AccessTier = "standard" | "delegated";
 
 export interface AccessProfile {
   role?: string | null;
+  /** Resolved "User role" label (Standard, Executive, Supervisory, ...) —
+   * see userRoleAccessControl.ts. When set, this is what `role` below gets
+   * overridden to for access-control purposes; the raw old role/grade
+   * fields are kept alongside for anything (badges, list filters) that
+   * still displays the old value directly. */
+  user_role_label?: string | null;
   grade_level?: string | null;
   access_tier?: AccessTier | string | null;
   page_permissions?: string[] | null;
@@ -62,25 +72,41 @@ export const PAGE_PERMISSION_LABELS: Record<
   "sys:definitions": { label: "System Definitions", group: "General" },
 };
 
-/** Full role — admin, manager, super_admin (sidebar admin group) */
+/**
+ * Full role — admin, manager, super_admin (sidebar admin group), or the new
+ * Executive/Super Admin role labels (Executive = the old "manager"
+ * equivalent, unchanged breadth). Human Resource and System Administrator
+ * are deliberately NOT included here even though they're also elevated —
+ * their access is narrower and scoped elsewhere (see
+ * HUMAN_RESOURCE_FULL_ACCESS_KEYS / hasSystemAccessByRoleLabel in
+ * userRoleAccessControl.ts and canManageAccessControl below).
+ */
 export function isFullRoleAccess(role: string | null | undefined): boolean {
   return (
-    role === "super_admin" || role === "admin" || role === "manager"
+    role === "super_admin" ||
+    role === "admin" ||
+    role === "manager" ||
+    isSuperAdmin(role) ||
+    isExecutiveRoleLabel(role)
   );
 }
 
 /**
  * Unconditional (role-only) bypass for User Management. Super Admin and
- * Manager L5+ always get full manage rights. Admin is deliberately NOT
- * included here — their default is "view" on User Management (see
- * ADMIN_DEFAULT_OVERRIDES in permissionLevels.ts) and can be raised to
- * add/edit per-user via the permission matrix, but never full by default.
+ * Manager L5+ always get full manage rights, same as System Administrator
+ * (new role) and Super Admin/Executive (new role labels). Admin is
+ * deliberately NOT included here — their default is "view" on User
+ * Management (see ADMIN_DEFAULT_OVERRIDES in permissionLevels.ts) and can be
+ * raised to add/edit per-user via the permission matrix, but never full by
+ * default.
  */
 export function canManageAccessControl(
   role: string | null | undefined,
   grade: string | null | undefined,
 ): boolean {
   if (isSuperAdmin(role)) return true;
+  if (hasSystemAccessByRoleLabel(role)) return true;
+  if (isExecutiveRoleLabel(role)) return true;
   if (role === "manager" && isFullAppraisalRank(grade)) return true;
   return false;
 }
@@ -148,14 +174,17 @@ export function groupedPagePermissions(): {
   return Array.from(map.entries()).map(([group, keys]) => ({ group, keys }));
 }
 
-/** DB profile with session JWT fallback (e.g. super_admin only in auth metadata). */
+/** DB profile with session JWT fallback (e.g. super_admin only in auth metadata).
+ * When `user_role_label` is present (the new role system), it takes over
+ * `role` for access-control purposes — see AccessProfile.user_role_label. */
 export function resolveAccessProfile(
   dbUser: AccessProfile | null | undefined,
   sessionRole?: string | null,
 ): AccessProfile | null {
-  if (dbUser?.role) {
+  if (dbUser?.role || dbUser?.user_role_label) {
     return {
-      role: dbUser.role,
+      role: dbUser.user_role_label || dbUser.role,
+      user_role_label: dbUser.user_role_label ?? null,
       grade_level: dbUser.grade_level,
       access_tier: dbUser.access_tier ?? "standard",
       page_permissions: dbUser.page_permissions ?? [],

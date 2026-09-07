@@ -15,6 +15,7 @@ import {
 import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { PermissionAction } from "@/lib/moduleRegistry/types";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -25,7 +26,14 @@ import type { PermissionAction } from "@/lib/moduleRegistry/types";
 export interface ApiRequestUser {
   id: string;
   email: string | null;
+  /** Effective role for access-control purposes — the resolved "User role"
+   * label (Standard, Executive, Supervisory, ...) when the caller has one
+   * set, else the raw old role column value. See userRoleAccessControl.ts. */
   role: string | null;
+  /** Raw old role column value, kept alongside `role` for anything that
+   * specifically needs the legacy enum rather than the effective role. */
+  legacy_role: string | null;
+  user_role_id: string | null;
   grade_level: string | null;
   company_id: string | null;
   name: string;
@@ -94,6 +102,7 @@ export async function getApiRequestUser(
 
   let profile: {
     role?: string | null;
+    user_role_id?: string | null;
     grade_level?: string | null;
     first_name?: string | null;
     last_name?: string | null;
@@ -109,7 +118,7 @@ export async function getApiRequestUser(
     const { data } = await supabaseAdmin
       .from("users")
       .select(
-        "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
+        "user_id, role, user_role_id, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
       )
       .eq("user_id", authUser.id)
       .maybeSingle();
@@ -118,7 +127,15 @@ export async function getApiRequestUser(
     console.error("[getApiRequestUser] users lookup failed", err);
   }
 
-  const role = profile?.role ?? metadataRole(authUser);
+  const legacyRole = profile?.role ?? metadataRole(authUser);
+  // Resolved "User role" label takes over as the effective role for
+  // access-control purposes once set — see userRoleAccessControl.ts. Falls
+  // back to the old role/metadata value for anyone not yet migrated.
+  const userRoleLabel = await resolveUserRoleLabelById(
+    supabaseAdmin,
+    profile?.user_role_id,
+  );
+  const role = userRoleLabel ?? legacyRole;
   const email = profile?.email ?? authUser.email ?? null;
   const name = profile
     ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || (email ?? "Unknown")
@@ -128,6 +145,8 @@ export async function getApiRequestUser(
     id: authUser.id,
     email,
     role,
+    legacy_role: legacyRole,
+    user_role_id: profile?.user_role_id ?? null,
     grade_level: profile?.grade_level ?? null,
     company_id: profile?.company_id ?? null,
     name,

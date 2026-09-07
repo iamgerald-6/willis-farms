@@ -5,6 +5,7 @@ import { isSuperAdmin } from "@/lib/accessControl";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { resolveAllGradeLevels } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 export type InvitePlatformEmployeeInput = {
@@ -100,7 +101,7 @@ export async function invitePlatformEmployee(
   if (supervisor_id) {
     const { data: supervisor, error: supervisorError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, grade_level")
+      .select("user_id, role, grade_level, user_role_id")
       .eq("user_id", String(supervisor_id).trim())
       .maybeSingle();
 
@@ -114,7 +115,18 @@ export async function invitePlatformEmployee(
       grade_level: grade_level ?? null,
     };
 
-    if (!canAssignAsSupervisor(supervisor, employeeStub, gradeConfig)) {
+    const supervisorRoleLabel = await resolveUserRoleLabelById(
+      supabaseAdmin,
+      supervisor.user_role_id,
+    );
+
+    if (
+      !canAssignAsSupervisor(
+        { ...supervisor, user_role_label: supervisorRoleLabel },
+        employeeStub,
+        gradeConfig,
+      )
+    ) {
       return {
         ok: false,
         error:

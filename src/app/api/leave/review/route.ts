@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  requireSeniorManagement,
+  getApiRequestUser,
   jsonForbidden,
+  jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,12 +16,8 @@ const supabaseAdmin = createClient(
 
 export async function PATCH(req: NextRequest) {
   try {
-    const caller = await requireSeniorManagement(req);
-    if (!caller) {
-      return jsonForbidden(
-        "Forbidden — admin, manager, or super_admin access required.",
-      );
-    }
+    const caller = await getApiRequestUser(req);
+    if (!caller) return jsonUnauthorized();
 
     const { leave_id, status, admin_note, reviewed_by } = await req.json();
 
@@ -42,7 +41,7 @@ export async function PATCH(req: NextRequest) {
     // leave, but never their own, regardless of what the client sent.
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("leave_requests")
-      .select("user_id")
+      .select("user_id, users:user_id(supervisor_id)")
       .eq("id", leave_id)
       .single();
 
@@ -55,6 +54,21 @@ export async function PATCH(req: NextRequest) {
 
     if (existing.user_id === caller.id) {
       return jsonForbidden("You cannot approve or reject your own leave request.");
+    }
+
+    // Broad: Senior Management (admin/manager/super_admin, or the new
+    // Executive/Human Resource/Super Admin roles). Scoped: Supervisory role
+    // can only review leave for whoever's supervisor_id points at them.
+    const requesterSupervisorId = (
+      existing.users as unknown as { supervisor_id?: string | null } | null
+    )?.supervisor_id;
+    const canReviewAsSupervisor =
+      isSupervisoryRoleLabel(caller.role) && requesterSupervisorId === caller.id;
+
+    if (!isSeniorManagement(caller.role) && !canReviewAsSupervisor) {
+      return jsonForbidden(
+        "Forbidden — Senior Management access, or being this employee's assigned supervisor, is required.",
+      );
     }
 
     const { data, error } = await supabaseAdmin

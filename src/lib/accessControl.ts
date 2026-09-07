@@ -17,6 +17,10 @@ import {
   resolveGradeOrder,
   type GradeLevelsConfig,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import {
+  hasBroadElevatedAccessByRoleLabel,
+  isSuperAdminRoleLabel,
+} from "@/lib/userRoleAccessControl";
 
 /** @deprecated Use resolveGradeOrder(config) — kept for registry compatibility. */
 export const GRADE_ORDER = resolveGradeOrder();
@@ -41,7 +45,7 @@ export function isSupervisor(
 }
 
 export function isSuperAdmin(role: string | null | undefined): boolean {
-  return role === "super_admin";
+  return role === "super_admin" || isSuperAdminRoleLabel(role);
 }
 
 export function canViewOthers(
@@ -87,13 +91,19 @@ export function hasFullAppraisalAccess(
   if (role === "manager" || role === "admin" || role === "super_admin") {
     return true;
   }
+  if (hasBroadElevatedAccessByRoleLabel(role)) return true;
   return isFullAppraisalRank(grade, config);
 }
 
 export function canViewAllAppraisalPeriods(
   role: string | null | undefined,
 ): boolean {
-  return role === "manager" || role === "admin" || role === "super_admin";
+  return (
+    role === "manager" ||
+    role === "admin" ||
+    role === "super_admin" ||
+    hasBroadElevatedAccessByRoleLabel(role)
+  );
 }
 
 export function canArchiveAppraisal(
@@ -101,6 +111,7 @@ export function canArchiveAppraisal(
   pagePermissionLevels?: Partial<Record<string, "view" | "add" | "edit">> | null,
 ): boolean {
   if (role === "super_admin" || role === "manager") return true;
+  if (hasBroadElevatedAccessByRoleLabel(role)) return true;
   if (role === "admin") {
     return pagePermissionLevels?.["hc:appraisal"] === "edit";
   }

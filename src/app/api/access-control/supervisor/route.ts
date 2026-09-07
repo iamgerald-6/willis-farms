@@ -7,6 +7,7 @@ import {
 import { isSuperAdmin } from "@/lib/accessControl";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
 import {
   isMissingColumnError,
   updateUserWithColumnFallback,
@@ -90,7 +91,7 @@ export async function PATCH(req: NextRequest) {
     if (supervisor_id) {
       const { data: supervisor, error: supervisorError } = await supabaseAdmin
         .from("users")
-        .select("user_id, role, grade_level")
+        .select("user_id, role, grade_level, user_role_id")
         .eq("user_id", supervisor_id)
         .maybeSingle();
 
@@ -101,8 +102,13 @@ export async function PATCH(req: NextRequest) {
         );
       }
 
+      const user_role_label = await resolveUserRoleLabelById(
+        supabaseAdmin,
+        supervisor.user_role_id,
+      );
+
       if (
-        !canAssignAsSupervisor(supervisor, target, gradeConfig)
+        !canAssignAsSupervisor({ ...supervisor, user_role_label }, target, gradeConfig)
       ) {
         return NextResponse.json(
           {
