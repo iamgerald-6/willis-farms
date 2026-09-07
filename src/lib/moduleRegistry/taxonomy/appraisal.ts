@@ -7,7 +7,6 @@ import {
   gradeBandForGrade,
   gradeIndex,
   sectionSetForQuarter,
-  sectionsFor,
   supervisableGradeBands,
   type Quarter,
   type SectionSet,
@@ -49,7 +48,6 @@ export {
   gradeBandForGrade,
   gradeIndex,
   sectionSetForQuarter,
-  sectionsFor,
   supervisableGradeBands,
 };
 export type { Quarter, SectionSet };

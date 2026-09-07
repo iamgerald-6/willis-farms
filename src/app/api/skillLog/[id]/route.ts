@@ -9,6 +9,7 @@ import {
   canApproveSkillLogRecord,
   canEditSkillLogDraft,
   canViewSkillLogRecord,
+  hasAssignedSupervisees,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
 
@@ -52,6 +53,8 @@ export async function GET(
     );
   }
 
+  const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
+
   if (
     !canViewSkillLogRecord(
       ctx.profile,
@@ -59,6 +62,7 @@ export async function GET(
       data as SkillLogRecord,
       ctx.presets,
       ctx.user.role,
+      hasSupervisees,
     )
   ) {
     return jsonForbidden();
@@ -112,6 +116,7 @@ export async function PATCH(
 
   // ── Sign-off fast path ──
   if (status === "signed_off") {
+    const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
     if (
       !canApproveSkillLogRecord(
         ctx.profile,
@@ -119,6 +124,7 @@ export async function PATCH(
         record,
         ctx.presets,
         ctx.user.role,
+        hasSupervisees,
       )
     ) {
       return forbiddenOrUnauthorized(ctx);

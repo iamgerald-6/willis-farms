@@ -136,7 +136,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldKey: "supervisor_id",
         fieldType: "supervisor",
         group: "hr",
-        hint: "Pick from staff who can supervise this grade (L4+ and strictly senior). Set grade level first.",
+        hint: "Pick the specific person currently holding the \"Reporting to\" role selected above. Set that first.",
       },
     ),
     hrField(

@@ -46,7 +46,7 @@ export interface PostingHistoryEntry {
   by: PostingHistoryActor;
 }
 
-export interface JobPosting {
+export interface JobPostingBase {
   id: string;
   slug: string;
   job_title_key: string | null;
@@ -78,10 +78,45 @@ export interface JobPosting {
   superseded_by?: string | null;
   /** Oldest first: opened/republished, then closed if it happened. */
   history?: PostingHistoryEntry[];
+  /** When set, this posting is archived — hidden from Recruitment and Create job posting's main table, reachable only from the Archive tab. Null means not archived. */
+  archived_at?: string | null;
+  /**
+   * Per-posting interview setup, filled in on the Interview step right
+   * after Save (see create-job-posting/page.tsx and
+   * PostingInterviewSetup.tsx) — distinct from interview_guide_key, which
+   * points at the shared, grade-level interview guide library.
+   */
+  interview_description?: string | null;
+  interview_panel_members?: string | null;
+  interview_duration_minutes?: number | null;
+  /** Screening/questions/scenarios/evaluation/ratings/benchmarks/extra stages for this posting's own interview — see @/lib/careers/postingInterviewSetup. */
+  interview_setup?: Record<string, unknown> | null;
+  /**
+   * Which optional org-structure fields (org_custom_list_types.id) this
+   * posting has, in the order the HR added them on Create job posting — not
+   * derived from each list's own sort_order, so a field always stays where
+   * it was put instead of jumping around by whichever list it belongs to.
+   * Site/Business unit/Department/Section/Position are never in here — they're
+   * always shown and always required. Null/absent on postings saved before
+   * this existed; those fall back to sort_order for their optional fields.
+   */
+  optional_org_field_order?: string[] | null;
 }
 
+/**
+ * job_postings also carries one real FK column per Organizational Structure
+ * list (site_id, business_unit_id, department_id, etc.) — see
+ * docs/organizational-structure/job-postings-org-fields.sql. The set of
+ * columns isn't fixed (admins add/remove lists from Set up at any time), so
+ * this is a dynamic index signature rather than named fields — mirrors the
+ * pattern used for OrgCustomListItem in
+ * @/lib/organizationalStructureCustomLists.
+ */
+export type JobPosting = JobPostingBase & Record<string, unknown>;
+
 export type JobPostingInput = {
-  job_title_key: string;
+  /** @deprecated title is now derived server-side from the selected Position — see resolveTitleFromPosition in jobPostingOrgFields.ts. Only used as a fallback when republishing a legacy posting with no Position set. */
+  title?: string;
   location?: string;
   employment_type?: string;
   summary: string;

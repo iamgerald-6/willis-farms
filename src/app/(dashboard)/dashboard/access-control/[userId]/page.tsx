@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
-import { isSuperAdmin } from "@/lib/accessControl";
+import { isSuperAdminRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   canManageUserAccounts,
   getEffectivePermissionActionsForProfile,
@@ -20,11 +20,7 @@ import {
 } from "@/lib/groupPermissionPresets";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import type { PagePermissionActions } from "@/lib/moduleRegistry/types";
-import {
-  gradeBandGroup,
-  permissionActionModuleCount,
-  roleGroup,
-} from "@/lib/permissionActions";
+import { permissionActionModuleCount, roleGroup } from "@/lib/permissionActions";
 import PermissionMatrix from "../components/PermissionMatrix";
 import {
   ArrowLeft,
@@ -45,6 +41,52 @@ import {
 const inputClass =
   "w-full border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
+type OrgPlacementField =
+  | "site_id"
+  | "business_unit_id"
+  | "department_id"
+  | "section_id"
+  | "position_id"
+  | "grade_level_id"
+  | "user_role_id";
+
+const ORG_PLACEMENT_FIELDS: OrgPlacementField[] = [
+  "site_id",
+  "business_unit_id",
+  "department_id",
+  "section_id",
+  "position_id",
+  "grade_level_id",
+  "user_role_id",
+];
+
+type OrgPlacementList = {
+  field: OrgPlacementField;
+  tableName: string;
+  label: string;
+  items: { id: string; label: string }[];
+};
+
+/** Org structure mapping tree — same shape/tables the Create job posting
+ * cascading dropdowns and Appraisal grade templates wizard use (see
+ * AppraisalGradeTemplatesManager.tsx). Any Org placement field that's been
+ * mapped under another one (e.g. User role mapped under Position, same as
+ * Grade level) gets its dropdown filtered down to what's actually mapped,
+ * rather than showing every item in the list. */
+type MappingLevel = {
+  id: string;
+  position: number;
+  parent_level_id: string | null;
+  list_type_id: string;
+  list_type: { id: string; label: string; singular: string; table_name: string };
+};
+type MappingNode = {
+  id: string;
+  level_id: string;
+  item_id: string;
+  parent_node_id: string | null;
+};
+
 export default function ManageUserAccessPage() {
   const params = useParams();
   const router = useRouter();
@@ -60,6 +102,17 @@ export default function ManageUserAccessPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [supervisorId, setSupervisorId] = useState<string>("");
+  const [orgPlacement, setOrgPlacement] = useState<
+    Record<OrgPlacementField, string>
+  >({
+    site_id: "",
+    business_unit_id: "",
+    department_id: "",
+    section_id: "",
+    position_id: "",
+    grade_level_id: "",
+    user_role_id: "",
+  });
   const [initialized, setInitialized] = useState(false);
 
   const { config: gradeConfig } = useGradeLevelsConfig();
@@ -88,17 +141,98 @@ export default function ManageUserAccessPage() {
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
+  const { data: orgPlacementLists = [] } = useQuery<OrgPlacementList[]>({
+    queryKey: ["access_control_org_placement_options"],
+    queryFn: async () => {
+      const res = await api.get("/access-control/org-placement/options");
+      return res.data?.data ?? [];
+    },
+  });
+
+  const { data: mappingLevels = [] } = useQuery<MappingLevel[]>({
+    queryKey: ["org_mapping_levels_list"],
+    queryFn: async () => (await api.get("/organizational-structure/mapping-levels")).data.data,
+  });
+  const { data: mappingNodes = [] } = useQuery<MappingNode[]>({
+    queryKey: ["org_mapping_nodes_list"],
+    queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
+  });
+
+  function chainLevel(tableName: string): MappingLevel | undefined {
+    return mappingLevels.find((l) => l.list_type.table_name === tableName);
+  }
+
+  function fieldForTable(tableName: string): OrgPlacementField | undefined {
+    return orgPlacementLists.find((l) => l.tableName === tableName)?.field;
+  }
+
+  /** Same fail-open chain resolution as the Appraisal grade templates wizard
+   * and Create job posting cascading dropdowns — walks up the mapping tree
+   * from the field's current selection to find its mapped node. */
+  function resolvedNodeIdFor(tableName: string): string | undefined {
+    const level = chainLevel(tableName);
+    if (!level) return undefined;
+    const field = fieldForTable(tableName);
+    const itemId = field ? orgPlacement[field] : undefined;
+    if (!itemId) return undefined;
+
+    let parentNodeId: string | null | undefined = null;
+    if (level.parent_level_id) {
+      const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
+      parentNodeId = parentLevel ? resolvedNodeIdFor(parentLevel.list_type.table_name) : undefined;
+    }
+    if (parentNodeId === undefined) return undefined;
+
+    return mappingNodes.find(
+      (n) => n.level_id === level.id && n.item_id === itemId && n.parent_node_id === parentNodeId,
+    )?.id;
+  }
+
+  /** Filters a field's dropdown options strictly to whatever's mapped under
+   * its parent field's current selection — no fallback. A field that isn't
+   * part of the mapping tree at all (or sits at its root, with no parent
+   * level) shows its full list, same as before. But once a field IS mapped
+   * under another one, it shows ONLY items with a mapping node for the
+   * parent's current selection — nothing selected on the parent, no
+   * matching mapping configured, or no items mapped at all for that
+   * combination all mean an empty dropdown, not "show everything". */
+  function itemsForList(list: OrgPlacementList): { id: string; label: string }[] {
+    const level = chainLevel(list.tableName);
+    if (!level) return list.items;
+    if (!level.parent_level_id) return list.items;
+
+    const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
+    if (!parentLevel) return [];
+
+    const parentNodeId = resolvedNodeIdFor(parentLevel.list_type.table_name);
+    if (parentNodeId === undefined) return [];
+
+    const ids = new Set(
+      mappingNodes
+        .filter((n) => n.level_id === level.id && n.parent_node_id === parentNodeId)
+        .map((n) => n.item_id),
+    );
+    return list.items.filter((i) => ids.has(i.id));
+  }
+
   const target = useMemo(
     () => users.find((u) => u.user_id === userId),
     [users, userId],
   );
 
+  // Resolved through the same path every other page uses — the new
+  // user_role_label, never the stale raw `role` column.
+  const targetProfile = useMemo(
+    () => (target ? resolveAccessProfile(target, undefined) : null),
+    [target],
+  );
+
   const isSelf = session?.user?.id === userId;
 
   useEffect(() => {
-    if (!target || initialized) return;
+    if (!target || !targetProfile || initialized) return;
     setPermissionActions(
-      getEffectivePermissionActionsForProfile(target, groupPresets),
+      getEffectivePermissionActionsForProfile(targetProfile, groupPresets),
     );
     setPermissionMode(
       hasIndividualPermissionOverride(target) ? "individual" : "group",
@@ -107,33 +241,32 @@ export default function ManageUserAccessPage() {
     setFirstName(target.first_name ?? "");
     setLastName(target.last_name ?? "");
     setSupervisorId(target.supervisor_id ?? "");
+    setOrgPlacement({
+      site_id: target.site_id ?? "",
+      business_unit_id: target.business_unit_id ?? "",
+      department_id: target.department_id ?? "",
+      section_id: target.section_id ?? "",
+      position_id: target.position_id ?? "",
+      grade_level_id: target.grade_level_id ?? "",
+      user_role_id: target.user_role_id ?? "",
+    });
     setInitialized(true);
-  }, [target, initialized, groupPresets]);
+  }, [target, targetProfile, initialized, groupPresets]);
 
   const groupBaselineActions = useMemo(() => {
-    if (!target) return {};
-    return resolveGroupPresetActions(
-      { role: target.role, grade_level: target.grade_level },
-      groupPresets ?? {},
-    );
-  }, [target, groupPresets]);
+    if (!targetProfile) return {};
+    return resolveGroupPresetActions(targetProfile, groupPresets ?? {});
+  }, [targetProfile, groupPresets]);
 
-  const presetLabels = useMemo(
-    () => getGroupPresetLabels(gradeConfig),
-    [gradeConfig],
-  );
-  const roleGroupKey = target ? roleGroup(target.role) : null;
-  const gradeGroupKey = target
-    ? gradeBandGroup(target.grade_level, gradeConfig)
-    : null;
+  const presetLabels = useMemo(() => getGroupPresetLabels(), []);
+  const roleGroupKey = targetProfile ? roleGroup(targetProfile.role) : null;
   const groupLabelParts = [
     roleGroupKey ? presetLabels[roleGroupKey] : null,
-    gradeGroupKey ? presetLabels[gradeGroupKey] : null,
   ].filter((v): v is string => !!v);
 
   const supervisorOptions = useMemo(() => {
     if (!target) return [];
-    return eligibleSupervisorsForEmployee(target, users, gradeConfig);
+    return eligibleSupervisorsForEmployee(target, users);
   }, [target, users, gradeConfig]);
 
   const assignedSupervisorName = supervisorDisplayName(
@@ -152,6 +285,12 @@ export default function ManageUserAccessPage() {
 
   const supervisorDirty =
     !!target && (supervisorId || "") !== (target.supervisor_id ?? "");
+
+  const orgPlacementDirty =
+    !!target &&
+    ORG_PLACEMENT_FIELDS.some(
+      (field) => (orgPlacement[field] || "") !== (target[field] ?? ""),
+    );
 
   const permissionModuleCount = permissionActionModuleCount(permissionActions);
 
@@ -208,6 +347,30 @@ export default function ManageUserAccessPage() {
     },
   });
 
+  const saveOrgPlacementMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.patch("/access-control/org-placement", {
+        target_user_id: userId,
+        ...Object.fromEntries(
+          ORG_PLACEMENT_FIELDS.map((field) => [
+            field,
+            orgPlacement[field] || null,
+          ]),
+        ),
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Org placement updated.");
+      queryClient.invalidateQueries({ queryKey: ["get_users"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(
+        error?.response?.data?.error ?? "Failed to update org placement.",
+      );
+    },
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (opts?: { resetToGroup?: boolean }) => {
       if (!session?.user?.id) throw new Error("Not signed in.");
@@ -250,7 +413,7 @@ export default function ManageUserAccessPage() {
     return <AccessControlManageSkeleton />;
   }
 
-  if (!target || isSuperAdmin(target.role)) {
+  if (!target || isSuperAdminRoleLabel(targetProfile?.role)) {
     return (
       <div className="p-6">
         <Link
@@ -368,10 +531,78 @@ export default function ManageUserAccessPage() {
 
           <div className="pt-2 border-t border-gray-100">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-              Grade level
+              Org placement
             </label>
-            <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
-              {target.grade_level ?? "Not set"}
+            <p className="text-xs text-gray-500 mb-2">
+              Copied from the job posting at hire time. Editable for
+              transfers, promotions, or corrections.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {ORG_PLACEMENT_FIELDS.map((field) => {
+                const list = orgPlacementLists.find((l) => l.field === field);
+                return (
+                  <div key={field}>
+                    <label
+                      htmlFor={`org-${field}`}
+                      className="text-xs font-medium text-gray-600 block mb-1"
+                    >
+                      {list?.label ?? field}
+                    </label>
+                    <select
+                      id={`org-${field}`}
+                      value={orgPlacement[field]}
+                      onChange={(e) =>
+                        setOrgPlacement((prev) => ({
+                          ...prev,
+                          [field]: e.target.value,
+                        }))
+                      }
+                      className={inputClass}
+                    >
+                      <option value="">Not set</option>
+                      {(list ? itemsForList(list) : []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <button
+                type="button"
+                onClick={() => saveOrgPlacementMutation.mutate()}
+                disabled={
+                  saveOrgPlacementMutation.isPending || !orgPlacementDirty
+                }
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+              >
+                {saveOrgPlacementMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                Save org placement
+              </button>
+              {orgPlacementDirty && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOrgPlacement({
+                      site_id: target.site_id ?? "",
+                      business_unit_id: target.business_unit_id ?? "",
+                      department_id: target.department_id ?? "",
+                      section_id: target.section_id ?? "",
+                      position_id: target.position_id ?? "",
+                      grade_level_id: target.grade_level_id ?? "",
+                      user_role_id: target.user_role_id ?? "",
+                    })
+                  }
+                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
 

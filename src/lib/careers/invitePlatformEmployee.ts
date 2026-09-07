@@ -5,6 +5,7 @@ import { isSuperAdmin } from "@/lib/accessControl";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { resolveAllGradeLevels } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 
 export type InvitePlatformEmployeeInput = {
@@ -22,6 +23,18 @@ export type InvitePlatformEmployeeInput = {
   supervisor_id?: string | null;
   application_id?: string | null;
   created_by?: string | null;
+  /** Org placement carried over from the linked job posting, when known —
+   * see resolveEmployeeOrgPlacementFromPosting. Null for any piece the
+   * posting didn't have (or when there's no linked posting at all). */
+  site_id?: string | null;
+  business_unit_id?: string | null;
+  department_id?: string | null;
+  section_id?: string | null;
+  position_id?: string | null;
+  grade_level_id?: string | null;
+  /** "User role" org-structure list — same placement mechanism as the org
+   * fields above. */
+  user_role_id?: string | null;
 };
 
 export type InvitePlatformEmployeeResult =
@@ -45,6 +58,13 @@ export async function invitePlatformEmployee(
     supervisor_id,
     application_id,
     created_by,
+    site_id,
+    business_unit_id,
+    department_id,
+    section_id,
+    position_id,
+    grade_level_id,
+    user_role_id,
   } = input;
 
   if (!email || !role || !first_name || !last_name || !company_id) {
@@ -81,7 +101,7 @@ export async function invitePlatformEmployee(
   if (supervisor_id) {
     const { data: supervisor, error: supervisorError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, grade_level")
+      .select("user_id, role, grade_level, user_role_id")
       .eq("user_id", String(supervisor_id).trim())
       .maybeSingle();
 
@@ -89,17 +109,23 @@ export async function invitePlatformEmployee(
       return { ok: false, error: "Supervisor not found", status: 404 };
     }
 
-    const employeeStub = {
-      user_id: "pending",
-      role,
-      grade_level: grade_level ?? null,
-    };
+    const employeeStub = { user_id: "pending" };
 
-    if (!canAssignAsSupervisor(supervisor, employeeStub, gradeConfig)) {
+    const supervisorRoleLabel = await resolveUserRoleLabelById(
+      supabaseAdmin,
+      supervisor.user_role_id,
+    );
+
+    if (
+      !canAssignAsSupervisor(
+        { ...supervisor, user_role_label: supervisorRoleLabel },
+        employeeStub,
+        "onboarding",
+      )
+    ) {
       return {
         ok: false,
-        error:
-          "Invalid supervisor — must be L4 or above and strictly senior to the employee's grade.",
+        error: "Invalid supervisor — must have the Supervisory Role User role.",
         status: 400,
       };
     }
@@ -147,6 +173,13 @@ export async function invitePlatformEmployee(
     application_id: application_id ?? null,
     employment_status: role === "employee" ? "probation" : null,
     platform_invited_at: role === "employee" ? invitedAt : null,
+    site_id: site_id ?? null,
+    business_unit_id: business_unit_id ?? null,
+    department_id: department_id ?? null,
+    section_id: section_id ?? null,
+    position_id: position_id ?? null,
+    grade_level_id: grade_level_id ?? null,
+    user_role_id: user_role_id ?? null,
   };
 
   const insertAttempts: Record<string, unknown>[] = [
@@ -178,6 +211,30 @@ export async function invitePlatformEmployee(
       employment_status: undefined,
       platform_invited_at: undefined,
     },
+    {
+      ...baseRow,
+      site_id: undefined,
+      business_unit_id: undefined,
+      department_id: undefined,
+      section_id: undefined,
+      position_id: undefined,
+      grade_level_id: undefined,
+      user_role_id: undefined,
+    },
+    {
+      ...baseRow,
+      supervisor_id: undefined,
+      application_id: undefined,
+      employment_status: undefined,
+      platform_invited_at: undefined,
+      site_id: undefined,
+      business_unit_id: undefined,
+      department_id: undefined,
+      section_id: undefined,
+      position_id: undefined,
+      grade_level_id: undefined,
+      user_role_id: undefined,
+    },
   ];
 
   let tableUser: Record<string, unknown> | null = null;
@@ -206,6 +263,13 @@ export async function invitePlatformEmployee(
       msg.includes("application_id") ||
       msg.includes("employment_status") ||
       msg.includes("platform_invited_at") ||
+      msg.includes("site_id") ||
+      msg.includes("business_unit_id") ||
+      msg.includes("department_id") ||
+      msg.includes("section_id") ||
+      msg.includes("position_id") ||
+      msg.includes("grade_level_id") ||
+      msg.includes("user_role_id") ||
       msg.includes("schema cache");
 
     if (!missingOptionalColumn) break;

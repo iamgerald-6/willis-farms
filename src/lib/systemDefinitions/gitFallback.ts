@@ -1,9 +1,4 @@
 import {
-  APPRAISAL_MODULE_ID_CONST,
-  APPRAISAL_SECTION_AUTH_LIST,
-  DEFAULT_SECTION_AUTHORISATION_OPTIONS,
-} from "./appraisalDefaults";
-import {
   RECRUITMENT_APPLICATION_FIELDS_LIST,
   RECRUITMENT_INSTITUTION_TYPES_LIST,
   RECRUITMENT_JOB_POSTINGS_LIST,
@@ -70,13 +65,6 @@ export function getGitFallbackOptions(
         rules: leaveRulesForLegacyValue(legacy),
       };
     });
-  }
-
-  if (
-    moduleId === APPRAISAL_MODULE_ID_CONST &&
-    optionList === APPRAISAL_SECTION_AUTH_LIST
-  ) {
-    return DEFAULT_SECTION_AUTHORISATION_OPTIONS;
   }
 
   if (
@@ -173,7 +161,6 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
   const decoded = decodeURIComponent(id);
   for (const [moduleId, lists] of Object.entries({
     "mod:leave": ["leave.types"],
-    [APPRAISAL_MODULE_ID_CONST]: [APPRAISAL_SECTION_AUTH_LIST],
     [RECRUITMENT_MODULE_ID]: [
       RECRUITMENT_APPLICATION_FIELDS_LIST,
       RECRUITMENT_JOB_POSTINGS_LIST,

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
-import { validateGrossSalaryInBand } from "@/lib/systemDefinitions/salaryRanges";
-import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
 
 const ONBOARDING_LIST_STATUSES = ["onboarding"] as const;
 
@@ -165,15 +163,18 @@ export async function PATCH(req: NextRequest) {
     ...(hr_data ?? {}),
   };
 
-  const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
-  const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
-
-  if (mergedHr.salary_ghs?.trim()) {
-    const bandCheck = validateGrossSalaryInBand(
+  // Validate gross salary against the linked job posting's own Salary band
+  // only. If the posting has no band (salary_band_min/max unset), there's
+  // nothing to validate against — skip band validation rather than falling
+  // back to the legacy grade-tier pay table.
+  if (
+    mergedHr.salary_ghs?.trim() &&
+    (mergedHr.salary_band_min != null || mergedHr.salary_band_max != null)
+  ) {
+    const bandCheck = validateGrossSalaryAgainstBand(
       mergedHr.salary_ghs,
-      mergedHr.grade_level,
-      mergedHr.salary_tier,
-      gradeConfig,
+      mergedHr.salary_band_min,
+      mergedHr.salary_band_max,
     );
     if (!bandCheck.valid) {
       return NextResponse.json({ error: bandCheck.message }, { status: 400 });

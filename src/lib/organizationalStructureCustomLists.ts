@@ -46,10 +46,28 @@ export type OrgCustomListType = {
   numeric_range_mode: NumericRangeMode;
   fields: CustomFieldDef[];
   sort_order: number;
+  /** Disabled lists are hidden from anywhere they'd be picked for new use (e.g. Create job posting's org-structure fields) — the table, its data, and existing references are untouched. */
+  is_active: boolean;
   created_at: string;
   updated_at: string;
   /** Present on the list returned by GET /custom-list-types — item count for the Set up hub table. */
   item_count?: number;
+  /**
+   * Name of the real foreign key column on job_postings that points at
+   * this list's table (e.g. "site_id"), set up by
+   * docs/organizational-structure/job-postings-org-fields.sql. Null only
+   * transiently, if the column failed to create.
+   */
+  job_posting_column: string | null;
+  /**
+   * Only set for is_numeric_range lists (e.g. Age, Salary) — two more real
+   * foreign key columns on job_postings (e.g. "age_min_id"/"age_max_id"),
+   * letting a posting specify a range instead of one value. See
+   * docs/organizational-structure/job-postings-range-fields.sql. Null for
+   * every non-numeric-range list — the single/range choice doesn't apply.
+   */
+  job_posting_min_column: string | null;
+  job_posting_max_column: string | null;
 };
 
 /**

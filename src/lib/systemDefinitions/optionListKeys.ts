@@ -13,7 +13,6 @@ export function registryRefToOptionList(ref: string): string {
 export const EDITABLE_OPTION_LISTS: Partial<Record<string, readonly string[]>> =
   {
     "mod:leave": ["leave.types"],
-    "mod:appraisal": ["appraisal.sectionAuthorisations"],
     "mod:skill-log": [
       "skillLog.types",
       "skillLog.sections",

@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
     const appraisal_id = searchParams.get("appraisal_id");
     const supervisor_id = searchParams.get("supervisor_id");
 
-    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+    const fullAccess = hasFullAppraisalAccess(caller.role);
 
     if (supervisor_id && supervisor_id !== caller.id && !fullAccess) {
       return jsonForbidden("You can only view your own justifications.");

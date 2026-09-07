@@ -171,10 +171,18 @@ export interface OnboardingHrData {
   /** user_id of assigned reporting supervisor (Section O picker). */
   supervisor_id?: string;
   supervisor_contact?: string;
-  /** low | mid | high — picks salary band for the selected grade. */
+  /**
+   * The linked job posting's own Salary item label (e.g. "3000-4000" or
+   * whatever the admin named that band) — sourced straight from the
+   * posting, not a low/mid/high pick anymore. See
+   * resolveOfferTermsFromPosting.
+   */
   salary_tier?: string;
-  /** Read-only display of configured band (also mirrored in salary_ghs). */
+  /** Read-only display of the posting's salary band (also mirrored in salary_ghs). */
   salary_range?: string;
+  /** Numeric bounds (as strings, like salary_ghs) parsed from the posting's Salary item, backing the "must be within" check on salary_ghs — see validateGrossSalaryAgainstBand. Absent for a posting whose Salary value isn't a parseable numeric range. */
+  salary_band_min?: string;
+  salary_band_max?: string;
   salary_ghs?: string;
   pay_frequency?: string;
   grade_level?: string;

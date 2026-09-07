@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { recomputeFinalScore } from "@/lib/appraisal/server";
-import { canRate } from "@/lib/appraisal/sections";
+import { canSuperviseAppraisal } from "@/lib/appraisal/roles";
 import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
-import { canViewAllAppraisalPeriods, isSuperAdmin } from "@/lib/accessControl";
+import { canViewAllAppraisalPeriods } from "@/lib/accessControl";
 import {
   requireAuth,
   canAccessAppraisalRecord,
@@ -120,25 +120,28 @@ export async function PATCH(
     }
 
     // Which side of this record is the caller on? Everyone owns their own
-    // self-assessment; the supervisor side requires a strictly senior grade
-    // (L3 minimum), with Super Admin as the only exception because L7 has
-    // nobody above them.
+    // self-assessment; the supervisor side requires being this employee's
+    // actual assigned supervisor (users.supervisor_id) — or Super Admin.
     const isOwnRecord = Boolean(
       (existing.employee_user_id && existing.employee_user_id === caller.id) ||
         (caller.company_id && caller.company_id === existing.company_id),
     );
-    const canActAsSupervisor =
-      !isOwnRecord &&
-      (isSuperAdmin(caller.role) ||
-        canRate(caller.grade_level, existing.current_grade));
+    const canActAsSupervisor = canSuperviseAppraisal(
+      { userId: caller.id, role: caller.role },
+      {
+        employee_user_id: existing.employee_user_id,
+        company_id: existing.company_id,
+        supervisor_id: existing.supervisor_id,
+      },
+    );
 
     const rejectSupervisorAction = () =>
       isOwnRecord
         ? jsonForbidden(
-            "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
+            "You cannot act as your own supervisor. Your assigned supervisor must complete this evaluation.",
           )
         : jsonForbidden(
-            `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${existing.current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
+            "Only this employee's assigned supervisor (or Super Admin) can complete their evaluation.",
           );
 
     // Archiving is a filing action, not a workflow state — an archived record

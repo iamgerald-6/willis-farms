@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import {
-  resolveAccessControlBandLabels,
   resolveAppraisalGradeBandLabels,
   resolveGradeLevelOptions,
   resolveGradeOrder,
@@ -41,6 +40,5 @@ export function useGradeLevelsConfig() {
     gradeOrder: resolveGradeOrder(config),
     gradeOptions: resolveGradeLevelOptions(config),
     appraisalBandLabels: resolveAppraisalGradeBandLabels(config),
-    accessControlBandLabels: resolveAccessControlBandLabels(config),
   };
 }

@@ -79,7 +79,6 @@ export {
   periodLabel,
   reviewedBy,
   sectionSetForQuarter,
-  sectionsFor,
   supervisableGradeBands,
 } from "./appraisal";
 export type {

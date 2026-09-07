@@ -10,8 +10,7 @@ import {
   type RoleInterviewReport,
 } from "@/lib/careers/types";
 import { stageMembers, combinedAreaScores } from "@/lib/careers/panelInterview";
-import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
-import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchPostingInterviewContext } from "@/lib/careers/fetchPostingInterviewContext";
 import { getAppBaseUrl, recruitmentInterviewUrl } from "@/lib/appUrl";
 
 // Generates the consolidated hiring summary report for one specific hiring
@@ -141,8 +140,7 @@ export async function POST(req: NextRequest) {
     const role_slug = applications[0].role_slug as string;
     const apps = applications as JobApplication[];
 
-    const guideKey = await resolveInterviewGuideKey(supabaseAdmin, role_slug);
-    const guide = await fetchResolvedInterviewGuide(supabaseAdmin, guideKey);
+    const { guide } = await fetchPostingInterviewContext(supabaseAdmin, job_posting_id);
 
     // Reliable now that status_history is logged on every status change —
     // "shortlisted" appearing anywhere in it means they passed the gate,

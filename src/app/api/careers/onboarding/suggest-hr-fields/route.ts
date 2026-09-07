@@ -14,8 +14,8 @@ import {
 } from "@/lib/careers/onboardingTypes";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
 import { resolveCompanyEmailDomain } from "@/lib/systemDefinitions/companyEmailDomain";
-import { resolveSalaryForGradeTier } from "@/lib/systemDefinitions/salaryRanges";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { resolveOfferTermsFromPosting } from "@/lib/careers/resolveOfferTermsFromPosting";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -32,6 +32,12 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // No onboarding_submissions row exists until HR first saves offer terms
+    // (or the candidate later starts onboarding) — that includes the very
+    // first time this panel is opened, which is exactly when the
+    // posting-sourced suggestions are needed most. So a missing row here
+    // falls back to the linked application directly instead of 404ing,
+    // matching how /careers/onboarding/offer-letter already behaves.
     const { data: row, error } = await supabaseAdmin
       .from("onboarding_submissions")
       .select(
@@ -40,7 +46,8 @@ export async function GET(req: NextRequest) {
         form_data,
         job_applications (
           full_name,
-          role_slug
+          role_slug,
+          job_posting_id
         )
       `,
       )
@@ -50,22 +57,32 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    if (!row) {
-      return NextResponse.json({ error: "Onboarding record not found." }, { status: 404 });
-    }
 
-    const rawApp = row.job_applications;
-    const app = (Array.isArray(rawApp) ? rawApp[0] : rawApp) as {
+    type AppInfo = {
       full_name: string;
       role_slug: string;
-    } | null;
+      job_posting_id: string | null;
+    };
+    let app: AppInfo | null = null;
+
+    if (row) {
+      const rawApp = row.job_applications;
+      app = (Array.isArray(rawApp) ? rawApp[0] : rawApp) as AppInfo | null;
+    } else {
+      const { data: directApp } = await supabaseAdmin
+        .from("job_applications")
+        .select("full_name, role_slug, job_posting_id")
+        .eq("id", applicationId)
+        .maybeSingle();
+      app = directApp;
+    }
 
     if (!app?.full_name) {
       return NextResponse.json({ error: "Linked application not found." }, { status: 404 });
     }
 
-    const hr = (row.hr_data ?? {}) as OnboardingHrData;
-    const form = mergeOnboardingForm(row.form_data as OnboardingFormData);
+    const hr = (row?.hr_data ?? {}) as OnboardingHrData;
+    const form = mergeOnboardingForm((row?.form_data ?? {}) as OnboardingFormData);
     const parsed = parseApplicantName(app.full_name);
 
     const firstName = form.personal?.first_name?.trim() || parsed.first_name;
@@ -76,7 +93,14 @@ export async function GET(req: NextRequest) {
     const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
     const emailDomain = resolveCompanyEmailDomain(moduleConfig.businessLogic);
 
+    // The linked job posting is now the source of truth for role/pay
+    // placement — see resolveOfferTermsFromPosting. Falls back to the
+    // older role-slug-based inference only for an application whose
+    // posting predates these fields (or has none linked at all).
+    const postingTerms = await resolveOfferTermsFromPosting(supabaseAdmin, app.job_posting_id);
+
     const gradeLevel =
+      postingTerms?.grade_level?.trim().toUpperCase() ||
       gradeOverride?.trim().toUpperCase() ||
       hr.grade_level?.trim().toUpperCase() ||
       inferGradeLevel(app.role_slug, hr, gradeConfig);
@@ -97,15 +121,17 @@ export async function GET(req: NextRequest) {
       domain: emailDomain,
     });
 
-    const salaryTier =
-      salaryTierOverride?.trim().toLowerCase() ||
-      hr.salary_tier?.trim().toLowerCase() ||
-      "mid";
-    const salary = resolveSalaryForGradeTier(
-      gradeLevel,
-      salaryTier,
-      gradeConfig,
-    );
+    // Salary is sourced exclusively from the linked job posting's own
+    // Salary field (see resolveOfferTermsFromPosting). If the posting has
+    // no salary band, these fields are simply left blank — no fallback to
+    // the legacy grade-tier pay table.
+    const salaryTierOut =
+      postingTerms?.salary_tier ??
+      salaryTierOverride?.trim().toLowerCase() ??
+      hr.salary_tier?.trim().toLowerCase() ??
+      null;
+    const salaryRangeOut = postingTerms?.salary_range ?? null;
+    const salaryGhsOut = hr.salary_ghs?.trim() || null;
 
     return NextResponse.json({
       success: true,
@@ -114,9 +140,15 @@ export async function GET(req: NextRequest) {
         employee_id,
         company_email,
         company_email_domain: emailDomain,
-        salary_tier: salary.tier ?? salaryTier,
-        salary_range: salary.formatted || null,
-        salary_ghs: salary.salaryGhs || null,
+        salary_tier: salaryTierOut,
+        salary_range: salaryRangeOut,
+        salary_ghs: salaryGhsOut,
+        salary_band_min: postingTerms?.salary_band_min ?? null,
+        salary_band_max: postingTerms?.salary_band_max ?? null,
+        position_title: postingTerms?.position_title ?? null,
+        employment_type: postingTerms?.employment_type ?? null,
+        department: postingTerms?.department ?? null,
+        work_location: postingTerms?.work_location ?? null,
       },
     });
   } catch (err) {

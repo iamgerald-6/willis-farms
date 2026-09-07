@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { fetchResolvedInterviewContext } from "@/lib/careers/fetchResolvedInterviewGuide";
+import { fetchPostingInterviewContext } from "@/lib/careers/fetchPostingInterviewContext";
 import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
@@ -13,7 +13,6 @@ import {
   validatePanelDecision,
   statusForDecision,
 } from "@/lib/careers/panelDecision";
-import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
 import {
   normalizeInterviewFormData,
   type InterviewFormData,
@@ -93,13 +92,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const guideKey = await resolveInterviewGuideKey(
+    const { guide, evaluationLabels } = await fetchPostingInterviewContext(
       supabaseAdmin,
-      data.role_slug,
-    );
-    const { guide, evaluationLabels } = await fetchResolvedInterviewContext(
-      supabaseAdmin,
-      guideKey,
+      data.job_posting_id,
     );
 
     const interview_form_data = normalizeInterviewFormData(
@@ -181,24 +176,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const guideKey = await resolveInterviewGuideKey(
-      supabaseAdmin,
-      application.role_slug,
-    );
-    if (!guideKey) {
+    if (!application.job_posting_id) {
       return NextResponse.json(
-        { error: "Unknown role on application." },
+        { error: "This application isn't linked to a job posting." },
         { status: 400 },
       );
     }
 
-    const { guide, benchmarks } = await fetchResolvedInterviewContext(
+    const { guide, benchmarks } = await fetchPostingInterviewContext(
       supabaseAdmin,
-      guideKey,
+      application.job_posting_id,
     );
     if (!guide) {
       return NextResponse.json(
-        { error: "Interview guide not configured for this role." },
+        { error: "Interview setup not configured for this posting." },
         { status: 400 },
       );
     }

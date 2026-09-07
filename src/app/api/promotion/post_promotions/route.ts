@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { isSupervisorRank } from "@/lib/systemDefinitions/gradeLevelsConfig";
-import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
+import { isSupervisor } from "@/lib/accessControl";
+import {
+  resolveEffectiveUserRoleLabel,
+  resolveUserRoleLabelById,
+} from "@/lib/userRoleAccessControl";
 
 export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
@@ -71,12 +74,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const gradeConfig = await fetchGradeLevelsConfig(supabase);
-    if (!isSupervisorRank(submitted_by_grade, gradeConfig)) {
+    // Resolved from the DB directly (role + whether anyone is actually
+    // assigned to this submitter) rather than trusting the client-supplied
+    // grade — same migration as the rest of the app's supervisor checks,
+    // see accessControl.ts's isSupervisor.
+    const { data: submitterRow } = await supabase
+      .from("users")
+      .select("user_role_id")
+      .eq("user_id", submitted_by_user_id ?? "")
+      .maybeSingle();
+    const submitterRoleLabel = resolveEffectiveUserRoleLabel(
+      await resolveUserRoleLabelById(supabase, submitterRow?.user_role_id),
+    );
+    const { data: submitterSupervisees } = await supabase
+      .from("users")
+      .select("user_id")
+      .eq("supervisor_id", submitted_by_user_id ?? "")
+      .limit(1);
+    const submitterHasSupervisees = !!submitterSupervisees && submitterSupervisees.length > 0;
+
+    if (!isSupervisor(submitterRoleLabel, submitterHasSupervisees)) {
       return NextResponse.json(
         {
           error:
-            "Only staff at grade L4 and above can submit promotion assessments.",
+            "Only Supervisory Role staff with at least one assigned supervisee (or Super Admin) can submit promotion assessments.",
         },
         { status: 403 },
       );

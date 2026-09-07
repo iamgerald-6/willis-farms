@@ -2,18 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import {
   isPostingPublic,
+  slugifyJobTitle,
   statusFromClosingDate,
   syncExpiredPostings,
   type JobPostingInput,
   type PostingHistoryEntry,
 } from "@/lib/careers/jobPostings";
-import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
 import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   insertJobPostingWithColumnFallback,
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
 } from "@/lib/careers/jobPostingDb";
+import {
+  extractOrgFieldUpdates,
+  fetchOrgFieldOptions,
+  findMissingOrgFields,
+  generateUniquePostingSlug,
+  resolveTitleFromPosition,
+} from "@/lib/careers/jobPostingOrgFields";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -58,33 +65,67 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = (await req.json()) as JobPostingInput;
+    const body = (await req.json()) as JobPostingInput & {
+      interview_guide_key?: string;
+      optional_org_field_order?: string[];
+    };
     const summary = body.summary?.trim();
     const description = body.description?.trim();
     const closes_at = body.closes_at;
 
-    if (!body.job_title_key?.trim() || !summary || !description || !closes_at) {
+    if (!summary || !description || !closes_at) {
       return NextResponse.json(
-        { error: "Job title, summary, description, and closing date are required." },
+        { error: "Summary, description, and closing date are required." },
         { status: 400 },
       );
     }
 
-    const resolved = await resolveJobTitleKey(supabaseAdmin, body.job_title_key);
-    if ("error" in resolved) {
-      return NextResponse.json({ error: resolved.error }, { status: 400 });
+    const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
+    const orgFieldUpdates = extractOrgFieldUpdates(
+      body as unknown as Record<string, unknown>,
+      orgFieldOptions,
+    );
+
+    // Every active org-structure list is required on a genuinely new
+    // posting created from Create job posting. Recruitment's Republish
+    // action (supersedes_id set) only asks HR for a new closing date and
+    // carries the old posting's org fields forward as-is, whatever they
+    // are — it isn't the "open it and edit it" path this rule targets, so
+    // a legacy posting missing a field can still be republished without
+    // being blocked here.
+    if (!body.supersedes_id) {
+      const missingOrgFields = findMissingOrgFields(orgFieldOptions, orgFieldUpdates);
+      if (missingOrgFields.length > 0) {
+        return NextResponse.json(
+          {
+            error: `All organizational structure fields are required. Missing: ${missingOrgFields.join(", ")}.`,
+          },
+          { status: 400 },
+        );
+      }
     }
 
-    const { option } = resolved;
-    let slug = option.key;
-    const { data: existing } = await supabaseAdmin
-      .from("job_postings")
-      .select("slug")
-      .like("slug", `${slug}%`);
-
-    if (existing?.some((r) => r.slug === slug)) {
-      slug = `${slug}_${Date.now().toString(36)}`;
+    // Title now comes straight from the selected Position — there's no
+    // more separate job-title-options list to resolve against. The
+    // `body.title` fallback only matters for Recruitment's Republish of a
+    // legacy posting that predates org-structure fields (no position_id),
+    // where CareersTab carries the old posting's title forward directly.
+    const positionTitle = await resolveTitleFromPosition(
+      supabaseAdmin,
+      orgFieldOptions,
+      orgFieldUpdates,
+    );
+    const title = positionTitle?.title ?? body.title?.trim() ?? "";
+    if (!title) {
+      return NextResponse.json(
+        { error: "A Position (or title) is required to create a job posting." },
+        { status: 400 },
+      );
     }
+
+    const jobTitleKey = slugifyJobTitle(title);
+    const slug = await generateUniquePostingSlug(supabaseAdmin, title);
+    const interviewGuideKey = body.interview_guide_key?.trim() || "L1";
 
     const status =
       body.status === "published" || body.status === "closed"
@@ -103,8 +144,8 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await insertJobPostingWithColumnFallback(supabaseAdmin, {
       slug,
-      job_title_key: option.key,
-      title: option.label,
+      job_title_key: jobTitleKey,
+      title,
       location: body.location?.trim() || "Eastern Region, Ghana",
       employment_type: body.employment_type?.trim() || "Full-time",
       summary,
@@ -116,13 +157,17 @@ export async function POST(req: NextRequest) {
       experience: body.experience ?? "",
       required_skills_attributes: body.required_skills_attributes ?? "",
       non_negotiable_standards: body.non_negotiable_standards ?? "",
-      interview_guide_key: option.interviewGuideKey,
+      interview_guide_key: interviewGuideKey,
       jd_file_url: body.jd_file_url ?? null,
       jd_file_public_id: body.jd_file_public_id ?? null,
       closes_at,
       status,
       is_active: status === "published",
       history: [openingEntry],
+      optional_org_field_order: Array.isArray(body.optional_org_field_order)
+        ? body.optional_org_field_order
+        : [],
+      ...orgFieldUpdates,
     });
 
     if (error) {

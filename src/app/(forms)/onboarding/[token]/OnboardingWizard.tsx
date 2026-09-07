@@ -583,10 +583,60 @@ export default function OnboardingWizard({
       )}
 
       <div className="space-y-6">
+        {step === "medical" && (
+          <section className="space-y-3">
+            <h2 className="text-sm font-bold text-gray-900">Biosecurity</h2>
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Wills Farms is a pig production business. These questions help us protect
+                herd health and comply with biosecurity rules.
+              </p>
+              {[
+                {
+                  key: "household_pigs" as const,
+                  label:
+                    "Do you or anyone in your household keep pigs or have contact with pigs outside work?",
+                },
+                {
+                  key: "household_pig_work" as const,
+                  label:
+                    "Does any household member work on another pig farm, animal market, or slaughter facility?",
+                },
+                {
+                  key: "visited_swine_site_12m" as const,
+                  label:
+                    "Have you worked on or visited any other swine site in the past 12 months?",
+                },
+                {
+                  key: "asf_travel_30d" as const,
+                  label:
+                    "Have you travelled to a region affected by African Swine Fever in the past 30 days?",
+                },
+              ].map(({ key, label }) => (
+                <div key={key} className="text-sm">
+                  <p className="text-gray-700 mb-1">{label}</p>
+                  <div className="flex gap-2">
+                    {(["yes", "no"] as const).map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() =>
+                          patchExtras({
+                            biosecurity: { ...formExtras.biosecurity, [key]: v },
+                          })
+                        }
+                        className={`px-3 py-1 rounded-lg text-xs font-medium border ${formExtras.biosecurity?.[key] === v ? "bg-red-600 text-white border-red-600" : "bg-white border-gray-200"}`}
+                      >
+                        {v === "yes" ? "Yes" : "No"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {sections.map(([sectionTitle, sectionFields]) => {
-          const isBiosecuritySection =
-            sectionTitle === "Biosecurity" ||
-            sectionTitle === "K. Biosecurity declaration";
           const isConsentSection = sectionTitle === "Consent & signature";
 
           return (
@@ -595,57 +645,6 @@ export default function OnboardingWizard({
                 <h2 className="text-sm font-bold text-gray-900">
                   {displaySectionTitle(sectionTitle)}
                 </h2>
-              )}
-
-              {step === "medical" && isBiosecuritySection && (
-                <div className="space-y-3">
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    Wills Farms is a pig production business. These questions help us protect
-                    herd health and comply with biosecurity rules.
-                  </p>
-                  {[
-                    {
-                      key: "household_pigs" as const,
-                      label:
-                        "Do you or anyone in your household keep pigs or have contact with pigs outside work?",
-                    },
-                    {
-                      key: "household_pig_work" as const,
-                      label:
-                        "Does any household member work on another pig farm, animal market, or slaughter facility?",
-                    },
-                    {
-                      key: "visited_swine_site_12m" as const,
-                      label:
-                        "Have you worked on or visited any other swine site in the past 12 months?",
-                    },
-                    {
-                      key: "asf_travel_30d" as const,
-                      label:
-                        "Have you travelled to a region affected by African Swine Fever in the past 30 days?",
-                    },
-                  ].map(({ key, label }) => (
-                    <div key={key} className="text-sm">
-                      <p className="text-gray-700 mb-1">{label}</p>
-                      <div className="flex gap-2">
-                        {(["yes", "no"] as const).map((v) => (
-                          <button
-                            key={v}
-                            type="button"
-                            onClick={() =>
-                              patchExtras({
-                                biosecurity: { ...formExtras.biosecurity, [key]: v },
-                              })
-                            }
-                            className={`px-3 py-1 rounded-lg text-xs font-medium border ${formExtras.biosecurity?.[key] === v ? "bg-red-600 text-white border-red-600" : "bg-white border-gray-200"}`}
-                          >
-                            {v === "yes" ? "Yes" : "No"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
               )}
 
               {step === "medical" && isConsentSection && (

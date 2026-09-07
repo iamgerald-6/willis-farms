@@ -1,39 +1,48 @@
-import { isSuperAdmin } from "@/lib/accessControl";
 import {
-  canRateGradeLevel,
-  isSupervisorRank,
-  type GradeLevelsConfig,
-} from "@/lib/systemDefinitions/gradeLevelsConfig";
+  canBeAssignedAsSupervisorAtOnboardingByRoleLabel,
+  canBeAssignedAsSupervisorByRoleLabel,
+} from "@/lib/userRoleAccessControl";
 import type { User } from "@/types";
 
-type GradeUser = Pick<User, "user_id" | "grade_level" | "role">;
+type RoleUser = Pick<User, "user_id" | "user_role_label">;
 
-/** Whether `supervisor` may be assigned to appraise `employee` (L4+ and strictly senior). */
+export type SupervisorAssignmentContext = "onboarding" | "manageUser";
+
+/**
+ * Whether `supervisor` may be assigned as `employee`'s reporting supervisor.
+ * Purely role-based now — no grade comparison at all:
+ *
+ *   - "manageUser" (default, used from the Access Control profile page):
+ *     Executive Role, Human Resource, Supervisory Role, or Super Admin.
+ *   - "onboarding" (used when inviting a new hire): Supervisory Role or
+ *     Super Admin only — narrower, since this is picking a new hire's direct
+ *     line supervisor specifically.
+ *
+ * Anyone without a resolved User role (or with Standard Role/Consultant/
+ * System Administrator) is never eligible — there is no old-system
+ * grade-rank fallback anymore.
+ */
 export function canAssignAsSupervisor(
-  supervisor: GradeUser,
-  employee: GradeUser,
-  config?: GradeLevelsConfig,
+  supervisor: RoleUser,
+  employee: RoleUser,
+  context: SupervisorAssignmentContext = "manageUser",
 ): boolean {
   if (supervisor.user_id === employee.user_id) return false;
-  if (isSuperAdmin(supervisor.role)) return true;
-  if (!isSupervisorRank(supervisor.grade_level, config)) return false;
-  return canRateGradeLevel(
-    supervisor.grade_level,
-    employee.grade_level,
-    config,
-  );
+  return context === "onboarding"
+    ? canBeAssignedAsSupervisorAtOnboardingByRoleLabel(supervisor.user_role_label)
+    : canBeAssignedAsSupervisorByRoleLabel(supervisor.user_role_label);
 }
 
 export function eligibleSupervisorsForEmployee(
-  employee: GradeUser,
+  employee: RoleUser,
   users: User[],
-  config?: GradeLevelsConfig,
+  context: SupervisorAssignmentContext = "manageUser",
 ): User[] {
   return users
     .filter(
       (u) =>
         u.user_id !== employee.user_id &&
-        canAssignAsSupervisor(u, employee, config),
+        canAssignAsSupervisor(u, employee, context),
     )
     .sort((a, b) => {
       const nameA = `${a.first_name} ${a.last_name}`.trim();

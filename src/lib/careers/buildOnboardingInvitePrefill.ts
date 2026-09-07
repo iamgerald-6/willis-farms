@@ -43,7 +43,13 @@ export function resolveApplicationDeliveryEmail(input: {
 
 type ExistingUserRow = Pick<
   User,
-  "user_id" | "email" | "first_name" | "last_name" | "grade_level" | "role"
+  | "user_id"
+  | "email"
+  | "first_name"
+  | "last_name"
+  | "grade_level"
+  | "role"
+  | "user_role_label"
 >;
 
 export function buildOnboardingInvitePrefill(input: {
@@ -104,17 +110,13 @@ export function buildOnboardingInvitePrefill(input: {
     return null;
   }
 
-  const employeeStub = {
-    user_id: "pending",
-    role: "employee" as const,
-    grade_level: grade_level ?? null,
-  };
+  const employeeStub = { user_id: "pending" };
 
   let supervisor_id: string | undefined;
 
   if (hr.supervisor_id) {
     const picked = input.existingUsers.find((u) => u.user_id === hr.supervisor_id);
-    if (picked && canAssignAsSupervisor(picked, employeeStub, input.gradeConfig)) {
+    if (picked && canAssignAsSupervisor(picked, employeeStub, "onboarding")) {
       supervisor_id = picked.user_id;
     }
   }
@@ -129,7 +131,7 @@ export function buildOnboardingInvitePrefill(input: {
       : null;
     if (
       matchedSupervisorRow &&
-      canAssignAsSupervisor(matchedSupervisorRow, employeeStub, input.gradeConfig)
+      canAssignAsSupervisor(matchedSupervisorRow, employeeStub, "onboarding")
     ) {
       supervisor_id = matchedSupervisorRow.user_id;
     }

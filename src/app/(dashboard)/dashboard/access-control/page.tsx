@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
-import { isSuperAdmin } from "@/lib/accessControl";
 import {
   canAddUser,
   canManageUserAccounts,
@@ -18,11 +17,7 @@ import { AccessControlTableSkeleton } from "@/components/skeletons/PageSkeletons
 import CreateUserModal from "@/app/(dashboard)/dashboard/components/createModal";
 import { toast } from "sonner";
 import { getAccountStatus } from "@/lib/userAccountStatus";
-import {
-  gradeBandGroup,
-  roleGroup,
-  type UserListGroup,
-} from "@/lib/permissionActions";
+import { roleGroup, type UserListGroup } from "@/lib/permissionActions";
 import {
   groupPresetKeyFromListGroup,
   hasIndividualPermissionOverride,
@@ -30,13 +25,20 @@ import {
 } from "@/lib/groupPermissionPresets";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import GroupPermissionPanel from "./components/GroupPermissionPanel";
-import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import {
+  isSuperAdminRoleLabel,
+  USER_ROLE_GROUP_KEYS,
+  userRoleGroupKeyLabel,
+} from "@/lib/userRoleAccessControl";
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-50 text-red-700 border border-red-200",
-  admin: "bg-purple-50 text-purple-700 border border-purple-200",
-  manager: "bg-blue-50 text-blue-700 border border-blue-200",
-  employee: "bg-green-50 text-green-700 border border-green-200",
+  executive_role: "bg-purple-50 text-purple-700 border border-purple-200",
+  system_administrator: "bg-orange-50 text-orange-700 border border-orange-200",
+  human_resource: "bg-blue-50 text-blue-700 border border-blue-200",
+  supervisory_role: "bg-teal-50 text-teal-700 border border-teal-200",
+  consultant: "bg-yellow-50 text-yellow-700 border border-yellow-200",
+  standard_role: "bg-green-50 text-green-700 border border-green-200",
 };
 
 function UserAvatar({ first, last }: { first: string; last: string }) {
@@ -98,7 +100,6 @@ export default function UserManagementPage() {
   const canManageAccounts = canManageUserAccounts(actorProfile, sessionRole);
 
   const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
-  const { accessControlBandLabels } = useGradeLevelsConfig();
   const activeGroupKey = groupPresetKeyFromListGroup(listGroup);
   const activeGroupActions =
     activeGroupKey && groupPresetData?.presets
@@ -129,30 +130,17 @@ export default function UserManagementPage() {
     return map;
   }, [users]);
 
+  // Resolved through the same path every other page uses — the new
+  // user_role_label, never the stale raw `role` column.
+  const resolvedRole = (u: User) => resolveAccessProfile(u, undefined)?.role ?? "Standard Role";
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
-      if (isSuperAdmin(u.role)) return false;
+      const role = resolvedRole(u);
+      if (isSuperAdminRoleLabel(role)) return false;
 
-      if (listGroup === "employees" && roleGroup(u.role) !== "employees") {
-        return false;
-      }
-      if (listGroup === "managers" && roleGroup(u.role) !== "managers") {
-        return false;
-      }
-      if (listGroup === "admins" && roleGroup(u.role) !== "admins") {
-        return false;
-      }
-      if (
-        listGroup === "grade_l1_l3" &&
-        gradeBandGroup(u.grade_level) !== "grade_l1_l3"
-      ) {
-        return false;
-      }
-      if (
-        listGroup === "grade_l4_l7" &&
-        gradeBandGroup(u.grade_level) !== "grade_l4_l7"
-      ) {
+      if (listGroup !== "all" && roleGroup(role) !== listGroup) {
         return false;
       }
 
@@ -170,13 +158,12 @@ export default function UserManagementPage() {
   const groupTabs: { id: UserListGroup; label: string }[] = useMemo(
     () => [
       { id: "all", label: "All users" },
-      { id: "employees", label: "Employees" },
-      { id: "managers", label: "Managers" },
-      { id: "admins", label: "Admins" },
-      { id: "grade_l4_l7", label: accessControlBandLabels.grade_l4_l7 },
-      { id: "grade_l1_l3", label: accessControlBandLabels.grade_l1_l3 },
+      ...USER_ROLE_GROUP_KEYS.map((key) => ({
+        id: key as UserListGroup,
+        label: userRoleGroupKeyLabel(key),
+      })),
     ],
-    [accessControlBandLabels],
+    [],
   );
 
   if (!canOpen) {
@@ -230,21 +217,18 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {groupTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setListGroup(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-              listGroup === tab.id
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <select
+          value={listGroup}
+          onChange={(e) => setListGroup(e.target.value as UserListGroup)}
+          className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400"
+        >
+          {groupTabs.map((tab) => (
+            <option key={tab.id} value={tab.id}>
+              {tab.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {activeGroupKey && activeGroupActions && (
@@ -395,12 +379,12 @@ export default function UserManagementPage() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                          ROLE_COLORS[u.role] ??
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          ROLE_COLORS[roleGroup(resolvedRole(u)) ?? ""] ??
                           "bg-gray-100 text-gray-600 border border-gray-200"
                         }`}
                       >
-                        {u.role.replace("_", " ")}
+                        {resolvedRole(u)}
                       </span>
                     </td>
                     <td className="px-4 py-3 align-top">

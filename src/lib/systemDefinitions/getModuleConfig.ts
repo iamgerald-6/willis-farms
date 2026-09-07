@@ -5,7 +5,6 @@ import {
   DEFAULT_COMPANY_EMAIL_DOMAIN,
   normalizeCompanyEmailDomain,
 } from "./companyEmailDomain";
-import { DEFAULT_APPRAISAL_SECTION_WEIGHT_RULES } from "./appraisalDefaults";
 import {
   formDefinitionForModule,
   mergeFormDefinition,
@@ -59,13 +58,6 @@ export async function fetchModuleConfig(
 
   return {
     businessLogic: {
-      sectionWeightRules:
-        businessLogic.sectionWeightRules?.length
-          ? businessLogic.sectionWeightRules
-          : gitFallbackBusinessLogic(moduleId).sectionWeightRules,
-      sectionBaseWeights: businessLogic.sectionBaseWeights,
-      globalSectionWeights: businessLogic.globalSectionWeights,
-      sectionContentOverrides: businessLogic.sectionContentOverrides,
       competencyContentOverrides: businessLogic.competencyContentOverrides,
       refereeReferenceConfig: businessLogic.refereeReferenceConfig,
       applicationFormConfig: businessLogic.applicationFormConfig,
@@ -88,9 +80,6 @@ export async function fetchModuleConfig(
 }
 
 function gitFallbackBusinessLogic(moduleId: string): ModuleBusinessLogic {
-  if (moduleId === "mod:appraisal") {
-    return { sectionWeightRules: DEFAULT_APPRAISAL_SECTION_WEIGHT_RULES };
-  }
   if (moduleId === "mod:leave") {
     return { annualLeaveCapDays: DEFAULT_ANNUAL_LEAVE_CAP_DAYS };
   }

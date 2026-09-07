@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
 // project_id is optional — omit it to get tasks across every active project
@@ -45,17 +46,34 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/task-manager/tasks — Senior Management only
+// POST /api/task-manager/tasks — Senior Management, or (new role system) a
+// Supervisory-role caller creating a task for one of their own supervisees.
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
     const { project_id, title, owner_id, start_date, due_date, is_recurring, task_type, frequency, indicator, method_provider, description } = body;
 
     if (!project_id || !title?.trim()) {
       return NextResponse.json({ error: "project_id and title are required" }, { status: 400 });
+    }
+
+    let canCreate = (await requireSeniorManagement(req)) !== null;
+    if (!canCreate && isSupervisoryRoleLabel(user.role) && owner_id) {
+      const { data: owner } = await supabaseAdmin
+        .from("users")
+        .select("supervisor_id")
+        .eq("user_id", owner_id)
+        .maybeSingle();
+      canCreate = owner?.supervisor_id === user.id;
+    }
+    if (!canCreate) {
+      return NextResponse.json(
+        { error: "Forbidden — Senior Management access, or being the assignee's supervisor, is required." },
+        { status: 403 },
+      );
     }
 
     const { data: task, error } = await supabaseAdmin

@@ -6,7 +6,11 @@ import {
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
 import { canPerformModuleAction } from "@/lib/permissionActions";
-import { canViewSkillLogRecord, type SkillLogRecord } from "@/lib/skillLogAccess";
+import {
+  canViewSkillLogRecord,
+  hasAssignedSupervisees,
+  type SkillLogRecord,
+} from "@/lib/skillLogAccess";
 
 const FULL_SELECT = `
   id,
@@ -81,6 +85,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
+
     const visible = (data ?? []).filter((log) =>
       canViewSkillLogRecord(
         ctx.profile,
@@ -88,6 +94,7 @@ export async function GET(req: NextRequest) {
         log as SkillLogRecord,
         ctx.presets,
         ctx.user.role,
+        hasSupervisees,
       ),
     );
 

@@ -1,5 +1,4 @@
 import { gradeIndex, isSuperAdmin } from "@/lib/accessControl";
-import { gradeBandGroupForGrade, type GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { getModuleRegistrySync } from "@/lib/moduleRegistry";
 import type {
   ModuleActions,
@@ -23,6 +22,13 @@ import {
   type AccessTier,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
+import {
+  hasSystemAccessByRoleLabel,
+  HUMAN_RESOURCE_FULL_ACCESS_KEYS,
+  isHumanResourceRoleLabel,
+  userRoleGroupKeyFromLabel,
+  type UserRoleGroupKey,
+} from "@/lib/userRoleAccessControl";
 
 export type { ModuleActions, PagePermissionActions, PermissionAction };
 
@@ -287,6 +293,25 @@ export function defaultAdminActions(): PagePermissionActions {
   return out;
 }
 
+/** Full (every supported action) access, but only for the given keys —
+ * everything else left blank. Used to seed a role's built-in default group
+ * preset from a fixed key list (e.g. HUMAN_RESOURCE_FULL_ACCESS_KEYS). */
+export function defaultFullAccessActionsFor(
+  keys: readonly PagePermissionKey[],
+): PagePermissionActions {
+  const allowed = new Set<string>(keys);
+  const out: PagePermissionActions = {};
+  for (const row of getPermissionMatrixModules()) {
+    if (!allowed.has(row.key)) continue;
+    const actions: ModuleActions = {};
+    for (const action of row.supportedActions) {
+      actions[action] = true;
+    }
+    out[row.key] = actions;
+  }
+  return out;
+}
+
 export function defaultFullAccessActions(): PagePermissionActions {
   const out: PagePermissionActions = {};
   for (const row of getPermissionMatrixModules()) {
@@ -334,6 +359,18 @@ export function getEffectivePermissionActions(
   const role = profile.role ?? sessionRole;
   if (isSuperAdmin(role)) return defaultFullAccessActions();
 
+  // Executive Role (new role system) is meant to be unconditional full
+  // access — same breadth as Super Admin — regardless of any stale
+  // per-user delegated override or legacy grade-band/role-group preset
+  // left over from before the role migration. Checking this here, before
+  // those, matches System Administrator/Human Resource's unconditional
+  // bypasses in canPerformModuleAction above; checking it further down (as
+  // before) let an old grade-band group preset silently narrow an
+  // Executive Role account's access.
+  if (isFullRoleAccess(role)) {
+    return defaultFullAccessActions();
+  }
+
   const tier = (profile.access_tier ?? "standard") as AccessTier;
   const stored = mergeStoredActions(profile);
 
@@ -352,10 +389,6 @@ export function getEffectivePermissionActions(
   if (role === "admin") {
     if (Object.keys(stored).length > 0) return stored;
     return defaultAdminActions();
-  }
-
-  if (isFullRoleAccess(role)) {
-    return defaultFullAccessActions();
   }
 
   if (tier === "delegated") {
@@ -381,6 +414,28 @@ export function canPerformModuleAction(
   sessionRole?: string | null,
   groupPresets?: GroupPresetsMap | null,
 ): boolean {
+  const role = profile?.role ?? sessionRole;
+
+  // System Definitions + User Management: unconditional for System
+  // Administrator / Super Admin (new role system) — deliberately not routed
+  // through the matrix below, since neither role should need per-user
+  // customization to reach what's supposed to be their default.
+  if ((key === "sys:definitions" || key === "users") && hasSystemAccessByRoleLabel(role)) {
+    return true;
+  }
+
+  // Human Resource: full (edit-equivalent) access to every Human Capital
+  // page plus Task Manager, by default — see
+  // HUMAN_RESOURCE_FULL_ACCESS_KEYS in userRoleAccessControl.ts. Deliberately
+  // does NOT cover "users"/"sys:definitions" (Human Resource has no default
+  // access there) or anything else outside that list.
+  if (
+    isHumanResourceRoleLabel(role) &&
+    (HUMAN_RESOURCE_FULL_ACCESS_KEYS as readonly string[]).includes(key)
+  ) {
+    return true;
+  }
+
   const effective = getEffectivePermissionActions(
     profile,
     sessionRole,
@@ -467,29 +522,15 @@ export function permissionActionSetsEqual(
   return true;
 }
 
-/** User list grouping helpers */
-export type UserListGroup =
-  | "all"
-  | "employees"
-  | "managers"
-  | "admins"
-  | "grade_l1_l3"
-  | "grade_l4_l7";
-
-export function gradeBandGroup(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): "grade_l1_l3" | "grade_l4_l7" | null {
-  return gradeBandGroupForGrade(grade, config);
-}
+/** User list grouping helpers — one group per role in the new 7-role
+ * system (see userRoleAccessControl.ts). Grade-band grouping was removed:
+ * access control groups by role only now. */
+export type UserListGroup = "all" | UserRoleGroupKey;
 
 export function roleGroup(
   role: string | null | undefined,
-): "employees" | "managers" | "admins" | null {
-  if (role === "employee") return "employees";
-  if (role === "manager") return "managers";
-  if (role === "admin") return "admins";
-  return null;
+): UserRoleGroupKey | null {
+  return userRoleGroupKeyFromLabel(role);
 }
 
 export function actionHelpFor(

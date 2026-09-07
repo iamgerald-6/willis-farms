@@ -197,10 +197,7 @@ export function canOpenUserManagement(
   sessionRole?: string | null,
 ): boolean {
   if (
-    canManageAccessControl(
-      profile?.role ?? sessionRole,
-      profile?.grade_level,
-    )
+    canManageAccessControl(profile?.role ?? sessionRole)
   ) {
     return true;
   }
@@ -212,10 +209,7 @@ export function canAddUser(
   sessionRole?: string | null,
 ): boolean {
   if (
-    canManageAccessControl(
-      profile?.role ?? sessionRole,
-      profile?.grade_level,
-    )
+    canManageAccessControl(profile?.role ?? sessionRole)
   ) {
     return true;
   }
@@ -227,10 +221,7 @@ export function canManageUserAccounts(
   sessionRole?: string | null,
 ): boolean {
   if (
-    canManageAccessControl(
-      profile?.role ?? sessionRole,
-      profile?.grade_level,
-    )
+    canManageAccessControl(profile?.role ?? sessionRole)
   ) {
     return true;
   }

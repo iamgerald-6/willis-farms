@@ -18,6 +18,12 @@ const OPTIONAL_USER_COLUMNS = [
   "employment_status",
   "platform_invited_at",
   "probation_completed_at",
+  "site_id",
+  "business_unit_id",
+  "department_id",
+  "section_id",
+  "position_id",
+  "grade_level_id",
 ] as const;
 
 export function isMissingColumnError(message: string): boolean {

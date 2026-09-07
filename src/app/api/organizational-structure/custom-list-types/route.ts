@@ -152,10 +152,13 @@ export async function POST(req: NextRequest) {
       .from("org_custom_list_types")
       .select("id", { count: "exact", head: true });
 
-    // Naive singular: strip a trailing "s". Good enough for the "Add ___"
-    // button text; admins can't rename it after creation (same as `code`
-    // on the fixed lists).
-    const singular = label.trim().replace(/s$/i, "") || label.trim();
+    // No singularization — a naive "strip a trailing s" guess (e.g. for
+    // "Add ___" button text) mangled words like "Status", "Series", or
+    // "Business" that already end in "s" without being plural. Using the
+    // label as-is means "Add Sites" instead of "Add Site", but it's never
+    // wrong, unlike the guess. Admins can't rename it after creation (same
+    // as `code` on the fixed lists).
+    const singular = label.trim();
     const code = slugifyLabel(label);
     const tableName = `custom_${code}`;
 
@@ -171,6 +174,79 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: createTableError.message }, { status: 500 });
     }
 
+    // Give this list its own real foreign key column on job_postings, so a
+    // posting can reference one row from it — same "job_posting_column"
+    // every list gets, base or custom. Column name derived from the
+    // singular (e.g. "business unit" -> "business_unit_id"), with a
+    // numeric suffix on collision, same convention as mapping table
+    // column names used to follow.
+    const baseColumn = `${slugifyLabel(singular)}_id`;
+    let jobPostingColumn = baseColumn;
+    let colSuffix = 2;
+    for (;;) {
+      const { data: collision } = await supabase
+        .from("org_custom_list_types")
+        .select("id")
+        .eq("job_posting_column", jobPostingColumn)
+        .maybeSingle();
+      if (!collision) break;
+      jobPostingColumn = `${baseColumn}_${colSuffix}`;
+      colSuffix += 1;
+    }
+
+    const { error: addColumnError } = await supabase.rpc("add_job_posting_org_column", {
+      p_column_name: jobPostingColumn,
+      p_referenced_table: tableName,
+    });
+    if (addColumnError) {
+      // Roll back the table we just created — nothing should be left
+      // behind if the job_postings column can't be added.
+      await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
+      return NextResponse.json({ error: addColumnError.message }, { status: 500 });
+    }
+
+    // Digits-mode numeric-range lists (e.g. Age: one whole number per
+    // item) also get min/max columns, so a posting can specify a range of
+    // numbers instead of one value. Bands-mode lists (e.g. Salary: each
+    // item is already its own range, like "1000-2000") don't get this —
+    // picking a single band already is the range, a min/max on top of
+    // that wouldn't mean anything. Every other list only ever gets the
+    // single column above.
+    let jobPostingMinColumn: string | null = null;
+    let jobPostingMaxColumn: string | null = null;
+    if (isNumericRange && numericRangeMode === "digits") {
+      jobPostingMinColumn = `${baseColumn.replace(/_id$/, "")}_min_id`;
+      jobPostingMaxColumn = `${baseColumn.replace(/_id$/, "")}_max_id`;
+      if (jobPostingMinColumn === jobPostingColumn || jobPostingMaxColumn === jobPostingColumn) {
+        // baseColumn already ended in "_min_id"/"_max_id" somehow — fall
+        // back to suffixing off the collision-resolved column instead.
+        jobPostingMinColumn = `${jobPostingColumn}_min`;
+        jobPostingMaxColumn = `${jobPostingColumn}_max`;
+      }
+
+      const { error: addMinError } = await supabase.rpc("add_job_posting_org_column", {
+        p_column_name: jobPostingMinColumn,
+        p_referenced_table: tableName,
+      });
+      const { error: addMaxError } = addMinError
+        ? { error: null }
+        : await supabase.rpc("add_job_posting_org_column", {
+            p_column_name: jobPostingMaxColumn,
+            p_referenced_table: tableName,
+          });
+      if (addMinError || addMaxError) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingColumn });
+        if (!addMinError) {
+          await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMinColumn });
+        }
+        await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
+        return NextResponse.json(
+          { error: (addMinError ?? addMaxError)?.message },
+          { status: 500 },
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("org_custom_list_types")
       .insert([
@@ -184,14 +260,24 @@ export async function POST(req: NextRequest) {
           numeric_range_mode: numericRangeMode,
           fields,
           sort_order: count ?? 0,
+          job_posting_column: jobPostingColumn,
+          job_posting_min_column: jobPostingMinColumn,
+          job_posting_max_column: jobPostingMaxColumn,
         },
       ])
       .select()
       .single();
 
     if (error) {
-      // Metadata insert failed after the table was already created —
-      // clean up so we don't leave an orphaned table with no registry entry.
+      // Metadata insert failed after the table and column(s) were already
+      // created — clean up so nothing orphaned is left behind.
+      await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingColumn });
+      if (jobPostingMinColumn) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMinColumn });
+      }
+      if (jobPostingMaxColumn) {
+        await supabase.rpc("drop_job_posting_org_column", { p_column_name: jobPostingMaxColumn });
+      }
       await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
       if (error.code === "23505") {
         return NextResponse.json(

@@ -1,8 +1,3 @@
-import {
-  normalizeGradeSalaryTiers,
-  type GradeSalaryTiers,
-} from "./salaryRanges";
-
 export type GradeRoleKind = "ranked" | "consultant";
 
 export type GradeLevelDef = {
@@ -14,8 +9,6 @@ export type GradeLevelDef = {
   builtIn?: boolean;
   /** Ranked L1–L7+ vs consultant (no numeric level). */
   roleKind?: GradeRoleKind;
-  /** Low / mid / high salary bands (GHS) for HR Section O. */
-  salaryTiers?: GradeSalaryTiers;
   /** Internal HR age band for shortlisting — not shown to applicants. */
   ageMin?: number;
   ageMax?: number;
@@ -40,8 +33,6 @@ export type AppraisalGradeBandId = (typeof APPRAISAL_GRADE_BAND_IDS)[number];
 export const MIN_SUPERVISOR_RANK = 4;
 /** L5+ gets full appraisal access (non-manager roles). */
 export const MIN_FULL_APPRAISAL_RANK = 5;
-/** Access-control junior band: ranks 1–3. */
-export const JUNIOR_BAND_MAX_RANK = 3;
 
 export const SPECIALIST_INTERVIEW_GUIDE_KEYS = ["data_analyst", "veterinarian"] as const;
 
@@ -124,7 +115,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (isConsultant) {
       if (!/^[a-z][a-z0-9_]*$/.test(id) || usedIds.has(id)) continue;
       usedIds.add(id);
-      const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
       const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
       const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
       levels.push({
@@ -134,7 +124,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
         roleKind: "consultant",
         roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
         builtIn: row.builtIn === true,
-        ...(salaryTiers ? { salaryTiers } : {}),
         ...(ageMin != null ? { ageMin } : {}),
         ...(ageMax != null ? { ageMax } : {}),
       });
@@ -144,7 +133,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
     if (!/^L\d+$/.test(id) || !Number.isFinite(rank) || rank < 1) continue;
     if (usedIds.has(id)) continue;
     usedIds.add(id);
-    const salaryTiers = normalizeGradeSalaryTiers(row.salaryTiers ?? row.salary_tiers);
     const ageMin = parseAgeLimit(row.ageMin ?? row.age_min);
     const ageMax = parseAgeLimit(row.ageMax ?? row.age_max);
     levels.push({
@@ -154,7 +142,6 @@ export function normalizeGradeLevelsConfig(raw: unknown): GradeLevelsConfig {
       roleKind: "ranked",
       roleKey: row.roleKey != null ? String(row.roleKey).trim() : undefined,
       builtIn: row.builtIn === true,
-      ...(salaryTiers ? { salaryTiers } : {}),
       ...(ageMin != null ? { ageMin } : {}),
       ...(ageMax != null ? { ageMax } : {}),
     });
@@ -314,44 +301,11 @@ export function isKnownGrade(
   );
 }
 
-export function isSupervisorRank(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const rank = gradeLevelToRank(grade, config);
-  return rank != null && rank >= MIN_SUPERVISOR_RANK;
-}
-
-export function isFullAppraisalRank(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const rank = gradeLevelToRank(grade, config);
-  return rank != null && rank >= MIN_FULL_APPRAISAL_RANK;
-}
-
-export function gradesUpToRank(maxRank: number, config?: GradeLevelsConfig): string[] {
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank <= maxRank)
-    .map((l) => l.id);
-}
-
-export function gradesFromRank(minRank: number, config?: GradeLevelsConfig): string[] {
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank >= minRank)
-    .map((l) => l.id);
-}
 
 export function formatGradeListLabel(gradeIds: string[]): string {
   if (gradeIds.length === 0) return "";
   if (gradeIds.length === 1) return gradeIds[0];
   return gradeIds.join(" / ");
-}
-
-export function formatGradeRangeLabel(gradeIds: string[]): string {
-  if (gradeIds.length === 0) return "";
-  if (gradeIds.length === 1) return gradeIds[0];
-  return `${gradeIds[0]}–${gradeIds[gradeIds.length - 1]}`;
 }
 
 /** Appraisal rating band for a single employee grade (stable band id). */
@@ -413,38 +367,6 @@ export function resolveAppraisalGradeOptions(
   }));
 }
 
-export type AccessControlGradeGroup = "grade_l1_l3" | "grade_l4_l7";
-
-export function gradeBandGroupForGrade(
-  grade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): AccessControlGradeGroup | null {
-  const rank = gradeLevelToRank(grade, config);
-  if (rank == null) return null;
-  return rank >= MIN_SUPERVISOR_RANK ? "grade_l4_l7" : "grade_l1_l3";
-}
-
-export function resolveAccessControlBandLabels(
-  config?: GradeLevelsConfig,
-): Record<AccessControlGradeGroup, string> {
-  const junior = gradesUpToRank(JUNIOR_BAND_MAX_RANK, config);
-  const senior = gradesFromRank(MIN_SUPERVISOR_RANK, config);
-  return {
-    grade_l1_l3: junior.length ? formatGradeRangeLabel(junior) : "L1–L3",
-    grade_l4_l7: senior.length ? formatGradeRangeLabel(senior) : "L4–L7",
-  };
-}
-
-export function resolveGroupPresetLabels(
-  config?: GradeLevelsConfig,
-): Record<AccessControlGradeGroup, string> {
-  const bands = resolveAccessControlBandLabels(config);
-  return {
-    grade_l1_l3: `All ${bands.grade_l1_l3}`,
-    grade_l4_l7: `All ${bands.grade_l4_l7}`,
-  };
-}
-
 export function nextGradeInOrder(
   grade: string | null | undefined,
   config?: GradeLevelsConfig,
@@ -457,17 +379,6 @@ export function nextGradeInOrder(
   return order[idx + 1];
 }
 
-export function gradesBelowViewer(
-  viewerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): string[] {
-  const viewerRank = gradeLevelToRank(viewerGrade, config);
-  if (viewerRank == null || viewerRank < MIN_SUPERVISOR_RANK) return [];
-  return resolveGradeLevels(config)
-    .filter((l) => l.rank < viewerRank)
-    .map((l) => l.id);
-}
-
 export function canRateGradeLevel(
   raterGrade: string | null | undefined,
   targetGrade: string | null | undefined,
@@ -478,18 +389,5 @@ export function canRateGradeLevel(
   if (raterRank == null || targetRank == null) return false;
   if (raterRank < MIN_SUPERVISOR_RANK) return false;
   return raterRank > targetRank;
-}
-
-export function canSignOffSkillLogGrade(
-  viewerGrade: string | null | undefined,
-  fillerGrade: string | null | undefined,
-  config?: GradeLevelsConfig,
-): boolean {
-  const viewerRank = gradeLevelToRank(viewerGrade, config);
-  const fillerRank = gradeLevelToRank(fillerGrade, config);
-  if (viewerRank == null || fillerRank == null) return false;
-  if (viewerRank < MIN_SUPERVISOR_RANK) return false;
-  if (viewerRank >= MIN_FULL_APPRAISAL_RANK) return true;
-  return viewerRank === MIN_SUPERVISOR_RANK && fillerRank === MIN_SUPERVISOR_RANK - 1;
 }
 

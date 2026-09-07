@@ -1,11 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getInterviewGuideKeyForRoleSlug } from "@/lib/careers/openings";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { fetchAndAppendStatusHistory } from "@/lib/careers/statusHistory";
-import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
-import { resolveAgeRangeForGuideKey } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { resolveAgeRangeFromPosting } from "@/lib/careers/jobPostingOrgFields";
 import type {
   ApplicationFormField,
   EducationEntry,
@@ -32,7 +30,6 @@ const MAX_TOTAL_BYTES = 30 * 1024 * 1024;
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 type AgeScreeningContext = {
-  gradeId: string;
   ageMin: number;
   ageMax: number;
   applicantAge: number | null;
@@ -64,7 +61,7 @@ function buildScreeningTool(ageContext: AgeScreeningContext | null) {
     properties.age_assessment = {
       type: "string",
       description:
-        "Age eligibility analysis for HR (internal only — not shown to applicants). State the applicant's age (or that date of birth was missing), the configured age band for this grade level, whether they fall within the band, and how age affects shortlisting. Be factual and concise.",
+        "Age eligibility analysis for HR (internal only — not shown to applicants). State the applicant's age (or that date of birth was missing), the age range configured on this job posting, whether they fall within it, and how age affects shortlisting. Be factual and concise.",
     };
     required.push("age_assessment");
   }
@@ -266,23 +263,10 @@ function computeAgeFromDob(dob: string | null | undefined, asOf = new Date()): n
   return age;
 }
 
-function resolveGuideKey(
-  posting: JobPostingSnippet | null,
-  roleSlug: string | null | undefined,
-): string | null {
-  const fromPosting = posting?.interview_guide_key?.trim();
-  if (fromPosting) return fromPosting;
-  const slug = roleSlug?.trim();
-  if (!slug) return null;
-  return getInterviewGuideKeyForRoleSlug(slug) ?? null;
-}
-
 function buildAgeContext(
-  guideKey: string | null,
-  gradeConfig: Awaited<ReturnType<typeof fetchGradeLevelsConfig>>,
+  ageRange: { ageMin: number; ageMax: number } | null,
   dateOfBirth: string | null,
 ): AgeScreeningContext | null {
-  const ageRange = resolveAgeRangeForGuideKey(guideKey, gradeConfig);
   if (!ageRange) return null;
   const applicantAge = computeAgeFromDob(dateOfBirth);
   const ageWithinRange =
@@ -290,7 +274,6 @@ function buildAgeContext(
       ? null
       : applicantAge >= ageRange.ageMin && applicantAge <= ageRange.ageMax;
   return {
-    gradeId: ageRange.gradeId,
     ageMin: ageRange.ageMin,
     ageMax: ageRange.ageMax,
     applicantAge,
@@ -319,17 +302,17 @@ function buildInstructions(
 
   const ageSection = ageContext
     ? [
-        `Internal age eligibility (HR only — not disclosed to applicants): this role is grade ${ageContext.gradeId} with an age band of ${ageContext.ageMin}–${ageContext.ageMax} years.`,
+        `Internal age eligibility (HR only — not disclosed to applicants): this job posting has a configured age eligibility range of ${ageContext.ageMin}–${ageContext.ageMax} years.`,
         ageContext.applicantAge != null
           ? `The applicant's date of birth indicates they are ${ageContext.applicantAge} years old${
               ageContext.ageWithinRange === true
-                ? " — within the configured band."
+                ? " — within the configured range."
                 : ageContext.ageWithinRange === false
-                  ? " — outside the configured band. Treat this as a shortlisting cutoff: they should not be auto-shortlisted even if the CV otherwise scores well."
+                  ? " — outside the configured range. Treat this as a shortlisting cutoff: they should not be auto-shortlisted even if the CV otherwise scores well."
                   : "."
             }`
-          : "Date of birth was not provided on the application — note this in age_assessment; they cannot be verified against the age band for auto-shortlisting.",
-        "Include a clear age_assessment in your tool response covering age vs. the band and shortlisting impact.",
+          : "Date of birth was not provided on the application — note this in age_assessment; they cannot be verified against the age range for auto-shortlisting.",
+        "Include a clear age_assessment in your tool response covering age vs. the range and shortlisting impact.",
       ].join("\n")
     : "";
 
@@ -358,8 +341,6 @@ export async function screenApplication(
     return { ok: false, error: "No CV on file for this application." };
   }
 
-  const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
-
   let posting: JobPostingSnippet | null = null;
   if (application.job_posting_id) {
     const { data: postingRow } = await supabaseAdmin
@@ -375,8 +356,8 @@ export async function screenApplication(
   const formData = application.application_form_data ?? {};
   const dateOfBirth =
     typeof formData.date_of_birth === "string" ? formData.date_of_birth.trim() : null;
-  const guideKey = resolveGuideKey(posting, application.role_slug);
-  const ageContext = buildAgeContext(guideKey, gradeConfig, dateOfBirth);
+  const ageRange = await resolveAgeRangeFromPosting(supabaseAdmin, application.job_posting_id);
+  const ageContext = buildAgeContext(ageRange, dateOfBirth);
 
   let remainingBudget = MAX_TOTAL_BYTES;
 
@@ -468,7 +449,6 @@ export async function screenApplication(
         screened_at: new Date().toISOString(),
         ...(ageContext
           ? {
-              grade_level: ageContext.gradeId,
               age_min: ageContext.ageMin,
               age_max: ageContext.ageMax,
               applicant_age: ageContext.applicantAge,

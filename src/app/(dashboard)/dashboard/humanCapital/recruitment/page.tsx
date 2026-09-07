@@ -60,7 +60,10 @@ import {
   PageHeaderSkeleton,
   ListRowsSkeleton,
 } from "@/components/skeletons/PageSkeletons";
-import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
+import type { User } from "@/types";
 
 const AI_RECOMMENDATION_LABELS: Record<string, string> = {
   hire: "Hire",
@@ -683,13 +686,11 @@ function ApplicationDetail({
                     <div className="mb-3 pb-3 border-b border-purple-200">
                       <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-1">
                         Age eligibility
-                        {application.ai_screening.grade_level &&
-                          application.ai_screening.age_min != null &&
+                        {application.ai_screening.age_min != null &&
                           application.ai_screening.age_max != null && (
                             <span className="font-normal normal-case text-purple-700">
                               {" "}
-                              ({application.ai_screening.grade_level}:{" "}
-                              {application.ai_screening.age_min}–
+                              ({application.ai_screening.age_min}–
                               {application.ai_screening.age_max} years)
                             </span>
                           )}
@@ -4876,21 +4877,35 @@ function RecruitmentPageContent() {
     },
   });
 
-  const { data: allUsers = [] } = useQuery({
+  const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
       const res = await api.get("/get_user");
-      return res.data as { user_id: string; role: string }[];
+      return res.data;
     },
   });
 
   const currentUser = allUsers.find((u) => u.user_id === session?.user?.id);
-  const role =
-    currentUser?.role ??
-    (session?.user?.user_metadata?.role as string | undefined) ??
-    "";
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(currentUser, sessionRole);
+  const role = accessProfile?.role ?? sessionRole ?? "";
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
 
-  const isHr = isFullRoleAccess(role);
+  // Same real permission system as everywhere else — covers Super Admin,
+  // Executive Role, Human Resource's HC bypass, group presets, and any
+  // individual per-user override, instead of just the narrow
+  // Super Admin/Executive-only check this used to be.
+  const isHr = Boolean(
+    accessProfile &&
+      canPerformModuleAction(
+        accessProfile,
+        "hc:recruitment",
+        "view",
+        sessionRole,
+        groupPresets,
+      ),
+  );
 
   const { data, isLoading } = useQuery({
     queryKey: ["job_applications"],

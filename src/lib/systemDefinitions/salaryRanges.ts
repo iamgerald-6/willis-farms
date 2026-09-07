@@ -1,60 +1,8 @@
-import {
-  resolveGradeLevels,
-  type GradeLevelDef,
-  type GradeLevelsConfig,
-} from "./gradeLevelsConfig";
-
-export const SALARY_TIER_IDS = ["low", "mid", "high"] as const;
-export type SalaryTierId = (typeof SALARY_TIER_IDS)[number];
-
-export const SALARY_TIER_LABELS: Record<SalaryTierId, string> = {
-  low: "Low",
-  mid: "Mid",
-  high: "High",
-};
-
-export type SalaryTierBand = {
-  min?: string;
-  max?: string;
-};
-
-export type GradeSalaryTiers = Partial<Record<SalaryTierId, SalaryTierBand>>;
-
-function normalizeTierBand(raw: unknown): SalaryTierBand | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const row = raw as Record<string, unknown>;
-  const min = row.min != null ? String(row.min).trim() : undefined;
-  const max = row.max != null ? String(row.max).trim() : undefined;
-  if (!min && !max) return undefined;
-  return { min: min || undefined, max: max || undefined };
-}
-
-export function normalizeGradeSalaryTiers(raw: unknown): GradeSalaryTiers | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const obj = raw as Record<string, unknown>;
-  const out: GradeSalaryTiers = {};
-  for (const tier of SALARY_TIER_IDS) {
-    const band = normalizeTierBand(obj[tier]);
-    if (band) out[tier] = band;
-  }
-  return Object.keys(out).length ? out : undefined;
-}
-
 function formatGhsAmount(value: string): string {
   const cleaned = value.replace(/,/g, "").trim();
   const num = Number(cleaned);
   if (!Number.isFinite(num)) return value.trim();
   return num.toLocaleString("en-GH");
-}
-
-export function formatSalaryTierBand(band?: SalaryTierBand | null): string {
-  if (!band) return "";
-  const min = band.min?.trim();
-  const max = band.max?.trim();
-  if (min && max) return `GHS ${formatGhsAmount(min)} – ${formatGhsAmount(max)}`;
-  if (min) return `GHS ${formatGhsAmount(min)}+`;
-  if (max) return `Up to GHS ${formatGhsAmount(max)}`;
-  return "";
 }
 
 export function parseGhsAmount(value: string | undefined | null): number | null {
@@ -77,105 +25,38 @@ export function formatGrossSalaryAmount(
   return `GHS ${formatted}`;
 }
 
-/** Midpoint of band when both bounds exist; otherwise the single bound. */
-export function defaultSalaryForTierBand(band: SalaryTierBand | null | undefined): string {
-  if (!band) return "";
-  const min = parseGhsAmount(band.min);
-  const max = parseGhsAmount(band.max);
-  if (min != null && max != null) {
-    return String(Math.round((min + max) / 2));
-  }
-  if (min != null) return String(min);
-  if (max != null) return String(max);
-  return "";
-}
-
-export function normalizeSalaryTierId(value: string | undefined | null): SalaryTierId | null {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === "low" || normalized === "mid" || normalized === "high") {
-    return normalized;
-  }
-  return null;
-}
-
-export function resolveSalaryTierBandForGrade(
-  gradeId: string | undefined | null,
-  tier: SalaryTierId | undefined | null,
-  config?: GradeLevelsConfig,
-): SalaryTierBand | null {
-  if (!gradeId?.trim() || !tier) return null;
-  const id = gradeId.trim().toUpperCase();
-  const level = resolveGradeLevels(config).find((l) => l.id === id);
-  return level?.salaryTiers?.[tier] ?? null;
-}
-
-export function validateGrossSalaryInBand(
+/**
+ * Validates a gross salary against a numeric band resolved straight from
+ * the job posting's own Salary field (see resolveOfferTermsFromPosting).
+ * min/max being undefined means the posting's Salary value wasn't a
+ * parseable numeric range (e.g. a plain label with no numbers) — nothing
+ * to check against, so this passes.
+ */
+export function validateGrossSalaryAgainstBand(
   salaryGhs: string | undefined | null,
-  gradeId: string | undefined | null,
-  tierInput: string | undefined | null,
-  config?: GradeLevelsConfig,
+  minInput: string | undefined | null,
+  maxInput: string | undefined | null,
 ): { valid: boolean; message: string | null } {
   const amount = parseGhsAmount(salaryGhs);
   if (amount == null) {
     return { valid: false, message: "Enter a valid gross salary amount." };
   }
-
-  const tier = normalizeSalaryTierId(tierInput);
-  const band = resolveSalaryTierBandForGrade(gradeId, tier, config);
-  if (!band) {
+  const min = parseGhsAmount(minInput);
+  const max = parseGhsAmount(maxInput);
+  if (min == null && max == null) {
     return { valid: true, message: null };
   }
-
-  const min = parseGhsAmount(band.min);
-  const max = parseGhsAmount(band.max);
-
   if (min != null && amount < min) {
     return {
       valid: false,
-      message: `Gross salary cannot be below GHS ${formatGhsAmount(String(min))} for this band.`,
+      message: `Gross salary cannot be below GHS ${formatGhsAmount(String(min))} for this role.`,
     };
   }
   if (max != null && amount > max) {
     return {
       valid: false,
-      message: `Gross salary cannot exceed GHS ${formatGhsAmount(String(max))} for this band.`,
+      message: `Gross salary cannot exceed GHS ${formatGhsAmount(String(max))} for this role.`,
     };
   }
-
   return { valid: true, message: null };
-}
-
-export function resolveSalaryForGradeTier(
-  gradeId: string | undefined | null,
-  tierInput: string | undefined | null,
-  config?: GradeLevelsConfig,
-): {
-  tier: SalaryTierId | null;
-  band: SalaryTierBand | null;
-  formatted: string;
-  salaryGhs: string;
-} {
-  const tier = normalizeSalaryTierId(tierInput);
-  const band = resolveSalaryTierBandForGrade(gradeId, tier, config);
-  const formatted = formatSalaryTierBand(band);
-  return {
-    tier,
-    band,
-    formatted,
-    salaryGhs: defaultSalaryForTierBand(band),
-  };
-}
-
-export function mergeSalaryTiersIntoLevels(
-  levels: GradeLevelDef[],
-  salaryByGrade: Record<string, GradeSalaryTiers | undefined>,
-): GradeLevelDef[] {
-  return levels.map((level) => {
-    const tiers = salaryByGrade[level.id] ?? level.salaryTiers;
-    if (!tiers || !Object.keys(tiers).length) {
-      const { salaryTiers: _drop, ...rest } = level;
-      return rest;
-    }
-    return { ...level, salaryTiers: tiers };
-  });
 }

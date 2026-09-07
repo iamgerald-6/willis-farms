@@ -4,9 +4,11 @@ import {
   requireUserManagementAccess,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
-import { isSuperAdmin } from "@/lib/accessControl";
-import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { canAssignAsSupervisor } from "@/lib/supervisorAssignment";
+import {
+  isSuperAdminRoleLabel,
+  resolveUserRoleLabelById,
+} from "@/lib/userRoleAccessControl";
 import {
   isMissingColumnError,
   updateUserWithColumnFallback,
@@ -53,7 +55,7 @@ export async function PATCH(req: NextRequest) {
 
     const { data: target, error: targetError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, grade_level")
+      .select("user_id, user_role_id")
       .eq("user_id", target_user_id)
       .maybeSingle();
 
@@ -71,7 +73,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    if (isSuperAdmin(target.role)) {
+    const targetRoleLabel = await resolveUserRoleLabelById(
+      supabaseAdmin,
+      target.user_role_id,
+    );
+
+    if (isSuperAdminRoleLabel(targetRoleLabel)) {
       return NextResponse.json(
         { error: "Cannot assign a supervisor to this account." },
         { status: 403 },
@@ -85,12 +92,10 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
-
     if (supervisor_id) {
       const { data: supervisor, error: supervisorError } = await supabaseAdmin
         .from("users")
-        .select("user_id, role, grade_level")
+        .select("user_id, user_role_id")
         .eq("user_id", supervisor_id)
         .maybeSingle();
 
@@ -101,13 +106,22 @@ export async function PATCH(req: NextRequest) {
         );
       }
 
+      const user_role_label = await resolveUserRoleLabelById(
+        supabaseAdmin,
+        supervisor.user_role_id,
+      );
+
       if (
-        !canAssignAsSupervisor(supervisor, target, gradeConfig)
+        !canAssignAsSupervisor(
+          { ...supervisor, user_role_label },
+          { ...target, user_role_label: targetRoleLabel },
+          "manageUser",
+        )
       ) {
         return NextResponse.json(
           {
             error:
-              "Invalid supervisor — must be L4 or above and strictly senior to the employee's grade.",
+              "Invalid supervisor — must have the Executive Role, Human Resource, or Supervisory Role User role.",
           },
           { status: 400 },
         );

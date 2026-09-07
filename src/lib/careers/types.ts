@@ -107,8 +107,11 @@ export interface AiScreening {
    * or on reports generated before this field was added.
    */
   certificate_validation_summary?: string;
-  /** Internal HR age band used for shortlisting — not shown to applicants. */
-  grade_level?: string;
+  /**
+   * Internal HR age band used for shortlisting — not shown to applicants.
+   * Sourced from the job posting's own Age field (Create job posting), not
+   * from a grade-level config.
+   */
   age_min?: number;
   age_max?: number;
   applicant_age?: number | null;

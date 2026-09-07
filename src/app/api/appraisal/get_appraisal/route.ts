@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     let archived = searchParams.get("archived");
 
-    const fullAccess = hasFullAppraisalAccess(caller.role, caller.grade_level);
+    const fullAccess = hasFullAppraisalAccess(caller.role);
     const canBrowsePeriods = canViewAllAppraisalPeriods(caller.role);
 
     // Employees (any grade) are locked to the single active period. Manager /

@@ -18,7 +18,7 @@ import {
   periodLabel,
 } from "@/lib/appraisal/deadlines";
 import { canAppraiseOthers } from "@/lib/appraisal/sections";
-import { isSuperAdmin } from "@/lib/accessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import {
   consultantSelfServiceBlockedMessage,
@@ -50,6 +50,9 @@ function AppraisalFormPageContent() {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const role = resolveAccessProfile(profile, sessionRole)?.role ?? sessionRole;
+  const hasSupervisees = !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
     profile?.grade_level,
@@ -92,9 +95,7 @@ function AppraisalFormPageContent() {
     },
   });
 
-  const canSuperviseOthers =
-    canAppraiseOthers(profile?.grade_level, gradeLevelsConfig) ||
-    isSuperAdmin(profile?.role);
+  const canSuperviseOthers = canAppraiseOthers(role, hasSupervisees);
 
   const blockConsultantSelfStart =
     isFreshFill && isConsultant && !existingAppraisalId && !canSuperviseOthers;

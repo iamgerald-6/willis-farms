@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { fetchResolvedInterviewGuide } from "@/lib/careers/fetchResolvedInterviewGuide";
-import { resolveInterviewGuideKey } from "@/lib/careers/jobPostingOptions";
+import { fetchPostingInterviewContext } from "@/lib/careers/fetchPostingInterviewContext";
 import {
   findPanelByToken,
   scoreSubmission,
@@ -29,7 +28,7 @@ async function loadApplications() {
   const { data, error } = await supabaseAdmin
     .from("job_applications")
     .select(
-      "id, full_name, role_title, reference_number, role_slug, status, interview_form_data",
+      "id, full_name, role_title, reference_number, role_slug, job_posting_id, status, interview_form_data",
     )
     .in("status", Array.from(INTERVIEW_STATUSES));
 
@@ -77,13 +76,9 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       });
     }
 
-    const guideKey = await resolveInterviewGuideKey(
+    const { guide } = await fetchPostingInterviewContext(
       loaded.supabaseAdmin,
-      match.application.role_slug,
-    );
-    const guide = await fetchResolvedInterviewGuide(
-      loaded.supabaseAdmin,
-      guideKey,
+      match.application.job_posting_id,
     );
     if (!guide) {
       return NextResponse.json({ error: "Interview guide not found." }, { status: 404 });
@@ -177,16 +172,9 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ success: true, data: { draft: true } });
     }
 
-    const guideKey = await resolveInterviewGuideKey(
+    const { guide } = await fetchPostingInterviewContext(
       loaded.supabaseAdmin,
-      match.application.role_slug,
-    );
-    if (!guideKey) {
-      return NextResponse.json({ error: "Interview guide not found." }, { status: 400 });
-    }
-    const guide = await fetchResolvedInterviewGuide(
-      loaded.supabaseAdmin,
-      guideKey,
+      match.application.job_posting_id,
     );
     if (!guide) {
       return NextResponse.json({ error: "Interview guide not found." }, { status: 404 });

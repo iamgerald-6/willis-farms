@@ -24,8 +24,10 @@ import {
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { collectExistingEmployeeIds } from "@/lib/careers/hrEmployeeDefaults";
 import { invitePlatformEmployee } from "@/lib/careers/invitePlatformEmployee";
+import { resolveEmployeeOrgPlacementFromPosting } from "@/lib/careers/resolveEmployeeOrgPlacement";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
+import { fetchUserRoleLabelMap } from "@/lib/userRoleAccessControl";
 
 /**
  * Senior HR or an authorised consultant approves onboarding and sends the WillsOne invite.
@@ -80,7 +82,8 @@ export async function POST(req: NextRequest) {
         role_title,
         role_slug,
         reference_number,
-        status
+        status,
+        job_posting_id
       )
     `,
     )
@@ -146,6 +149,7 @@ export async function POST(req: NextRequest) {
     role_slug: string;
     reference_number: string;
     status: string;
+    job_posting_id: string | null;
   } | null;
 
   if (!app?.full_name) {
@@ -183,17 +187,23 @@ export async function POST(req: NextRequest) {
   const { companyEmails } = await collectExistingEmployeeIds(supabaseAdmin);
   const { data: existingUsers, error: usersError } = await supabaseAdmin
     .from("users")
-    .select("user_id, email, first_name, last_name, grade_level, role");
+    .select("user_id, email, first_name, last_name, grade_level, role, user_role_id");
 
   if (usersError) {
     return NextResponse.json({ error: usersError.message }, { status: 500 });
   }
 
+  const userRoleLabels = await fetchUserRoleLabelMap(supabaseAdmin);
+  const existingUsersWithRoleLabel = (existingUsers ?? []).map((u) => ({
+    ...u,
+    user_role_label: u.user_role_id ? userRoleLabels.get(u.user_role_id) ?? null : null,
+  }));
+
   const prefill = buildOnboardingInvitePrefill({
     app,
     form_data: submission.form_data as OnboardingFormData,
     hr_data: mergedHr,
-    existingUsers: existingUsers ?? [],
+    existingUsers: existingUsersWithRoleLabel,
     existingEmails: companyEmails,
     gradeConfig,
     emailDomain,
@@ -225,6 +235,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const orgPlacement = await resolveEmployeeOrgPlacementFromPosting(
+    supabaseAdmin,
+    app.job_posting_id,
+  );
+
   const inviteResult = await invitePlatformEmployee(supabaseAdmin, {
     email: prefill.email,
     invite_delivery_email: prefill.delivery_email,
@@ -238,6 +253,7 @@ export async function POST(req: NextRequest) {
     supervisor_id: prefill.supervisor_id ?? null,
     application_id,
     created_by: caller.id,
+    ...orgPlacement,
   });
 
   if (!inviteResult.ok) {

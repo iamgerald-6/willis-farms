@@ -5,13 +5,14 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
-import type { OrgMappingGroup } from "@/lib/organizationalStructureMappings";
 
 /**
- * PATCH — rename a custom list. Only `label` (and the `singular` derived
- * from it) can change — `code` and `table_name` stay put, same as `code`
- * being immutable on the fixed lists, since the physical table is already
- * named after it.
+ * PATCH — rename a custom list and/or toggle it active/disabled. Renaming
+ * only changes `label` (and the `singular` derived from it) — `code` and
+ * `table_name` stay put, since the physical table is already named after
+ * it. Disabling a list doesn't touch its table or data at all — it just
+ * hides it from anywhere it'd be picked for new use (see is_active on
+ * OrgCustomListType).
  */
 export async function PATCH(
   req: NextRequest,
@@ -23,14 +24,29 @@ export async function PATCH(
     const caller = await requireSystemDefinitionsAccess(req, "edit");
     if (!caller) {
       return jsonForbidden(
-        "System Definitions edit access is required to rename a list.",
+        "System Definitions edit access is required to edit a list.",
       );
     }
 
     const body = await req.json();
-    const label = (body.label as string | undefined)?.trim();
-    if (!label) {
-      return NextResponse.json({ error: "List name is required" }, { status: 400 });
+    const updates: Record<string, unknown> = {};
+
+    if (body.label !== undefined) {
+      const label = (body.label as string | undefined)?.trim();
+      if (!label) {
+        return NextResponse.json({ error: "List name is required" }, { status: 400 });
+      }
+      updates.label = label;
+      // Same naive singular derivation used at creation time.
+      updates.singular = label.replace(/s$/i, "") || label;
+    }
+
+    if (typeof body.is_active === "boolean") {
+      updates.is_active = body.is_active;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }
 
     const supabase = getSupabaseAdminFromAuth();
@@ -41,12 +57,9 @@ export async function PATCH(
       );
     }
 
-    // Same naive singular derivation used at creation time.
-    const singular = label.replace(/s$/i, "") || label;
-
     const { data, error } = await supabase
       .from("org_custom_list_types")
-      .update({ label, singular })
+      .update(updates)
       .eq("id", id)
       .select()
       .single();
@@ -62,11 +75,10 @@ export async function PATCH(
 }
 
 /**
- * DELETE — remove a custom list type: drops any mapping groups that link
- * to it (their own tables too, same as deleting a mapping group directly),
- * then drops the list's own physical table, then its registry row.
- * Irreversible, same as deleting any of the fixed org structure lists'
- * underlying table would be.
+ * DELETE — remove a custom list type: drops its job_postings foreign key
+ * column first (so no column is left pointing at a table about to
+ * disappear), then the list's own physical table, then its registry row.
+ * Irreversible.
  */
 export async function DELETE(
   req: NextRequest,
@@ -101,29 +113,17 @@ export async function DELETE(
     }
     const config = listType as OrgCustomListType;
 
-    const { data: dependentGroups, error: dependentGroupsError } = await supabase
-      .from("org_mapping_groups")
-      .select("*")
-      .or(`parent_list_key.eq.${id},child_list_key.eq.${id}`);
-
-    if (dependentGroupsError) {
-      return NextResponse.json({ error: dependentGroupsError.message }, { status: 500 });
-    }
-
-    for (const group of (dependentGroups ?? []) as OrgMappingGroup[]) {
-      const { error: dropMappingTableError } = await supabase.rpc(
-        "drop_org_dynamic_mapping_table",
-        { p_table_name: group.table_name },
-      );
-      if (dropMappingTableError) {
-        return NextResponse.json({ error: dropMappingTableError.message }, { status: 500 });
-      }
-      const { error: deleteGroupError } = await supabase
-        .from("org_mapping_groups")
-        .delete()
-        .eq("id", group.id);
-      if (deleteGroupError) {
-        return NextResponse.json({ error: deleteGroupError.message }, { status: 500 });
+    for (const column of [
+      config.job_posting_column,
+      config.job_posting_min_column,
+      config.job_posting_max_column,
+    ]) {
+      if (!column) continue;
+      const { error: dropColumnError } = await supabase.rpc("drop_job_posting_org_column", {
+        p_column_name: column,
+      });
+      if (dropColumnError) {
+        return NextResponse.json({ error: dropColumnError.message }, { status: 500 });
       }
     }
 

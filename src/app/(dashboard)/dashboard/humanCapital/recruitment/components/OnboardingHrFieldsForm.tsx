@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
@@ -20,22 +20,14 @@ import {
   ONBOARDING_HR_FIELDS_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
-import {
-  SALARY_TIER_IDS,
-  SALARY_TIER_LABELS,
-  resolveSalaryForGradeTier,
-  validateGrossSalaryInBand,
-} from "@/lib/systemDefinitions/salaryRanges";
+import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
 import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
-import {
-  eligibleSupervisorsForEmployee,
-} from "@/lib/supervisorAssignment";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
 
@@ -131,23 +123,6 @@ export default function OnboardingHrFieldsForm({
   const { domain: companyEmailDomain } = useCompanyEmailDomain();
   const salaryGhsTouched = useRef(false);
 
-  const applySalaryFromSystem = useCallback(
-    (gradeLevel: string, tierInput?: string, forceSalary = false) => {
-      const tier = tierInput?.trim() || "mid";
-      const resolved = resolveSalaryForGradeTier(gradeLevel, tier, gradeConfig);
-      setHrData((prev) => ({
-        ...prev,
-        salary_tier: tier,
-        salary_range: resolved.formatted || undefined,
-        salary_ghs:
-          forceSalary || !salaryGhsTouched.current
-            ? resolved.salaryGhs || prev.salary_ghs
-            : prev.salary_ghs,
-      }));
-    },
-    [gradeConfig, setHrData],
-  );
-
   const { data: allUsers = [] } = useQuery<User[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
@@ -156,25 +131,25 @@ export default function OnboardingHrFieldsForm({
     },
   });
 
-  const employeeGradeStub = useMemo(
-    () => ({
-      user_id: "pending",
-      role: "employee" as const,
-      grade_level: hrData.grade_level ?? null,
-    }),
-    [hrData.grade_level],
-  );
-
+  // Assigned supervisor is scoped to whoever currently holds the "Reporting
+  // to" role/title picked above — not a grade-based lookup — since HR is
+  // choosing which specific person (among possibly several with the same
+  // title) this hire will actually report to. Only currently-employed staff
+  // (not disabled) are eligible.
   const eligibleSupervisors = useMemo(() => {
-    if (!hrData.grade_level) return [];
-    return eligibleSupervisorsForEmployee(
-      employeeGradeStub,
-      allUsers,
-      gradeConfig,
-    );
-  }, [allUsers, employeeGradeStub, gradeConfig, hrData.grade_level]);
+    const roleTitle = hrData.reporting_to?.trim();
+    if (!roleTitle) return [];
+    return allUsers
+      .filter((u) => !u.is_disabled && u.job_position?.trim() === roleTitle)
+      .sort((a, b) => {
+        const nameA = `${a.first_name} ${a.last_name}`.trim();
+        const nameB = `${b.first_name} ${b.last_name}`.trim();
+        return nameA.localeCompare(nameB);
+      });
+  }, [allUsers, hrData.reporting_to]);
 
-  // Clear supervisor when grade changes and current pick is no longer valid.
+  // Clear supervisor when the reporting-to role changes and current pick is
+  // no longer among the people holding that role.
   useEffect(() => {
     if (!hrData.supervisor_id) return;
     const stillValid = eligibleSupervisors.some(
@@ -189,22 +164,6 @@ export default function OnboardingHrFieldsForm({
     }
   }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
 
-  useEffect(() => {
-    if (!hrData.grade_level?.trim()) return;
-    if (hrData.salary_range?.trim() && hrData.salary_ghs?.trim()) return;
-    applySalaryFromSystem(
-      hrData.grade_level,
-      hrData.salary_tier,
-      !hrData.salary_ghs?.trim(),
-    );
-  }, [
-    applySalaryFromSystem,
-    hrData.grade_level,
-    hrData.salary_tier,
-    hrData.salary_range,
-    hrData.salary_ghs,
-  ]);
-
   const departmentOptions = useMemo(() => {
     const lists = optionLists ?? {};
     const rank = gradeLevelToRank(hrData.grade_level, gradeConfig ?? undefined);
@@ -214,13 +173,17 @@ export default function OnboardingHrFieldsForm({
     return lists[ONBOARDING_DEPARTMENTS_L1L6_LIST] ?? [];
   }, [hrData.grade_level, optionLists, gradeConfig]);
 
-  // Real position titles currently held by senior staff (manager/admin/
-  // super_admin) — not the recruitment job-postings catalog, since "Reporting
+  // Real position titles currently held by staff with the Supervisory Role
+  // User role — not the recruitment job-postings catalog, since "Reporting
   // to" should reflect who's actually in the org today, not a hypothetical
-  // opening. HR picks the applicable one per offer.
+  // opening. Onboarding only ever assigns a new hire's supervisor to someone
+  // with Supervisory Role (narrower than Manage User's pool, which also
+  // allows Executive Role / Human Resource) — see
+  // canBeAssignedAsSupervisorAtOnboardingByRoleLabel. HR picks the
+  // applicable one per offer.
   const reportingToOptions = useMemo(() => {
     const titles = allUsers
-      .filter((u) => isSeniorManagement(u.role))
+      .filter((u) => !u.is_disabled && isSupervisoryRoleLabel(u.user_role_label))
       .map((u) => u.job_position?.trim())
       .filter((title): title is string => Boolean(title));
     return [...new Set(titles)].sort((a, b) => a.localeCompare(b));
@@ -272,9 +235,9 @@ export default function OnboardingHrFieldsForm({
       return (
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
-          {!hrData.grade_level ? (
+          {!hrData.reporting_to?.trim() ? (
             <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              Select a grade level first to see eligible supervisors.
+              Select who this hire reports to first to see who currently holds that role.
             </p>
           ) : (
             <select
@@ -295,7 +258,7 @@ export default function OnboardingHrFieldsForm({
             >
               <option value="">
                 {eligibleSupervisors.length === 0
-                  ? "No eligible supervisors for this grade"
+                  ? "No one currently holds that role"
                   : "Select supervisor…"}
               </option>
               {eligibleSupervisors.map((sup) => (
@@ -314,80 +277,60 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldType === "grade_level") {
+      // Grade level now always comes from the application's linked job
+      // posting (see resolveOfferTermsFromPosting / postingLockedFields in
+      // OfferTermsPanel) — every posting requires one. This form no longer
+      // offers a manual L1–L7 select; a legacy application with nothing set
+      // just shows a plain notice instead of letting HR pick from the old
+      // "Grade levels & linked roles" system.
       return (
-        <label key={field.id} className={`block ${spanClass}`}>
-          <span className="text-xs text-gray-500">{field.label}</span>
-          <select
-            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-            value={hrData.grade_level ?? ""}
-            onChange={(e) => {
-              onGradeChange?.();
-              const grade = e.target.value || undefined;
-              const tier = hrData.salary_tier;
-              salaryGhsTouched.current = false;
-              setHrData((prev) => ({ ...prev, grade_level: grade }));
-              if (grade) {
-                applySalaryFromSystem(grade, tier, true);
-              }
-            }}
-          >
-            <option value="">Select grade level…</option>
-            {gradeOptions.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div key={field.id} className={spanClass}>
+          {hrData.grade_level ? (
+            <ReadOnlyValue label={field.label} value={hrData.grade_level} />
+          ) : (
+            <label className="block">
+              <span className="text-xs text-gray-500">{field.label}</span>
+              <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                Not set on the linked job posting — add a Grade level there.
+              </p>
+            </label>
+          )}
+        </div>
       );
     }
 
     if (field.fieldType === "salary_tier") {
+      // Same as grade level — sourced from the posting's own Salary field
+      // (see resolveOfferTermsFromPosting), never manually picked here.
       return (
-        <label key={field.id} className={`block ${spanClass}`}>
-          <span className="text-xs text-gray-500">{field.label}</span>
-          {!hrData.grade_level ? (
-            <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              Select a grade level first to pick a salary tier.
-            </p>
+        <div key={field.id} className={spanClass}>
+          {hrData.salary_tier ? (
+            <ReadOnlyValue label={field.label} value={hrData.salary_tier} />
           ) : (
-            <select
-              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              value={hrData.salary_tier ?? "mid"}
-              onChange={(e) => {
-                salaryGhsTouched.current = false;
-                applySalaryFromSystem(hrData.grade_level!, e.target.value, true);
-              }}
-            >
-              {SALARY_TIER_IDS.map((tier) => (
-                <option key={tier} value={tier}>
-                  {SALARY_TIER_LABELS[tier]}
-                </option>
-              ))}
-            </select>
+            <label className="block">
+              <span className="text-xs text-gray-500">{field.label}</span>
+              <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                Not set on the linked job posting — add a Salary there.
+              </p>
+              {shouldShowHint(field.hint) && (
+                <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+              )}
+            </label>
           )}
-          {shouldShowHint(field.hint) && (
-            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
-          )}
-        </label>
+        </div>
       );
     }
 
     if (field.fieldType === "salary_range") {
-      const rangeText =
-        hrData.salary_range?.trim() ||
-        (hrData.grade_level
-          ? resolveSalaryForGradeTier(
-              hrData.grade_level,
-              hrData.salary_tier ?? "mid",
-              gradeConfig,
-            ).formatted
-          : "");
+      // Sourced exclusively from the linked job posting's Salary field.
+      // Left blank (no legacy grade-tier substitution) when the posting
+      // has no salary band.
+      const rangeText = hrData.salary_range?.trim() || "";
       return (
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
           <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-            {rangeText || "Select grade and salary tier first."}
+            {rangeText || "Not set on the linked job posting."}
           </div>
         </label>
       );
@@ -587,21 +530,15 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldKey === "salary_ghs") {
-      const bandCheck = validateGrossSalaryInBand(
-        value,
-        hrData.grade_level,
-        hrData.salary_tier,
-        gradeConfig,
-      );
-      const bandText =
-        hrData.salary_range?.trim() ||
-        (hrData.grade_level
-          ? resolveSalaryForGradeTier(
-              hrData.grade_level,
-              hrData.salary_tier ?? "mid",
-              gradeConfig,
-            ).formatted
-          : "");
+      // The posting's own Salary field (salary_band_min/max) is the sole
+      // source of truth for a validation band. If the posting has no band,
+      // there's nothing to validate against — skip band validation rather
+      // than falling back to the old grade-level pay-tier table.
+      const hasPostingBand = hrData.salary_band_min != null || hrData.salary_band_max != null;
+      const bandCheck = hasPostingBand
+        ? validateGrossSalaryAgainstBand(value, hrData.salary_band_min, hrData.salary_band_max)
+        : { valid: true, message: null };
+      const bandText = hrData.salary_range?.trim() || "";
 
       return (
         <label key={field.id} className={`block ${spanClass}`}>

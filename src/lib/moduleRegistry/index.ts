@@ -118,7 +118,6 @@ export {
   periodLabel,
   reviewedBy,
   sectionSetForQuarter,
-  sectionsFor,
   supervisableGradeBands,
   FINAL_DECISIONS,
   GENERAL_PROMOTION_CONDITIONS,

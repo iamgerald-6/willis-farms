@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 
 export function useCurrentUser() {
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -25,7 +26,9 @@ export function useCurrentUser() {
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
-  const role = profile?.role ?? session?.user?.user_metadata?.role ?? null;
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const role = accessProfile?.role ?? sessionRole ?? null;
 
   return {
     isLoading: sessionLoading || usersLoading,

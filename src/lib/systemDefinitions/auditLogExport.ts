@@ -10,10 +10,6 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
 
 export const AUDIT_FIELD_LABEL: Record<string, string> = {
   annualLeaveCapDays: "Annual leave cap (days)",
-  sectionWeightRules: "Section weight rules",
-  sectionBaseWeights: "Section base weights",
-  globalSectionWeights: "Global section weights",
-  sectionContentOverrides: "Rating section content",
   competencyContentOverrides: "Competency sections",
   refereeReferenceConfig: "Referee reference config",
   applicationFormConfig: "Application form config",

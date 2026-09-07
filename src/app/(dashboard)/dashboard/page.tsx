@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { TMProject } from "@/types/taskManager";
-import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { isFullRoleAccess, resolveAccessProfile } from "@/lib/pagePermissions";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { getStatusSummary } from "./humanCapital/appraisal/component/appraisalTypes";
 import type { JobApplication } from "@/lib/careers/types";
@@ -34,13 +34,10 @@ import {
 import {
   DonutChart,
   CategoryBarChart,
-  HorizontalBarChart,
   SegmentedBar,
   ScoreRing,
   ScoreHistoryChart,
 } from "./components/DashboardCharts";
-
-const BRAND = "#C62828";
 
 // Fixed display order + representative stand-in record for each status the
 // Appraisal page can show (see getStatusSummary in appraisalTypes.ts) — used
@@ -546,8 +543,6 @@ export default function DashboardPage() {
 
   const userId = session?.user?.id;
   const metaRole = session?.user?.user_metadata?.role as string | undefined;
-  const isLikelyAdmin =
-    metaRole === "admin" || metaRole === "super_admin" || metaRole === "manager";
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["get_users"],
@@ -556,7 +551,12 @@ export default function DashboardPage() {
   });
 
   const profile = users?.find((u) => u.user_id === userId);
-  const role = profile?.role ?? metaRole;
+  // Resolve the same way every other page does — the new user_role_label,
+  // not the stale raw `role` column — so this page's "who counts as admin"
+  // check (and the role badge text below) matches the new role system
+  // instead of the pre-migration one.
+  const accessProfile = resolveAccessProfile(profile, metaRole);
+  const role = accessProfile?.role ?? metaRole;
   const isAdmin = isFullRoleAccess(role);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
@@ -567,7 +567,7 @@ export default function DashboardPage() {
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
     queryKey: ["leave", isAdmin ? "all" : userId],
     queryFn: async () => {
-      if (isAdmin || isLikelyAdmin) {
+      if (isAdmin) {
         const res = await api.get("/leave/all");
         return Array.isArray(res.data) ? res.data : (res.data.data ?? []);
       }
@@ -1120,29 +1120,6 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  const staffRoleBars = [
-    {
-      label: "Employees",
-      value: users?.filter((u) => u.role === "employee").length ?? 0,
-      color: BRAND,
-    },
-    {
-      label: "Admins",
-      value: users?.filter((u) => u.role === "admin").length ?? 0,
-      color: "#6b7280",
-    },
-    {
-      label: "Super Admins",
-      value: users?.filter((u) => u.role === "super_admin").length ?? 0,
-      color: "#374151",
-    },
-    {
-      label: "Managers",
-      value: users?.filter((u) => u.role === "manager").length ?? 0,
-      color: "#9ca3af",
-    },
-  ].filter((x) => x.value > 0);
-
   return (
     <div className="bg-white min-h-full">
       <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
@@ -1334,12 +1311,6 @@ export default function DashboardPage() {
                 items={adminAttentionItems}
                 onClose={() => setShowAllAttention(false)}
               />
-            )}
-
-            {staffRoleBars.length > 0 && (
-              <Panel title="Staff by role">
-                <HorizontalBarChart items={staffRoleBars} />
-              </Panel>
             )}
           </>
         ) : isConsultant ? (

@@ -45,6 +45,23 @@ export interface User {
   created_by?: string | null;
   /** Assigned reporting supervisor (L4+ and strictly senior to this user's grade). */
   supervisor_id?: string | null;
+  /** Org placement copied from the linked job posting at hire time — see
+   * resolveEmployeeOrgPlacement.ts. Editable afterward by HR (e.g. for
+   * transfers/promotions) from the Access Control profile page. */
+  site_id?: string | null;
+  business_unit_id?: string | null;
+  department_id?: string | null;
+  section_id?: string | null;
+  position_id?: string | null;
+  grade_level_id?: string | null;
+  /** "User role" org-structure list (custom list created under Organizational
+   * structure) — same placement mechanism as the 6 fields above. */
+  user_role_id?: string | null;
+  /** Resolved label for user_role_id (e.g. "Executive", "Supervisory") —
+   * attached server-side by /get_user, not a real column. See
+   * userRoleAccessControl.ts; this is what access-control decisions should
+   * key off going forward, not the old `role` field. */
+  user_role_label?: string | null;
   // Task Manager: can this user see every task/project, or only their own?
   // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
   // false except super_admin, who always has it regardless of this value.

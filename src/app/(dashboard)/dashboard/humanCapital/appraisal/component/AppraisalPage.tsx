@@ -23,16 +23,15 @@ import {
 import {
   Ratings,
   SectionRatings,
+  SectionDef,
   computeWeightedScore,
   ITEM_RATING_MIN,
   ITEM_RATING_MAX,
 } from "@/lib/appraisal/scoring";
 import {
   Quarter,
-  canRate,
-  canAppraiseOthers,
   supervisableGradeBands,
-  sectionsFor,
+  sectionSetForQuarter,
 } from "@/lib/appraisal/sections";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
@@ -40,6 +39,7 @@ import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeC
 import { resolveAppraisalSupervisorFields } from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
+import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   computeDeadline,
   getActiveAppraisalPeriod,
@@ -50,15 +50,6 @@ import {
 import { DeadlineBanner } from "./DeadlineBanner";
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import { getPromotionReadinessOptions } from "@/lib/moduleRegistry";
-import {
-  APPRAISAL_MODULE_ID_CONST,
-  APPRAISAL_SECTION_AUTH_LIST,
-  applySectionBaseWeights,
-  applySectionContentOverrides,
-  applySectionWeightRules,
-  type ModuleBusinessLogic,
-  type SystemOption,
-} from "@/lib/systemDefinitions";
 import { useAppraisalFormProgress } from "@/lib/appraisal/appraisalFormProgress";
 import {
   canParticipateAsProgramSubject,
@@ -196,7 +187,7 @@ function SectionBlock({
       >
         <div className="flex items-center gap-3">
           <span>
-            {section.key}. {section.title}
+            Section {section.key}: {section.title}
           </span>
           <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full text-white/70">
             Weight: {Math.round(section.weight * 100)}%
@@ -359,40 +350,20 @@ export default function AppraisalForm({
     },
   });
 
-  const { data: sectionAuthOptions = [] } = useQuery<SystemOption[]>({
-    queryKey: ["appraisal_section_authorisations"],
-    queryFn: async () => {
-      const res = await api.get("/system-definitions/options", {
-        params: {
-          module_id: APPRAISAL_MODULE_ID_CONST,
-          option_list: APPRAISAL_SECTION_AUTH_LIST,
-        },
-      });
-      return res.data.data as SystemOption[];
+  // Org-structure Sections list — used to resolve the employee's own
+  // section (users.section_id, copied from their hiring posting) into a
+  // label, so Section Authorisations Held can auto-fill from the section
+  // actually attached to their role instead of always starting blank.
+  const { data: orgSections = [] } = useQuery<{ id: string; label: string }[]>(
+    {
+      queryKey: ["appraisal_org_sections"],
+      queryFn: async () => {
+        const res = await api.get("/appraisal/sections");
+        return res.data.data as { id: string; label: string }[];
+      },
     },
-  });
+  );
 
-  const { data: moduleConfig } = useQuery<{
-    businessLogic: ModuleBusinessLogic;
-  }>({
-    queryKey: ["appraisal_module_config"],
-    queryFn: async () => {
-      const res = await api.get(
-        `/system-definitions/modules/${encodeURIComponent(APPRAISAL_MODULE_ID_CONST)}`,
-      );
-      return {
-        businessLogic: (res.data.data?.businessLogic ??
-          {}) as ModuleBusinessLogic,
-      };
-    },
-  });
-
-  const weightRules = moduleConfig?.businessLogic?.sectionWeightRules ?? [];
-  const globalSectionWeights =
-    moduleConfig?.businessLogic?.globalSectionWeights;
-  const sectionBaseWeights = moduleConfig?.businessLogic?.sectionBaseWeights;
-  const sectionContentOverrides =
-    moduleConfig?.businessLogic?.sectionContentOverrides;
   const allUsers = usersData ?? [];
 
   // ── Current viewer profile ──
@@ -402,7 +373,7 @@ export default function AppraisalForm({
   );
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
-  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.role);
+  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.user_role_label);
   const isConsultantViewer = isConsultantEmployee(currentUserGrade, gradeConfig);
 
   // ── Which side of the form am I filling? ──
@@ -433,10 +404,6 @@ export default function AppraisalForm({
   const hasSubject = isFillingSecond || !!selectedEmployee;
   const supervisorMode = hasSubject && !isOwnAppraisal(viewer, subject);
   const selfAppraisalMode = hasSubject && !supervisorMode;
-
-  // Can this viewer appraise anyone other than themselves at all? (L4+)
-  const canSelectForOthers =
-    !isFillingSecond && (canAppraiseOthers(currentUserGrade) || isSuperAdmin);
 
   const watchedSupervisorName = watch("immediate_supervisor");
   const watchedSupervisorEmail = watch("supervisor_email");
@@ -523,34 +490,6 @@ export default function AppraisalForm({
     }
   }, [existingAppraisal, allUsers, setValue]);
 
-  // ── Immediate Supervisor dropdown — every user eligible to rate the
-  // employee actually being appraised (self, or whoever's picked in "Select
-  // Employee" below), same L4+/strictly-senior rule the rest of the
-  // appraisal system already uses (canRate). Picking a name here writes
-  // BOTH immediate_supervisor and supervisor_email together (see
-  // handleSupervisorSelect) — there's no longer a way to attach a
-  // supervisor's name without their email coming along with it, which is
-  // what actually routes the "please complete your evaluation" notification. ──
-  const employeeGradeForSupervisorList = fillingForSelf
-    ? currentUserGrade
-    : selectedEmployee?.grade_level;
-  const eligibleSupervisors = useMemo(() => {
-    if (isFillingSecond || !employeeGradeForSupervisorList) return [];
-    const employeeId = fillingForSelf ? userId : selectedEmployee?.user_id;
-    return allUsers.filter(
-      (u) =>
-        u.user_id !== employeeId &&
-        canRate(u.grade_level, employeeGradeForSupervisorList),
-    );
-  }, [
-    allUsers,
-    isFillingSecond,
-    employeeGradeForSupervisorList,
-    fillingForSelf,
-    userId,
-    selectedEmployee,
-  ]);
-
   const assignedSupervisor = useMemo(() => {
     const id = currentUserProfile?.supervisor_id;
     if (!id) return null;
@@ -558,16 +497,6 @@ export default function AppraisalForm({
   }, [allUsers, currentUserProfile?.supervisor_id]);
 
   const hasAssignedSupervisor = !!assignedSupervisor;
-
-  const handleSupervisorSelect = (supervisorUserId: string) => {
-    setSelectedSupervisorId(supervisorUserId);
-    const sup = eligibleSupervisors.find((u) => u.user_id === supervisorUserId);
-    setValue(
-      "immediate_supervisor",
-      sup ? `${sup.first_name} ${sup.last_name}` : "",
-    );
-    setValue("supervisor_email", sup?.email ?? "");
-  };
 
   // Filling for someone I supervise — lock to my own name+email.
   // Self-appraisal: use assigned supervisor from User Management when set.
@@ -604,62 +533,66 @@ export default function AppraisalForm({
   ]);
 
   // ── Filter employees for a fresh supervisor fill ──
+  // Who shows up here must match who canSuperviseAppraisal (appraisal/roles.ts)
+  // actually lets this viewer appraise: Super Admin sees every eligible
+  // subject; everyone else sees only the people actually assigned to them as
+  // supervisor_id — never a grade-rank or role-only comparison.
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
-    const allowedGrades = new Set<string>();
-    for (const band of allowedGradeBands) {
-      for (const grade of appraisalFormKeyCovers[band.value] ?? []) {
-        allowedGrades.add(grade);
-      }
-    }
     return allUsers.filter((u) => {
       if (!canParticipateAsProgramSubject(u.grade_level, gradeConfig)) return false;
-      if (!u.grade_level || !allowedGrades.has(u.grade_level)) return false;
       if (u.user_id === userId) return false;
-      return isSuperAdmin || canRate(currentUserGrade, u.grade_level, gradeConfig);
+      return isSuperAdmin || isAssignedSupervisorOf(userId, u);
     });
-  }, [
-    allUsers,
-    allowedGradeBands,
-    appraisalFormKeyCovers,
-    userId,
-    currentUserGrade,
-    isSuperAdmin,
-    fillingForSelf,
-    isFillingSecond,
-    gradeConfig,
-  ]);
+  }, [allUsers, userId, isSuperAdmin, fillingForSelf, isFillingSecond, gradeConfig]);
+
+  // Can this viewer appraise anyone other than themselves at all? Super
+  // Admin always can; everyone else only if they have at least one person
+  // actually assigned to them as supervisor_id (see filteredEmployees above).
+  const canSelectForOthers =
+    !isFillingSecond && (isSuperAdmin || filteredEmployees.length > 0);
+
+  // Appraisal grade templates — one question set per exact Site/Business
+  // unit/Department/Section/Position/Grade level combination, matched
+  // against the appraised employee's own stored org placement (this fully
+  // replaces the old global L1-L7 grade-band system — no fallback). If no
+  // template has been built yet for this employee's exact combination, they
+  // have no sections to fill until HR builds one under System Definitions
+  // > Appraisal > Appraisal scope.
+  const employeeOrgPlacement = useMemo(
+    () => ({
+      site_id: selectedEmployee?.site_id ?? null,
+      business_unit_id: selectedEmployee?.business_unit_id ?? null,
+      department_id: selectedEmployee?.department_id ?? null,
+      section_id: selectedEmployee?.section_id ?? null,
+      position_id: selectedEmployee?.position_id ?? null,
+      grade_level_id: selectedEmployee?.grade_level_id ?? null,
+    }),
+    [selectedEmployee],
+  );
+  const hasCompleteOrgPlacement = Object.values(employeeOrgPlacement).every(Boolean);
+
+  const { data: gradeTemplate } = useQuery<{
+    id: string;
+    quarterly: SectionDef[];
+    annual: SectionDef[];
+  } | null>({
+    queryKey: ["appraisal_grade_template", employeeOrgPlacement],
+    queryFn: async () => {
+      const res = await api.get("/appraisal/grade-template", {
+        params: employeeOrgPlacement,
+      });
+      return res.data.data;
+    },
+    enabled: hasCompleteOrgPlacement,
+  });
 
   const sections = useMemo(() => {
-    const base = sectionsFor(gradeBand, quarter);
-    const withContent = applySectionContentOverrides(
-      base,
-      gradeBand,
-      quarter,
-      sectionContentOverrides,
-    );
-    const withBaseWeights = applySectionBaseWeights(
-      withContent,
-      gradeBand,
-      quarter,
-      globalSectionWeights,
-      sectionBaseWeights,
-    );
-    return applySectionWeightRules(
-      withBaseWeights,
-      selectedEmployee?.grade_level ?? currentUserGrade,
-      weightRules,
-    );
-  }, [
-    gradeBand,
-    quarter,
-    selectedEmployee?.grade_level,
-    currentUserGrade,
-    weightRules,
-    globalSectionWeights,
-    sectionBaseWeights,
-    sectionContentOverrides,
-  ]);
+    if (!gradeTemplate) return [];
+    return sectionSetForQuarter(quarter) === "quarterly"
+      ? gradeTemplate.quarterly
+      : gradeTemplate.annual;
+  }, [gradeTemplate, quarter]);
 
   const visibleSections =
     !isFillingSecond && !fillingForSelf && !selectedEmployee ? [] : sections;
@@ -706,6 +639,27 @@ export default function AppraisalForm({
       setValue("employee_email", currentUserProfile.email);
     }
   }, [fillingForSelf, currentUserProfile, setValue]);
+
+  // Section Authorisations Held is a locked field, always driven by the
+  // section attached to the selected employee's role (users.section_id,
+  // copied from their hiring posting — see resolveEmployeeOrgPlacement.ts),
+  // never a manual pick. Resolves against the org-structure Sections list
+  // itself (not the old generic system-definitions option list), and keeps
+  // the underlying form value in sync with whichever employee is currently
+  // selected so it still submits correctly even though there's no visible
+  // input for it.
+  const employeeSectionLabel = useMemo(() => {
+    if (!selectedEmployee?.section_id) return null;
+    return (
+      orgSections.find((s) => s.id === selectedEmployee.section_id)?.label ??
+      null
+    );
+  }, [selectedEmployee, orgSections]);
+
+  useEffect(() => {
+    if (isFillingSecond) return;
+    setValue("section_authorisations_held", employeeSectionLabel ?? "");
+  }, [isFillingSecond, employeeSectionLabel, setValue]);
 
   // Supervisor fill: derive the form band from the selected employee's grade.
   useEffect(() => {
@@ -838,6 +792,14 @@ export default function AppraisalForm({
     if (supervisorMode && !reviewDate) {
       errs.reviewDate = "Please schedule a final review date";
       toast.error("Please schedule a final review date");
+    }
+
+    if (selectedEmployee && visibleSections.length === 0) {
+      errs.sections =
+        "No appraisal question set is configured for this employee yet — ask HR to set one up under System Definitions before this can be submitted.";
+      toast.error(
+        "No appraisal question set is configured for this employee yet.",
+      );
     }
 
     let missingRatings = false;
@@ -1189,30 +1151,14 @@ export default function AppraisalForm({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            {isFillingSecond ? (
-              <ReadOnlyField
-                label="Section Authorisations Held"
-                value={existingAppraisal?.section_authorisations_held}
-              />
-            ) : (
-              <>
-                <FieldLabel>Section Authorisations Held</FieldLabel>
-                <select
-                  {...register("section_authorisations_held")}
-                  className={inputCls()}
-                >
-                  <option value="">Select section authorisation</option>
-                  {sectionAuthOptions.map((opt) => (
-                    <option
-                      key={opt.id}
-                      value={opt.legacy_value ?? opt.label}
-                    >
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            <ReadOnlyField
+              label="Section Authorisations Held"
+              value={
+                isFillingSecond
+                  ? existingAppraisal?.section_authorisations_held
+                  : (employeeSectionLabel ?? "Not set on employee record")
+              }
+            />
           </div>
           <div>
             {isFillingSecond ? (
@@ -1261,24 +1207,21 @@ export default function AppraisalForm({
                 />
               </div>
             ) : (
+              // No supervisor assigned in User Management yet. Only the
+              // actual assigned supervisor (users.supervisor_id) is allowed
+              // to complete the evaluation now (see canSuperviseAppraisal),
+              // so there's no safe way to let someone pick an arbitrary
+              // person here — picking the wrong one would just route the
+              // notification to someone who'd be rejected at submit time.
+              // The required hidden inputs stay empty, which blocks
+              // submission until a supervisor is actually assigned.
               <div>
                 <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
-                <select
-                  value={selectedSupervisorId}
-                  onChange={(e) => handleSupervisorSelect(e.target.value)}
-                  className={inputCls(!!errors.immediate_supervisor)}
-                >
-                  <option value="">
-                    {eligibleSupervisors.length === 0
-                      ? "No eligible supervisors found"
-                      : "Select supervisor's name"}
-                  </option>
-                  {eligibleSupervisors.map((u) => (
-                    <option key={u.user_id} value={u.user_id}>
-                      {u.first_name} {u.last_name} ({u.grade_level ?? "?"})
-                    </option>
-                  ))}
-                </select>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  No supervisor is assigned to you yet. Ask an admin to set
+                  your Assigned supervisor in Manage User before this
+                  appraisal can be completed.
+                </div>
                 <input
                   type="hidden"
                   {...register("immediate_supervisor", { required: true })}
@@ -1415,7 +1358,11 @@ export default function AppraisalForm({
 
         {visibleSections.length === 0 && (
           <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-            Select an employee above to load the rating sections
+            {!(isFillingSecond || fillingForSelf || selectedEmployee)
+              ? "Select an employee above to load the rating sections"
+              : !hasCompleteOrgPlacement
+                ? "This employee's org placement (Site/Business unit/Department/Section/Position/Grade level) isn't fully set up yet — ask HR to complete it in Manage User before an appraisal can be filled."
+                : "No appraisal question set has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions > Appraisal > Appraisal scope."}
           </div>
         )}
 

@@ -1,9 +1,13 @@
-import { canSignOffSkillLog } from "@/lib/accessControl";
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { AccessProfile } from "@/lib/pagePermissions";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
+import {
+  canBeAssignedAsSupervisorByRoleLabel,
+  isSuperAdminRoleLabel,
+  isSupervisoryRoleLabel,
+} from "@/lib/userRoleAccessControl";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type SkillLogRecord = {
@@ -23,9 +27,6 @@ function supervisorId(log: SkillLogRecord): string | undefined {
   return log.supervisor?.user_id ?? log.supervisor_id;
 }
 
-function fillerGrade(log: SkillLogRecord): string | null | undefined {
-  return log.supervisor?.grade_level;
-}
 
 export function canViewSkillLogRecord(
   profile: AccessProfile | null | undefined,
@@ -33,6 +34,7 @@ export function canViewSkillLogRecord(
   log: SkillLogRecord,
   groupPresets?: GroupPresetsMap | null,
   sessionRole?: string | null,
+  hasSupervisees = false,
 ): boolean {
   if (!profile || !userId) return false;
   if (!canPerformModuleAction(profile, "hc:skillLog", "view", sessionRole, groupPresets)) {
@@ -59,15 +61,30 @@ export function canViewSkillLogRecord(
     canPerformModuleAction(profile, "hc:skillLog", "approve", sessionRole, groupPresets)
   ) {
     if (log.status === "signed_off") return true;
-    if (
-      log.status === "submitted" &&
-      canSignOffSkillLog(profile.grade_level, fillerGrade(log))
-    ) {
+    if (log.status === "submitted" && canSignOffSkillLogEffective(profile, hasSupervisees)) {
       return true;
     }
   }
 
   return false;
+}
+
+/**
+ * Whether `profile` may sign off a submitted log — Super Admin always can;
+ * everyone else must actually hold the Supervisory Role AND have at least
+ * one employee assigned to them (supervisor_id) — a Supervisory-role label
+ * with nobody reporting to them doesn't qualify. This is a distinct admin/
+ * review capability, separate from who actually FILLS a specific employee's
+ * log (always their own assigned supervisor — see canFillSkillLogForEmployee
+ * below), and from `hasSupervisees`, which the caller must compute (see
+ * hasAssignedSupervisees below).
+ */
+function canSignOffSkillLogEffective(
+  profile: AccessProfile,
+  hasSupervisees: boolean,
+): boolean {
+  if (isSuperAdminRoleLabel(profile.role)) return true;
+  return isSupervisoryRoleLabel(profile.role) && hasSupervisees;
 }
 
 export function canApproveSkillLogRecord(
@@ -76,6 +93,7 @@ export function canApproveSkillLogRecord(
   log: SkillLogRecord,
   groupPresets?: GroupPresetsMap | null,
   sessionRole?: string | null,
+  hasSupervisees = false,
 ): boolean {
   if (!profile || !userId) return false;
   if (log.status !== "submitted") return false;
@@ -87,7 +105,23 @@ export function canApproveSkillLogRecord(
     return false;
   }
 
-  return canSignOffSkillLog(profile.grade_level, fillerGrade(log));
+  return canSignOffSkillLogEffective(profile, hasSupervisees);
+}
+
+/** Whether `userId` currently has at least one employee assigned to them as
+ * supervisor_id — required alongside the Supervisory Role label itself for
+ * sign-off/approval eligibility (see canSignOffSkillLogEffective above). */
+export async function hasAssignedSupervisees(
+  supabase: SupabaseClient | null,
+  userId: string | null | undefined,
+): Promise<boolean> {
+  if (!supabase || !userId) return false;
+  const { data } = await supabase
+    .from("users")
+    .select("user_id")
+    .eq("supervisor_id", userId)
+    .limit(1);
+  return !!data && data.length > 0;
 }
 
 export function canEditSkillLogDraft(
@@ -108,10 +142,16 @@ export function canFillSkillLog(
   sessionRole?: string | null,
 ): boolean {
   if (!profile) return false;
-  if (isConsultantGrade(profile.grade_level)) return false;
-  const grade = profile.grade_level;
-  const gradeNum = parseInt(String(grade ?? "").replace(/\D/g, ""), 10) || 0;
-  if (gradeNum < 4) return false; // L4+ fills logs (SKILL_LOG_MIN_FILLER_GRADE)
+
+  const role = profile.role ?? sessionRole;
+  // Only roles ever eligible to be someone's assigned supervisor (Executive
+  // Role, Human Resource, Supervisory Role, or Super Admin) can fill a skill
+  // log at all — WHICH employee's log they can actually fill is checked
+  // separately per-employee in canFillSkillLogForEmployee below, via the
+  // supervisor_id assignment. Standard, Consultant, and System Administrator
+  // never fill logs.
+  if (!canBeAssignedAsSupervisorByRoleLabel(role)) return false;
+
   return canPerformModuleAction(profile, "hc:skillLog", "add", sessionRole, groupPresets);
 }
 

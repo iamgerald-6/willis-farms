@@ -5,13 +5,19 @@ import {
   type JobPostingStatus,
   type PostingHistoryEntry,
 } from "@/lib/careers/jobPostings";
-import { resolveJobTitleKey } from "@/lib/careers/resolveJobTitleKey";
 import { resolvePostingActor } from "@/lib/careers/resolvePostingActor";
 import {
   isMissingColumnError,
   JOB_POSTINGS_MIGRATION_HINT,
   updateJobPostingWithColumnFallback,
 } from "@/lib/careers/jobPostingDb";
+import { slugifyJobTitle } from "@/lib/careers/jobPostings";
+import {
+  extractOrgFieldUpdates,
+  fetchOrgFieldOptions,
+  findMissingOrgFields,
+  resolveTitleFromPosition,
+} from "@/lib/careers/jobPostingOrgFields";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -26,19 +32,6 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   try {
     const body = await req.json();
     const updates: Record<string, unknown> = {};
-
-    if (body.job_title_key !== undefined) {
-      const resolved = await resolveJobTitleKey(
-        supabaseAdmin,
-        String(body.job_title_key),
-      );
-      if ("error" in resolved) {
-        return NextResponse.json({ error: resolved.error }, { status: 400 });
-      }
-      updates.job_title_key = resolved.option.key;
-      updates.title = resolved.option.label;
-      updates.interview_guide_key = resolved.option.interviewGuideKey;
-    }
 
     if (body.location !== undefined) updates.location = String(body.location).trim();
     if (body.employment_type !== undefined) {
@@ -71,12 +64,83 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       updates.jd_file_public_id = body.jd_file_public_id;
     }
 
+    // Per-posting interview setup — filled in on the Interview step right
+    // after Save, distinct from the shared grade-level interview guide
+    // library (interview_guide_key).
+    if (body.interview_description !== undefined) {
+      updates.interview_description = body.interview_description
+        ? String(body.interview_description).trim()
+        : null;
+    }
+    if (body.interview_panel_members !== undefined) {
+      updates.interview_panel_members = body.interview_panel_members
+        ? String(body.interview_panel_members).trim()
+        : null;
+    }
+    if (body.interview_duration_minutes !== undefined) {
+      updates.interview_duration_minutes =
+        body.interview_duration_minutes === null || body.interview_duration_minutes === ""
+          ? null
+          : Number(body.interview_duration_minutes);
+    }
+    if (body.interview_setup !== undefined) {
+      updates.interview_setup = body.interview_setup ?? {};
+    }
+    if (body.optional_org_field_order !== undefined) {
+      updates.optional_org_field_order = Array.isArray(body.optional_org_field_order)
+        ? body.optional_org_field_order
+        : [];
+    }
+
     if (body.status === "published" || body.status === "closed") {
       updates.status = body.status as JobPostingStatus;
       updates.is_active = body.status === "published";
     } else if (body.closes_at !== undefined) {
       updates.status = statusFromClosingDate(String(body.closes_at));
       updates.is_active = updates.status === "published";
+    }
+
+    if (typeof body.archived === "boolean") {
+      updates.archived_at = body.archived ? new Date().toISOString() : null;
+    }
+
+    const orgFieldOptions = await fetchOrgFieldOptions(supabaseAdmin);
+    const orgFieldUpdates = extractOrgFieldUpdates(body, orgFieldOptions);
+    Object.assign(updates, orgFieldUpdates);
+
+    // Only Create job posting's own edit form ever sends org-structure
+    // columns, and it always sends the complete set (see
+    // effectiveOrgFieldValues on that page) — so if any showed up here,
+    // this is a full-form save and every active list must be filled in.
+    // This is also how an old posting that predates this rule gets forced
+    // to catch up: the moment it's opened and saved again, it's saving the
+    // complete set, and this check applies. A Close/Archive/Republish
+    // action from Recruitment never touches these columns, so it's
+    // unaffected.
+    if (Object.keys(orgFieldUpdates).length > 0) {
+      const missingOrgFields = findMissingOrgFields(orgFieldOptions, orgFieldUpdates);
+      if (missingOrgFields.length > 0) {
+        return NextResponse.json(
+          {
+            error: `All organizational structure fields are required. Missing: ${missingOrgFields.join(", ")}.`,
+          },
+          { status: 400 },
+        );
+      }
+
+      // Same full-form save from Create job posting's edit form — the
+      // title tracks whichever Position was (re)selected. The posting's
+      // slug/web address, set once at creation, is deliberately left
+      // untouched here.
+      const positionTitle = await resolveTitleFromPosition(
+        supabaseAdmin,
+        orgFieldOptions,
+        orgFieldUpdates,
+      );
+      if (positionTitle) {
+        updates.title = positionTitle.title;
+        updates.job_title_key = slugifyJobTitle(positionTitle.title);
+      }
     }
 
     if (Object.keys(updates).length === 0) {

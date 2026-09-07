@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { Archive, FileText, PenLine } from "lucide-react";
 import { Quarter, canAppraiseOthers } from "@/lib/appraisal/sections";
+import { isSystemAdministratorRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   getActiveAppraisalPeriod,
   periodLabel as activePeriodLabel,
@@ -14,7 +15,6 @@ import {
   canArchiveAppraisal,
   canViewAllAppraisalPeriods,
   hasFullAppraisalAccess,
-  isSuperAdmin,
 } from "@/lib/accessControl";
 import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 import Pagination, { PAGE_SIZE } from "@/app/(dashboard)/dashboard/humanCapital/recruitment/components/Pagination";
@@ -166,12 +166,9 @@ export default function AppraisalLandingPage({
   const [showArchived, setShowArchived] = useState(false);
   const [showAllPeriods, setShowAllPeriods] = useState(false);
 
-  // Full access (Manager/Admin/Super Admin/L5+) sees everyone; everyone
-  // else sees only their own appraisal data (spec Section 4).
-  const viewerHasFullAccess = hasFullAppraisalAccess(
-    viewer.role,
-    viewer.gradeLevel,
-  );
+  // Full access (Super Admin/Executive Role/Human Resource) sees everyone;
+  // everyone else sees only their own appraisal data (spec Section 4).
+  const viewerHasFullAccess = hasFullAppraisalAccess(viewer.role);
   // Only Manager / Admin / Super Admin may browse past periods. Employees
   // (any grade) are locked to the current applicable period.
   const canBrowsePeriods = canViewAllAppraisalPeriods(viewer.role);
@@ -235,11 +232,13 @@ export default function AppraisalLandingPage({
     [appraisals, page],
   );
 
-  // L4+ can also appraise people below them; everyone else only ever fills
-  // their own self-assessment.
-  const viewerCanAppraiseOthers =
-    canAppraiseOthers(viewer.gradeLevel, gradeLevelsConfig) ||
-    isSuperAdmin(viewer.role);
+  // Supervisory Role with at least one assigned supervisee can also
+  // appraise people below them; everyone else only ever fills their own
+  // self-assessment.
+  const viewerCanAppraiseOthers = canAppraiseOthers(
+    viewer.role,
+    !!viewer.hasSupervisees,
+  );
   const showSelfAppraisalButton =
     !isConsultant && !viewerCanAppraiseOthers;
   const showNewAppraisalButton = viewerCanAppraiseOthers;
@@ -346,7 +345,7 @@ export default function AppraisalLandingPage({
               <Archive className="w-3.5 h-3.5" />
               {viewingArchived ? "Viewing archived" : "Archived"}
             </button>
-            {viewer.role === "admin" && !canArchive && (
+            {isSystemAdministratorRoleLabel(viewer.role) && !canArchive && (
               <span className="text-xs text-gray-400">
                 Archiving requires Edit on Appraisal in Manage User
               </span>

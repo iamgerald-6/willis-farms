@@ -38,8 +38,9 @@ export const appraisalFormDefinition: FormDefinition = {
       id: "ratings",
       label: "Rating Sections",
       type: "readOnly",
-      optionsRef: "taxonomy.appraisal.sectionsForGradeBand",
-      helpText: "Section weights and items vary by grade band and quarter",
+      optionsRef: "taxonomy.appraisal.sectionsForOrgPlacement",
+      helpText:
+        "Section weights and items vary by the employee's exact org placement (see Appraisal scope in System Definitions) and quarter",
     },
     {
       id: "promotion_readiness_assessment",
@@ -71,7 +72,6 @@ export const modAppraisal: ModuleRecord = {
   },
   table: "appraisals",
   supportedActions: ["view", "add", "edit", "review"],
-  taxonomyRefs: ["taxonomy.appraisal.sectionAuthorisations"],
   businessLogic: [
     {
       id: "l4-leadership-weight",

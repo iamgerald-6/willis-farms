@@ -15,6 +15,10 @@ import {
 import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { PermissionAction } from "@/lib/moduleRegistry/types";
+import {
+  resolveEffectiveUserRoleLabel,
+  resolveUserRoleLabelById,
+} from "@/lib/userRoleAccessControl";
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -25,7 +29,14 @@ import type { PermissionAction } from "@/lib/moduleRegistry/types";
 export interface ApiRequestUser {
   id: string;
   email: string | null;
+  /** Effective role for access-control purposes — the resolved "User role"
+   * label (Standard, Executive, Supervisory, ...) when the caller has one
+   * set, else the raw old role column value. See userRoleAccessControl.ts. */
   role: string | null;
+  /** Raw old role column value, kept alongside `role` for anything that
+   * specifically needs the legacy enum rather than the effective role. */
+  legacy_role: string | null;
+  user_role_id: string | null;
   grade_level: string | null;
   company_id: string | null;
   name: string;
@@ -94,6 +105,7 @@ export async function getApiRequestUser(
 
   let profile: {
     role?: string | null;
+    user_role_id?: string | null;
     grade_level?: string | null;
     first_name?: string | null;
     last_name?: string | null;
@@ -109,7 +121,7 @@ export async function getApiRequestUser(
     const { data } = await supabaseAdmin
       .from("users")
       .select(
-        "user_id, role, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
+        "user_id, role, user_role_id, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
       )
       .eq("user_id", authUser.id)
       .maybeSingle();
@@ -118,7 +130,17 @@ export async function getApiRequestUser(
     console.error("[getApiRequestUser] users lookup failed", err);
   }
 
-  const role = profile?.role ?? metadataRole(authUser);
+  // Kept only for display/reference — access decisions never use this.
+  const legacyRole = profile?.role ?? metadataRole(authUser);
+  // Resolved "User role" label is the sole source of truth for access
+  // control — see userRoleAccessControl.ts. We never fall back to the old
+  // employee/manager/admin/super_admin role column; an unassigned "User
+  // role" defaults to Standard Role.
+  const userRoleLabel = await resolveUserRoleLabelById(
+    supabaseAdmin,
+    profile?.user_role_id,
+  );
+  const role = resolveEffectiveUserRoleLabel(userRoleLabel);
   const email = profile?.email ?? authUser.email ?? null;
   const name = profile
     ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || (email ?? "Unknown")
@@ -128,6 +150,8 @@ export async function getApiRequestUser(
     id: authUser.id,
     email,
     role,
+    legacy_role: legacyRole,
+    user_role_id: profile?.user_role_id ?? null,
     grade_level: profile?.grade_level ?? null,
     company_id: profile?.company_id ?? null,
     name,
@@ -145,6 +169,14 @@ function callerAccessProfile(user: ApiRequestUser): AccessProfile {
   return resolveAccessProfile(
     {
       role: user.role,
+      // user.role is ALREADY the fully resolved effective role label (see
+      // getApiRequestUser's resolveEffectiveUserRoleLabel call) — set it as
+      // user_role_label too so resolveAccessProfile doesn't recompute a
+      // fresh "no user_role_label on this object" default (Standard Role)
+      // and silently discard it. Without this, every server-side
+      // AccessProfile built here collapsed to Standard Role regardless of
+      // the caller's actual role.
+      user_role_label: user.role,
       grade_level: user.grade_level,
       access_tier: user.access_tier,
       page_permissions: user.page_permissions,
@@ -217,7 +249,7 @@ export async function requireFullAppraisalAccess(
   req: NextRequest,
 ): Promise<ApiRequestUser | null> {
   const user = await getApiRequestUser(req);
-  if (!user || !hasFullAppraisalAccess(user.role, user.grade_level)) return null;
+  if (!user || !hasFullAppraisalAccess(user.role)) return null;
   return user;
 }
 
@@ -276,7 +308,7 @@ export function canAccessAppraisalRecord(
     supervisor_id?: string | null;
   },
 ): boolean {
-  if (hasFullAppraisalAccess(user.role, user.grade_level)) return true;
+  if (hasFullAppraisalAccess(user.role)) return true;
   if (user.id && record.employee_user_id === user.id) return true;
   if (user.id && record.supervisor_id === user.id) return true;
   if (user.company_id && record.company_id === user.company_id) return true;

@@ -7,12 +7,12 @@ import {
   isPeriodOpenForNewAppraisal,
   periodLabel,
 } from "@/lib/appraisal/deadlines";
-import { canRate, type Quarter } from "@/lib/appraisal/sections";
+import { type Quarter } from "@/lib/appraisal/sections";
+import { canSuperviseAppraisal } from "@/lib/appraisal/roles";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { fetchAppraisalScopeConfig } from "@/lib/grades/fetchAppraisalScopeConfig";
 import { isValidAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
 import { canParticipateAsProgramSubject } from "@/lib/consultantPrograms";
-import { isSuperAdmin } from "@/lib/accessControl";
 import { sendSupervisorEvaluationDueEmail, logSupervisorEvaluationEmail } from "@/lib/appraisal/emails";
 import {
   requireAuth,
@@ -161,33 +161,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isEmployeeSubmit = (submitted_by ?? "employee") === "employee";
-    const ownsRecord =
-      (employee_user_id && employee_user_id === caller.id) ||
-      (caller.company_id && caller.company_id === company_id);
-
-    if (isEmployeeSubmit) {
-      // Everyone fills their own self-assessment — grade is irrelevant here.
-      if (!ownsRecord) {
-        return jsonForbidden("You can only submit your own self-assessment.");
-      }
-    } else {
-      // The supervisor side must be filled by someone strictly senior. Super
-      // Admin is the sole exception, since L7 has nobody above them.
-      if (ownsRecord) {
-        return jsonForbidden(
-          "You cannot act as your own supervisor. Someone above your grade must complete this evaluation.",
-        );
-      }
-      const isSuperAdminCaller = isSuperAdmin(caller.role);
-      if (!isSuperAdminCaller && !canRate(caller.grade_level, current_grade)) {
-        return jsonForbidden(
-          `Grade ${caller.grade_level ?? "unknown"} cannot appraise a ${current_grade} employee. A supervisor must be L4 or above and senior to the employee.`,
-        );
-      }
-    }
-
-    // Confirm company_id exists and load assigned supervisor when present.
+    // Confirm company_id exists and load the employee's actual assigned
+    // supervisor — needed below to decide who may fill the supervisor side.
     const { data: employeeUser, error: userError } = await supabaseAdmin
       .from("users")
       .select("company_id, user_id, supervisor_id")
@@ -199,6 +174,39 @@ export async function POST(req: NextRequest) {
         { error: "Employee not found with that company ID" },
         { status: 404 },
       );
+    }
+
+    const isEmployeeSubmit = (submitted_by ?? "employee") === "employee";
+    const ownsRecord =
+      (employee_user_id && employee_user_id === caller.id) ||
+      (caller.company_id && caller.company_id === company_id);
+
+    if (isEmployeeSubmit) {
+      // Everyone fills their own self-assessment — role is irrelevant here.
+      if (!ownsRecord) {
+        return jsonForbidden("You can only submit your own self-assessment.");
+      }
+    } else {
+      // The supervisor side must be filled by this employee's actual
+      // assigned supervisor (users.supervisor_id) — or Super Admin.
+      if (ownsRecord) {
+        return jsonForbidden(
+          "You cannot act as your own supervisor. Your assigned supervisor must complete this evaluation.",
+        );
+      }
+      const canSupervise = canSuperviseAppraisal(
+        { userId: caller.id, role: caller.role },
+        {
+          employee_user_id: employeeUser.user_id,
+          company_id: employeeUser.company_id,
+          supervisor_id: employeeUser.supervisor_id,
+        },
+      );
+      if (!canSupervise) {
+        return jsonForbidden(
+          "Only this employee's assigned supervisor (or Super Admin) can complete their evaluation.",
+        );
+      }
     }
 
     let resolvedSupervisorId: string | null = null;
