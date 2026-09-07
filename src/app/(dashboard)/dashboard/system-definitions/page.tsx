@@ -722,6 +722,9 @@ export default function SystemDefinitionsPage() {
   const createJobPostingActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/create-job-posting",
   );
+  const accessControlActive = !!pathname?.startsWith(
+    "/dashboard/system-definitions/access-control",
+  );
   const setupActive = orgStructureActive;
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -996,13 +999,20 @@ export default function SystemDefinitionsPage() {
                             key={m.id}
                             icon={Icon}
                             label={m.label}
-                            active={active}
+                            active={active || accessControlActive}
                             open={openSectionIds.has(m.id)}
                             onToggle={() => toggleSectionOpen(m.id)}
                           >
-                            <span className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-400">
+                            <Link
+                              href="/dashboard/system-definitions/access-control"
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                accessControlActive
+                                  ? "bg-red-50 text-red-600"
+                                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+                              }`}
+                            >
                               Access control
-                            </span>
+                            </Link>
                           </CollapsibleNavSection>
                         );
                       }
