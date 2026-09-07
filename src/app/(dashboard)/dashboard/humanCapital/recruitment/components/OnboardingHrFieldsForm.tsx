@@ -317,62 +317,47 @@ export default function OnboardingHrFieldsForm({
     }
 
     if (field.fieldType === "grade_level") {
+      // Grade level now always comes from the application's linked job
+      // posting (see resolveOfferTermsFromPosting / postingLockedFields in
+      // OfferTermsPanel) — every posting requires one. This form no longer
+      // offers a manual L1–L7 select; a legacy application with nothing set
+      // just shows a plain notice instead of letting HR pick from the old
+      // "Grade levels & linked roles" system.
       return (
-        <label key={field.id} className={`block ${spanClass}`}>
-          <span className="text-xs text-gray-500">{field.label}</span>
-          <select
-            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-            value={hrData.grade_level ?? ""}
-            onChange={(e) => {
-              onGradeChange?.();
-              const grade = e.target.value || undefined;
-              const tier = hrData.salary_tier;
-              salaryGhsTouched.current = false;
-              setHrData((prev) => ({ ...prev, grade_level: grade }));
-              if (grade) {
-                applySalaryFromSystem(grade, tier, true);
-              }
-            }}
-          >
-            <option value="">Select grade level…</option>
-            {gradeOptions.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div key={field.id} className={spanClass}>
+          {hrData.grade_level ? (
+            <ReadOnlyValue label={field.label} value={hrData.grade_level} />
+          ) : (
+            <label className="block">
+              <span className="text-xs text-gray-500">{field.label}</span>
+              <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                Not set on the linked job posting — add a Grade level there.
+              </p>
+            </label>
+          )}
+        </div>
       );
     }
 
     if (field.fieldType === "salary_tier") {
+      // Same as grade level — sourced from the posting's own Salary field
+      // (see resolveOfferTermsFromPosting), never manually picked here.
       return (
-        <label key={field.id} className={`block ${spanClass}`}>
-          <span className="text-xs text-gray-500">{field.label}</span>
-          {!hrData.grade_level ? (
-            <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              Select a grade level first to pick a salary tier.
-            </p>
+        <div key={field.id} className={spanClass}>
+          {hrData.salary_tier ? (
+            <ReadOnlyValue label={field.label} value={hrData.salary_tier} />
           ) : (
-            <select
-              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              value={hrData.salary_tier ?? "mid"}
-              onChange={(e) => {
-                salaryGhsTouched.current = false;
-                applySalaryFromSystem(hrData.grade_level!, e.target.value, true);
-              }}
-            >
-              {SALARY_TIER_IDS.map((tier) => (
-                <option key={tier} value={tier}>
-                  {SALARY_TIER_LABELS[tier]}
-                </option>
-              ))}
-            </select>
+            <label className="block">
+              <span className="text-xs text-gray-500">{field.label}</span>
+              <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                Not set on the linked job posting — add a Salary there.
+              </p>
+              {shouldShowHint(field.hint) && (
+                <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+              )}
+            </label>
           )}
-          {shouldShowHint(field.hint) && (
-            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
-          )}
-        </label>
+        </div>
       );
     }
 
