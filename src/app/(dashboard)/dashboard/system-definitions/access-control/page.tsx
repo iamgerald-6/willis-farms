@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Plus, UserCheck } from "lucide-react";
@@ -10,6 +10,7 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { buildSidebarNav } from "@/lib/moduleRegistry/navigation/buildSidebarNav";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -23,6 +24,28 @@ type PlaceholderItem = {
 };
 
 /**
+ * Flattens the platform's actual sidebar navigation (built from the module
+ * registry — same source Sidebar.tsx renders from) into a single pick-list:
+ * top-level items as-is, and each collapsible group's children labeled
+ * "Group > Child" so nested items (e.g. under Human Capital) stay
+ * distinguishable in a flat dropdown.
+ */
+function getSidebarNavItemOptions(): string[] {
+  const nav = buildSidebarNav();
+  const options: string[] = [];
+  for (const item of nav) {
+    if (item.children && item.children.length > 0) {
+      for (const child of item.children) {
+        options.push(`${item.label} > ${child.label}`);
+      }
+    } else {
+      options.push(item.label);
+    }
+  }
+  return options;
+}
+
+/**
  * Same access-gated page shell as Organizational structure / Create job
  * posting. Add item + table are a visual placeholder for now — nothing is
  * saved to the database yet (see the "Access control" submenu under User
@@ -32,6 +55,7 @@ export default function SystemDefinitionsAccessControlPage() {
   const [items, setItems] = useState<PlaceholderItem[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newItemName, setNewItemName] = useState("");
+  const sidebarNavOptions = useMemo(() => getSidebarNavItemOptions(), []);
 
   const addItem = () => {
     const name = newItemName.trim();
@@ -132,14 +156,19 @@ export default function SystemDefinitionsAccessControlPage() {
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
               Item name
             </label>
-            <input
-              type="text"
+            <select
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="e.g. Something"
               className={inputClass}
               autoFocus
-            />
+            >
+              <option value="">Select a sidebar item…</option>
+              {sidebarNavOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex items-center gap-2">
