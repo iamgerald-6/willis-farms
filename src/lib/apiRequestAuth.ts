@@ -169,6 +169,14 @@ function callerAccessProfile(user: ApiRequestUser): AccessProfile {
   return resolveAccessProfile(
     {
       role: user.role,
+      // user.role is ALREADY the fully resolved effective role label (see
+      // getApiRequestUser's resolveEffectiveUserRoleLabel call) — set it as
+      // user_role_label too so resolveAccessProfile doesn't recompute a
+      // fresh "no user_role_label on this object" default (Standard Role)
+      // and silently discard it. Without this, every server-side
+      // AccessProfile built here collapsed to Standard Role regardless of
+      // the caller's actual role.
+      user_role_label: user.role,
       grade_level: user.grade_level,
       access_tier: user.access_tier,
       page_permissions: user.page_permissions,
