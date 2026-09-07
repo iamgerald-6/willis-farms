@@ -15,6 +15,10 @@ export type EmployeeOrgPlacement = {
   section_id: string | null;
   position_id: string | null;
   grade_level_id: string | null;
+  /** "User role" org-structure list — same placement mechanism as the 6
+   * fields above (see users.user_role_id / docs/access-control/users-org-
+   * placement-user-role.sql). */
+  user_role_id: string | null;
 };
 
 const EMPTY_PLACEMENT: EmployeeOrgPlacement = {
@@ -24,6 +28,7 @@ const EMPTY_PLACEMENT: EmployeeOrgPlacement = {
   section_id: null,
   position_id: null,
   grade_level_id: null,
+  user_role_id: null,
 };
 
 export async function resolveEmployeeOrgPlacementFromPosting(
@@ -35,7 +40,7 @@ export async function resolveEmployeeOrgPlacementFromPosting(
   const { data } = await supabase
     .from("job_postings")
     .select(
-      "site_id, business_unit_id, department_id, section_id, position_id, grade_level_id",
+      "site_id, business_unit_id, department_id, section_id, position_id, grade_level_id, user_role_id",
     )
     .eq("id", jobPostingId)
     .maybeSingle();
@@ -49,5 +54,6 @@ export async function resolveEmployeeOrgPlacementFromPosting(
     section_id: data.section_id ?? null,
     position_id: data.position_id ?? null,
     grade_level_id: data.grade_level_id ?? null,
+    user_role_id: (data as { user_role_id?: string | null }).user_role_id ?? null,
   };
 }

@@ -10,7 +10,7 @@ import {
 } from "@/lib/supabaseUserUpdate";
 
 const ORG_PLACEMENT_MIGRATION_HINT =
-  " Run docs/access-control/users-org-placement.sql in Supabase, then: NOTIFY pgrst, 'reload schema';";
+  " Run docs/access-control/users-org-placement.sql (and, for User role, docs/access-control/users-org-placement-user-role.sql) in Supabase, then: NOTIFY pgrst, 'reload schema';";
 
 const ORG_PLACEMENT_FIELDS = [
   "site_id",
@@ -19,6 +19,7 @@ const ORG_PLACEMENT_FIELDS = [
   "section_id",
   "position_id",
   "grade_level_id",
+  "user_role_id",
 ] as const;
 
 export async function PATCH(req: NextRequest) {

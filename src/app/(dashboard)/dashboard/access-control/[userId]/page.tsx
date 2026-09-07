@@ -51,7 +51,8 @@ type OrgPlacementField =
   | "department_id"
   | "section_id"
   | "position_id"
-  | "grade_level_id";
+  | "grade_level_id"
+  | "user_role_id";
 
 const ORG_PLACEMENT_FIELDS: OrgPlacementField[] = [
   "site_id",
@@ -60,6 +61,7 @@ const ORG_PLACEMENT_FIELDS: OrgPlacementField[] = [
   "section_id",
   "position_id",
   "grade_level_id",
+  "user_role_id",
 ];
 
 type OrgPlacementList = {
@@ -93,6 +95,7 @@ export default function ManageUserAccessPage() {
     section_id: "",
     position_id: "",
     grade_level_id: "",
+    user_role_id: "",
   });
   const [initialized, setInitialized] = useState(false);
 
@@ -156,6 +159,7 @@ export default function ManageUserAccessPage() {
       section_id: target.section_id ?? "",
       position_id: target.position_id ?? "",
       grade_level_id: target.grade_level_id ?? "",
+      user_role_id: target.user_role_id ?? "",
     });
     setInitialized(true);
   }, [target, initialized, groupPresets]);
@@ -512,6 +516,7 @@ export default function ManageUserAccessPage() {
                       section_id: target.section_id ?? "",
                       position_id: target.position_id ?? "",
                       grade_level_id: target.grade_level_id ?? "",
+                      user_role_id: target.user_role_id ?? "",
                     })
                   }
                   className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"

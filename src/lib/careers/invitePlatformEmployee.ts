@@ -31,6 +31,9 @@ export type InvitePlatformEmployeeInput = {
   section_id?: string | null;
   position_id?: string | null;
   grade_level_id?: string | null;
+  /** "User role" org-structure list — same placement mechanism as the org
+   * fields above. */
+  user_role_id?: string | null;
 };
 
 export type InvitePlatformEmployeeResult =
@@ -60,6 +63,7 @@ export async function invitePlatformEmployee(
     section_id,
     position_id,
     grade_level_id,
+    user_role_id,
   } = input;
 
   if (!email || !role || !first_name || !last_name || !company_id) {
@@ -168,6 +172,7 @@ export async function invitePlatformEmployee(
     section_id: section_id ?? null,
     position_id: position_id ?? null,
     grade_level_id: grade_level_id ?? null,
+    user_role_id: user_role_id ?? null,
   };
 
   const insertAttempts: Record<string, unknown>[] = [
@@ -207,6 +212,7 @@ export async function invitePlatformEmployee(
       section_id: undefined,
       position_id: undefined,
       grade_level_id: undefined,
+      user_role_id: undefined,
     },
     {
       ...baseRow,
@@ -220,6 +226,7 @@ export async function invitePlatformEmployee(
       section_id: undefined,
       position_id: undefined,
       grade_level_id: undefined,
+      user_role_id: undefined,
     },
   ];
 
@@ -255,6 +262,7 @@ export async function invitePlatformEmployee(
       msg.includes("section_id") ||
       msg.includes("position_id") ||
       msg.includes("grade_level_id") ||
+      msg.includes("user_role_id") ||
       msg.includes("schema cache");
 
     if (!missingOptionalColumn) break;

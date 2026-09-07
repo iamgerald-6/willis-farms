@@ -54,6 +54,9 @@ export interface User {
   section_id?: string | null;
   position_id?: string | null;
   grade_level_id?: string | null;
+  /** "User role" org-structure list (custom list created under Organizational
+   * structure) — same placement mechanism as the 6 fields above. */
+  user_role_id?: string | null;
   // Task Manager: can this user see every task/project, or only their own?
   // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
   // false except super_admin, who always has it regardless of this value.
