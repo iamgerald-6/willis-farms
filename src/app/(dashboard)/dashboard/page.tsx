@@ -34,13 +34,10 @@ import {
 import {
   DonutChart,
   CategoryBarChart,
-  HorizontalBarChart,
   SegmentedBar,
   ScoreRing,
   ScoreHistoryChart,
 } from "./components/DashboardCharts";
-
-const BRAND = "#C62828";
 
 // Fixed display order + representative stand-in record for each status the
 // Appraisal page can show (see getStatusSummary in appraisalTypes.ts) — used
@@ -1125,29 +1122,6 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
-  const staffRoleBars = [
-    {
-      label: "Employees",
-      value: users?.filter((u) => u.role === "employee").length ?? 0,
-      color: BRAND,
-    },
-    {
-      label: "Admins",
-      value: users?.filter((u) => u.role === "admin").length ?? 0,
-      color: "#6b7280",
-    },
-    {
-      label: "Super Admins",
-      value: users?.filter((u) => u.role === "super_admin").length ?? 0,
-      color: "#374151",
-    },
-    {
-      label: "Managers",
-      value: users?.filter((u) => u.role === "manager").length ?? 0,
-      color: "#9ca3af",
-    },
-  ].filter((x) => x.value > 0);
-
   return (
     <div className="bg-white min-h-full">
       <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
@@ -1339,12 +1313,6 @@ export default function DashboardPage() {
                 items={adminAttentionItems}
                 onClose={() => setShowAllAttention(false)}
               />
-            )}
-
-            {staffRoleBars.length > 0 && (
-              <Panel title="Staff by role">
-                <HorizontalBarChart items={staffRoleBars} />
-              </Panel>
             )}
           </>
         ) : isConsultant ? (
