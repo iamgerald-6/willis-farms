@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import api from "@/lib/api";
 import { User } from "@/types";
 import { TMProject } from "@/types/taskManager";
-import { isFullRoleAccess } from "@/lib/pagePermissions";
+import { isFullRoleAccess, resolveAccessProfile } from "@/lib/pagePermissions";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { getStatusSummary } from "./humanCapital/appraisal/component/appraisalTypes";
 import type { JobApplication } from "@/lib/careers/types";
@@ -556,7 +556,12 @@ export default function DashboardPage() {
   });
 
   const profile = users?.find((u) => u.user_id === userId);
-  const role = profile?.role ?? metaRole;
+  // Resolve the same way every other page does — the new user_role_label,
+  // not the stale raw `role` column — so this page's "who counts as admin"
+  // check (and the role badge text below) matches the new role system
+  // instead of the pre-migration one.
+  const accessProfile = resolveAccessProfile(profile, metaRole);
+  const role = accessProfile?.role ?? metaRole;
   const isAdmin = isFullRoleAccess(role);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
