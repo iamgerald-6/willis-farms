@@ -24,25 +24,13 @@ type PlaceholderItem = {
 };
 
 /**
- * Flattens the platform's actual sidebar navigation (built from the module
- * registry — same source Sidebar.tsx renders from) into a single pick-list:
- * top-level items as-is, and each collapsible group's children labeled
- * "Group > Child" so nested items (e.g. under Human Capital) stay
- * distinguishable in a flat dropdown.
+ * Top-level entries only from the platform's actual sidebar navigation
+ * (built from the module registry — same source Sidebar.tsx renders from).
+ * Sub-menu items nested under a collapsible group (e.g. Human Capital's
+ * children) are intentionally excluded.
  */
 function getSidebarNavItemOptions(): string[] {
-  const nav = buildSidebarNav();
-  const options: string[] = [];
-  for (const item of nav) {
-    if (item.children && item.children.length > 0) {
-      for (const child of item.children) {
-        options.push(`${item.label} > ${child.label}`);
-      }
-    } else {
-      options.push(item.label);
-    }
-  }
-  return options;
+  return buildSidebarNav().map((item) => item.label);
 }
 
 /**
