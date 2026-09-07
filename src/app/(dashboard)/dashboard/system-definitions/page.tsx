@@ -986,6 +986,27 @@ export default function SystemDefinitionsPage() {
                     {groupModules.map((m) => {
                       const Icon = resolveNavIcon(m.sidebar.icon);
                       const active = selectedModule?.id === m.id;
+
+                      // User Management gets one empty placeholder submenu,
+                      // "Access control" — not wired to anything yet, just
+                      // the entry itself for now.
+                      if (m.id === "mod:users") {
+                        return (
+                          <CollapsibleNavSection
+                            key={m.id}
+                            icon={Icon}
+                            label={m.label}
+                            active={active}
+                            open={openSectionIds.has(m.id)}
+                            onToggle={() => toggleSectionOpen(m.id)}
+                          >
+                            <span className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-400">
+                              Access control
+                            </span>
+                          </CollapsibleNavSection>
+                        );
+                      }
+
                       return (
                         <button
                           key={m.id}
