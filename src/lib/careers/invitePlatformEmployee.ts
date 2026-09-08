@@ -141,7 +141,8 @@ export async function invitePlatformEmployee(
     ) {
       return {
         ok: false,
-        error: "Invalid supervisor — must have the Supervisory Role User role.",
+        error:
+          "Invalid supervisor — must have Supervisory Role, Executive Role, or Human Resource.",
         status: 400,
       };
     }

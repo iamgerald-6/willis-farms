@@ -30,15 +30,15 @@
 
 -- ----------------------------------------------------------------------------
 -- Step 1: extra columns needed to fully describe a grade (rank for ordering
--- / "who outranks whom", ranked-vs-consultant kind, and the HR age band
--- used for shortlisting — all previously hardcoded in gradeLevelsConfig.ts).
+-- / "who outranks whom", ranked-vs-consultant kind — previously hardcoded
+-- in gradeLevelsConfig.ts). Age eligibility is NOT on the grade: it lives
+-- on the job posting (custom_age). If this file was already run with
+-- age_min/age_max, run drop-grade-levels-age-columns.sql.
 -- ----------------------------------------------------------------------------
 alter table grade_levels
   add column if not exists rank int,
   add column if not exists role_kind text not null default 'ranked'
-    check (role_kind in ('ranked', 'consultant')),
-  add column if not exists age_min int,
-  add column if not exists age_max int;
+    check (role_kind in ('ranked', 'consultant'));
 
 commit;
 
@@ -53,9 +53,7 @@ begin
   update org_custom_list_types
   set fields = '[
     {"key": "rank", "label": "Rank (ordering, 0 = consultant)", "type": "number"},
-    {"key": "role_kind", "label": "Role kind", "type": "select", "options": ["ranked", "consultant"]},
-    {"key": "age_min", "label": "Min age", "type": "number"},
-    {"key": "age_max", "label": "Max age", "type": "number"}
+    {"key": "role_kind", "label": "Role kind", "type": "select", "options": ["ranked", "consultant"]}
   ]'::jsonb
   where table_name = 'grade_levels';
 exception when others then
@@ -71,16 +69,16 @@ commit;
 -- ----------------------------------------------------------------------------
 do $$
 begin
-  insert into grade_levels (label, code, sort_order, is_active, rank, role_kind, age_min, age_max)
+  insert into grade_levels (label, code, sort_order, is_active, rank, role_kind)
   values
-    ('Junior (1)',        'L1',         0, true, 1, 'ranked',     22, 33),
-    ('Technician (2)',    'L2',         1, true, 2, 'ranked',     22, 33),
-    ('Senior (3)',        'L3',         2, true, 3, 'ranked',     25, 40),
-    ('Supervisor (4)',    'L4',         3, true, 4, 'ranked',     25, 40),
-    ('Asst. Manager (5)', 'L5',         4, true, 5, 'ranked',     25, 40),
-    ('Farm Manager (6)',  'L6',         5, true, 6, 'ranked',     33, 55),
-    ('Operations (7)',    'L7',         6, true, 7, 'ranked',     33, 55),
-    ('Consultant',        'consultant', 7, true, 0, 'consultant', 25, 55)
+    ('Junior (1)',        'L1',         0, true, 1, 'ranked'),
+    ('Technician (2)',    'L2',         1, true, 2, 'ranked'),
+    ('Senior (3)',        'L3',         2, true, 3, 'ranked'),
+    ('Supervisor (4)',    'L4',         3, true, 4, 'ranked'),
+    ('Asst. Manager (5)', 'L5',         4, true, 5, 'ranked'),
+    ('Farm Manager (6)',  'L6',         5, true, 6, 'ranked'),
+    ('Operations (7)',    'L7',         6, true, 7, 'ranked'),
+    ('Consultant',        'consultant', 7, true, 0, 'consultant')
   on conflict (code) do nothing;
 exception when others then
   raise notice 'Step 3 (seed default grades) failed: %', sqlerrm;
@@ -89,21 +87,21 @@ end $$;
 commit;
 
 -- ----------------------------------------------------------------------------
--- Step 4: backfill rank/role_kind/age_min/age_max on any pre-existing rows
--- that match these 8 known codes but predate these columns (no-op if the
--- insert above created them just now, since it already sets those values;
+-- Step 4: backfill rank/role_kind on any pre-existing rows that match
+-- these 8 known codes but predate these columns (no-op if the insert
+-- above created them just now, since it already sets those values;
 -- only matters if the row already existed from before).
 -- ----------------------------------------------------------------------------
 do $$
 begin
-  update grade_levels set rank = 1, role_kind = 'ranked', age_min = coalesce(age_min, 22), age_max = coalesce(age_max, 33) where code = 'L1' and rank is null;
-  update grade_levels set rank = 2, role_kind = 'ranked', age_min = coalesce(age_min, 22), age_max = coalesce(age_max, 33) where code = 'L2' and rank is null;
-  update grade_levels set rank = 3, role_kind = 'ranked', age_min = coalesce(age_min, 25), age_max = coalesce(age_max, 40) where code = 'L3' and rank is null;
-  update grade_levels set rank = 4, role_kind = 'ranked', age_min = coalesce(age_min, 25), age_max = coalesce(age_max, 40) where code = 'L4' and rank is null;
-  update grade_levels set rank = 5, role_kind = 'ranked', age_min = coalesce(age_min, 25), age_max = coalesce(age_max, 40) where code = 'L5' and rank is null;
-  update grade_levels set rank = 6, role_kind = 'ranked', age_min = coalesce(age_min, 33), age_max = coalesce(age_max, 55) where code = 'L6' and rank is null;
-  update grade_levels set rank = 7, role_kind = 'ranked', age_min = coalesce(age_min, 33), age_max = coalesce(age_max, 55) where code = 'L7' and rank is null;
-  update grade_levels set rank = 0, role_kind = 'consultant', age_min = coalesce(age_min, 25), age_max = coalesce(age_max, 55) where code = 'consultant' and rank is null;
+  update grade_levels set rank = 1, role_kind = 'ranked' where code = 'L1' and rank is null;
+  update grade_levels set rank = 2, role_kind = 'ranked' where code = 'L2' and rank is null;
+  update grade_levels set rank = 3, role_kind = 'ranked' where code = 'L3' and rank is null;
+  update grade_levels set rank = 4, role_kind = 'ranked' where code = 'L4' and rank is null;
+  update grade_levels set rank = 5, role_kind = 'ranked' where code = 'L5' and rank is null;
+  update grade_levels set rank = 6, role_kind = 'ranked' where code = 'L6' and rank is null;
+  update grade_levels set rank = 7, role_kind = 'ranked' where code = 'L7' and rank is null;
+  update grade_levels set rank = 0, role_kind = 'consultant' where code = 'consultant' and rank is null;
 exception when others then
   raise notice 'Step 4 (backfill known-code rows) failed: %', sqlerrm;
 end $$;

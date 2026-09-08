@@ -248,8 +248,8 @@ export interface OnboardingHrData {
   department?: string;
   employment_type?: string;
   work_location?: string;
-  /** Position title of the manager this hire reports to — picked from staff
-   * currently holding a manager/admin/super_admin role (see isSeniorManagement). */
+  /** Display name of the line manager this hire reports to (offer letter).
+   * Picked from staff with Supervisory / Executive / Human Resource User role. */
   reporting_to?: string;
   /** Effective employment start date — single source for both the offer letter's
    * appointment/effective date and its Position Details "Start Date" line. */

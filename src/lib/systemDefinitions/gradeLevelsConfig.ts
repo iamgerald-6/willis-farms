@@ -9,9 +9,6 @@ export type GradeLevelDef = {
   builtIn?: boolean;
   /** Ranked L1–L7+ vs consultant (no numeric level). */
   roleKind?: GradeRoleKind;
-  /** Internal HR age band for shortlisting — not shown to applicants. */
-  ageMin?: number;
-  ageMax?: number;
 };
 
 export const CONSULTANT_GRADE_ID = "consultant" as const;

@@ -82,7 +82,7 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldType: "reporting_to",
         group: "placement",
         required: true,
-        hint: "Position title of the manager this hire reports to — drawn from staff currently holding a manager/admin/super-admin role.",
+        hint: "Staff with Supervisory Role, Executive Role, or Human Resource — the person this hire will report to.",
       },
     ),
     hrField(

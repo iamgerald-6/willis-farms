@@ -14,9 +14,9 @@ export type SupervisorAssignmentContext = "onboarding" | "manageUser";
  *
  *   - "manageUser" (default, used from the Access Control profile page):
  *     Executive Role, Human Resource, Supervisory Role, or Super Admin.
- *   - "onboarding" (used when inviting a new hire): Supervisory Role or
- *     Super Admin only — narrower, since this is picking a new hire's direct
- *     line supervisor specifically.
+ *   - "onboarding" (Offer terms / invite): Supervisory Role, Executive Role,
+ *     or Human Resource — people who may be a new hire's line manager,
+ *     whether or not anyone currently reports to them.
  *
  * Anyone without a resolved User role (or with Standard Role/Consultant/
  * System Administrator) is never eligible — there is no old-system

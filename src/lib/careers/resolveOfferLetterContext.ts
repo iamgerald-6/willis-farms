@@ -23,7 +23,7 @@ export type OfferLetterContext = {
   medicalReports: string[];
   letterDate: string;
   salaryDisplay?: string;
-  /** Position title of the manager this hire reports to (see reporting_to on OnboardingHrData). */
+  /** Line manager this hire reports to (name, from reporting_to). */
   reportingTo?: string;
   noticePeriod?: string;
   workingHours?: string;

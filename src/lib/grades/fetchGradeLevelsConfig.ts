@@ -12,8 +12,6 @@ type GradeLevelRow = {
   sort_order?: number | null;
   rank?: number | null;
   role_kind?: string | null;
-  age_min?: number | null;
-  age_max?: number | null;
   is_active: boolean;
 };
 
@@ -30,8 +28,6 @@ function rowToGradeLevelDef(row: GradeLevelRow): GradeLevelDef {
     rank: roleKind === "consultant" ? 0 : (row.rank ?? row.sort_order ?? 0),
     label: row.label,
     roleKind,
-    ...(row.age_min != null ? { ageMin: row.age_min } : {}),
-    ...(row.age_max != null ? { ageMax: row.age_max } : {}),
   };
 }
 

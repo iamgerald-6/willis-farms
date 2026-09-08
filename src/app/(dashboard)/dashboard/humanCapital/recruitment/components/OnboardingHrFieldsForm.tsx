@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
@@ -24,9 +24,15 @@ import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
-import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
+import { canBeAssignedAsSupervisorAtOnboardingByRoleLabel } from "@/lib/userRoleAccessControl";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
+
+function lineManagerLabel(user: User): string {
+  const name = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
+  const title = user.job_position?.trim();
+  return title ? `${name} (${title})` : name;
+}
 
 function toDateInputValue(value: string | undefined | null): string {
   if (!value?.trim()) return "";
@@ -130,56 +136,44 @@ export default function OnboardingHrFieldsForm({
     },
   });
 
-  // Assigned supervisor is scoped to whoever currently holds the "Reporting
-  // to" role/title picked above — not a grade-based lookup — since HR is
-  // choosing which specific person (among possibly several with the same
-  // title) this hire will actually report to. Only currently-employed staff
-  // (not disabled) are eligible.
-  const eligibleSupervisors = useMemo(() => {
-    const roleTitle = hrData.reporting_to?.trim();
-    if (!roleTitle) return [];
+  // Offer / onboarding line managers: staff with Supervisory Role, Executive
+  // Role, or Human Resource. Not filtered by who currently has reports — the
+  // applicant is not a user yet.
+  const lineManagers = useMemo(() => {
     return allUsers
-      .filter((u) => !u.is_disabled && u.job_position?.trim() === roleTitle)
-      .sort((a, b) => {
-        const nameA = `${a.first_name} ${a.last_name}`.trim();
-        const nameB = `${b.first_name} ${b.last_name}`.trim();
-        return nameA.localeCompare(nameB);
-      });
-  }, [allUsers, hrData.reporting_to]);
+      .filter(
+        (u) =>
+          !u.is_disabled &&
+          canBeAssignedAsSupervisorAtOnboardingByRoleLabel(u.user_role_label),
+      )
+      .sort((a, b) => lineManagerLabel(a).localeCompare(lineManagerLabel(b)));
+  }, [allUsers]);
 
-  // Clear supervisor when the reporting-to role changes and current pick is
-  // no longer among the people holding that role.
-  useEffect(() => {
-    if (!hrData.supervisor_id) return;
-    const stillValid = eligibleSupervisors.some(
-      (u) => u.user_id === hrData.supervisor_id,
-    );
-    if (!stillValid) {
-      setHrData((prev) => ({
-        ...prev,
-        supervisor_id: undefined,
-        supervisor_name: undefined,
-      }));
+  const selectedLineManagerId = useMemo(() => {
+    if (hrData.supervisor_id && lineManagers.some((u) => u.user_id === hrData.supervisor_id)) {
+      return hrData.supervisor_id;
     }
-  }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
+    const reportingTo = hrData.reporting_to?.trim();
+    if (!reportingTo) return "";
+    const byName = lineManagers.find((u) => lineManagerLabel(u) === reportingTo);
+    if (byName) return byName.user_id;
+    const byJobTitle = lineManagers.find((u) => u.job_position?.trim() === reportingTo);
+    return byJobTitle?.user_id ?? "";
+  }, [hrData.supervisor_id, hrData.reporting_to, lineManagers]);
+
+  const pickLineManager = (userId: string) => {
+    const sup = lineManagers.find((u) => u.user_id === userId);
+    setHrData((prev) => ({
+      ...prev,
+      supervisor_id: sup?.user_id,
+      supervisor_name: sup
+        ? `${sup.first_name} ${sup.last_name}`.trim()
+        : undefined,
+      reporting_to: sup ? lineManagerLabel(sup) : undefined,
+    }));
+  };
 
   const departmentOptions = optionLists?.[ONBOARDING_DEPARTMENTS_LIST] ?? [];
-
-  // Real position titles currently held by staff with the Supervisory Role
-  // User role — not the recruitment job-postings catalog, since "Reporting
-  // to" should reflect who's actually in the org today, not a hypothetical
-  // opening. Onboarding only ever assigns a new hire's supervisor to someone
-  // with Supervisory Role (narrower than Manage User's pool, which also
-  // allows Executive Role / Human Resource) — see
-  // canBeAssignedAsSupervisorAtOnboardingByRoleLabel. HR picks the
-  // applicable one per offer.
-  const reportingToOptions = useMemo(() => {
-    const titles = allUsers
-      .filter((u) => !u.is_disabled && isSupervisoryRoleLabel(u.user_role_label))
-      .map((u) => u.job_position?.trim())
-      .filter((title): title is string => Boolean(title));
-    return [...new Set(titles)].sort((a, b) => a.localeCompare(b));
-  }, [allUsers]);
 
   const locationOptions = optionLists?.[ONBOARDING_LOCATIONS_LIST] ?? [];
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
@@ -223,44 +217,25 @@ export default function OnboardingHrFieldsForm({
       field.fieldKey === "supervisor_id" ||
       (field.fieldKey === "supervisor_name" && field.fieldType === "text")
     ) {
-      const selectedId = hrData.supervisor_id ?? "";
+      const emptyLabel =
+        lineManagers.length === 0
+          ? "No Supervisory, Executive, or HR staff found"
+          : "Select supervisor…";
       return (
         <label key={field.id} className={`block ${spanClass}`}>
           <span className="text-xs text-gray-500">{field.label}</span>
-          {!hrData.reporting_to?.trim() ? (
-            <p className="mt-1 text-xs text-amber-600 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              Select who this hire reports to first to see who currently holds that role.
-            </p>
-          ) : (
-            <select
-              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              value={selectedId}
-              onChange={(e) => {
-                const sup = eligibleSupervisors.find(
-                  (u) => u.user_id === e.target.value,
-                );
-                setHrData((prev) => ({
-                  ...prev,
-                  supervisor_id: sup?.user_id,
-                  supervisor_name: sup
-                    ? `${sup.first_name} ${sup.last_name}`.trim()
-                    : undefined,
-                }));
-              }}
-            >
-              <option value="">
-                {eligibleSupervisors.length === 0
-                  ? "No one currently holds that role"
-                  : "Select supervisor…"}
+          <select
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            value={selectedLineManagerId}
+            onChange={(e) => pickLineManager(e.target.value)}
+          >
+            <option value="">{emptyLabel}</option>
+            {lineManagers.map((sup) => (
+              <option key={sup.user_id} value={sup.user_id}>
+                {lineManagerLabel(sup)}
               </option>
-              {eligibleSupervisors.map((sup) => (
-                <option key={sup.user_id} value={sup.user_id}>
-                  {sup.first_name} {sup.last_name}
-                  {sup.grade_level ? ` (${sup.grade_level})` : ""}
-                </option>
-              ))}
-            </select>
-          )}
+            ))}
+          </select>
           {shouldShowHint(field.hint) && (
             <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
           )}
@@ -394,17 +369,17 @@ export default function OnboardingHrFieldsForm({
           <span className="text-xs text-gray-500">{field.label}</span>
           <select
             className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-            value={hrData.reporting_to ?? ""}
-            onChange={(e) => setField("reporting_to", e.target.value || undefined)}
+            value={selectedLineManagerId}
+            onChange={(e) => pickLineManager(e.target.value)}
           >
             <option value="">
-              {reportingToOptions.length === 0
-                ? "No senior staff positions found"
+              {lineManagers.length === 0
+                ? "No Supervisory, Executive, or HR staff found"
                 : "Select who this hire reports to…"}
             </option>
-            {reportingToOptions.map((title) => (
-              <option key={title} value={title}>
-                {title}
+            {lineManagers.map((sup) => (
+              <option key={sup.user_id} value={sup.user_id}>
+                {lineManagerLabel(sup)}
               </option>
             ))}
           </select>

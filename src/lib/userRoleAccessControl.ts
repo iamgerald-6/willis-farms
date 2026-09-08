@@ -213,8 +213,9 @@ export function hasSystemAccessByRoleLabel(label: string | null | undefined): bo
 }
 
 /** Who can be picked as someone's Assigned supervisor from Manage User —
- * Executive Role, Human Resource, or Supervisory Role (Standard, Consultant,
- * System Administrator are not eligible). Onboarding uses a narrower pool —
+ * Executive Role, Human Resource, Supervisory Role, or Super Admin
+ * (Standard, Consultant, System Administrator are not eligible). Offer /
+ * onboarding uses the same three line-manager roles without Super Admin —
  * see canBeAssignedAsSupervisorAtOnboardingByRoleLabel below. */
 export function canBeAssignedAsSupervisorByRoleLabel(
   label: string | null | undefined,
@@ -227,13 +228,18 @@ export function canBeAssignedAsSupervisorByRoleLabel(
   );
 }
 
-/** Who can be picked as a new hire's supervisor during onboarding —
- * Supervisory Role only (narrower than the Manage User pool above, which
- * also allows Executive Role / Human Resource). */
+/** Who can be picked as a new hire's line manager on Offer terms /
+ * onboarding: Supervisory Role, Executive Role, or Human Resource.
+ * Super Admin is not in this list — they can still be assigned later from
+ * Manage User. Does not depend on whether anyone currently reports to them. */
 export function canBeAssignedAsSupervisorAtOnboardingByRoleLabel(
   label: string | null | undefined,
 ): boolean {
-  return isSuperAdminRoleLabel(label) || isSupervisoryRoleLabel(label);
+  return (
+    isSupervisoryRoleLabel(label) ||
+    isExecutiveRoleLabel(label) ||
+    isHumanResourceRoleLabel(label)
+  );
 }
 
 /** Module keys Human Resource gets full (edit-equivalent) access to by
