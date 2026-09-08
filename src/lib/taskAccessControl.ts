@@ -5,13 +5,11 @@ import {
 } from "@/lib/userRoleAccessControl";
 
 /**
- * Senior Management = admin, manager, or super_admin — or, under the new
- * role system, Executive/Human Resource/Super Admin (see
- * hasBroadElevatedAccessByRoleLabel). System Administrator and Supervisory
- * are deliberately NOT included: System Administrator is explicitly barred
- * from creating tasks/approving leave/etc, and Supervisory's equivalent
- * capability is scoped to their own supervisees via supervisor_id rather
- * than broad like this.
+ * Senior Management = Executive / Human Resource / Super Admin (see
+ * hasBroadElevatedAccessByRoleLabel). System Administrator is not included
+ * (cannot create tasks / approve leave). Supervisory Role is not included
+ * here either — they can still create tasks for their assigned people via
+ * users.supervisor_id (see POST /api/task-manager/tasks).
  *
  * Only Senior Management can create, edit, archive, delete, or restore
  * tasks and projects. Everyone else is read-only, scoped to their own tasks

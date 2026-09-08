@@ -5,8 +5,8 @@ import type { AccessProfile } from "@/lib/pagePermissions";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   canBeAssignedAsSupervisorByRoleLabel,
+  isExecutiveRoleLabel,
   isSuperAdminRoleLabel,
-  isSupervisoryRoleLabel,
 } from "@/lib/userRoleAccessControl";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -18,6 +18,35 @@ export type SkillLogRecord = {
   employee?: { user_id?: string; grade_level?: string | null } | null;
   supervisor?: { user_id?: string; grade_level?: string | null } | null;
 };
+
+type EmbeddedGradeUser = {
+  grade_levels?: { code: string | null } | null;
+  grade_level_id?: string | null;
+  [key: string]: unknown;
+};
+
+/**
+ * grade_level is no longer a stored column on users — every skill_logs
+ * query embeds the employee/supervisor via grade_level_id's FK join to
+ * grade_levels(code) instead. Flatten that embed back onto a top-level
+ * `grade_level` field so client code (SkillLogDetailModal, SkillLogforms,
+ * skillLogForms/page.tsx, skillLog/page.tsx, …) reads the same shape it
+ * always has, without ever touching a stored/driftable grade_level column.
+ */
+export function flattenSkillLogGradeLevels<
+  T extends { employee?: EmbeddedGradeUser | null; supervisor?: EmbeddedGradeUser | null },
+>(row: T): T {
+  const flattenUser = (u?: EmbeddedGradeUser | null) => {
+    if (!u) return u;
+    const { grade_levels, ...rest } = u;
+    return { ...rest, grade_level: grade_levels?.code ?? null };
+  };
+  return {
+    ...row,
+    employee: flattenUser(row.employee) as T["employee"],
+    supervisor: flattenUser(row.supervisor) as T["supervisor"],
+  };
+}
 
 function employeeId(log: SkillLogRecord): string | undefined {
   return log.employee?.user_id ?? log.employee_id;
@@ -34,7 +63,7 @@ export function canViewSkillLogRecord(
   log: SkillLogRecord,
   groupPresets?: GroupPresetsMap | null,
   sessionRole?: string | null,
-  hasSupervisees = false,
+  _hasSupervisees = false,
 ): boolean {
   if (!profile || !userId) return false;
   if (!canPerformModuleAction(profile, "hc:skillLog", "view", sessionRole, groupPresets)) {
@@ -44,10 +73,8 @@ export function canViewSkillLogRecord(
   const empId = employeeId(log);
   const supId = supervisorId(log);
 
-  // Employee or filler always sees their own involvement
   if (empId === userId || supId === userId) return true;
 
-  // Reviewers see all submitted / signed-off logs
   if (
     (log.status === "submitted" || log.status === "signed_off") &&
     canPerformModuleAction(profile, "hc:skillLog", "review", sessionRole, groupPresets)
@@ -55,13 +82,12 @@ export function canViewSkillLogRecord(
     return true;
   }
 
-  // Approvers see submitted logs they may sign off, and signed-off logs they reviewed
   if (
     supId !== userId &&
     canPerformModuleAction(profile, "hc:skillLog", "approve", sessionRole, groupPresets)
   ) {
     if (log.status === "signed_off") return true;
-    if (log.status === "submitted" && canSignOffSkillLogEffective(profile, hasSupervisees)) {
+    if (log.status === "submitted" && canSignOffSkillLogEffective(profile)) {
       return true;
     }
   }
@@ -69,22 +95,10 @@ export function canViewSkillLogRecord(
   return false;
 }
 
-/**
- * Whether `profile` may sign off a submitted log — Super Admin always can;
- * everyone else must actually hold the Supervisory Role AND have at least
- * one employee assigned to them (supervisor_id) — a Supervisory-role label
- * with nobody reporting to them doesn't qualify. This is a distinct admin/
- * review capability, separate from who actually FILLS a specific employee's
- * log (always their own assigned supervisor — see canFillSkillLogForEmployee
- * below), and from `hasSupervisees`, which the caller must compute (see
- * hasAssignedSupervisees below).
- */
-function canSignOffSkillLogEffective(
-  profile: AccessProfile,
-  hasSupervisees: boolean,
-): boolean {
-  if (isSuperAdminRoleLabel(profile.role)) return true;
-  return isSupervisoryRoleLabel(profile.role) && hasSupervisees;
+/** Sign-off is Executive Role (or Super Admin). The person who filled the
+ * log cannot also sign it off — even if they are an Executive. */
+function canSignOffSkillLogEffective(profile: AccessProfile): boolean {
+  return isSuperAdminRoleLabel(profile.role) || isExecutiveRoleLabel(profile.role);
 }
 
 export function canApproveSkillLogRecord(
@@ -93,7 +107,7 @@ export function canApproveSkillLogRecord(
   log: SkillLogRecord,
   groupPresets?: GroupPresetsMap | null,
   sessionRole?: string | null,
-  hasSupervisees = false,
+  _hasSupervisees = false,
 ): boolean {
   if (!profile || !userId) return false;
   if (log.status !== "submitted") return false;
@@ -105,23 +119,7 @@ export function canApproveSkillLogRecord(
     return false;
   }
 
-  return canSignOffSkillLogEffective(profile, hasSupervisees);
-}
-
-/** Whether `userId` currently has at least one employee assigned to them as
- * supervisor_id — required alongside the Supervisory Role label itself for
- * sign-off/approval eligibility (see canSignOffSkillLogEffective above). */
-export async function hasAssignedSupervisees(
-  supabase: SupabaseClient | null,
-  userId: string | null | undefined,
-): Promise<boolean> {
-  if (!supabase || !userId) return false;
-  const { data } = await supabase
-    .from("users")
-    .select("user_id")
-    .eq("supervisor_id", userId)
-    .limit(1);
-  return !!data && data.length > 0;
+  return canSignOffSkillLogEffective(profile);
 }
 
 export function canEditSkillLogDraft(

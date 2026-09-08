@@ -34,11 +34,10 @@ const Leave = () => {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const role = accessProfile?.role ?? sessionRole;
-  const hasSupervisees = !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
-  // "All Requests" toggle — same rule as everywhere else someone else's
-  // records become visible: Super Admin, the broad HR/Executive/System
-  // roles, or a Supervisory Role account with at least one supervisee.
-  const isAdminOrManager = canViewOthers(role, hasSupervisees);
+  // "All Requests" toggle — role opens it (Supervisory / Executive / HR /
+  // Super Admin). users.supervisor_id only decides whose requests they
+  // can act on, not whether the tab exists.
+  const isAdminOrManager = canViewOthers(role);
 
   return (
     <div>

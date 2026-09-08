@@ -6,8 +6,7 @@ import type { JobApplication } from "@/lib/careers/types";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { resolveOfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
 import { validateOfferTerms } from "@/lib/careers/offerTerms";
-import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 
 export const maxDuration = 60;
 
@@ -73,8 +72,7 @@ export async function POST(req: NextRequest) {
 
     const hr = (submission?.hr_data ?? {}) as OnboardingHrData;
 
-    const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
-    const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
 
     const termsValidation = validateOfferTerms(hr, gradeConfig);
     if (!hr.offer_terms_saved_at || !termsValidation.valid) {

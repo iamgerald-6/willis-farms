@@ -8,22 +8,18 @@ import {
   resolveGradeOrder,
   type GradeLevelsConfig,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 
+/** Grade levels now live in the Organizational Structure "Grade levels"
+ * catalog (grade_levels table) — see
+ * docs/organizational-structure/grade-levels-catalog-fields.sql — not the
+ * old System Definitions (mod:recruitment) business-logic JSON blob. */
 export const GRADE_LEVELS_CONFIG_QUERY_KEY = [
-  "system_module_config",
-  RECRUITMENT_MODULE_ID,
-  "grade_levels",
+  "org_structure_grade_levels_config",
 ] as const;
 
 async function fetchGradeLevelsConfigClient(): Promise<GradeLevelsConfig | null> {
-  const res = await api.get(
-    `/system-definitions/modules/${encodeURIComponent(RECRUITMENT_MODULE_ID)}`,
-  );
-  return (
-    (res.data.data?.businessLogic?.gradeLevelsConfig as GradeLevelsConfig | undefined) ??
-    null
-  );
+  const res = await api.get("/system-definitions/grade-levels-config");
+  return (res.data.data as GradeLevelsConfig | undefined) ?? null;
 }
 
 export function useGradeLevelsConfig() {

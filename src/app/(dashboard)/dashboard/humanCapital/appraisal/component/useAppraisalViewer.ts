@@ -12,9 +12,8 @@ import type { ViewerContext } from "./appraisalTypes";
  * every other page does (resolveAccessProfile — the new user_role_label,
  * never the stale raw `role` column). "Full access" (see everyone, browse
  * all periods, archive) and "appraises others at all" are role-based —
- * see hasFullAppraisalAccess/canAppraiseOthers. Which SPECIFIC employee a
- * supervisor can act on is a separate, per-record check (canSuperviseAppraisal
- * in appraisal/roles.ts) gated on the actual supervisor_id assignment.
+ * see hasFullAppraisalAccess/canAppraiseOthers. Who can fill the
+ * supervisor side is user_role_id (canSuperviseAppraisal).
  */
 export function useAppraisalViewer(): {
   viewer: ViewerContext;
@@ -41,8 +40,6 @@ export function useAppraisalViewer(): {
   const profile = users?.find((u) => u.user_id === userId);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
-  const hasSupervisees =
-    !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
 
   return {
     viewer: {
@@ -52,7 +49,6 @@ export function useAppraisalViewer(): {
       userId,
       accessTier: profile?.access_tier ?? null,
       pagePermissionLevels: profile?.page_permission_levels ?? null,
-      hasSupervisees,
     },
     isLoading: sessionLoading || usersLoading,
   };

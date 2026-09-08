@@ -1,4 +1,20 @@
-import type { InterviewGuideKey } from "./openings";
+/** Legacy shared, grade-keyed interview guide identifier. Real interview
+ * execution no longer resolves content from these — see
+ * fetchPostingInterviewContext.ts — this type/config only remains for the
+ * one-time "backfill this posting's Interview setup from its old guide"
+ * tool (postings/backfill-interview-setup/route.ts) and for historical
+ * data (role_interview_reports rows created before job_posting_id existed). */
+export type InterviewGuideKey =
+  | "L1"
+  | "L2"
+  | "L3"
+  | "L4"
+  | "L5"
+  | "L6"
+  | "L7"
+  | "consultant"
+  | "data_analyst"
+  | "veterinarian";
 
 export const RATING_LABELS: Record<number, string> = {
   1: "Unsatisfactory",
@@ -539,7 +555,7 @@ const VETERINARIAN_GUIDE: InterviewGuideConfig = {
   ],
 };
 
-const GUIDES: Record<InterviewGuideKey, InterviewGuideConfig> = {
+const GUIDES: Partial<Record<InterviewGuideKey, InterviewGuideConfig>> = {
   L1: L1_GUIDE,
   L2: L2_GUIDE,
   L3: L3_GUIDE,

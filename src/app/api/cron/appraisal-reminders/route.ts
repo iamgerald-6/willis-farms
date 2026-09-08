@@ -92,7 +92,17 @@ export async function GET(req: NextRequest) {
       const active = getActiveAppraisalPeriod(now);
       const { quarter, year } = active;
 
-      const { data: allUsers } = await supabaseAdmin.from("users").select("*");
+      // grade_level is no longer a stored column — derived live via the
+      // grade_level_id FK join to the Grade levels catalog.
+      const { data: allUsersRaw } = await supabaseAdmin
+        .from("users")
+        .select("*, grade_levels(code)");
+      const allUsers = (allUsersRaw ?? []).map((row) => {
+        const { grade_levels, ...rest } = row as typeof row & {
+          grade_levels?: { code: string | null } | null;
+        };
+        return { ...rest, grade_level: grade_levels?.code ?? null };
+      });
       const { data: existingRows } = await supabaseAdmin
         .from("appraisals")
         .select("company_id")

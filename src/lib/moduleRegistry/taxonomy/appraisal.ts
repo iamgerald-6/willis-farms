@@ -3,11 +3,8 @@ import {
   GRADE_OPTIONS,
   QUARTERS,
   canAppraiseOthers,
-  canRate,
   gradeBandForGrade,
-  gradeIndex,
   sectionSetForQuarter,
-  supervisableGradeBands,
   type Quarter,
   type SectionSet,
 } from "@/lib/appraisal/sections";
@@ -44,11 +41,8 @@ export {
   GRADE_OPTIONS,
   QUARTERS,
   canAppraiseOthers,
-  canRate,
   gradeBandForGrade,
-  gradeIndex,
   sectionSetForQuarter,
-  supervisableGradeBands,
 };
 export type { Quarter, SectionSet };
 

@@ -11,10 +11,6 @@ import {
   type ApplicationFormConfig,
 } from "./applicationFormConfig";
 import {
-  normalizeGradeLevelsConfig,
-  type GradeLevelsConfig,
-} from "./gradeLevelsConfig";
-import {
   normalizeAnnualLeaveCapDays,
 } from "@/lib/leave/leavePolicy";
 import { normalizeCompanyEmailDomain } from "./companyEmailDomain";
@@ -42,8 +38,6 @@ export interface ModuleBusinessLogic {
   refereeReferenceConfig?: RefereeReferenceConfig;
   /** Recruitment — job application wizard layout (steps, referee count). */
   applicationFormConfig?: ApplicationFormConfig;
-  /** Recruitment — configurable grade levels (L1–L7+) linked to job posting roles. */
-  gradeLevelsConfig?: GradeLevelsConfig;
   /** Appraisal — grouped bands vs individual grade-level forms. */
   appraisalScopeConfig?: AppraisalScopeConfig;
   /** Leave module — annual working-day allowance per employee per calendar year. */
@@ -71,7 +65,6 @@ export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
     applicationFormConfig: normalizeApplicationFormConfig(
       obj.applicationFormConfig,
     ),
-    gradeLevelsConfig: normalizeGradeLevelsConfig(obj.gradeLevelsConfig),
     appraisalScopeConfig: normalizeAppraisalScopeConfig(
       obj.appraisalScopeConfig,
     ),

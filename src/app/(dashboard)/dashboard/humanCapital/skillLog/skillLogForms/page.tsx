@@ -21,41 +21,32 @@ import {
 import { FormPageSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
   getModuleRoute,
-  getSkillLogGradeLevels,
-  parseSkillLogGradeLevel,
   SKILL_LOG_FORM_COPY,
-  SKILL_LOG_MIN_FILLER_GRADE,
 } from "@/lib/moduleRegistry";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canFillSkillLog } from "@/lib/skillLogAccess";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   canParticipateAsProgramSubject,
   consultantSelfServiceBlockedMessage,
   isConsultantEmployee,
 } from "@/lib/consultantPrograms";
 import {
-  buildSkillLogCompetencyRowsFromConfig,
-  resolveSkillLogSectionsForType,
   SKILL_LOG_MODULE_ID,
-  SKILL_LOG_SECTIONS_LIST,
   SKILL_LOG_TIER_AUTH_LIST,
-  SKILL_LOG_TYPES_LIST,
-  type ModuleBusinessLogic,
   type SystemOption,
 } from "@/lib/systemDefinitions";
+import type { SkillLogTemplateSection } from "@/lib/skillLog/templates";
+import { hasCompleteSkillLogPlacement } from "@/lib/skillLog/templates";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
 const SKILL_LOG_ROUTE =
   getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
-const ALL_GRADES = getSkillLogGradeLevels();
 
 function optionValue(opt: SystemOption): string {
   return opt.legacy_value ?? opt.label;
-}
-
-function hasOptionValue(options: SystemOption[], value: string | undefined | null): boolean {
-  if (!value) return false;
-  return options.some((o) => optionValue(o) === value);
 }
 
 interface UserProfile {
@@ -63,15 +54,19 @@ interface UserProfile {
   first_name: string;
   last_name: string;
   grade_level: string;
+  role?: string;
+  user_role_label?: string | null;
   supervisor_id?: string | null;
+  site_id?: string | null;
+  business_unit_id?: string | null;
+  department_id?: string | null;
+  section_id?: string | null;
+  position_id?: string | null;
+  grade_level_id?: string | null;
 }
 
-// NOTE: the skill taxonomy (log types, sections, and individual skills) used
-// to be hardcoded here. It's now sourced from system definitions via
-// buildSkillLogCompetencyRowsFromConfig/resolveSkillLogSectionsForType and
-// SKILL_LOG_TYPES_LIST (imported above), so admins can edit it without a
-// code change. The old hardcoded table below is dead — removed rather than
-// kept alongside the registry-driven version.
+// Competency rows come from the Skill log scope template that matches the
+// selected employee's org placement (System Definitions > Skill Log).
 // ─── Review date helper ─────────────────────────────────────────────────────
 // review_period is still stored as a plain string (no schema change), but the
 // UI now captures it as a single calendar date (YYYY-MM-DD, matching what a
@@ -91,9 +86,8 @@ const competencySchema = z.object({
 });
 
 const skillLogSchema = z.object({
-  employee_grade: z.string().min(1, "Select a grade"),
   employee_id: z.string().min(1, "Select an employee"),
-  log_type: z.string().min(1, "Select a log type"),
+  log_type: z.string().min(1, "A skill log template is required"),
   review_period: z.string().min(1, "Date is required"),
   section: z.string().optional(),
   tier_auth: z.string().optional(),
@@ -151,7 +145,7 @@ function FormInput({
         {label}
       </label>
       <input
-        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 ${error ? "border-red-400" : "border-gray-200"}`}
+        className={`w-full border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:bg-gray-50 ${error ? "border-red-400" : "border-gray-200"}`}
         style={{ "--tw-ring-color": BRAND } as any}
         {...props}
       />
@@ -249,6 +243,7 @@ function SkillLogFormPageContent() {
     },
   });
   const supervisorId = session?.user?.id ?? "";
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
 
   // ── All users via API (bypasses RLS) ──
   const { data: allUsers = [] } = useQuery<UserProfile[]>({
@@ -261,31 +256,29 @@ function SkillLogFormPageContent() {
 
   // Derive supervisor profile from the already-fetched list
   const supervisor = allUsers.find((u) => u.user_id === supervisorId) ?? null;
+  const accessProfile = resolveAccessProfile(supervisor, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultantSupervisor = isConsultantEmployee(
     supervisor?.grade_level,
     gradeLevelsConfig,
   );
-
-  const supervisorGradeLevel = parseSkillLogGradeLevel(
-    supervisor?.grade_level ?? "L1",
-  );
+  const canFill = accessProfile
+    ? canFillSkillLog(accessProfile, groupPresetData?.presets, sessionRole)
+    : false;
 
   useEffect(() => {
     if (allUsers.length > 0 && supervisorId && !supervisor) return; // still loading
-    if (supervisor && supervisorGradeLevel < SKILL_LOG_MIN_FILLER_GRADE) {
-      router.replace(SKILL_LOG_ROUTE);
-    }
-    if (supervisor && isConsultantSupervisor && !isEditMode) {
+    if (!isEditMode && supervisor && (isConsultantSupervisor || !canFill)) {
       router.replace(SKILL_LOG_ROUTE);
     }
   }, [
     supervisor,
-    supervisorGradeLevel,
     router,
     allUsers.length,
     supervisorId,
     isConsultantSupervisor,
+    canFill,
     isEditMode,
   ]);
 
@@ -305,36 +298,10 @@ function SkillLogFormPageContent() {
     return res.data.data as SystemOption[];
   };
 
-  const { data: sectionOptions = [], isLoading: loadingSections } = useQuery({
-    queryKey: ["skill_log_options", SKILL_LOG_SECTIONS_LIST],
-    queryFn: () => fetchOptions(SKILL_LOG_SECTIONS_LIST),
-  });
-
   const { data: tierAuthOptions = [], isLoading: loadingTierAuth } = useQuery({
     queryKey: ["skill_log_options", SKILL_LOG_TIER_AUTH_LIST],
     queryFn: () => fetchOptions(SKILL_LOG_TIER_AUTH_LIST),
   });
-
-  const { data: logTypeOptions = [], isLoading: loadingLogTypes } = useQuery({
-    queryKey: ["skill_log_options", SKILL_LOG_TYPES_LIST],
-    queryFn: () => fetchOptions(SKILL_LOG_TYPES_LIST),
-  });
-
-  const { data: moduleConfig } = useQuery<{ businessLogic: ModuleBusinessLogic }>({
-    queryKey: ["skill_log_module_config"],
-    queryFn: async () => {
-      const res = await api.get(
-        `/system-definitions/modules/${encodeURIComponent(SKILL_LOG_MODULE_ID)}`,
-      );
-      return {
-        businessLogic: (res.data.data?.businessLogic ??
-          {}) as ModuleBusinessLogic,
-      };
-    },
-  });
-
-  const competencyOverrides =
-    moduleConfig?.businessLogic?.competencyContentOverrides;
 
   // ── Load existing log for edit ──
   const { data: existingLog, isLoading: loadingExisting } = useQuery({
@@ -359,7 +326,6 @@ function SkillLogFormPageContent() {
   } = useForm<SkillLogFormValues>({
     resolver: zodResolver(skillLogSchema),
     defaultValues: {
-      employee_grade: "",
       employee_id: "",
       log_type: "",
       review_period: "",
@@ -373,8 +339,6 @@ function SkillLogFormPageContent() {
 
   const { fields, replace } = useFieldArray({ control, name: "competencies" });
 
-  const watchedGrade = watch("employee_grade");
-  const watchedLogType = watch("log_type");
   const watchedEmployeeId = watch("employee_id");
 
   const directReports = useMemo(
@@ -387,50 +351,104 @@ function SkillLogFormPageContent() {
     [allUsers, supervisorId, gradeLevelsConfig],
   );
 
-  const assessableGrades = useMemo(() => {
-    const gradesWithReports = new Set(
-      directReports.map((u) => u.grade_level).filter(Boolean),
-    );
-    return ALL_GRADES.filter(
-      (g) =>
-        parseSkillLogGradeLevel(g) < supervisorGradeLevel &&
-        gradesWithReports.has(g),
-    );
-  }, [directReports, supervisorGradeLevel]);
+  const selectedEmployee = useMemo(
+    () => allUsers.find((u) => u.user_id === watchedEmployeeId) ?? null,
+    [allUsers, watchedEmployeeId],
+  );
 
-  const employeesForGrade = useMemo(() => {
-    if (!watchedGrade) return [];
-    return directReports.filter((u) => u.grade_level === watchedGrade);
-  }, [directReports, watchedGrade]);
+  const employeeOrgPlacement = useMemo(
+    () => ({
+      site_id: selectedEmployee?.site_id ?? null,
+      business_unit_id: selectedEmployee?.business_unit_id ?? null,
+      department_id: selectedEmployee?.department_id ?? null,
+      section_id: selectedEmployee?.section_id ?? null,
+      position_id: selectedEmployee?.position_id ?? null,
+      grade_level_id: selectedEmployee?.grade_level_id ?? null,
+    }),
+    [selectedEmployee],
+  );
+  const hasCompleteOrgPlacement = hasCompleteSkillLogPlacement(employeeOrgPlacement);
+
+  const { data: skillLogTemplate, isLoading: loadingTemplate } = useQuery<{
+    id: string | null;
+    sections: SkillLogTemplateSection[];
+    tier_auth_options?: string[];
+    section_label: string | null;
+    position_label: string | null;
+  } | null>({
+    queryKey: ["skill_log_template", employeeOrgPlacement],
+    queryFn: async () => {
+      const res = await api.get("/skillLog/template", {
+        params: employeeOrgPlacement,
+      });
+      return res.data.data;
+    },
+    enabled: !!selectedEmployee,
+  });
+
+  const matchedTemplateSections = useMemo(
+    () =>
+      skillLogTemplate?.id
+        ? skillLogTemplate.sections.filter((s) => s.skills.length > 0)
+        : [],
+    [skillLogTemplate],
+  );
+  const hasMatchedTemplate = matchedTemplateSections.length > 0;
+
+  const templateTierOptions = useMemo(() => {
+    const fromTemplate = (skillLogTemplate?.tier_auth_options ?? [])
+      .map((label) => label.trim())
+      .filter(Boolean);
+    if (fromTemplate.length > 0) return fromTemplate;
+    return tierAuthOptions.map((opt) => optionValue(opt)).filter(Boolean);
+  }, [skillLogTemplate, tierAuthOptions]);
 
   const watchedReviewPeriod = watch("review_period");
 
-  // Reset employee on grade change
   useEffect(() => {
     if (isEditMode) return;
-    setValue("employee_id", "");
-  }, [watchedGrade, setValue, isEditMode]);
-
-  // Rebuild competency rows on log type change
-  // Rebuild competency rows on log type change — skip in edit mode
-  useEffect(() => {
-    if (isEditMode) return; // ← don't rebuild when editing, reset() handles it
-    if (!watchedLogType) {
+    if (!selectedEmployee) {
       replace([]);
+      setValue("section", "");
+      setValue("log_type", "");
       return;
     }
-    replace(buildSkillLogCompetencyRowsFromConfig(watchedLogType, competencyOverrides));
-  }, [watchedLogType, replace, isEditMode, competencyOverrides]);
+    if (skillLogTemplate?.section_label) {
+      setValue("section", skillLogTemplate.section_label);
+    }
+    if (!hasMatchedTemplate) {
+      replace([]);
+      setValue("log_type", "");
+      return;
+    }
+    setValue("log_type", skillLogTemplate?.position_label || "Skill log");
+    replace(
+      matchedTemplateSections.flatMap((section) =>
+        section.skills.map((skill) => ({
+          skill,
+          observed: null,
+          performed_under_supervision: null,
+          performed_consistently: null,
+          rating: null,
+          comments: "",
+        })),
+      ),
+    );
+  }, [
+    isEditMode,
+    selectedEmployee,
+    hasMatchedTemplate,
+    skillLogTemplate,
+    matchedTemplateSections,
+    replace,
+    setValue,
+  ]);
 
   // Populate form in edit mode
   // Populate form in edit mode
   useEffect(() => {
     if (!existingLog) return;
     const comp = existingLog.skill_log_competencies ?? [];
-
-    // employee_grade may come from the joined employee object
-    const employeeGrade =
-      existingLog.employee_grade ?? existingLog.employee?.grade_level ?? "";
 
     // Only pre-fill the date input when the existing value is already in
     // the YYYY-MM-DD shape it expects. A legacy value (e.g. a pre-date-picker
@@ -441,7 +459,6 @@ function SkillLogFormPageContent() {
       : "";
 
     reset({
-      employee_grade: employeeGrade,
       employee_id: existingLog.employee_id ?? "",
       log_type: existingLog.log_type ?? "",
       review_period: existingReviewPeriod,
@@ -517,11 +534,30 @@ function SkillLogFormPageContent() {
     return map;
   }, [fields]);
 
-  const logSections = watchedLogType
-    ? resolveSkillLogSectionsForType(watchedLogType, competencyOverrides)
-    : [];
+  const logSections = useMemo(() => {
+    if (isEditMode && fields.length > 0) {
+      const savedSkills = fields.map((f) => f.skill);
+      if (!hasMatchedTemplate) {
+        return [{ key: "existing", title: "Competencies", skills: savedSkills }];
+      }
+      const saved = new Set(savedSkills);
+      const grouped = matchedTemplateSections
+        .map((s) => ({ ...s, skills: s.skills.filter((sk) => saved.has(sk)) }))
+        .filter((s) => s.skills.length > 0);
+      const groupedSkills = new Set(grouped.flatMap((s) => s.skills));
+      const leftovers = savedSkills.filter((sk) => !groupedSkills.has(sk));
+      if (leftovers.length > 0) {
+        return [...grouped, { key: "other", title: "Competencies", skills: leftovers }];
+      }
+      return grouped.length > 0
+        ? grouped
+        : [{ key: "existing", title: "Competencies", skills: savedSkills }];
+    }
+    if (hasMatchedTemplate) return matchedTemplateSections;
+    return [];
+  }, [hasMatchedTemplate, matchedTemplateSections, isEditMode, fields]);
 
-  const optionsLoading = loadingSections || loadingTierAuth || loadingLogTypes;
+  const optionsLoading = loadingTierAuth;
 
   if (isEditMode && loadingExisting) {
     return <FormPageSkeleton />;
@@ -568,32 +604,6 @@ function SkillLogFormPageContent() {
             Employee Details
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Grade */}
-            <Controller
-              control={control}
-              name="employee_grade"
-              render={({ field }) => (
-                <FormSelect
-                  label="Select Grade"
-                  error={errors.employee_grade?.message}
-                  disabled={isEditMode}
-                  {...field}
-                >
-                  <option value="">
-                    {assessableGrades.length === 0
-                      ? "No direct reports assigned to you"
-                      : "— Select grade —"}
-                  </option>
-                  {assessableGrades.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </FormSelect>
-              )}
-            />
-
-            {/* Employee */}
             <Controller
               control={control}
               name="employee_id"
@@ -601,21 +611,18 @@ function SkillLogFormPageContent() {
                 <FormSelect
                   label="Employee"
                   error={errors.employee_id?.message}
-                  disabled={!watchedGrade || isEditMode}
+                  disabled={isEditMode}
                   {...field}
                 >
                   <option value="">
-                    {watchedGrade
-                      ? employeesForGrade.length === 0
-                        ? `No direct reports at ${watchedGrade}`
-                        : "— Select employee —"
-                      : assessableGrades.length === 0
-                        ? "No direct reports assigned to you"
-                        : "Select a grade first"}
+                    {directReports.length === 0
+                      ? "No direct reports assigned to you"
+                      : "— Select employee —"}
                   </option>
-                  {employeesForGrade.map((u) => (
+                  {directReports.map((u) => (
                     <option key={u.user_id} value={u.user_id}>
                       {u.first_name} {u.last_name}
+                      {u.grade_level ? ` (${u.grade_level})` : ""}
                     </option>
                   ))}
                   {isEditMode && existingLog && (
@@ -627,32 +634,14 @@ function SkillLogFormPageContent() {
               )}
             />
 
-            <Controller
-              control={control}
-              name="section"
-              render={({ field }) => (
-                <FormSelect
-                  label="Section"
-                  error={errors.section?.message}
-                  disabled={optionsLoading}
-                  {...field}
-                >
-                  <option value="">— Select section —</option>
-                  {sectionOptions.map((opt) => (
-                    <option key={opt.id} value={optionValue(opt)}>
-                      {opt.label}
-                    </option>
-                  ))}
-                  {isEditMode &&
-                    existingLog?.section &&
-                    !hasOptionValue(sectionOptions, existingLog.section) && (
-                      <option value={existingLog.section}>
-                        {existingLog.section}
-                      </option>
-                    )}
-                </FormSelect>
-              )}
+            <FormInput
+              label="Section"
+              readOnly
+              disabled
+              value={watch("section") || "—"}
             />
+            <input type="hidden" {...register("section")} />
+            <input type="hidden" {...register("log_type")} />
 
             <Controller
               control={control}
@@ -661,18 +650,18 @@ function SkillLogFormPageContent() {
                 <FormSelect
                   label="Tier Authorisation"
                   error={errors.tier_auth?.message}
-                  disabled={optionsLoading}
+                  disabled={optionsLoading && templateTierOptions.length === 0}
                   {...field}
                 >
                   <option value="">— Select tier —</option>
-                  {tierAuthOptions.map((opt) => (
-                    <option key={opt.id} value={optionValue(opt)}>
-                      {opt.label}
+                  {templateTierOptions.map((label) => (
+                    <option key={label} value={label}>
+                      {label}
                     </option>
                   ))}
                   {isEditMode &&
                     existingLog?.tier_auth &&
-                    !hasOptionValue(tierAuthOptions, existingLog.tier_auth) && (
+                    !templateTierOptions.includes(existingLog.tier_auth) && (
                       <option value={existingLog.tier_auth}>
                         {existingLog.tier_auth}
                       </option>
@@ -699,35 +688,25 @@ function SkillLogFormPageContent() {
                 )}
             </div>
 
-            {/* Log Type */}
-            <Controller
-              control={control}
-              name="log_type"
-              render={({ field }) => (
-                <FormSelect
-                  label="Skills Log Type"
-                  error={errors.log_type?.message}
-                  disabled={optionsLoading}
-                  {...field}
-                >
-                  <option value="">— Select log type —</option>
-                  {logTypeOptions.map((opt) => (
-                    <option key={opt.id} value={optionValue(opt)}>
-                      {opt.label}
-                    </option>
-                  ))}
-                  {isEditMode &&
-                    existingLog?.log_type &&
-                    !hasOptionValue(logTypeOptions, existingLog.log_type) && (
-                      <option value={existingLog.log_type}>
-                        {existingLog.log_type}
-                      </option>
-                    )}
-                </FormSelect>
-              )}
-            />
           </div>
         </div>
+
+        {!isEditMode && logSections.length === 0 && (
+          <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl bg-white">
+            {loadingTemplate && selectedEmployee ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading this employee&apos;s skill log form…
+              </span>
+            ) : !watchedEmployeeId ? (
+              "Select an employee above to load the skill log form"
+            ) : !hasCompleteOrgPlacement ? (
+              "This employee's org placement (Site/Business unit/Department/Section/Position/Grade level) isn't fully set up yet — ask HR to complete it in Manage User before a skill log can be filled."
+            ) : (
+              "No skill log form has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions > Skill Log > Skill log scope."
+            )}
+          </div>
+        )}
 
         {/* Competency Table */}
         {logSections.length > 0 && fields.length > 0 && (

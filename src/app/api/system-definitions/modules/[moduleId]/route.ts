@@ -19,7 +19,6 @@ const BUSINESS_LOGIC_KEYS = [
   "competencyContentOverrides",
   "refereeReferenceConfig",
   "applicationFormConfig",
-  "gradeLevelsConfig",
   "appraisalScopeConfig",
   "annualLeaveCapDays",
   "companyEmailDomain",

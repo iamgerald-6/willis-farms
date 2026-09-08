@@ -669,12 +669,10 @@ export default function PromotionViewPage() {
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const viewerRole = resolveAccessProfile(currentUser, sessionRole)?.role ?? sessionRole ?? "";
-  const viewerHasSupervisees =
-    !!userId && allUsers.some((u) => u.supervisor_id === userId);
-  const { config: gradeLevelsConfig } = useGradeLevelsConfig();
+  const { config: gradeLevelsConfig, gradeOrder } = useGradeLevelsConfig();
 
-  const canActOnOthers = canActOnOthersAccess(viewerRole, viewerHasSupervisees);
-  const canViewAll = canViewOthers(viewerRole, viewerHasSupervisees);
+  const canActOnOthers = canActOnOthersAccess(viewerRole);
+  const canViewAll = canViewOthers(viewerRole);
 
   // Fetch completed promotions from promotions table
   const { data: completedRaw = [], isLoading: loadingCompleted } = useQuery<
@@ -924,7 +922,7 @@ export default function PromotionViewPage() {
             className="flex-1 sm:flex-initial text-xs sm:text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-red-400 text-gray-600"
           >
             <option value="">All Grades</option>
-            {["L1", "L2", "L3", "L4", "L5", "L6", "L7"].map((g) => (
+            {gradeOrder.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>

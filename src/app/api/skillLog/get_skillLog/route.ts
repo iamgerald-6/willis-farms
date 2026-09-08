@@ -8,7 +8,7 @@ import {
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import {
   canViewSkillLogRecord,
-  hasAssignedSupervisees,
+  flattenSkillLogGradeLevels,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
 
@@ -32,13 +32,15 @@ const FULL_SELECT = `
     user_id,
     first_name,
     last_name,
-    grade_level
+    grade_level_id,
+    grade_levels ( code )
   ),
   supervisor:users!skill_logs_supervisor_id_fkey (
     user_id,
     first_name,
     last_name,
-    grade_level
+    grade_level_id,
+    grade_levels ( code )
   ),
   skill_log_competencies (
     id,
@@ -85,18 +87,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
-
-    const visible = (data ?? []).filter((log) =>
-      canViewSkillLogRecord(
-        ctx.profile,
-        ctx.user.id,
-        log as SkillLogRecord,
-        ctx.presets,
-        ctx.user.role,
-        hasSupervisees,
-      ),
-    );
+    const visible = (data ?? [])
+      .filter((log) =>
+        canViewSkillLogRecord(
+          ctx.profile,
+          ctx.user.id,
+          log as SkillLogRecord,
+          ctx.presets,
+          ctx.user.role,
+        ),
+      )
+      .map((log) => flattenSkillLogGradeLevels(log as SkillLogRecord));
 
     return NextResponse.json({ success: true, data: visible });
   } catch (err: unknown) {

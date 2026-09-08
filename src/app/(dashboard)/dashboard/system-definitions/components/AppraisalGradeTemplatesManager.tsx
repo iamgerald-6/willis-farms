@@ -16,6 +16,12 @@ import type {
   OrgCustomListItem,
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
+import {
+  EMPTY_ORG_MAP_ROWS,
+  itemsForOrgMapField,
+  parentOrgTable,
+  type OrgMapRows,
+} from "@/lib/organizationalStructureMapping";
 
 /**
  * Replaces the old global L1-L7 grade-band "Appraisal scope" editors
@@ -43,15 +49,6 @@ const TABLE_TO_TEMPLATE_COLUMN: Record<string, keyof AppraisalGradeTemplate> = {
   custom_position: "position_id",
   grade_levels: "grade_level_id",
 };
-
-type MappingLevel = {
-  id: string;
-  position: number;
-  parent_level_id: string | null;
-  list_type_id: string;
-  list_type: { id: string; label: string; singular: string; table_name: string };
-};
-type MappingNode = { id: string; level_id: string; item_id: string; parent_node_id: string | null };
 
 type SectionSet = "quarterly" | "annual";
 type WizardTab = "scope" | "sections" | "weights" | "rules";
@@ -108,70 +105,21 @@ export default function AppraisalGradeTemplatesManager({ canAdd, canEdit }: Prop
     return map;
   }, [relevantListTypes, itemsQueries]);
 
-  const { data: mappingLevels = [] } = useQuery<MappingLevel[]>({
-    queryKey: ["org_mapping_levels_list"],
-    queryFn: async () => (await api.get("/organizational-structure/mapping-levels")).data.data,
+  const { data: orgMaps = EMPTY_ORG_MAP_ROWS } = useQuery<OrgMapRows>({
+    queryKey: ["org_map_rows"],
+    queryFn: async () => (await api.get("/organizational-structure/org-maps")).data.data,
   });
-  const { data: mappingNodes = [] } = useQuery<MappingNode[]>({
-    queryKey: ["org_mapping_nodes_list"],
-    queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
-  });
-
-  function chainLevel(tableName: string): MappingLevel | undefined {
-    return mappingLevels.find((l) => l.list_type.table_name === tableName);
-  }
 
   // ── Selections for the "scope" tab (building/finding a template) ──
   const [selections, setSelections] = useState<Record<string, string>>({});
 
-  function resolvedNodeIdFor(tableName: string): string | undefined {
-    const level = chainLevel(tableName);
-    if (!level) return undefined;
-    const itemId = selections[tableName];
-    if (!itemId) return undefined;
-
-    let parentNodeId: string | null | undefined = null;
-    if (level.parent_level_id) {
-      const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
-      parentNodeId = parentLevel ? resolvedNodeIdFor(parentLevel.list_type.table_name) : undefined;
-    }
-    if (parentNodeId === undefined) return undefined;
-
-    return mappingNodes.find(
-      (n) => n.level_id === level.id && n.item_id === itemId && n.parent_node_id === parentNodeId,
-    )?.id;
-  }
-
-  /**
-   * Filters a field's options down to whatever's mapped under the parent
-   * field currently selected — but always fails OPEN (shows every item)
-   * rather than closed whenever the chain can't be fully resolved, so a
-   * still-loading parent selection, an unmapped item, or a partially set up
-   * mapping never silently empties out a required dropdown (e.g. Grade
-   * level under Position). Only actually narrows the list when the whole
-   * chain resolves AND at least one mapped item is found.
-   */
   function itemsForField(tableName: string): OrgCustomListItem[] {
-    const items = itemsByTable[tableName] ?? [];
-    if (tableName === "sites") return items;
-
-    const level = chainLevel(tableName);
-    if (!level) return items;
-
-    const levelNodes = mappingNodes.filter((n) => n.level_id === level.id);
-    if (levelNodes.length === 0) return items; // not configured yet — fail open
-
-    if (!level.parent_level_id) return items;
-    const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
-    if (!parentLevel) return items;
-    const parentNodeId = resolvedNodeIdFor(parentLevel.list_type.table_name);
-    if (parentNodeId === undefined) return items; // parent chain not fully resolved yet — fail open
-
-    const ids = new Set(
-      levelNodes.filter((n) => n.parent_node_id === parentNodeId).map((n) => n.item_id),
+    return itemsForOrgMapField(
+      tableName,
+      itemsByTable[tableName] ?? [],
+      selections,
+      orgMaps,
     );
-    const filtered = items.filter((i) => ids.has(i.id));
-    return filtered.length > 0 ? filtered : items; // nothing mapped for this exact combo — fail open
   }
 
   function clearDownstream(fromTable: string) {
@@ -491,34 +439,44 @@ function ScopeTab({
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-400">
-        Pick the exact combination this appraisal question set applies to.
-        Employees are matched by their own stored Site/BU/Department/
-        Section/Position/Grade level.
+        Pick the mapped org path this appraisal applies to. Each dropdown
+        only lists what is mapped under the value above it — not the full
+        catalog.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[...CHAIN_TABLES, GRADE_TABLE].map((table) => (
+        {[...CHAIN_TABLES, GRADE_TABLE].map((table) => {
+          const parentTable = parentOrgTable(table);
+          const parentReady = !parentTable || !!selections[parentTable];
+          const options = parentReady ? itemsForField(table) : [];
+          const emptyLabel = !parentReady
+            ? `Select ${FIELD_LABELS[parentTable] ?? "the parent"} first`
+            : options.length === 0 && parentTable
+              ? `No ${FIELD_LABELS[table]?.toLowerCase() ?? "items"} mapped`
+              : "Not set";
+          return (
           <div key={table}>
             <label className="text-xs font-medium text-gray-600 block mb-1">
               {FIELD_LABELS[table]}
             </label>
             <select
               value={selections[table] ?? ""}
-              disabled={!canEdit}
+              disabled={!canEdit || !parentReady}
               onChange={(e) => {
                 setSelections((prev) => ({ ...prev, [table]: e.target.value }));
                 clearDownstream(table);
               }}
               className="w-full border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 disabled:opacity-60"
             >
-              <option value="">Not set</option>
-              {itemsForField(table).map((item) => (
+              <option value="">{emptyLabel}</option>
+              {options.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.label}
                 </option>
               ))}
             </select>
           </div>
-        ))}
+          );
+        })}
       </div>
       {canEdit && (
         <div className="flex justify-end">

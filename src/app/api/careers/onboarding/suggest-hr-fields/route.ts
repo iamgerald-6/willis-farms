@@ -13,6 +13,7 @@ import {
   type OnboardingHrData,
 } from "@/lib/careers/onboardingTypes";
 import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { resolveCompanyEmailDomain } from "@/lib/systemDefinitions/companyEmailDomain";
 import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import { resolveOfferTermsFromPosting } from "@/lib/careers/resolveOfferTermsFromPosting";
@@ -90,12 +91,12 @@ export async function GET(req: NextRequest) {
     const lastName = form.personal?.surname?.trim() || parsed.surname;
 
     const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
-    const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+    const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
     const emailDomain = resolveCompanyEmailDomain(moduleConfig.businessLogic);
 
     // The linked job posting is now the source of truth for role/pay
     // placement — see resolveOfferTermsFromPosting. Falls back to the
-    // older role-slug-based inference only for an application whose
+    // older hr.grade_level-based inference only for an application whose
     // posting predates these fields (or has none linked at all).
     const postingTerms = await resolveOfferTermsFromPosting(supabaseAdmin, app.job_posting_id);
 
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
       postingTerms?.grade_level?.trim().toUpperCase() ||
       gradeOverride?.trim().toUpperCase() ||
       hr.grade_level?.trim().toUpperCase() ||
-      inferGradeLevel(app.role_slug, hr, gradeConfig);
+      inferGradeLevel(hr, gradeConfig);
 
     const { companyIds, companyEmails } = await collectExistingEmployeeIds(supabaseAdmin);
 

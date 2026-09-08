@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import { canAppraiseOthers } from "@/lib/appraisal/sections";
 import { isSeniorManagement, canViewAllTasks } from "@/lib/taskAccessControl";
 import {
   canAddUser,
@@ -118,14 +119,23 @@ export async function getApiRequestUser(
     page_permission_actions?: AccessProfile["page_permission_actions"];
   } | null = null;
   try {
+    // grade_level is no longer a stored column — derived live via the
+    // grade_level_id FK join to the Organizational Structure "Grade levels"
+    // catalog, so it can never drift out of sync with the catalog. See
+    // docs/organizational-structure/drop-users-grade-level-column.sql.
     const { data } = await supabaseAdmin
       .from("users")
       .select(
-        "user_id, role, user_role_id, grade_level, first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
+        "user_id, role, user_role_id, grade_level_id, grade_levels(code), first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
       )
       .eq("user_id", authUser.id)
       .maybeSingle();
-    profile = data;
+    if (data) {
+      const { grade_levels, ...rest } = data as typeof data & {
+        grade_levels?: { code: string | null } | null;
+      };
+      profile = { ...rest, grade_level: grade_levels?.code ?? null };
+    }
   } catch (err) {
     console.error("[getApiRequestUser] users lookup failed", err);
   }
@@ -308,9 +318,8 @@ export function canAccessAppraisalRecord(
     supervisor_id?: string | null;
   },
 ): boolean {
-  if (hasFullAppraisalAccess(user.role)) return true;
+  if (hasFullAppraisalAccess(user.role) || canAppraiseOthers(user.role)) return true;
   if (user.id && record.employee_user_id === user.id) return true;
-  if (user.id && record.supervisor_id === user.id) return true;
   if (user.company_id && record.company_id === user.company_id) return true;
   return false;
 }

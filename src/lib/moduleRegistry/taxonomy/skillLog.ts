@@ -45,15 +45,6 @@ export const SKILL_LOG_STATUSES: SkillLogStatusDef[] = [
   },
 ];
 
-export const SKILL_LOG_GRADES = [
-  "L1",
-  "L2",
-  "L3",
-  "L4",
-  "L5",
-  "L6",
-] as const;
-
 export const SKILL_LOG_PAGE_COPY = {
   title: "Skills Logs",
   subtitleCanAct: "Skill logs for your assigned direct reports",
@@ -84,21 +75,6 @@ export const SKILL_LOG_FORM_COPY = {
   updateDraft: "Update Draft",
   submitForSignOff: "Submit for Sign-Off",
 };
-
-/** Minimum supervisor grade level (numeric) required to fill logs */
-export const SKILL_LOG_MIN_FILLER_GRADE = 4;
-
-export function parseSkillLogGradeLevel(
-  grade: string | undefined | null,
-): number {
-  if (!grade) return 0;
-  const n = parseInt(grade.replace(/\D/g, ""), 10);
-  return Number.isNaN(n) ? 0 : n;
-}
-
-export function getSkillLogGradeLevels(): readonly string[] {
-  return SKILL_LOG_GRADES;
-}
 
 export function getSkillLogTypeLegacyValues(): readonly string[] {
   return Object.keys(SKILL_LOG_TYPES);

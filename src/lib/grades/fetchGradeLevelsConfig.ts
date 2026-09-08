@@ -1,12 +1,54 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
-import type { GradeLevelsConfig } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import {
+  CONSULTANT_GRADE_ID,
+  type GradeLevelDef,
+  type GradeLevelsConfig,
+  type GradeRoleKind,
+} from "@/lib/systemDefinitions/gradeLevelsConfig";
 
-/** Load grade levels config from System Definitions (mod:recruitment). */
+type GradeLevelRow = {
+  code: string;
+  label: string;
+  sort_order?: number | null;
+  rank?: number | null;
+  role_kind?: string | null;
+  age_min?: number | null;
+  age_max?: number | null;
+  is_active: boolean;
+};
+
+function rowToGradeLevelDef(row: GradeLevelRow): GradeLevelDef {
+  const code = row.code.trim().toLowerCase();
+  const roleKind: GradeRoleKind =
+    row.role_kind === "consultant" ||
+    code === CONSULTANT_GRADE_ID ||
+    code.endsWith("_consultant")
+      ? "consultant"
+      : "ranked";
+  return {
+    id: row.code,
+    rank: roleKind === "consultant" ? 0 : (row.rank ?? row.sort_order ?? 0),
+    label: row.label,
+    roleKind,
+    ...(row.age_min != null ? { ageMin: row.age_min } : {}),
+    ...(row.age_max != null ? { ageMax: row.age_max } : {}),
+  };
+}
+
+/**
+ * Load grade levels from the Organizational Structure catalog
+ * (grade_levels table). No hardcoded fallback list.
+ */
 export async function fetchGradeLevelsConfig(
   supabase: SupabaseClient,
 ): Promise<GradeLevelsConfig> {
-  const moduleConfig = await fetchModuleConfig(supabase, RECRUITMENT_MODULE_ID);
-  return moduleConfig.businessLogic.gradeLevelsConfig ?? {};
+  const { data, error } = await supabase
+    .from("grade_levels")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  if (error || !data || data.length === 0) return {};
+
+  return { levels: (data as GradeLevelRow[]).map(rowToGradeLevelDef) };
 }

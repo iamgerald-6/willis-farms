@@ -46,20 +46,15 @@ import {
 } from "@/lib/systemDefinitions";
 import OptionsEditor from "./components/OptionsEditor";
 import AppraisalGradeTemplatesManager from "./components/AppraisalGradeTemplatesManager";
+import SkillLogTemplatesManager from "./components/SkillLogTemplatesManager";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
-import CompetencySectionsEditor from "./components/CompetencySectionsEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
-import {
-  ONBOARDING_DEPARTMENTS_L1L6_LIST,
-  ONBOARDING_DEPARTMENTS_L7_LIST,
-  ONBOARDING_LOCATIONS_LIST,
-  ONBOARDING_MEDICAL_REPORTS_LIST,
-} from "@/lib/systemDefinitions/onboardingDefaults";
+import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
 import { ONBOARDING_EMPLOYMENT_TYPES_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
@@ -209,7 +204,10 @@ type ModuleSection = {
  * section — e.g. Appraisal, where the generic Overview panels (dropdown
  * options, how records are shown, what can be done here) don't add anything
  * beyond its own dedicated sections (Appraisal scope, Rating sections, ...). */
-const HIDE_OVERVIEW_SECTION_MODULE_IDS = new Set(["mod:appraisal"]);
+const HIDE_OVERVIEW_SECTION_MODULE_IDS = new Set([
+  "mod:appraisal",
+  "mod:skill-log",
+]);
 
 function getModuleSections(
   m: ModuleRecord,
@@ -487,30 +485,9 @@ function getModuleSections(
         <SectionCard
           icon={Tag}
           title="HR onboarding dropdown lists"
-          description="Work locations, departments, and employment types used in HR Section O."
+          description="Employment types used in HR Section O. Work location and Department are no longer edited here — they're pulled live from Organizational Structure → Sites / Departments."
         >
           <div className="space-y-4">
-            <OptionsEditor
-              moduleId={m.id}
-              optionList={ONBOARDING_LOCATIONS_LIST}
-              title="Work locations"
-              canAdd={canAdd}
-              canEdit={canEdit}
-            />
-            <OptionsEditor
-              moduleId={m.id}
-              optionList={ONBOARDING_DEPARTMENTS_L1L6_LIST}
-              title="Departments (L1–L6 and junior grades)"
-              canAdd={canAdd}
-              canEdit={canEdit}
-            />
-            <OptionsEditor
-              moduleId={m.id}
-              optionList={ONBOARDING_DEPARTMENTS_L7_LIST}
-              title="Departments (L7+ senior grades)"
-              canAdd={canAdd}
-              canEdit={canEdit}
-            />
             <OptionsEditor
               moduleId={m.id}
               optionList={ONBOARDING_EMPLOYMENT_TYPES_LIST}
@@ -550,21 +527,16 @@ function getModuleSections(
 
   if (isEditableCompetencySectionModule(m.id)) {
     sections.push({
-      key: "competency-sections",
-      label: "Competency sections",
-      icon: Rows3,
+      key: "skill-log-scope",
+      label: "Skill log scope",
+      icon: Settings2,
       render: () => (
         <SectionCard
-          icon={Rows3}
-          title="Competency sections"
-          description="Section titles and skill lines for each skills log type. Pick the type first — sections you add belong to that type only."
+          icon={Settings2}
+          title="Skill log scope"
+          description="Build the skill log form for an exact Site/Business unit/Department/Section/Position/Grade level combination — matched against each employee's own org placement."
         >
-          <CompetencySectionsEditor
-            moduleId={m.id}
-            readOnly={!canEdit}
-            canAdd={canAdd}
-            canEdit={canEdit}
-          />
+          <SkillLogTemplatesManager canAdd={canAdd} canEdit={canEdit} />
         </SectionCard>
       ),
     });

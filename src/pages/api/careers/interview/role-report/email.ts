@@ -26,14 +26,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { job_posting_id, role_slug, to } = req.body ?? {};
-    if ((!job_posting_id && !role_slug) || !to) {
-      return res.status(400).json({ error: "job_posting_id (or role_slug) and to are required." });
+    const { job_posting_id, to } = req.body ?? {};
+    if (!job_posting_id || !to) {
+      return res.status(400).json({ error: "job_posting_id and to are required." });
     }
 
     const { data, error: fetchError } = await findRoleReportRow(supabaseAdmin, {
       jobPostingId: job_posting_id ?? null,
-      roleSlug: role_slug ?? null,
     });
 
     if (fetchError || !data) {

@@ -13,7 +13,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabaseAdmin.from("users").select("*");
+    // "*, grade_levels(code)" — grade_level is no longer a stored column on
+    // users; it's derived live on every request from grade_level_id's FK
+    // join to the Organizational Structure "Grade levels" catalog, so it
+    // can never drift from the catalog's own definitions. See
+    // docs/organizational-structure/drop-users-grade-level-column.sql.
+    const { data, error } = await supabaseAdmin
+      .from("users")
+      .select("*, grade_levels(code)");
 
     if (error) {
       return NextResponse.json([], { status: 400 });
@@ -26,10 +33,16 @@ export async function GET(req: NextRequest) {
     // created yet, or nobody migrated) just means every user_role_label
     // comes back null, and callers fall back to the old role/grade fields.
     const roleLabels = await fetchUserRoleLabelMap(supabaseAdmin);
-    const withRoleLabels = (data ?? []).map((row) => ({
-      ...row,
-      user_role_label: row.user_role_id ? roleLabels.get(row.user_role_id) ?? null : null,
-    }));
+    const withRoleLabels = (data ?? []).map((row) => {
+      const { grade_levels, ...rest } = row as typeof row & {
+        grade_levels?: { code: string | null } | null;
+      };
+      return {
+        ...rest,
+        grade_level: grade_levels?.code ?? null,
+        user_role_label: rest.user_role_id ? roleLabels.get(rest.user_role_id) ?? null : null,
+      };
+    });
 
     return NextResponse.json(withRoleLabels);
   } catch (err) {

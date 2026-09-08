@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { isSupervisor } from "@/lib/accessControl";
 import {
+  hasBroadElevatedAccessByRoleLabel,
   resolveEffectiveUserRoleLabel,
   resolveUserRoleLabelById,
 } from "@/lib/userRoleAccessControl";
@@ -74,10 +75,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Resolved from the DB directly (role + whether anyone is actually
-    // assigned to this submitter) rather than trusting the client-supplied
-    // grade — same migration as the rest of the app's supervisor checks,
-    // see accessControl.ts's isSupervisor.
+    // Role opens the ability to submit. Supervisory Role can only submit
+    // for people assigned to them (users.supervisor_id). Executive / HR /
+    // Super Admin can submit for anyone except themselves.
     const { data: submitterRow } = await supabase
       .from("users")
       .select("user_role_id")
@@ -86,21 +86,35 @@ export async function POST(req: NextRequest) {
     const submitterRoleLabel = resolveEffectiveUserRoleLabel(
       await resolveUserRoleLabelById(supabase, submitterRow?.user_role_id),
     );
-    const { data: submitterSupervisees } = await supabase
-      .from("users")
-      .select("user_id")
-      .eq("supervisor_id", submitted_by_user_id ?? "")
-      .limit(1);
-    const submitterHasSupervisees = !!submitterSupervisees && submitterSupervisees.length > 0;
 
-    if (!isSupervisor(submitterRoleLabel, submitterHasSupervisees)) {
+    if (!isSupervisor(submitterRoleLabel)) {
       return NextResponse.json(
         {
           error:
-            "Only Supervisory Role staff with at least one assigned supervisee (or Super Admin) can submit promotion assessments.",
+            "Only Supervisory Role, Executive Role, Human Resource, or Super Admin can submit promotion assessments.",
         },
         { status: 403 },
       );
+    }
+
+    if (
+      submitted_by_user_id &&
+      !hasBroadElevatedAccessByRoleLabel(submitterRoleLabel)
+    ) {
+      const { data: employeeRow } = await supabase
+        .from("users")
+        .select("supervisor_id")
+        .eq("company_id", company_id)
+        .maybeSingle();
+      if (employeeRow?.supervisor_id !== submitted_by_user_id) {
+        return NextResponse.json(
+          {
+            error:
+              "You can only submit a promotion assessment for employees assigned to you as their supervisor.",
+          },
+          { status: 403 },
+        );
+      }
     }
 
     const insertPayload: Record<string, unknown> = {

@@ -4,8 +4,7 @@ import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import type { JobApplication } from "@/lib/careers/types";
 import { resolveOfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
 import { validateOfferTerms } from "@/lib/careers/offerTerms";
-import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 
 type OfferLetterFile = {
   secure_url: string;
@@ -60,8 +59,7 @@ export async function GET(req: NextRequest) {
   let context = null;
   let gradeConfig;
   if (application) {
-    const moduleConfig = await fetchModuleConfig(supabaseAdmin, RECRUITMENT_MODULE_ID);
-    gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+    gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
     context = await resolveOfferLetterContext(
       supabaseAdmin,
       application as JobApplication,

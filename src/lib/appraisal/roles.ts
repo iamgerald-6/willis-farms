@@ -1,13 +1,11 @@
-import { isSuperAdminRoleLabel } from "@/lib/userRoleAccessControl";
+import { canBeAssignedAsSupervisorByRoleLabel } from "@/lib/userRoleAccessControl";
 
 /**
  * Which side of an appraisal a given person occupies.
  *
- * The side is a property of the RECORD, not of the viewer's role: everyone,
- * supervisors included, completes their own self-assessment, and the
- * supervisor side is always filled by whoever is actually assigned as that
- * employee's supervisor (users.supervisor_id, set at onboarding or from
- * Manage User) — see canSuperviseAppraisal below.
+ * Everyone completes their own self-assessment. The supervisor side is
+ * available to anyone whose user_role_id is Supervisory Role, Executive
+ * Role, Human Resource, or Super Admin — not users.supervisor_id.
  */
 export type AppraisalSide = "employee" | "supervisor" | "observer";
 
@@ -23,8 +21,6 @@ export interface AppraisalSubject {
   company_id?: string | null;
   /** The appraised person's grade, e.g. "L5". */
   current_grade?: string | null;
-  /** The appraised person's assigned reporting supervisor — see
-   * supervisorAssignment.ts. Used for the new Supervisory-role check below. */
   supervisor_id?: string | null;
 }
 
@@ -42,22 +38,14 @@ export function isOwnAppraisal(
   return false;
 }
 
-/**
- * Super Admin bypasses everything. Everyone else — regardless of role —
- * supervises an appraisal only if they're the employee's actual assigned
- * supervisor (users.supervisor_id, set during onboarding or from Manage
- * User). Being eligible to BE assigned as a supervisor (Executive Role,
- * Human Resource, Supervisory Role — see canBeAssignedAsSupervisorByRoleLabel
- * in supervisorAssignment.ts) is a separate, earlier check; it doesn't by
- * itself grant appraisal access to anyone who wasn't actually assigned.
- */
+/** Supervisor side: user_role_id is Supervisory / Executive / Human Resource
+ * / Super Admin, and this is not their own record. */
 export function canSuperviseAppraisal(
   viewer: AppraisalViewer,
   subject: AppraisalSubject,
 ): boolean {
   if (isOwnAppraisal(viewer, subject)) return false;
-  if (isSuperAdminRoleLabel(viewer.role)) return true;
-  return !!viewer.userId && subject.supervisor_id === viewer.userId;
+  return canBeAssignedAsSupervisorByRoleLabel(viewer.role);
 }
 
 export function appraisalSideFor(

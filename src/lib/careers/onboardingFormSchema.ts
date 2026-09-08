@@ -3,10 +3,8 @@ import { getGitFallbackOptions } from "@/lib/systemDefinitions/gitFallback";
 import {
   RECRUITMENT_MODULE_ID,
   getDefaultOnboardingFormFields,
-  ONBOARDING_DEPARTMENTS_L1L6_LIST,
-  ONBOARDING_DEPARTMENTS_L7_LIST,
+  ONBOARDING_DEPARTMENTS_LIST,
   ONBOARDING_FIELDS_LIST,
-  ONBOARDING_LOCATIONS_LIST,
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import { COUNTRY_CODES } from "@/lib/careers/phoneCountryCodes";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
@@ -622,11 +620,7 @@ export function resolveFieldOptions(
   optionLists: Record<string, string[]>,
 ): string[] {
   if (field.rules.optionsRefDynamic === "department") {
-    const grade = String(values["_meta.grade_level"] ?? "");
-    if (grade === "L7") {
-      return optionLists[ONBOARDING_DEPARTMENTS_L7_LIST] ?? [];
-    }
-    return optionLists[ONBOARDING_DEPARTMENTS_L1L6_LIST] ?? [];
+    return optionLists[ONBOARDING_DEPARTMENTS_LIST] ?? [];
   }
   if (field.rules.optionsRef) {
     return optionLists[field.rules.optionsRef] ?? field.rules.options ?? [];

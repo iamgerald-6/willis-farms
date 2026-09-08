@@ -5,9 +5,13 @@ import {
   jsonUnauthorized,
   requireSkillLogAccess,
 } from "@/lib/apiRequestAuth";
-import { canFillSkillLog, canFillSkillLogForEmployee } from "@/lib/skillLogAccess";
+import {
+  canFillSkillLog,
+  canFillSkillLogForEmployee,
+  flattenSkillLogGradeLevels,
+  type SkillLogRecord,
+} from "@/lib/skillLogAccess";
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
-import { SKILL_LOG_MIN_FILLER_GRADE } from "@/lib/moduleRegistry";
 
 export async function POST(req: NextRequest) {
   const ctx = await requireSkillLogAccess(req, "add");
@@ -19,7 +23,9 @@ export async function POST(req: NextRequest) {
   if (
     !canFillSkillLog(ctx.profile, ctx.presets, ctx.user.role)
   ) {
-    return jsonForbidden("Only L4+ supervisors with fill permission can create skill logs");
+    return jsonForbidden(
+      "Only Supervisory Role, Human Resource, Executive Role, or Super Admin with fill permission can create skill logs",
+    );
   }
 
   const supabaseAdmin = getSupabaseAdminFromAuth();
@@ -57,40 +63,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: supervisorProfile } = await supabaseAdmin
+    // grade_level is no longer a stored column — derived live via the
+    // grade_level_id FK join to the Grade levels catalog.
+    const { data: employeeProfileRow } = await supabaseAdmin
       .from("users")
-      .select("grade_level")
-      .eq("user_id", supervisor_id)
-      .maybeSingle();
-
-    if (!supervisorProfile) {
-      return NextResponse.json(
-        { success: false, message: "Supervisor not found" },
-        { status: 404 },
-      );
-    }
-
-    const supervisorGrade =
-      parseInt(supervisorProfile.grade_level.replace(/\D/g, ""), 10) || 0;
-    if (supervisorGrade < SKILL_LOG_MIN_FILLER_GRADE) {
-      return NextResponse.json(
-        { success: false, message: "Only L4+ supervisors can fill skill logs" },
-        { status: 403 },
-      );
-    }
-
-    const { data: employeeProfile } = await supabaseAdmin
-      .from("users")
-      .select("user_id, grade_level, supervisor_id")
+      .select("user_id, grade_level_id, grade_levels(code), supervisor_id")
       .eq("user_id", employee_id)
       .maybeSingle();
 
-    if (!employeeProfile) {
+    if (!employeeProfileRow) {
       return NextResponse.json(
         { success: false, message: "Employee not found" },
         { status: 404 },
       );
     }
+
+    const employeeProfileGradeLevels = (
+      employeeProfileRow as typeof employeeProfileRow & {
+        grade_levels?: { code: string | null } | null;
+      }
+    ).grade_levels;
+    const employeeProfile = {
+      ...employeeProfileRow,
+      grade_level: employeeProfileGradeLevels?.code ?? null,
+    };
 
     if (isConsultantGrade(employeeProfile.grade_level)) {
       return NextResponse.json(
@@ -108,19 +104,6 @@ export async function POST(req: NextRequest) {
           success: false,
           message:
             "You can only fill skill logs for employees assigned to you as their supervisor in User Management.",
-        },
-        { status: 403 },
-      );
-    }
-
-    const employeeGrade =
-      parseInt(employeeProfile.grade_level.replace(/\D/g, ""), 10) || 0;
-    if (employeeGrade >= supervisorGrade) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "You can only assess employees with a lower grade than yours",
         },
         { status: 403 },
       );
@@ -192,15 +175,21 @@ export async function POST(req: NextRequest) {
       .select(
         `
         *,
-        employee:users!skill_logs_employee_id_fkey (user_id, first_name, last_name, grade_level),
-        supervisor:users!skill_logs_supervisor_id_fkey (user_id, first_name, last_name, grade_level),
+        employee:users!skill_logs_employee_id_fkey (user_id, first_name, last_name, grade_level_id, grade_levels(code)),
+        supervisor:users!skill_logs_supervisor_id_fkey (user_id, first_name, last_name, grade_level_id, grade_levels(code)),
         skill_log_competencies (*)
       `,
       )
       .eq("id", logData.id)
       .single();
 
-    return NextResponse.json({ success: true, data: fullLog }, { status: 201 });
+    return NextResponse.json(
+      {
+        success: true,
+        data: fullLog ? flattenSkillLogGradeLevels(fullLog as SkillLogRecord) : fullLog,
+      },
+      { status: 201 },
+    );
   } catch (err: unknown) {
     console.error("[POST /api/skillLog/create_skillLog]", err);
     const message = err instanceof Error ? err.message : "Server error";

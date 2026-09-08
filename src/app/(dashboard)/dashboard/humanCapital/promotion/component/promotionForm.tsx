@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import {
   FINAL_DECISIONS,
-  GRADE_ORDER,
   RATING_LABELS,
   computeReadinessSummary,
   getFormConfig,
@@ -30,6 +29,8 @@ import {
   type SkillSignoffStage,
 } from "./promotionFormConfigs";
 import { isSupervisor } from "@/lib/accessControl";
+import { hasBroadElevatedAccessByRoleLabel } from "@/lib/userRoleAccessControl";
+import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
@@ -343,9 +344,7 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const currentUserRole =
     resolveAccessProfile(currentUserProfile, sessionRole)?.role ?? sessionRole ?? "";
-  const currentUserHasSupervisees =
-    !!userId && allUsers.some((u) => u.supervisor_id === userId);
-  const canFillPromotion = isSupervisor(currentUserRole, currentUserHasSupervisees);
+  const canFillPromotion = isSupervisor(currentUserRole);
 
   const { data: promotionAppraisals = [], isLoading } = useQuery<Appraisal[]>({
     queryKey: ["promotion_appraisals"],
@@ -356,13 +355,17 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   });
 
   const eligibleAppraisals = useMemo(
-    () =>
-      promotionAppraisals.filter(
-        (a) =>
-          a.company_id !== currentUserProfile?.company_id &&
-          getFormConfig(a.current_grade) != null,
-      ),
-    [promotionAppraisals, currentUserProfile],
+    () => {
+      const canSeeAllSubjects = hasBroadElevatedAccessByRoleLabel(currentUserRole);
+      return promotionAppraisals.filter((a) => {
+        if (a.company_id === currentUserProfile?.company_id) return false;
+        if (getFormConfig(a.current_grade) == null) return false;
+        if (canSeeAllSubjects) return true;
+        const employee = allUsers.find((u) => u.company_id === a.company_id);
+        return isAssignedSupervisorOf(userId, employee ?? {});
+      });
+    },
+    [promotionAppraisals, currentUserProfile, currentUserRole, allUsers, userId],
   );
 
   useEffect(() => {

@@ -119,9 +119,6 @@ export async function PATCH(
       return jsonForbidden("You do not have access to this appraisal.");
     }
 
-    // Which side of this record is the caller on? Everyone owns their own
-    // self-assessment; the supervisor side requires being this employee's
-    // actual assigned supervisor (users.supervisor_id) — or Super Admin.
     const isOwnRecord = Boolean(
       (existing.employee_user_id && existing.employee_user_id === caller.id) ||
         (caller.company_id && caller.company_id === existing.company_id),
@@ -131,17 +128,14 @@ export async function PATCH(
       {
         employee_user_id: existing.employee_user_id,
         company_id: existing.company_id,
-        supervisor_id: existing.supervisor_id,
       },
     );
 
     const rejectSupervisorAction = () =>
       isOwnRecord
-        ? jsonForbidden(
-            "You cannot act as your own supervisor. Your assigned supervisor must complete this evaluation.",
-          )
+        ? jsonForbidden("You cannot act as your own supervisor.")
         : jsonForbidden(
-            "Only this employee's assigned supervisor (or Super Admin) can complete their evaluation.",
+            "Only Supervisory Role, Executive Role, Human Resource, or Super Admin can complete this evaluation.",
           );
 
     // Archiving is a filing action, not a workflow state — an archived record

@@ -161,11 +161,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Confirm company_id exists and load the employee's actual assigned
-    // supervisor — needed below to decide who may fill the supervisor side.
     const { data: employeeUser, error: userError } = await supabaseAdmin
       .from("users")
-      .select("company_id, user_id, supervisor_id")
+      .select("company_id, user_id")
       .eq("company_id", company_id)
       .single();
 
@@ -187,11 +185,9 @@ export async function POST(req: NextRequest) {
         return jsonForbidden("You can only submit your own self-assessment.");
       }
     } else {
-      // The supervisor side must be filled by this employee's actual
-      // assigned supervisor (users.supervisor_id) — or Super Admin.
       if (ownsRecord) {
         return jsonForbidden(
-          "You cannot act as your own supervisor. Your assigned supervisor must complete this evaluation.",
+          "You cannot act as your own supervisor.",
         );
       }
       const canSupervise = canSuperviseAppraisal(
@@ -199,12 +195,11 @@ export async function POST(req: NextRequest) {
         {
           employee_user_id: employeeUser.user_id,
           company_id: employeeUser.company_id,
-          supervisor_id: employeeUser.supervisor_id,
         },
       );
       if (!canSupervise) {
         return jsonForbidden(
-          "Only this employee's assigned supervisor (or Super Admin) can complete their evaluation.",
+          "Only Supervisory Role, Executive Role, Human Resource, or Super Admin can complete this evaluation.",
         );
       }
     }
@@ -218,8 +213,8 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
       resolvedSupervisorId = supUser?.user_id ?? null;
     }
-    if (!resolvedSupervisorId && employeeUser.supervisor_id) {
-      resolvedSupervisorId = employeeUser.supervisor_id;
+    if (!resolvedSupervisorId && !isEmployeeSubmit) {
+      resolvedSupervisorId = caller.id;
     }
 
     // ── Upsert-by-natural-key: one appraisal row per employee per quarter ──

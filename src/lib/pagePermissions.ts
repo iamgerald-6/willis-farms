@@ -2,6 +2,7 @@ import {
   isSuperAdmin,
 } from "@/lib/accessControl";
 import {
+  DEFAULT_USER_ROLE_LABEL,
   hasSystemAccessByRoleLabel,
   isExecutiveRoleLabel,
   resolveEffectiveUserRoleLabel,
@@ -166,9 +167,13 @@ export function groupedPagePermissions(): {
   return Array.from(map.entries()).map(([group, keys]) => ({ group, keys }));
 }
 
-/** DB profile with session JWT fallback (e.g. super_admin only in auth metadata).
- * When `user_role_label` is present (the new role system), it takes over
- * `role` for access-control purposes — see AccessProfile.user_role_label. */
+/** DB profile is the sole source of the effective role — see
+ * AccessProfile.user_role_label. `sessionRole` is the raw old auth-metadata
+ * role (admin/manager/super_admin/employee, from before the role-label
+ * system) and is NEVER used to compute `role` here: while the DB profile is
+ * still loading client-side, callers get a Standard Role (lowest-privilege)
+ * profile instead of a brief flash of the old role's access/UI. Once the DB
+ * profile loads, it fully replaces this placeholder. */
 export function resolveAccessProfile(
   dbUser: AccessProfile | null | undefined,
   sessionRole?: string | null,
@@ -186,7 +191,7 @@ export function resolveAccessProfile(
   }
   if (sessionRole) {
     return {
-      role: sessionRole,
+      role: DEFAULT_USER_ROLE_LABEL,
       access_tier: "standard",
       page_permissions: [],
       page_permission_levels: null,

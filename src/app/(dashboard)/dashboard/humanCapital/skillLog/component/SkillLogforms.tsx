@@ -39,15 +39,8 @@ export const SkillLogForm: React.FC<Props> = ({
 }) => {
   const queryClient = useQueryClient();
 
-  // Guardrail: Fail early if a Grade 1 or 2 tries to render this form
-  if (currentUser.grade_level < 3) {
-    return (
-      <div className="bg-red-50 border-l-4 border-[#C62828] p-4 rounded text-sm text-red-900 font-medium">
-        Access Denied: Only staff at Grade Level 3 or above can sign off
-        technical logs.
-      </div>
-    );
-  }
+  // Unused legacy form — live fill/sign-off is skillLogForms + skillLogAccess
+  // (user_role_id for who can fill; assigned reports only; Executive sign-off).
 
   const {
     register,

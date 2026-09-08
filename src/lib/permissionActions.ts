@@ -1,4 +1,4 @@
-import { gradeIndex, isSuperAdmin } from "@/lib/accessControl";
+import { isSuperAdmin } from "@/lib/accessControl";
 import { getModuleRegistrySync } from "@/lib/moduleRegistry";
 import type {
   ModuleActions,
@@ -278,21 +278,6 @@ export function defaultStandardEmployeeActions(): PagePermissionActions {
   return out;
 }
 
-export function defaultAdminActions(): PagePermissionActions {
-  const employee = defaultStandardEmployeeActions();
-  const out: PagePermissionActions = { ...employee };
-  out.users = { view: true };
-  out.policies = { ...(out.policies ?? { view: true }), view: true, add: true };
-  out["sop:view"] = { view: true };
-  out["sop:add"] = { view: true, add: true };
-  out["hc:appraisal"] = {
-    ...(out["hc:appraisal"] ?? { view: true }),
-    view: true,
-    add: true,
-  };
-  return out;
-}
-
 /** Full (every supported action) access, but only for the given keys —
  * everything else left blank. Used to seed a role's built-in default group
  * preset from a fixed key list (e.g. HUMAN_RESOURCE_FULL_ACCESS_KEYS). */
@@ -383,12 +368,6 @@ export function getEffectivePermissionActions(
   if (groupPresets && Object.keys(groupPresets).length > 0) {
     const fromGroups = resolveGroupPresetActions(profile, groupPresets);
     if (Object.keys(fromGroups).length > 0) return fromGroups;
-  }
-
-  // Legacy fallbacks when group presets are not loaded
-  if (role === "admin") {
-    if (Object.keys(stored).length > 0) return stored;
-    return defaultAdminActions();
   }
 
   if (tier === "delegated") {

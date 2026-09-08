@@ -28,14 +28,19 @@ export async function loadConsultantUserProfile(
   supabaseAdmin: SupabaseClient,
   userId: string,
 ): Promise<ConsultantUserProfile | null> {
+  // grade_level is no longer a stored column — derived live via the
+  // grade_level_id FK join to the Grade levels catalog.
   const { data, error } = await supabaseAdmin
     .from("users")
-    .select("user_id, email, first_name, last_name, grade_level, supervisor_id")
+    .select("user_id, email, first_name, last_name, grade_level_id, grade_levels(code), supervisor_id")
     .eq("user_id", userId)
     .maybeSingle();
 
   if (error || !data?.user_id) return null;
-  return data as ConsultantUserProfile;
+  const { grade_levels, ...rest } = data as typeof data & {
+    grade_levels?: { code: string | null } | null;
+  };
+  return { ...rest, grade_level: grade_levels?.code ?? null } as ConsultantUserProfile;
 }
 
 export function usesConsultantHrApproval(hr: OnboardingHrData | null | undefined): boolean {

@@ -9,6 +9,7 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import { TMProject } from "@/types/taskManager";
 import { isFullRoleAccess, resolveAccessProfile } from "@/lib/pagePermissions";
+import { isStandardRoleLabel } from "@/lib/userRoleAccessControl";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { getStatusSummary } from "./humanCapital/appraisal/component/appraisalTypes";
 import type { JobApplication } from "@/lib/careers/types";
@@ -1147,7 +1148,7 @@ export default function DashboardPage() {
                 label="Total Staff"
                 value={users?.length ?? "—"}
                 icon={Users}
-                sub={`${users?.filter((u) => u.role === "employee").length ?? 0} employees`}
+                sub={`${users?.filter((u) => isStandardRoleLabel(u.user_role_label)).length ?? 0} employees`}
               />
               <StatCard
                 label="Pending Leave"

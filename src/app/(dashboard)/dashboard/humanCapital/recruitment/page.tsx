@@ -218,18 +218,14 @@ function ApplicationDetail({
   // who applied for the same role. Cheap GET, so no need to gate it behind
   // a specific status — it simply renders nothing if none exists yet.
   const { data: roleReportRow } = useQuery({
-    queryKey: [
-      "role_interview_report",
-      application.job_posting_id ?? application.role_slug,
-    ],
+    queryKey: ["role_interview_report", application.job_posting_id],
     queryFn: async () => {
-      const params = application.job_posting_id
-        ? `job_posting_id=${application.job_posting_id}`
-        : `role_slug=${application.role_slug}`;
-      const res = await api.get(`/careers/interview/role-report?${params}`);
+      const res = await api.get(
+        `/careers/interview/role-report?job_posting_id=${application.job_posting_id}`,
+      );
       return res.data.data as RoleInterviewReportRow | null;
     },
-    enabled: !!(application.job_posting_id || application.role_slug),
+    enabled: !!application.job_posting_id,
   });
 
   const allowedStatusOptions = useMemo(
@@ -1435,11 +1431,7 @@ function ApplicationDetail({
                         </button>
                       )}
                       <a
-                        href={`/api/careers/interview/role-report/pdf?${
-                          application.job_posting_id
-                            ? `job_posting_id=${application.job_posting_id}`
-                            : `role_slug=${application.role_slug}`
-                        }`}
+                        href={`/api/careers/interview/role-report/pdf?job_posting_id=${application.job_posting_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"

@@ -13,7 +13,6 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   competencyContentOverrides: "Competency sections",
   refereeReferenceConfig: "Referee reference config",
   applicationFormConfig: "Application form config",
-  gradeLevelsConfig: "Grade levels",
   appraisalScopeConfig: "Appraisal scope config",
   form_definition: "Form layout",
   label: "Label",

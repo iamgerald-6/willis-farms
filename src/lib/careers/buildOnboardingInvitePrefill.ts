@@ -47,7 +47,6 @@ type ExistingUserRow = Pick<
   | "email"
   | "first_name"
   | "last_name"
-  | "grade_level"
   | "role"
   | "user_role_label"
 >;
@@ -78,7 +77,7 @@ export function buildOnboardingInvitePrefill(input: {
   const phone = form.personal?.mobile?.trim() || input.app.phone?.trim() || "";
   const job_position =
     hr.position_title?.trim() || input.app.role_title?.trim() || "";
-  const grade_level = inferGradeLevel(input.app.role_slug, hr);
+  const grade_level = inferGradeLevel(hr);
   const company_id = hr.employee_id?.trim();
 
   const takenEmails = new Set<string>();

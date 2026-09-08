@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SystemOption } from "./types";
 import { GHANA_REGIONS } from "@/lib/careers/onboardingTypes";
 import {
@@ -6,9 +7,14 @@ import {
 
 export const RECRUITMENT_MODULE_ID = "mod:recruitment";
 export const ONBOARDING_FIELDS_LIST = "careers.onboardingFields";
+/** Keys into the optionLists map returned by fetchOnboardingSiteAndDepartmentLabels
+ * below — not system_options-backed lists anymore. Work location and
+ * Department are sourced live from the Organizational Structure Sites /
+ * Departments catalog (see docs/organizational-structure/schema.sql), so
+ * renaming or adding a site/department there is reflected here immediately
+ * instead of drifting from a separate, hand-typed onboarding list. */
 export const ONBOARDING_LOCATIONS_LIST = "careers.onboardingLocations";
-export const ONBOARDING_DEPARTMENTS_L1L6_LIST = "careers.onboardingDepartmentsL1L6";
-export const ONBOARDING_DEPARTMENTS_L7_LIST = "careers.onboardingDepartmentsL7";
+export const ONBOARDING_DEPARTMENTS_LIST = "careers.onboardingDepartments";
 export const ONBOARDING_MEDICAL_REPORTS_LIST = "careers.onboardingMedicalReports";
 
 function field(
@@ -90,28 +96,32 @@ export function getDefaultOnboardingMedicalReports(): SystemOption[] {
   ];
 }
 
-export function getDefaultOnboardingLocations(): SystemOption[] {
-  return [
-    optionRow("opt:onboarding:loc:1", ONBOARDING_LOCATIONS_LIST, "Main Breeding Farm — Ashanti", "main_breeding_ashanti", 0),
-    optionRow("opt:onboarding:loc:2", ONBOARDING_LOCATIONS_LIST, "Grower-Finisher Site — Eastern", "grower_eastern", 1),
-    optionRow("opt:onboarding:loc:3", ONBOARDING_LOCATIONS_LIST, "Commercial Operations — Greater Accra", "commercial_accra", 2),
-    optionRow("opt:onboarding:loc:4", ONBOARDING_LOCATIONS_LIST, "Head Office — Accra", "head_office", 3),
-  ];
-}
+/** Live Work location / Department options for onboarding — sourced
+ * directly from the Organizational Structure Sites / Departments catalog
+ * (active rows only, in catalog sort order). Replaces the old hand-typed
+ * system_options lists; there is no hardcoded fallback data here — an
+ * empty catalog just means an empty dropdown until Sites/Departments are
+ * configured under Organizational Structure. */
+export async function fetchOnboardingSiteAndDepartmentLabels(
+  supabase: SupabaseClient,
+): Promise<{ sites: string[]; departments: string[] }> {
+  const [{ data: sites }, { data: departments }] = await Promise.all([
+    supabase
+      .from("sites")
+      .select("label")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("departments")
+      .select("label")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
 
-export function getDefaultOnboardingDepartmentsL1L6(): SystemOption[] {
-  return [
-    optionRow("opt:onboarding:dept:l16:1", ONBOARDING_DEPARTMENTS_L1L6_LIST, "Farm Operations", "farm_operations", 0),
-    optionRow("opt:onboarding:dept:l16:2", ONBOARDING_DEPARTMENTS_L1L6_LIST, "Breeding Operations", "breeding_operations", 1),
-  ];
-}
-
-export function getDefaultOnboardingDepartmentsL7(): SystemOption[] {
-  return [
-    optionRow("opt:onboarding:dept:l7:1", ONBOARDING_DEPARTMENTS_L7_LIST, "Breeding Operations", "breeding_operations", 0),
-    optionRow("opt:onboarding:dept:l7:2", ONBOARDING_DEPARTMENTS_L7_LIST, "Commercial Operations", "commercial_operations", 1),
-    optionRow("opt:onboarding:dept:l7:3", ONBOARDING_DEPARTMENTS_L7_LIST, "Production", "production", 2),
-  ];
+  return {
+    sites: (sites ?? []).map((row) => row.label as string).filter(Boolean),
+    departments: (departments ?? []).map((row) => row.label as string).filter(Boolean),
+  };
 }
 
 /** Git / pre-migration defaults for employee onboarding form fields. */

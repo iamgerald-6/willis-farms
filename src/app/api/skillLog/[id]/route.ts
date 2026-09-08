@@ -9,14 +9,17 @@ import {
   canApproveSkillLogRecord,
   canEditSkillLogDraft,
   canViewSkillLogRecord,
-  hasAssignedSupervisees,
+  flattenSkillLogGradeLevels,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
 
+// grade_level is no longer a stored column — derived live via the
+// grade_level_id FK join to the Grade levels catalog (see
+// flattenSkillLogGradeLevels).
 const FULL_SELECT = `
   *,
-  employee:users!skill_logs_employee_id_fkey (user_id, first_name, last_name, grade_level),
-  supervisor:users!skill_logs_supervisor_id_fkey (user_id, first_name, last_name, grade_level),
+  employee:users!skill_logs_employee_id_fkey (user_id, first_name, last_name, grade_level_id, grade_levels(code)),
+  supervisor:users!skill_logs_supervisor_id_fkey (user_id, first_name, last_name, grade_level_id, grade_levels(code)),
   skill_log_competencies (*)
 `;
 
@@ -53,8 +56,6 @@ export async function GET(
     );
   }
 
-  const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
-
   if (
     !canViewSkillLogRecord(
       ctx.profile,
@@ -62,13 +63,15 @@ export async function GET(
       data as SkillLogRecord,
       ctx.presets,
       ctx.user.role,
-      hasSupervisees,
     )
   ) {
     return jsonForbidden();
   }
 
-  return NextResponse.json({ success: true, data });
+  return NextResponse.json({
+    success: true,
+    data: flattenSkillLogGradeLevels(data as SkillLogRecord),
+  });
 }
 
 export async function PATCH(
@@ -116,7 +119,6 @@ export async function PATCH(
 
   // ── Sign-off fast path ──
   if (status === "signed_off") {
-    const hasSupervisees = await hasAssignedSupervisees(supabaseAdmin, ctx.user.id);
     if (
       !canApproveSkillLogRecord(
         ctx.profile,
@@ -124,7 +126,6 @@ export async function PATCH(
         record,
         ctx.presets,
         ctx.user.role,
-        hasSupervisees,
       )
     ) {
       return forbiddenOrUnauthorized(ctx);
@@ -147,7 +148,10 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    return NextResponse.json({ success: true, data: signedData });
+    return NextResponse.json({
+      success: true,
+      data: flattenSkillLogGradeLevels(signedData as SkillLogRecord),
+    });
   }
 
   if (existing.status === "signed_off") {
@@ -257,7 +261,10 @@ export async function PATCH(
     );
   }
 
-  return NextResponse.json({ success: true, data: fullLog });
+  return NextResponse.json({
+    success: true,
+    data: flattenSkillLogGradeLevels(fullLog as SkillLogRecord),
+  });
 }
 
 export async function DELETE(

@@ -32,17 +32,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *                            Explicitly NOT granted appraise / approve leave
  *                            / fill skill log / create tasks for others —
  *                            deliberately narrower than "full role access".
- *   Supervisory Role        - who can be assigned (via users.supervisor_id,
- *                            see supervisorAssignment.ts) as someone's
- *                            reporting supervisor during onboarding.
- *                            Appraising, approving leave, filling the skill
- *                            log of, and creating tasks for a specific
- *                            employee is always done by whoever is
- *                            *actually assigned* as their supervisor_id
- *                            (set during onboarding or from Manage User) —
- *                            not by role name alone. In Manage User, the
- *                            assignable pool is wider: Executive Role,
- *                            Human Resource, or Supervisory Role.
+ *   Supervisory Role        - may use supervisor features (appraise, approve
+ *                            leave, fill skill logs, create tasks for others).
+ *                            WHICH people they can act on is still whoever
+ *                            has users.supervisor_id pointing at them
+ *                            (assigned in onboarding or Manage User).
+ *                            Executive Role, Human Resource, and Super Admin
+ *                            can also be picked as someone's assigned
+ *                            supervisor. Standard, Consultant, and System
+ *                            Administrator cannot.
  *   Super Admin             - bypasses everything.
  */
 

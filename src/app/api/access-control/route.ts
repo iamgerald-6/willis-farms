@@ -75,15 +75,22 @@ export async function PATCH(req: NextRequest) {
       return jsonForbidden("updated_by must match the authenticated user.");
     }
 
-    const { data: target, error: targetError } = await supabaseAdmin
+    const { data: targetRow, error: targetError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, email, grade_level")
+      // grade_level is no longer a stored column — derived live via the
+      // grade_level_id FK join to the Grade levels catalog.
+      .select("user_id, role, email, grade_level_id, grade_levels(code)")
       .eq("user_id", target_user_id)
       .single();
 
-    if (targetError || !target) {
+    if (targetError || !targetRow) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
+
+    const { grade_levels, ...target } = targetRow as typeof targetRow & {
+      grade_levels?: { code: string | null } | null;
+    };
+    const targetGradeLevel = grade_levels?.code ?? null;
 
     if (target_user_id === caller.id && is_disabled === true) {
       return jsonForbidden("You cannot disable your own account.");
@@ -169,7 +176,7 @@ export async function PATCH(req: NextRequest) {
     const currentRole = target.role as string;
     const { presets: groupPresets } = await fetchGroupPresetsFromDb(supabaseAdmin);
     const groupActions = resolveGroupPresetActions(
-      { role: target.role, grade_level: target.grade_level },
+      { role: target.role, grade_level: targetGradeLevel },
       groupPresets,
     );
     const matchesGroupPreset =

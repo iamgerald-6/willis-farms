@@ -88,6 +88,7 @@ interface UserProfile {
   last_name: string;
   grade_level: string;
   role?: string;
+  user_role_label?: string | null;
   company_id?: string;
   supervisor_id?: string | null;
 }
@@ -459,10 +460,6 @@ export default function SkillLogsPage() {
 
   const currentUser = allUsers.find((u) => u.user_id === userId) ?? null;
   const accessProfile = resolveAccessProfile(currentUser, sessionRole);
-  // Mirrors hasAssignedSupervisees on the server — sign-off eligibility
-  // requires actually having someone assigned to you as supervisor_id, not
-  // just holding the Supervisory Role label.
-  const hasSupervisees = allUsers.some((u) => u.supervisor_id === userId);
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
@@ -496,7 +493,6 @@ export default function SkillLogsPage() {
           logAsRecord(log),
           groupPresets,
           sessionRole,
-          hasSupervisees,
         )
       : false;
 

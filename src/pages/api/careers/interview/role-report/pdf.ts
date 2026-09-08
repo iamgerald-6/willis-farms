@@ -22,15 +22,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const jobPostingId = req.query.job_posting_id;
-  const roleSlug = req.query.role_slug;
-  if ((!jobPostingId || typeof jobPostingId !== "string") && (!roleSlug || typeof roleSlug !== "string")) {
-    return res.status(400).json({ error: "job_posting_id or role_slug is required." });
+  if (!jobPostingId || typeof jobPostingId !== "string") {
+    return res.status(400).json({ error: "job_posting_id is required." });
   }
 
   try {
     const { data, error: fetchError } = await findRoleReportRow(supabaseAdmin, {
-      jobPostingId: typeof jobPostingId === "string" ? jobPostingId : null,
-      roleSlug: typeof roleSlug === "string" ? roleSlug : null,
+      jobPostingId,
     });
 
     if (fetchError || !data) {

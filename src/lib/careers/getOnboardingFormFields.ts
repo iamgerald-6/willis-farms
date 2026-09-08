@@ -7,16 +7,13 @@ import {
   type OnboardingFormField,
 } from "@/lib/careers/onboardingFormSchema";
 import {
-  ONBOARDING_DEPARTMENTS_L1L6_LIST,
-  ONBOARDING_DEPARTMENTS_L7_LIST,
+  ONBOARDING_DEPARTMENTS_LIST,
   ONBOARDING_FIELDS_LIST,
   ONBOARDING_LOCATIONS_LIST,
   ONBOARDING_MEDICAL_REPORTS_LIST,
   RECRUITMENT_MODULE_ID,
-  getDefaultOnboardingDepartmentsL1L6,
-  getDefaultOnboardingDepartmentsL7,
+  fetchOnboardingSiteAndDepartmentLabels,
   getDefaultOnboardingFormFields,
-  getDefaultOnboardingLocations,
   getDefaultOnboardingMedicalReports,
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import type { SystemOption } from "@/lib/systemDefinitions";
@@ -68,18 +65,8 @@ export async function fetchOnboardingFormFields(
 export async function fetchOnboardingOptionLists(
   supabase: SupabaseClient,
 ): Promise<Record<string, string[]>> {
-  const [locations, deptL16, deptL7, medicalReports] = await Promise.all([
-    fetchOptionList(supabase, ONBOARDING_LOCATIONS_LIST, getDefaultOnboardingLocations),
-    fetchOptionList(
-      supabase,
-      ONBOARDING_DEPARTMENTS_L1L6_LIST,
-      getDefaultOnboardingDepartmentsL1L6,
-    ),
-    fetchOptionList(
-      supabase,
-      ONBOARDING_DEPARTMENTS_L7_LIST,
-      getDefaultOnboardingDepartmentsL7,
-    ),
+  const [{ sites, departments }, medicalReports] = await Promise.all([
+    fetchOnboardingSiteAndDepartmentLabels(supabase),
     fetchOptionList(
       supabase,
       ONBOARDING_MEDICAL_REPORTS_LIST,
@@ -88,22 +75,18 @@ export async function fetchOnboardingOptionLists(
   ]);
 
   return {
-    [ONBOARDING_LOCATIONS_LIST]: locations,
-    [ONBOARDING_DEPARTMENTS_L1L6_LIST]: deptL16,
-    [ONBOARDING_DEPARTMENTS_L7_LIST]: deptL7,
+    [ONBOARDING_LOCATIONS_LIST]: sites,
+    [ONBOARDING_DEPARTMENTS_LIST]: departments,
     [ONBOARDING_MEDICAL_REPORTS_LIST]: medicalReports,
   };
 }
 
+/** DB-unreachable fallback — Sites/Departments have no hardcoded stand-in
+ * (they only ever come from the live catalog), so both are empty here. */
 export function getGitOnboardingOptionLists(): Record<string, string[]> {
   return {
-    [ONBOARDING_LOCATIONS_LIST]: optionListLabelsFromOptions(getDefaultOnboardingLocations()),
-    [ONBOARDING_DEPARTMENTS_L1L6_LIST]: optionListLabelsFromOptions(
-      getDefaultOnboardingDepartmentsL1L6(),
-    ),
-    [ONBOARDING_DEPARTMENTS_L7_LIST]: optionListLabelsFromOptions(
-      getDefaultOnboardingDepartmentsL7(),
-    ),
+    [ONBOARDING_LOCATIONS_LIST]: [],
+    [ONBOARDING_DEPARTMENTS_LIST]: [],
     [ONBOARDING_MEDICAL_REPORTS_LIST]: optionListLabelsFromOptions(
       getDefaultOnboardingMedicalReports(),
     ),

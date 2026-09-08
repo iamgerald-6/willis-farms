@@ -2,9 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeInterviewFormData, type JobApplication } from "@/lib/careers/types";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { inferGradeLevel } from "@/lib/careers/hrEmployeeDefaults";
-import { fetchModuleConfig } from "@/lib/systemDefinitions/getModuleConfig";
+import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { formatGrossSalaryAmount } from "@/lib/systemDefinitions/salaryRanges";
-import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 
 export type OfferLetterContext = {
@@ -63,12 +62,11 @@ export async function resolveOfferLetterContext(
   hr: OnboardingHrData = {},
 ): Promise<OfferLetterContext> {
   const formData = normalizeInterviewFormData(application.interview_form_data);
-  const moduleConfig = await fetchModuleConfig(supabase, RECRUITMENT_MODULE_ID);
-  const gradeConfig = moduleConfig.businessLogic.gradeLevelsConfig;
+  const gradeConfig = await fetchGradeLevelsConfig(supabase);
 
   const gradeLevel =
     hr.grade_level?.trim().toUpperCase() ||
-    inferGradeLevel(application.role_slug, hr, gradeConfig) ||
+    inferGradeLevel(hr, gradeConfig) ||
     undefined;
 
   const medicalReports = await fetchRequiredMedicalReports(supabase);

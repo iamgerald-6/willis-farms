@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 
     const { data: existingUsers, error: usersError } = await supabaseAdmin
       .from("users")
-      .select("user_id, email, first_name, last_name, grade_level, role, user_role_id");
+      .select("user_id, email, first_name, last_name, role, user_role_id");
 
     if (usersError) {
       return NextResponse.json({ error: usersError.message }, { status: 500 });

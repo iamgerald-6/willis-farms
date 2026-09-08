@@ -232,13 +232,7 @@ export default function AppraisalLandingPage({
     [appraisals, page],
   );
 
-  // Supervisory Role with at least one assigned supervisee can also
-  // appraise people below them; everyone else only ever fills their own
-  // self-assessment.
-  const viewerCanAppraiseOthers = canAppraiseOthers(
-    viewer.role,
-    !!viewer.hasSupervisees,
-  );
+  const viewerCanAppraiseOthers = canAppraiseOthers(viewer.role);
   const showSelfAppraisalButton =
     !isConsultant && !viewerCanAppraiseOthers;
   const showNewAppraisalButton = viewerCanAppraiseOthers;

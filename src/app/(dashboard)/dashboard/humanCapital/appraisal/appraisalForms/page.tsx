@@ -52,7 +52,6 @@ function AppraisalFormPageContent() {
   const profile = users?.find((u) => u.user_id === userId);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const role = resolveAccessProfile(profile, sessionRole)?.role ?? sessionRole;
-  const hasSupervisees = !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
     profile?.grade_level,
@@ -95,7 +94,7 @@ function AppraisalFormPageContent() {
     },
   });
 
-  const canSuperviseOthers = canAppraiseOthers(role, hasSupervisees);
+  const canSuperviseOthers = canAppraiseOthers(role);
 
   const blockConsultantSelfStart =
     isFreshFill && isConsultant && !existingAppraisalId && !canSuperviseOthers;

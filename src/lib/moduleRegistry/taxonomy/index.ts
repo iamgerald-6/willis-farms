@@ -36,20 +36,16 @@ export {
 
 export {
   SKILL_LOG_FORM_COPY,
-  SKILL_LOG_GRADES,
-  SKILL_LOG_MIN_FILLER_GRADE,
   SKILL_LOG_PAGE_COPY,
   SKILL_LOG_STATUSES,
   SKILL_LOG_TYPES,
   buildSkillLogCompetencyRows,
-  getSkillLogGradeLevels,
   getSkillLogSectionsForType,
   getSkillLogStatusBadgeClass,
   getSkillLogStatusDef,
   getSkillLogStatusFilterOptions,
   getSkillLogTypeLegacyValues,
   getSkillLogTypeOptions,
-  parseSkillLogGradeLevel,
 } from "./skillLog";
 export type {
   SkillLogCompetencyRow,
@@ -66,7 +62,6 @@ export {
   QUARTER_FILTERS,
   QUARTERS,
   canAppraiseOthers,
-  canRate,
   canSuperviseAppraisal,
   appraisalSideFor,
   getJustificationStatusDef,
@@ -74,12 +69,10 @@ export {
   getQuarterFilterLabel,
   getStatusSummary,
   gradeBandForGrade,
-  gradeIndex,
   isOwnAppraisal,
   periodLabel,
   reviewedBy,
   sectionSetForQuarter,
-  supervisableGradeBands,
 } from "./appraisal";
 export type {
   Appraisal,

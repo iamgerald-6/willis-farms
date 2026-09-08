@@ -1,7 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { InterviewGuideKey } from "@/lib/careers/openings";
+import type { InterviewGuideKey } from "@/lib/careers/interviewFormConfigs";
 
 export type JobPostingStatus = "published" | "closed";
+
+/** Random human-readable reference number stamped on a new job application. */
+export function generateReferenceNumber(): string {
+  const year = new Date().getFullYear();
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `WF-${year}-${suffix}`;
+}
 
 /** Field key -> human label, shared between the admin editor and the public details page. */
 export const JOB_POSTING_CONTENT_SECTIONS: {
@@ -143,7 +150,13 @@ export const JOB_POSTING_STATUS_LABELS: Record<JobPostingStatus, string> = {
   closed: "Closed",
 };
 
-export { formatPublicJobTitle } from "@/lib/careers/jobPostingOptions";
+/** Strip internal grade codes like "(L1)" from titles shown on the public careers page. */
+export function formatPublicJobTitle(title: string): string {
+  return title
+    .replace(/\s*\(L\d+\)\s*$/i, "")
+    .replace(/\s*—\s*L\d+\s*$/i, "")
+    .trim();
+}
 
 export function slugifyJobTitle(title: string): string {
   return title

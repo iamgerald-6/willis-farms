@@ -20,7 +20,8 @@ type UserRow = {
   email: string;
   company_id: string;
   job_position: string | null;
-  grade_level: string | null;
+  grade_level_id: string | null;
+  grade_levels?: { code: string | null } | { code: string | null }[] | null;
   role: string;
   created_at: string;
   application_id?: string | null;
@@ -134,8 +135,12 @@ export async function GET() {
     );
   }
 
+  // grade_level is no longer a stored column — derived live via the
+  // grade_level_id FK join to the Organizational Structure "Grade levels"
+  // catalog, so it can never drift out of sync with the catalog. See
+  // docs/organizational-structure/drop-users-grade-level-column.sql.
   const userSelect =
-    "user_id, first_name, last_name, email, company_id, job_position, grade_level, role, created_at, application_id, employment_status, platform_invited_at, is_disabled";
+    "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, application_id, employment_status, platform_invited_at, is_disabled";
 
   let usersResult = await supabaseAdmin
     .from("users")
@@ -153,7 +158,7 @@ export async function GET() {
       usersResult = (await supabaseAdmin
         .from("users")
         .select(
-          "user_id, first_name, last_name, email, company_id, job_position, grade_level, role, created_at, is_disabled",
+          "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, is_disabled",
         )
         .eq("role", "employee")
         .order("created_at", { ascending: false })) as typeof usersResult;
@@ -243,7 +248,9 @@ export async function GET() {
         email: user.email,
         company_id: user.company_id,
         job_position: user.job_position,
-        grade_level: user.grade_level,
+        grade_level: (Array.isArray(user.grade_levels)
+          ? user.grade_levels[0]?.code
+          : user.grade_levels?.code) ?? null,
         employment_status: employmentStatus,
         platform_invited_at: platformInvitedAt,
         application_id: user.application_id ?? onboarding?.application_id ?? null,

@@ -8,10 +8,8 @@ import {
   resolveOnboardingHrFields,
   type OnboardingHrFieldDef,
 } from "@/lib/careers/onboardingHrFormSchema";
-import { gradeLevelToRank } from "@/lib/careers/hrEmployeeDefaults";
 import {
-  ONBOARDING_DEPARTMENTS_L1L6_LIST,
-  ONBOARDING_DEPARTMENTS_L7_LIST,
+  ONBOARDING_DEPARTMENTS_LIST,
   ONBOARDING_LOCATIONS_LIST,
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/onboardingDefaults";
@@ -21,7 +19,6 @@ import {
   ONBOARDING_PAY_FREQUENCIES_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
 import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
-import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useCompanyEmailDomain } from "@/hooks/useCompanyEmailDomain";
 import {
   joinCompanyEmail,
@@ -96,30 +93,32 @@ export default function OnboardingHrFieldsForm({
   const { data: optionLists } = useQuery({
     queryKey: ["onboarding-hr-option-lists"],
     queryFn: async () => {
-      const lists = [
-        ONBOARDING_LOCATIONS_LIST,
-        ONBOARDING_DEPARTMENTS_L1L6_LIST,
-        ONBOARDING_DEPARTMENTS_L7_LIST,
-        ONBOARDING_EMPLOYMENT_TYPES_LIST,
-        ONBOARDING_PAY_FREQUENCIES_LIST,
-      ] as const;
-      const entries = await Promise.all(
-        lists.map(async (option_list) => {
-          const res = await api.get("/system-definitions/options", {
-            params: { module_id: RECRUITMENT_MODULE_ID, option_list },
-          });
-          const rows = (res.data.data ?? []) as { label: string; is_active?: boolean }[];
-          return [
-            option_list,
-            rows.filter((o) => o.is_active !== false).map((o) => o.label),
-          ] as const;
-        }),
-      );
-      return Object.fromEntries(entries) as Record<string, string[]>;
+      const lists = [ONBOARDING_EMPLOYMENT_TYPES_LIST, ONBOARDING_PAY_FREQUENCIES_LIST] as const;
+      const [entries, orgLists] = await Promise.all([
+        Promise.all(
+          lists.map(async (option_list) => {
+            const res = await api.get("/system-definitions/options", {
+              params: { module_id: RECRUITMENT_MODULE_ID, option_list },
+            });
+            const rows = (res.data.data ?? []) as { label: string; is_active?: boolean }[];
+            return [
+              option_list,
+              rows.filter((o) => o.is_active !== false).map((o) => o.label),
+            ] as const;
+          }),
+        ),
+        // Work location / Department are live from the Organizational
+        // Structure Sites / Departments catalog, not a hand-typed list —
+        // see fetchOnboardingSiteAndDepartmentLabels.
+        api.get("/careers/onboarding/org-lists"),
+      ]);
+      const out = Object.fromEntries(entries) as Record<string, string[]>;
+      out[ONBOARDING_LOCATIONS_LIST] = orgLists.data?.data?.sites ?? [];
+      out[ONBOARDING_DEPARTMENTS_LIST] = orgLists.data?.data?.departments ?? [];
+      return out;
     },
   });
 
-  const { config: gradeConfig, gradeOptions } = useGradeLevelsConfig();
   const { domain: companyEmailDomain } = useCompanyEmailDomain();
   const salaryGhsTouched = useRef(false);
 
@@ -164,14 +163,7 @@ export default function OnboardingHrFieldsForm({
     }
   }, [eligibleSupervisors, hrData.supervisor_id, setHrData]);
 
-  const departmentOptions = useMemo(() => {
-    const lists = optionLists ?? {};
-    const rank = gradeLevelToRank(hrData.grade_level, gradeConfig ?? undefined);
-    if (rank != null && rank >= 7) {
-      return lists[ONBOARDING_DEPARTMENTS_L7_LIST] ?? [];
-    }
-    return lists[ONBOARDING_DEPARTMENTS_L1L6_LIST] ?? [];
-  }, [hrData.grade_level, optionLists, gradeConfig]);
+  const departmentOptions = optionLists?.[ONBOARDING_DEPARTMENTS_LIST] ?? [];
 
   // Real position titles currently held by staff with the Supervisory Role
   // User role — not the recruitment job-postings catalog, since "Reporting

@@ -90,7 +90,11 @@ export default function InterviewPanelForm({
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
 
-  const { data: queryData, isLoading, refetch } = useQuery({
+  const {
+    data: queryData,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["interview_guide", applicationId],
     queryFn: async () => {
       const res = await api.get(
@@ -178,7 +182,8 @@ export default function InterviewPanelForm({
   // would look like a "change" to the autosave effect below and fire it
   // even when HR hasn't typed anything yet.
   const hrStage1: StageSubmissionData = useMemo(
-    () => formData.hr_submission?.stage1 ?? { screening: {}, question_ratings: {} },
+    () =>
+      formData.hr_submission?.stage1 ?? { screening: {}, question_ratings: {} },
     [formData.hr_submission?.stage1],
   );
 
@@ -230,13 +235,17 @@ export default function InterviewPanelForm({
       // component along with the application detail view it lives in, so
       // these two actions deliberately skip it and just refetch instead.
       if (params.action === "open_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        toast.success(
+          "Panel forms opened — members can now access their evaluation forms.",
+        );
         setManualStep("panel");
         refetch();
         return;
       }
       if (params.action === "open_stage2_panel_forms") {
-        toast.success("Panel forms opened — members can now access their evaluation forms.");
+        toast.success(
+          "Panel forms opened — members can now access their evaluation forms.",
+        );
         setManualStep("stage2_setup");
         refetch();
         return;
@@ -259,13 +268,17 @@ export default function InterviewPanelForm({
       // rescheduling should land HR back on the (now editable) setup
       // screen to fix the date/panel, not close the whole application view.
       if (params.action === "reschedule_stage1") {
-        toast.success("Stage 1 reset — update the details and resend invites when ready.");
+        toast.success(
+          "Stage 1 reset — update the details and resend invites when ready.",
+        );
         setManualStep("panel");
         refetch();
         return;
       }
       if (params.action === "reschedule_stage2") {
-        toast.success("Stage 2 reset — update the details and resend invites when ready.");
+        toast.success(
+          "Stage 2 reset — update the details and resend invites when ready.",
+        );
         setManualStep("stage2_setup");
         refetch();
         return;
@@ -314,7 +327,9 @@ export default function InterviewPanelForm({
   // onSaved(), which closes the whole application detail view (see the
   // "open panel forms" fix above); an autosave firing mid-edit must never
   // do that.
-  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [autosaveStatus, setAutosaveStatus] = useState<
+    "idle" | "saving" | "saved"
+  >("idle");
   const autosaveMutation = useMutation({
     mutationFn: (data: InterviewFormData) =>
       api.post("/careers/interview", {
@@ -520,7 +535,10 @@ export default function InterviewPanelForm({
           ) : activeStep === "stage1" &&
             !formData.setup?.stage1_forms_opened_at &&
             !hrStage1.submitted_at ? (
-            <FormsNotOpenNotice stage={1} onGoToSetup={() => setManualStep("panel")} />
+            <FormsNotOpenNotice
+              stage={1}
+              onGoToSetup={() => setManualStep("panel")}
+            />
           ) : activeStep === "stage1" ? (
             <Stage1ScreeningQuestions
               guide={guide}
@@ -612,7 +630,10 @@ export default function InterviewPanelForm({
           ) : activeStep === "stage2" &&
             !formData.setup?.stage2_forms_opened_at &&
             !hrStage2.submitted_at ? (
-            <FormsNotOpenNotice stage={2} onGoToSetup={() => setManualStep("stage2_setup")} />
+            <FormsNotOpenNotice
+              stage={2}
+              onGoToSetup={() => setManualStep("stage2_setup")}
+            />
           ) : activeStep === "stage2" ? (
             <Stage2Practical
               guide={guide}
@@ -692,7 +713,9 @@ export default function InterviewPanelForm({
                   saveMutation.mutate({ action: "finalize", data: formData })
                 }
                 disabled={
-                  saveMutation.isPending || isLoading || !formData.summary?.ai_analysis
+                  saveMutation.isPending ||
+                  isLoading ||
+                  !formData.summary?.ai_analysis
                 }
                 className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
               >
@@ -734,8 +757,7 @@ function FormsNotOpenNotice({
         </p>
         <p className="text-sm text-amber-800 mt-1">
           Nobody — including HR — can fill in Stage {stage} scores until you
-          open the forms from Panel setup, once the interview actually
-          starts.
+          open the forms from Panel setup, once the interview actually starts.
         </p>
         <button
           type="button"

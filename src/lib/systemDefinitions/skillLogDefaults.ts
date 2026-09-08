@@ -21,7 +21,7 @@ const DEFAULT_SECTIONS = [
   "General",
 ] as const;
 
-const DEFAULT_TIER_AUTH = [
+export const DEFAULT_SKILL_LOG_TIER_AUTH = [
   "None yet",
   "GP",
   "PS",
@@ -64,7 +64,7 @@ export function getGitSkillLogTierAuthOptions(): SystemOption[] {
   return toOptions(
     SKILL_LOG_MODULE_ID,
     SKILL_LOG_TIER_AUTH_LIST,
-    DEFAULT_TIER_AUTH,
+    DEFAULT_SKILL_LOG_TIER_AUTH,
     "tier",
   );
 }

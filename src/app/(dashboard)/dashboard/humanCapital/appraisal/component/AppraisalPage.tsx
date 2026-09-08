@@ -30,7 +30,6 @@ import {
 } from "@/lib/appraisal/scoring";
 import {
   Quarter,
-  supervisableGradeBands,
   sectionSetForQuarter,
 } from "@/lib/appraisal/sections";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
@@ -38,6 +37,7 @@ import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
 import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
 import { resolveAppraisalSupervisorFields } from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
+import { canBeAssignedAsSupervisorByRoleLabel } from "@/lib/userRoleAccessControl";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
@@ -267,11 +267,7 @@ export default function AppraisalForm({
   const lockedQuarter = defaultQuarter ?? activePeriod.quarter;
   const lockedYear = defaultYear ?? activePeriod.year;
   const { config: gradeConfig } = useGradeLevelsConfig();
-  const {
-    scopeConfig,
-    formOptions: appraisalFormOptions,
-    formKeyCovers: appraisalFormKeyCovers,
-  } = useAppraisalScopeConfig();
+  const { scopeConfig } = useAppraisalScopeConfig();
   // ── Auth ──
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -373,8 +369,8 @@ export default function AppraisalForm({
   );
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
-  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.user_role_label);
   const isConsultantViewer = isConsultantEmployee(currentUserGrade, gradeConfig);
+  const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.user_role_label);
 
   // ── Which side of the form am I filling? ──
   // Everyone — supervisors included — completes their own self-assessment, so
@@ -382,7 +378,7 @@ export default function AppraisalForm({
   const viewer = useMemo(
     () => ({
       userId,
-      role: currentUserProfile?.role,
+      role: currentUserProfile?.user_role_label ?? currentUserProfile?.role,
       gradeLevel: currentUserGrade,
       companyId: currentUserProfile?.company_id,
     }),
@@ -428,20 +424,6 @@ export default function AppraisalForm({
         isFillingSecond &&
         existingAppraisal?.submitted_by !== "both" &&
         existingAppraisal?.status !== "final_reviewed"));
-
-  const allowedGradeBands = useMemo(
-    () =>
-      isSuperAdmin
-        ? appraisalFormOptions
-        : supervisableGradeBands(currentUserGrade, gradeConfig, scopeConfig),
-    [
-      currentUserGrade,
-      gradeConfig,
-      scopeConfig,
-      appraisalFormOptions,
-      isSuperAdmin,
-    ],
-  );
 
   const ownGradeBand = resolveAppraisalFormKey(
     currentUserGrade,
@@ -490,16 +472,7 @@ export default function AppraisalForm({
     }
   }, [existingAppraisal, allUsers, setValue]);
 
-  const assignedSupervisor = useMemo(() => {
-    const id = currentUserProfile?.supervisor_id;
-    if (!id) return null;
-    return allUsers.find((u) => u.user_id === id) ?? null;
-  }, [allUsers, currentUserProfile?.supervisor_id]);
-
-  const hasAssignedSupervisor = !!assignedSupervisor;
-
-  // Filling for someone I supervise — lock to my own name+email.
-  // Self-appraisal: use assigned supervisor from User Management when set.
+  // Filling for someone else — lock supervisor fields to the current user.
   useEffect(() => {
     if (isFillingSecond) return;
     if (!fillingForSelf && currentUserProfile) {
@@ -511,15 +484,6 @@ export default function AppraisalForm({
       setValue("supervisor_email", currentUserProfile.email ?? "");
       return;
     }
-    if (assignedSupervisor) {
-      setSelectedSupervisorId(assignedSupervisor.user_id);
-      setValue(
-        "immediate_supervisor",
-        `${assignedSupervisor.first_name} ${assignedSupervisor.last_name}`,
-      );
-      setValue("supervisor_email", assignedSupervisor.email ?? "");
-      return;
-    }
     setSelectedSupervisorId("");
     setValue("immediate_supervisor", "");
     setValue("supervisor_email", "");
@@ -528,15 +492,13 @@ export default function AppraisalForm({
     selectedEmployee?.user_id,
     isFillingSecond,
     currentUserProfile,
-    assignedSupervisor,
     setValue,
   ]);
 
-  // ── Filter employees for a fresh supervisor fill ──
-  // Who shows up here must match who canSuperviseAppraisal (appraisal/roles.ts)
-  // actually lets this viewer appraise: Super Admin sees every eligible
-  // subject; everyone else sees only the people actually assigned to them as
-  // supervisor_id — never a grade-rank or role-only comparison.
+  const canFillAsSupervisor = canBeAssignedAsSupervisorByRoleLabel(
+    currentUserProfile?.user_role_label,
+  );
+
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
     return allUsers.filter((u) => {
@@ -546,11 +508,7 @@ export default function AppraisalForm({
     });
   }, [allUsers, userId, isSuperAdmin, fillingForSelf, isFillingSecond, gradeConfig]);
 
-  // Can this viewer appraise anyone other than themselves at all? Super
-  // Admin always can; everyone else only if they have at least one person
-  // actually assigned to them as supervisor_id (see filteredEmployees above).
-  const canSelectForOthers =
-    !isFillingSecond && (isSuperAdmin || filteredEmployees.length > 0);
+  const canSelectForOthers = !isFillingSecond && canFillAsSupervisor;
 
   // Appraisal grade templates — one question set per exact Site/Business
   // unit/Department/Section/Position/Grade level combination, matched
@@ -609,27 +567,14 @@ export default function AppraisalForm({
     setValue("review_year", lockedYear);
   }, [isFillingSecond, lockedQuarter, lockedYear, setValue]);
 
-  // Keep the grade band valid: your own band for a self-appraisal, otherwise
-  // one of the bands you are senior enough to rate.
+  // Self-appraisal: grade band is always your own — supervisor filling for
+  // someone else gets theirs from the "derive the form band from the
+  // selected employee's grade" effect below instead (never a rank-gated
+  // selected employee's org placement, not the viewer's).
   useEffect(() => {
-    if (isFillingSecond) return;
-    if (fillingForSelf) {
-      setGradeBand(ownGradeBand);
-      return;
-    }
-    if (
-      allowedGradeBands.length > 0 &&
-      !allowedGradeBands.some((b) => b.value === gradeBand)
-    ) {
-      setGradeBand(allowedGradeBands[0].value);
-    }
-  }, [
-    allowedGradeBands,
-    gradeBand,
-    isFillingSecond,
-    fillingForSelf,
-    ownGradeBand,
-  ]);
+    if (isFillingSecond || !fillingForSelf) return;
+    setGradeBand(ownGradeBand);
+  }, [isFillingSecond, fillingForSelf, ownGradeBand]);
 
   // Self-appraisal: lock the subject to yourself and pre-fill your email
   useEffect(() => {
@@ -1191,44 +1136,19 @@ export default function AppraisalForm({
                   {...register("supervisor_email", { required: true })}
                 />
               </div>
-            ) : hasAssignedSupervisor ? (
-              <div>
-                <ReadOnlyField
-                  label="Supervisor's Name"
-                  value={`${assignedSupervisor!.first_name} ${assignedSupervisor!.last_name}`}
-                />
-                <input
-                  type="hidden"
-                  {...register("immediate_supervisor", { required: true })}
-                />
-                <input
-                  type="hidden"
-                  {...register("supervisor_email", { required: true })}
-                />
-              </div>
             ) : (
-              // No supervisor assigned in User Management yet. Only the
-              // actual assigned supervisor (users.supervisor_id) is allowed
-              // to complete the evaluation now (see canSuperviseAppraisal),
-              // so there's no safe way to let someone pick an arbitrary
-              // person here — picking the wrong one would just route the
-              // notification to someone who'd be rejected at submit time.
-              // The required hidden inputs stay empty, which blocks
-              // submission until a supervisor is actually assigned.
-              <div>
+              <div className="space-y-2">
                 <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
-                  No supervisor is assigned to you yet. Ask an admin to set
-                  your Assigned supervisor in Manage User before this
-                  appraisal can be completed.
-                </div>
                 <input
-                  type="hidden"
+                  type="text"
                   {...register("immediate_supervisor", { required: true })}
+                  className={inputCls()}
                 />
+                <FieldLabel required>Supervisor&apos;s Email</FieldLabel>
                 <input
-                  type="hidden"
+                  type="email"
                   {...register("supervisor_email", { required: true })}
+                  className={inputCls()}
                 />
               </div>
             )}

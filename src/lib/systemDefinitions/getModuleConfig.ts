@@ -61,7 +61,6 @@ export async function fetchModuleConfig(
       competencyContentOverrides: businessLogic.competencyContentOverrides,
       refereeReferenceConfig: businessLogic.refereeReferenceConfig,
       applicationFormConfig: businessLogic.applicationFormConfig,
-      gradeLevelsConfig: businessLogic.gradeLevelsConfig,
       appraisalScopeConfig: businessLogic.appraisalScopeConfig,
       annualLeaveCapDays:
         businessLogic.annualLeaveCapDays ??

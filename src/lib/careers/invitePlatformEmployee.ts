@@ -82,17 +82,33 @@ export async function invitePlatformEmployee(
 
   const gradeConfig = await fetchGradeLevelsConfig(supabaseAdmin);
 
+  // grade_level (text, e.g. "L1") is no longer a users column — it only
+  // ever arrives here as a fallback hint from the onboarding HR form
+  // (see inferGradeLevel) when the linked job posting didn't already
+  // supply grade_level_id via org placement. Resolve it against the real
+  // Grade levels catalog to get the row's actual id, since that id — not
+  // the text — is what gets written to users.grade_level_id below.
   const gradeLevelTrimmed = grade_level?.trim() ?? "";
+  let resolvedGradeLevelId = grade_level_id ?? null;
+
   if (gradeLevelTrimmed) {
-    const allowedGrades = new Set(
-      resolveAllGradeLevels(gradeConfig).map((level) => level.id.toLowerCase()),
+    const matchedGrade = resolveAllGradeLevels(gradeConfig).find(
+      (level) => level.id.toLowerCase() === gradeLevelTrimmed.toLowerCase(),
     );
-    if (!allowedGrades.has(gradeLevelTrimmed.toLowerCase())) {
+    if (!matchedGrade) {
       return {
         ok: false,
         error: `Invalid grade level "${gradeLevelTrimmed}".`,
         status: 400,
       };
+    }
+    if (!resolvedGradeLevelId) {
+      const { data: gradeRow } = await supabaseAdmin
+        .from("grade_levels")
+        .select("id")
+        .ilike("code", gradeLevelTrimmed)
+        .maybeSingle();
+      resolvedGradeLevelId = gradeRow?.id ?? null;
     }
   }
 
@@ -101,7 +117,7 @@ export async function invitePlatformEmployee(
   if (supervisor_id) {
     const { data: supervisor, error: supervisorError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role, grade_level, user_role_id")
+      .select("user_id, role, user_role_id")
       .eq("user_id", String(supervisor_id).trim())
       .maybeSingle();
 
@@ -166,7 +182,6 @@ export async function invitePlatformEmployee(
     first_name,
     last_name,
     company_id,
-    grade_level,
     job_position: job_position ?? null,
     supervisor_id: resolvedSupervisorId,
     created_at: invitedAt,
@@ -178,7 +193,7 @@ export async function invitePlatformEmployee(
     department_id: department_id ?? null,
     section_id: section_id ?? null,
     position_id: position_id ?? null,
-    grade_level_id: grade_level_id ?? null,
+    grade_level_id: resolvedGradeLevelId,
     user_role_id: user_role_id ?? null,
   };
 
@@ -278,19 +293,12 @@ export async function invitePlatformEmployee(
   if (tableError || !tableUser) {
     await supabaseAdmin.auth.admin.deleteUser(authUser.id);
     const msg = tableError?.message ?? "Could not create user.";
-    const gradeConstraint =
-      msg.includes("users_grade_level_check") ||
-      (msg.includes("grade_level") && msg.includes("check constraint"));
-    const hint = gradeConstraint
-      ? " Run docs/access-control/users-grade-level-check.sql in Supabase to allow consultant and custom grades."
-      : tableError?.message?.includes("created_by")
-        ? " Run in Supabase SQL: ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by uuid; NOTIFY pgrst, 'reload schema';"
-        : "";
+    const hint = tableError?.message?.includes("created_by")
+      ? " Run in Supabase SQL: ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by uuid; NOTIFY pgrst, 'reload schema';"
+      : "";
     return {
       ok: false,
-      error: gradeConstraint
-        ? `Grade level "${gradeLevelTrimmed || grade_level}" is not allowed by the database yet.${hint}`
-        : msg + hint,
+      error: msg + hint,
       status: 400,
     };
   }

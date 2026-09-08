@@ -85,13 +85,8 @@ export interface Justification {
   created_at: string;
 }
 
-// role is the resolved new-role-system label (e.g. "Executive Role",
-// "Supervisory Role" — see resolveAccessProfile), not the old
-// employee/manager/admin/super_admin literals. hasSupervisees is whether
-// this person actually has anyone assigned to them (users.supervisor_id) —
-// combined with Supervisory Role for the broad "appraises others at all"
-// gate (canAppraiseOthers). Which SPECIFIC employee they can act on is a
-// separate, per-record check (canSuperviseAppraisal in appraisal/roles.ts).
+// role is the resolved User role label from user_role_id (e.g. "Executive
+// Role", "Supervisory Role" — see resolveAccessProfile).
 export interface ViewerContext {
   role: string;
   gradeLevel: string | null;

@@ -14,9 +14,9 @@ import { canArchiveAppraisal } from "@/lib/accessControl";
  * hidden from the default list, frozen against edits, and skipped by the
  * reminder/lock cron.
  *
- * Who may archive:
- *   - Manager / Super Admin → yes
- *   - Admin → only when Manage User has granted Edit on Appraisal
+ * Who may archive — see canArchiveAppraisal in accessControl.ts:
+ *   - Super Admin / Executive Role / Human Resource (broad elevated access) → yes
+ *   - Anyone else who's been granted Edit on Appraisal via Manage User → yes
  *   - Everyone else → no
  */
 export async function POST(
@@ -39,9 +39,7 @@ export async function POST(
 
     if (!canArchiveAppraisal(caller.role, caller.page_permission_levels)) {
       return jsonForbidden(
-        caller.role === "admin"
-          ? "Admins cannot archive appraisals unless Edit on Appraisal is granted in Manage User."
-          : "Only managers can archive appraisals.",
+        "You need Edit access on Appraisal (granted in Manage User) to archive appraisals.",
       );
     }
 

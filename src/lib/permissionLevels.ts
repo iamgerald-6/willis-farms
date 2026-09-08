@@ -73,26 +73,6 @@ export function getPermissionModuleConfig(
   return PERMISSION_MODULE_CONFIG[key] ?? GENERIC_PERMISSION_HELP;
 }
 
-/**
- * Admin's default is deliberately lighter than Manager/Super Admin: they see
- * everything an employee sees, plus a read-only view of User Management, and
- * can add (but not archive/delete) Policies & SOP content. Managers and
- * Super Admins keep full "edit" everywhere via isFullRoleAccess below.
- * Explicit page_permission_levels (once an admin is customized/delegated)
- * always take precedence over these defaults.
- */
-const ADMIN_DEFAULT_OVERRIDES: Partial<
-  Record<PagePermissionKey, PermissionLevel>
-> = {
-  users: "view",
-  policies: "add",
-  "sop:view": "view",
-  "sop:add": "add",
-  // Admins can work the current appraisal flow, but cannot archive unless
-  // Manage User explicitly grants Edit on Appraisal.
-  "hc:appraisal": "add",
-};
-
 export function moduleSupportsAdd(key: PagePermissionKey): boolean {
   return getPermissionModuleConfig(key).supportsAdd;
 }
@@ -131,14 +111,6 @@ export function getPagePermissionLevel(
 
   const tier = (profile?.access_tier ?? "standard") as AccessTier;
   const levels = resolvePermissionLevels(profile);
-
-  // Admin gets a lighter default than Manager/Super Admin on a few modules
-  // (see ADMIN_DEFAULT_OVERRIDES). Once explicitly customized (delegated +
-  // stored level for this key), the stored value wins.
-  if (role === "admin" && ADMIN_DEFAULT_OVERRIDES[key]) {
-    if (tier === "delegated" && levels[key]) return levels[key]!;
-    return ADMIN_DEFAULT_OVERRIDES[key]!;
-  }
 
   if (isFullRoleAccess(role)) return "edit";
 

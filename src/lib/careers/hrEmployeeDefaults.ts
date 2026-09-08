@@ -1,24 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getOpeningBySlug } from "@/lib/careers/openings";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import {
   DEFAULT_COMPANY_EMAIL_DOMAIN,
   normalizeCompanyEmailDomain,
 } from "@/lib/systemDefinitions/companyEmailDomain";
 import {
-  DEFAULT_GRADE_LEVELS,
   gradeLevelToRank as gradeLevelToRankFromConfig,
-  resolveGradeLevelOptions,
-  resolveGradeLevels,
   resolveAllGradeLevels,
   type GradeLevelsConfig,
 } from "@/lib/systemDefinitions/gradeLevelsConfig";
 
-export const GRADE_LEVELS = DEFAULT_GRADE_LEVELS.map((l) => l.id) as readonly string[];
 export type GradeLevel = string;
-
-/** @deprecated Prefer resolveGradeLevelOptions(config) when config is available. */
-export const GRADE_LEVEL_OPTIONS = resolveGradeLevelOptions();
 
 export function gradeLevelToRank(
   gradeLevel: string | null | undefined,
@@ -28,7 +20,6 @@ export function gradeLevelToRank(
 }
 
 export function inferGradeLevel(
-  roleSlug: string,
   hrData: OnboardingHrData | null | undefined,
   config?: GradeLevelsConfig,
 ): string | undefined {
@@ -40,10 +31,6 @@ export function inferGradeLevel(
     const match = levels.find((l) => l.id.toLowerCase() === fromHr.toLowerCase());
     return match?.id;
   }
-
-  const opening = getOpeningBySlug(roleSlug);
-  const key = opening?.interviewGuideKey?.toUpperCase();
-  if (key && levelSet.has(key)) return key;
 
   return undefined;
 }

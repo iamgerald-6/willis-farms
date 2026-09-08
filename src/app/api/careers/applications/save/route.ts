@@ -10,8 +10,7 @@ import {
   buildApplicationFormSnapshot,
   fetchApplicationFormContext,
 } from "@/lib/careers/getApplicationFormFields";
-import { isPostingPublic } from "@/lib/careers/jobPostings";
-import { generateReferenceNumber } from "@/lib/careers/openings";
+import { generateReferenceNumber, isPostingPublic } from "@/lib/careers/jobPostings";
 import { sendApplicationConfirmationEmail } from "@/lib/careers/applicationConfirmationEmail";
 import { sendApplicationHrNotificationEmail } from "@/lib/careers/applicationHrNotificationEmail";
 

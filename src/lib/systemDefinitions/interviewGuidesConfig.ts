@@ -11,7 +11,7 @@ import {
   GIT_INTERVIEW_GUIDE_KEYS,
   RATING_LABELS,
 } from "@/lib/careers/interviewFormConfigs";
-import type { InterviewGuideKey } from "@/lib/careers/openings";
+import type { InterviewGuideKey } from "@/lib/careers/interviewFormConfigs";
 
 export type DisqualifierDef = {
   id: string;

@@ -9,6 +9,7 @@ import {
   canViewAllAppraisalPeriods,
   hasFullAppraisalAccess,
 } from "@/lib/accessControl";
+import { canAppraiseOthers } from "@/lib/appraisal/sections";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { isUntouchedAppraisalSeed } from "@/lib/appraisal/supervisorDisplay";
 import { enrichAppraisalsWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
@@ -36,7 +37,8 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     let archived = searchParams.get("archived");
 
-    const fullAccess = hasFullAppraisalAccess(caller.role);
+    const fullAccess =
+      hasFullAppraisalAccess(caller.role) || canAppraiseOthers(caller.role);
     const canBrowsePeriods = canViewAllAppraisalPeriods(caller.role);
 
     // Employees (any grade) are locked to the single active period. Manager /

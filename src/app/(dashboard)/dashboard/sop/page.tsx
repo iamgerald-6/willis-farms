@@ -43,16 +43,14 @@ export default function SOPHubPage() {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const role = accessProfile?.role ?? sessionRole;
-  const hasSupervisees = !!userId && (users ?? []).some((u) => u.supervisor_id === userId);
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
-  // Manage side: Executive Role/Super Admin, Supervisory Role with at least
-  // one assigned supervisee, or anyone specifically delegated the
-  // "sop:add" permission via Access Control.
+  // Manage side: role (Supervisory / Executive / HR / Super Admin via
+  // isSupervisor / isFullRoleAccess) or anyone delegated "sop:add".
   const canManage =
     isFullRoleAccess(role) ||
-    isSupervisor(role, hasSupervisees) ||
+    isSupervisor(role) ||
     (accessProfile
       ? canAccessPage(accessProfile, "sop:add", groupPresets, sessionRole)
       : false);

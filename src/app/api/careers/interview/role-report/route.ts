@@ -13,20 +13,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
-  // job_posting_id identifies a specific hiring round and is what every
-  // current caller sends. role_slug alone is kept only as a fallback for
-  // applicants whose report predates round-scoping (job_posting_id null) —
+  // job_posting_id identifies a specific hiring round and is required —
   // see findRoleReportRow.
   const jobPostingId = req.nextUrl.searchParams.get("job_posting_id");
-  const roleSlug = req.nextUrl.searchParams.get("role_slug");
-  if (!jobPostingId && !roleSlug) {
-    return NextResponse.json({ error: "job_posting_id or role_slug is required." }, { status: 400 });
+  if (!jobPostingId) {
+    return NextResponse.json({ error: "job_posting_id is required." }, { status: 400 });
   }
 
   try {
     const { data, error } = await findRoleReportRow(supabaseAdmin, {
       jobPostingId,
-      roleSlug,
     });
 
     if (error) {
@@ -61,26 +57,23 @@ export async function PATCH(req: NextRequest) {
   try {
     const {
       job_posting_id,
-      role_slug,
       report,
       edited_by,
     }: {
       job_posting_id?: string;
-      role_slug?: string;
       report?: RoleInterviewReport;
       edited_by?: string;
     } = await req.json();
 
-    if ((!job_posting_id && !role_slug) || !report) {
+    if (!job_posting_id || !report) {
       return NextResponse.json(
-        { error: "job_posting_id (or role_slug) and report are required." },
+        { error: "job_posting_id and report are required." },
         { status: 400 },
       );
     }
 
     const { data: existing, error: fetchError } = await findRoleReportRow(supabaseAdmin, {
       jobPostingId: job_posting_id,
-      roleSlug: role_slug,
     });
 
     if (fetchError) {
