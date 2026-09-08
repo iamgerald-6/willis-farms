@@ -35,7 +35,11 @@ import {
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import { useAppraisalScopeConfig } from "@/hooks/useAppraisalScopeConfig";
 import { resolveAppraisalFormKey } from "@/lib/systemDefinitions/appraisalScopeConfig";
-import { resolveAppraisalSupervisorFields } from "@/lib/appraisal/supervisorDisplay";
+import {
+  resolveAppraisalSupervisorFields,
+  formatSupervisorName,
+  resolveSupervisorUser,
+} from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
 import { canBeAssignedAsSupervisorByRoleLabel } from "@/lib/userRoleAccessControl";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
@@ -304,10 +308,8 @@ export default function AppraisalForm({
   const [promotionReadiness, setPromotionReadiness] = useState("");
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [reviewDate, setReviewDate] = useState("");
-  /** Which user_id is picked in the "Immediate Supervisor" dropdown — the
-   * name and email that actually get submitted are looked up from this and
-   * written via setValue (see handleSupervisorSelect), so there's no way to
-   * pick a supervisor's name without their email coming along with it. */
+  /** user_id of the supervisor stamped on submit — assigned reporting line
+   * for self-appraisal, or the current user when filling for someone else. */
   const [selectedSupervisorId, setSelectedSupervisorId] = useState("");
 
   const {
@@ -432,6 +434,24 @@ export default function AppraisalForm({
   );
   const fillingForSelf = !isFillingSecond && fillTarget === "self";
 
+  // Self-appraisal: the reporting supervisor is whoever Access Control /
+  // onboarding assigned on users.supervisor_id — never typed on this form.
+  const assignedSupervisor = useMemo(
+    () =>
+      resolveSupervisorUser(
+        fillingForSelf
+          ? (currentUserProfile?.supervisor_id ?? selectedEmployee?.supervisor_id)
+          : null,
+        allUsers,
+      ),
+    [
+      fillingForSelf,
+      currentUserProfile?.supervisor_id,
+      selectedEmployee?.supervisor_id,
+      allUsers,
+    ],
+  );
+
   // ── Pre-fill from existing appraisal when continuing a record ──
   useEffect(() => {
     if (!existingAppraisal) return;
@@ -472,24 +492,37 @@ export default function AppraisalForm({
     }
   }, [existingAppraisal, allUsers, setValue]);
 
-  // Filling for someone else — lock supervisor fields to the current user.
+  // Supervisor fields are never typed. Filling for someone else — you are
+  // their supervisor for this record. Filling for yourself — lock to the
+  // person assigned on your employee record (users.supervisor_id).
   useEffect(() => {
     if (isFillingSecond) return;
     if (!fillingForSelf && currentUserProfile) {
       setSelectedSupervisorId(currentUserProfile.user_id);
       setValue(
         "immediate_supervisor",
-        `${currentUserProfile.first_name} ${currentUserProfile.last_name}`,
+        `${currentUserProfile.first_name} ${currentUserProfile.last_name}`.trim(),
       );
       setValue("supervisor_email", currentUserProfile.email ?? "");
       return;
     }
-    setSelectedSupervisorId("");
-    setValue("immediate_supervisor", "");
-    setValue("supervisor_email", "");
+    if (fillingForSelf && assignedSupervisor) {
+      setSelectedSupervisorId(assignedSupervisor.user_id);
+      setValue(
+        "immediate_supervisor",
+        formatSupervisorName(assignedSupervisor) ?? "",
+      );
+      setValue("supervisor_email", assignedSupervisor.email ?? "");
+      return;
+    }
+    if (fillingForSelf) {
+      setSelectedSupervisorId("");
+      setValue("immediate_supervisor", "");
+      setValue("supervisor_email", "");
+    }
   }, [
     fillingForSelf,
-    selectedEmployee?.user_id,
+    assignedSupervisor,
     isFillingSecond,
     currentUserProfile,
     setValue,
@@ -594,9 +627,12 @@ export default function AppraisalForm({
   // selected so it still submits correctly even though there's no visible
   // input for it.
   const employeeSectionLabel = useMemo(() => {
-    if (!selectedEmployee?.section_id) return null;
+    const fromCatalog = selectedEmployee?.section_id
+      ? orgSections.find((s) => s.id === selectedEmployee.section_id)?.label
+      : null;
     return (
-      orgSections.find((s) => s.id === selectedEmployee.section_id)?.label ??
+      selectedEmployee?.section_label?.trim() ||
+      fromCatalog?.trim() ||
       null
     );
   }, [selectedEmployee, orgSections]);
@@ -727,6 +763,14 @@ export default function AppraisalForm({
     if (!selectedEmployee) {
       errs.employee = "Please select an employee";
       toast.error("Please select an employee");
+    }
+
+    if (fillingForSelf && !assignedSupervisor) {
+      errs.supervisor =
+        "Your reporting supervisor is not assigned. Ask HR to set it in Access Control.";
+      toast.error(
+        "Your reporting supervisor is not assigned. Ask HR to set it in Access Control.",
+      );
     }
 
     if (quarter === "Q4" && !promotionReadiness) {
@@ -1104,6 +1148,12 @@ export default function AppraisalForm({
                   : (employeeSectionLabel ?? "Not set on employee record")
               }
             />
+            {!isFillingSecond && selectedEmployee && !employeeSectionLabel && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                Section comes from the employee&apos;s org-tree placement.
+                Ask HR to set it in Access Control.
+              </p>
+            )}
           </div>
           <div>
             {isFillingSecond ? (
@@ -1111,22 +1161,33 @@ export default function AppraisalForm({
                 label="Supervisor's Name"
                 value={displaySupervisorName}
               />
-            ) : !fillingForSelf ? (
-              // Filling for someone I supervise — I AM their supervisor for
-              // this appraisal by definition, so this is locked to my own
-              // name rather than offering a choice (see the effect that
-              // sets immediate_supervisor/supervisor_email to my own
-              // profile whenever fillingForSelf is false). Same bordered
-              // read-only look as the Quarter field in Review Period below.
-              <div>
+            ) : (
+              // Never typed. Filling for someone else — you are their
+              // supervisor for this record. Self-appraisal — locked to
+              // users.supervisor_id (Access Control / onboarding).
+              <div className="space-y-2">
                 <ReadOnlyField
                   label="Supervisor's Name"
                   value={
-                    currentUserProfile
-                      ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}`
-                      : null
+                    fillingForSelf
+                      ? formatSupervisorName(assignedSupervisor)
+                      : currentUserProfile
+                        ? `${currentUserProfile.first_name} ${currentUserProfile.last_name}`.trim()
+                        : null
                   }
                 />
+                {fillingForSelf && (
+                  <ReadOnlyField
+                    label="Supervisor's Email"
+                    value={assignedSupervisor?.email}
+                  />
+                )}
+                {fillingForSelf && !assignedSupervisor && (
+                  <p className="text-xs text-amber-700">
+                    Your reporting supervisor is not assigned. Ask HR to set
+                    it in Access Control before submitting.
+                  </p>
+                )}
                 <input
                   type="hidden"
                   {...register("immediate_supervisor", { required: true })}
@@ -1134,21 +1195,6 @@ export default function AppraisalForm({
                 <input
                   type="hidden"
                   {...register("supervisor_email", { required: true })}
-                />
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <FieldLabel required>Supervisor&apos;s Name</FieldLabel>
-                <input
-                  type="text"
-                  {...register("immediate_supervisor", { required: true })}
-                  className={inputCls()}
-                />
-                <FieldLabel required>Supervisor&apos;s Email</FieldLabel>
-                <input
-                  type="email"
-                  {...register("supervisor_email", { required: true })}
-                  className={inputCls()}
                 />
               </div>
             )}

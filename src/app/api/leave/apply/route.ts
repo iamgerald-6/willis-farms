@@ -126,8 +126,22 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      const msg = error.message ?? "";
+      const missingDocumentColumn =
+        insertRow.document_url != null &&
+        (msg.toLowerCase().includes("document_url") ||
+          msg.toLowerCase().includes("schema cache") ||
+          msg.toLowerCase().includes("could not find"));
+      return NextResponse.json(
+        {
+          error: missingDocumentColumn
+            ? "leave_requests is missing document_url. Run docs/leave/leave-requests-document-url.sql in the Supabase SQL editor, then retry."
+            : msg,
+        },
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({ data });
   } catch {

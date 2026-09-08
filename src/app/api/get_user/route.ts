@@ -18,9 +18,21 @@ export async function GET(req: NextRequest) {
     // join to the Organizational Structure "Grade levels" catalog, so it
     // can never drift from the catalog's own definitions. See
     // docs/organizational-structure/drop-users-grade-level-column.sql.
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from("users")
-      .select("*, grade_levels(code)");
+      .select("*, grade_levels(code), sections(label)");
+
+    // sections(label) needs users.section_id → sections.id. If that embed
+    // isn't in the PostgREST cache yet, still return users so appraisal
+    // and access-control keep working; the form then falls back to the
+    // /appraisal/sections catalog lookup.
+    if (error) {
+      const fallback = await supabaseAdmin
+        .from("users")
+        .select("*, grade_levels(code)");
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       return NextResponse.json([], { status: 400 });
@@ -34,12 +46,14 @@ export async function GET(req: NextRequest) {
     // comes back null, and callers fall back to the old role/grade fields.
     const roleLabels = await fetchUserRoleLabelMap(supabaseAdmin);
     const withRoleLabels = (data ?? []).map((row) => {
-      const { grade_levels, ...rest } = row as typeof row & {
+      const { grade_levels, sections, ...rest } = row as typeof row & {
         grade_levels?: { code: string | null } | null;
+        sections?: { label: string | null } | null;
       };
       return {
         ...rest,
         grade_level: grade_levels?.code ?? null,
+        section_label: sections?.label ?? null,
         user_role_label: rest.user_role_id ? roleLabels.get(rest.user_role_id) ?? null : null,
       };
     });

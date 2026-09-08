@@ -89,3 +89,5 @@ on conflict (id) do nothing;
 -- Supporting document on leave requests
 alter table leave_requests
   add column if not exists document_url text;
+
+notify pgrst, 'reload schema';

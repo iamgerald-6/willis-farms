@@ -54,6 +54,8 @@ export interface User {
   section_id?: string | null;
   position_id?: string | null;
   grade_level_id?: string | null;
+  /** Label of users.section_id from the org-structure Sections catalog. */
+  section_label?: string | null;
   /** "User role" org-structure list (custom list created under Organizational
    * structure) — same placement mechanism as the 6 fields above. */
   user_role_id?: string | null;
