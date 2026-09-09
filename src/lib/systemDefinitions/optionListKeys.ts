@@ -85,15 +85,6 @@ export function isEditableCompetencySectionModule(moduleId: string): boolean {
   );
 }
 
-/** Modules whose rating sections can be edited in System Definitions. */
-export const EDITABLE_RATING_SECTION_MODULES = ["mod:appraisal"] as const;
-
-export function isEditableRatingSectionModule(moduleId: string): boolean {
-  return EDITABLE_RATING_SECTION_MODULES.includes(
-    moduleId as (typeof EDITABLE_RATING_SECTION_MODULES)[number],
-  );
-}
-
 /** Modules whose public referee reference form can be edited in System Definitions. */
 export const EDITABLE_REFEREE_REFERENCE_MODULES = ["mod:recruitment"] as const;
 

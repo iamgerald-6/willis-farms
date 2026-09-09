@@ -40,13 +40,11 @@ import {
   isEditableOnboardingFormModule,
   isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
-  isEditableRatingSectionModule,
   isEditableRefereeReferenceModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
 import OptionsEditor from "./components/OptionsEditor";
-import AppraisalGradeTemplatesManager from "./components/AppraisalGradeTemplatesManager";
 import SkillLogTemplatesManager from "./components/SkillLogTemplatesManager";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
@@ -568,30 +566,9 @@ function getModuleSections(
   }
 
   // Appraisal scope, Rating sections, Rating section weights, and Extra
-  // rules by grade are four related pieces of the same appraisal-form
-  // configuration — combined into one "Appraisal scope" sub-nav entry
-  // rather than four separate clicks, each still gated by its own
-  // isEditable*Module check exactly as before.
-  if (isEditableRatingSectionModule(m.id)) {
-    sections.push({
-      key: "appraisal-scope",
-      label: "Appraisal scope",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Appraisal scope"
-          description="Build the appraisal question set for an exact Site/Business unit/Department/Section/Position/Grade level combination — matched against each employee's own org placement."
-        >
-          <AppraisalGradeTemplatesManager
-            moduleId={m.id}
-            canAdd={canAdd}
-            canEdit={canEdit}
-          />
-        </SectionCard>
-      ),
-    });
-  }
+  // rules by grade moved to a "Manage appraisals" tab on the Appraisal
+  // feature page itself (dashboard/humanCapital/appraisal), gated by
+  // hasFullAppraisalAccess — no longer configured here.
 
   return sections;
 }
@@ -657,6 +634,11 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
   "mod:overview",
   "mod:notifications",
   "mod:system-definitions",
+  // Appraisal scope moved to the "Manage appraisals" tab on the Appraisal
+  // feature page — it was the only section this module ever had here
+  // (Overview is hidden for it too, see HIDE_OVERVIEW_SECTION_MODULE_IDS),
+  // so it would otherwise show as an empty, clickable module row.
+  "mod:appraisal",
 ]);
 
 /** Organizational structure isn't a module-registry group (its two links are
