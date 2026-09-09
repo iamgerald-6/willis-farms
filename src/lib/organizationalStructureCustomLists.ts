@@ -27,10 +27,41 @@ export type CustomFieldDef = {
 
 /**
  * How a numeric-range list's generator behaves: "digits" fills one row per
- * whole number (e.g. Age: 15, 16, 17...); "bands" fills bucketed ranges of
- * a given length (e.g. Salary: 1000-2000, 2000-3000...).
+ * whole number (e.g. Age: 15, 16, 17…); "bands" fills salary-style ranges
+ * from min, max, and range length (e.g. 1000-2000, 2000-3000…).
  */
 export type NumericRangeMode = "digits" | "bands";
+
+/** Age list — digits-mode catalog (15, 16, 17…). Eligibility min/max is on org mapping. */
+export function isAgeCatalogListType(
+  listType: Pick<OrgCustomListType, "table_name" | "label">,
+): boolean {
+  return listType.table_name === "custom_age" || /^ages?$/i.test(listType.label.trim());
+}
+
+/** Normalize Age list metadata for API/UI (digits fill on Manage, no job posting columns). */
+export function normalizeAgeCatalogListType<T extends OrgCustomListType>(listType: T): T {
+  if (!isAgeCatalogListType(listType)) return listType;
+  return {
+    ...listType,
+    is_numeric_range: true,
+    numeric_range_mode: "digits",
+    job_posting_column: null,
+    job_posting_min_column: null,
+    job_posting_max_column: null,
+  };
+}
+
+/** Whether Manage shows the bulk min/max generator (Age digits, Salary bands, etc.). */
+export function listUsesNumericRangeGenerator(
+  listType: Pick<
+    OrgCustomListType,
+    "table_name" | "label" | "is_numeric_range" | "numeric_range_mode"
+  >,
+): boolean {
+  if (isAgeCatalogListType(listType)) return true;
+  return listType.is_numeric_range;
+}
 
 export type OrgCustomListType = {
   id: string;
@@ -40,7 +71,7 @@ export type OrgCustomListType = {
   /** Name of this list's own physical table, e.g. "custom_cost_centres". */
   table_name: string;
   has_region: boolean;
-  /** When true, Manage shows a range generator instead of a label field — e.g. Age, Salary. */
+  /** When true, Manage shows a range generator — Age (digits) or Salary (bands). */
   is_numeric_range: boolean;
   /** Only meaningful when is_numeric_range is true. */
   numeric_range_mode: NumericRangeMode;
@@ -60,7 +91,7 @@ export type OrgCustomListType = {
    */
   job_posting_column: string | null;
   /**
-   * Only set for is_numeric_range lists (e.g. Age, Salary) — two more real
+   * Only set for digits-mode numeric-range lists (not Age) — two more real
    * foreign key columns on job_postings (e.g. "age_min_id"/"age_max_id"),
    * letting a posting specify a range instead of one value. See
    * docs/organizational-structure/job-postings-range-fields.sql. Null for

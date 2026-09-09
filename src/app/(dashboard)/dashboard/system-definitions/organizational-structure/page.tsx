@@ -84,7 +84,7 @@ export default function OrganizationalStructurePage() {
   const [newListLabel, setNewListLabel] = useState("");
   const [newListHasRegion, setNewListHasRegion] = useState(false);
   const [newListIsNumericRange, setNewListIsNumericRange] = useState(false);
-  const [newListNumericMode, setNewListNumericMode] = useState<NumericRangeMode>("digits");
+  const [newListNumericMode, setNewListNumericMode] = useState<NumericRangeMode>("bands");
   const [newListFields, setNewListFields] = useState<DraftField[]>([]);
 
   const addFieldRow = () =>
@@ -235,7 +235,7 @@ export default function OrganizationalStructurePage() {
             href="/dashboard/system-definitions/organizational-structure/mapping-setup"
             className="px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
-            <Network className="w-4 h-4" /> Org structure mapping set up
+            <Network className="w-4 h-4" /> Org structure mapping
           </Link>
           {canAdd && (
             <button
@@ -290,7 +290,7 @@ export default function OrganizationalStructurePage() {
                 <span className="text-sm text-gray-700">
                   Individual numbers
                   <span className="block text-xs text-gray-500">
-                    Min/max fills one row per number, e.g. 15, 16, 17... — good for Age.
+                    Min/max fills one row per number, e.g. 33, 34, 35… — good for Age.
                   </span>
                 </span>
               </label>
@@ -305,7 +305,7 @@ export default function OrganizationalStructurePage() {
                 <span className="text-sm text-gray-700">
                   Number ranges
                   <span className="block text-xs text-gray-500">
-                    Min/max/length fills bucketed ranges, e.g. 1000-2000, 2000-3000... —
+                    Min/max/length fills bucketed ranges, e.g. 1000-2000, 2000-3000… —
                     good for Salary.
                   </span>
                 </span>

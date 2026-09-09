@@ -1,0 +1,5 @@
+-- ============================================================================
+-- DEPRECATED — do not run. Age uses digits mode (individual years) and
+-- org mapping min/max picks. Use age-digits-restore.sql instead if this
+-- file was run previously.
+-- ============================================================================

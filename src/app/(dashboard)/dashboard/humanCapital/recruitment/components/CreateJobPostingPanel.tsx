@@ -40,7 +40,6 @@ import PostingInterviewSetup, {
   type PostingOverviewRow,
 } from "./PostingInterviewSetup";
 import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
-
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
@@ -161,7 +160,8 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
         (lt): lt is OrgCustomListType & { job_posting_column: string } =>
           typeof lt.job_posting_column === "string" &&
           lt.job_posting_column.length > 0 &&
-          lt.is_active !== false,
+          lt.is_active !== false &&
+          lt.table_name !== "custom_age",
       ),
     [listTypes],
   );
@@ -225,7 +225,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
     enabled: !!canView,
   });
-
   function chainLevel(tableName: string): MappingLevel | undefined {
     return mappingLevels.find((l) => l.list_type.table_name === tableName);
   }

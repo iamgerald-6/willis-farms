@@ -98,6 +98,10 @@ function formatCurrencyGhs(value: string | null | undefined): string | null {
 /** Survives Strict Mode remounts so we never fire two AI generations for one open. */
 const offerLetterAutoGenerateStarted = new Set<string>();
 
+function clearOfferLetterAutoGenerate(applicationId: string) {
+  offerLetterAutoGenerateStarted.delete(applicationId);
+}
+
 export default function OfferLetterEditorModal({
   applicationId,
   candidateName,
@@ -180,11 +184,17 @@ export default function OfferLetterEditorModal({
       toast.success("Offer letter generated — review and edit before saving.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
+      clearOfferLetterAutoGenerate(applicationId);
       toast.error(error?.response?.data?.error ?? "Generation failed.");
     },
   });
 
   const isGenerating = generateMutation.isPending;
+
+  const handleClose = () => {
+    clearOfferLetterAutoGenerate(applicationId);
+    onClose();
+  };
 
   useEffect(() => {
     if (showInitialLoader || !data?.offer_terms_saved_at) return;
@@ -274,7 +284,7 @@ export default function OfferLetterEditorModal({
     onSuccess: () => {
       toast.success("Offer letter saved and PDF ready.");
       onSaved();
-      onClose();
+      handleClose();
     },
     onError: (error: Error) => {
       toast.error(error.message ?? "Save failed.");
@@ -289,7 +299,7 @@ export default function OfferLetterEditorModal({
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[92vh] flex flex-col"
@@ -304,7 +314,7 @@ export default function OfferLetterEditorModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100"
           >
             <X className="w-5 h-5" />
@@ -477,7 +487,11 @@ export default function OfferLetterEditorModal({
             ) : (
               <Sparkles className="w-4 h-4" />
             )}
-            {draft.trim() ? "Regenerate with WillsFarms Intel" : "Generate with WillsFarms Intel"}
+            {isGenerating
+              ? "Generating…"
+              : draft.trim()
+                ? "Regenerate with WillsFarms Intel"
+                : "Generate with WillsFarms Intel"}
           </button>
           {draft.trim() && (
             <a

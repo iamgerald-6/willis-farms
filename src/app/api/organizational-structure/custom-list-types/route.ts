@@ -10,6 +10,10 @@ import type {
   CustomFieldType,
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
+import {
+  isAgeCatalogListType,
+  normalizeAgeCatalogListType,
+} from "@/lib/organizationalStructureCustomLists";
 
 const VALID_FIELD_TYPES: CustomFieldType[] = ["text", "number", "boolean", "date", "select"];
 
@@ -87,7 +91,7 @@ export async function GET(req: NextRequest) {
         const { count } = await supabase
           .from(listType.table_name)
           .select("id", { count: "exact", head: true });
-        return { ...listType, item_count: count ?? 0 };
+        return { ...normalizeAgeCatalogListType(listType), item_count: count ?? 0 };
       }),
     );
 
@@ -112,7 +116,11 @@ export async function POST(req: NextRequest) {
     const label = (body.label as string | undefined)?.trim();
     const hasRegion = body.has_region === true;
     const isNumericRange = body.is_numeric_range === true;
-    const numericRangeMode = body.numeric_range_mode === "bands" ? "bands" : "digits";
+    const isAgeCatalogLabel = /^ages?$/i.test(label.trim());
+    let numericRangeMode = body.numeric_range_mode === "bands" ? "bands" : "digits";
+    // Age: digits fill on Manage (33, 34, 35…). Salary: bands. No job posting columns for Age.
+    const effectiveIsNumericRange = isAgeCatalogLabel || isNumericRange;
+    if (isAgeCatalogLabel) numericRangeMode = "digits";
 
     if (!label) {
       return NextResponse.json({ error: "List name is required" }, { status: 400 });
@@ -180,46 +188,43 @@ export async function POST(req: NextRequest) {
     // singular (e.g. "business unit" -> "business_unit_id"), with a
     // numeric suffix on collision, same convention as mapping table
     // column names used to follow.
-    const baseColumn = `${slugifyLabel(singular)}_id`;
-    let jobPostingColumn = baseColumn;
-    let colSuffix = 2;
-    for (;;) {
-      const { data: collision } = await supabase
-        .from("org_custom_list_types")
-        .select("id")
-        .eq("job_posting_column", jobPostingColumn)
-        .maybeSingle();
-      if (!collision) break;
-      jobPostingColumn = `${baseColumn}_${colSuffix}`;
-      colSuffix += 1;
+    // Age is catalog + org-mapping only — no columns on job_postings.
+    const isAgeCatalog = tableName === "custom_age" || isAgeCatalogLabel;
+
+    let jobPostingColumn: string | null = null;
+    if (!isAgeCatalog) {
+      const baseColumn = `${slugifyLabel(singular)}_id`;
+      jobPostingColumn = baseColumn;
+      let colSuffix = 2;
+      for (;;) {
+        const { data: collision } = await supabase
+          .from("org_custom_list_types")
+          .select("id")
+          .eq("job_posting_column", jobPostingColumn)
+          .maybeSingle();
+        if (!collision) break;
+        jobPostingColumn = `${baseColumn}_${colSuffix}`;
+        colSuffix += 1;
+      }
+
+      const { error: addColumnError } = await supabase.rpc("add_job_posting_org_column", {
+        p_column_name: jobPostingColumn,
+        p_referenced_table: tableName,
+      });
+      if (addColumnError) {
+        await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
+        return NextResponse.json({ error: addColumnError.message }, { status: 500 });
+      }
     }
 
-    const { error: addColumnError } = await supabase.rpc("add_job_posting_org_column", {
-      p_column_name: jobPostingColumn,
-      p_referenced_table: tableName,
-    });
-    if (addColumnError) {
-      // Roll back the table we just created — nothing should be left
-      // behind if the job_postings column can't be added.
-      await supabase.rpc("drop_org_dynamic_list_table", { p_table_name: tableName });
-      return NextResponse.json({ error: addColumnError.message }, { status: 500 });
-    }
-
-    // Digits-mode numeric-range lists (e.g. Age: one whole number per
-    // item) also get min/max columns, so a posting can specify a range of
-    // numbers instead of one value. Bands-mode lists (e.g. Salary: each
-    // item is already its own range, like "1000-2000") don't get this —
-    // picking a single band already is the range, a min/max on top of
-    // that wouldn't mean anything. Every other list only ever gets the
-    // single column above.
+    // Digits-mode numeric-range lists (except Age) get min/max posting columns.
     let jobPostingMinColumn: string | null = null;
     let jobPostingMaxColumn: string | null = null;
-    if (isNumericRange && numericRangeMode === "digits") {
-      jobPostingMinColumn = `${baseColumn.replace(/_id$/, "")}_min_id`;
-      jobPostingMaxColumn = `${baseColumn.replace(/_id$/, "")}_max_id`;
+    if (effectiveIsNumericRange && numericRangeMode === "digits" && !isAgeCatalog && jobPostingColumn) {
+      const slugBase = slugifyLabel(singular);
+      jobPostingMinColumn = `${slugBase}_min_id`;
+      jobPostingMaxColumn = `${slugBase}_max_id`;
       if (jobPostingMinColumn === jobPostingColumn || jobPostingMaxColumn === jobPostingColumn) {
-        // baseColumn already ended in "_min_id"/"_max_id" somehow — fall
-        // back to suffixing off the collision-resolved column instead.
         jobPostingMinColumn = `${jobPostingColumn}_min`;
         jobPostingMaxColumn = `${jobPostingColumn}_max`;
       }
@@ -256,7 +261,7 @@ export async function POST(req: NextRequest) {
           code,
           table_name: tableName,
           has_region: hasRegion,
-          is_numeric_range: isNumericRange,
+          is_numeric_range: effectiveIsNumericRange,
           numeric_range_mode: numericRangeMode,
           fields,
           sort_order: count ?? 0,

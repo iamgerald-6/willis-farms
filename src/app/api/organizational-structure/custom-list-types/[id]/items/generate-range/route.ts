@@ -6,17 +6,19 @@ import {
 } from "@/lib/apiRequestAuth";
 import { slugifyLabel } from "@/lib/organizationalStructure";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import {
+  isAgeCatalogListType,
+  listUsesNumericRangeGenerator,
+  normalizeAgeCatalogListType,
+} from "@/lib/organizationalStructureCustomLists";
 
 const MAX_RANGE_SIZE = 1000;
 
 /**
- * POST — bulk-fill a numeric-range list (e.g. Age, Salary). Two modes,
- * per the list's numeric_range_mode:
- *  - "digits": one row per whole number from min to max (e.g. Age: 15, 16, 17...).
- *  - "bands": bucketed ranges of `length` from min to max (e.g. Salary:
- *    min 1000, max 20000, length 1000 -> "1000-2000", "2000-3000", ...).
- * Existing rows (matched by code) are skipped rather than erroring, so
- * this is safe to run again to extend a list.
+ * POST — fill a numeric-range list. Two modes:
+ *  - "digits" (Age): one row per whole number from min to max (33, 34, 35…).
+ *  - "bands" (Salary): min/max/length fills bucketed ranges (1000-2000, …).
+ * Existing rows (matched by code) are skipped rather than erroring.
  */
 export async function POST(
   req: NextRequest,
@@ -66,9 +68,9 @@ export async function POST(
     if (listTypeError || !listType) {
       return NextResponse.json({ error: "Unknown list" }, { status: 404 });
     }
-    const config = listType as OrgCustomListType;
+    const config = normalizeAgeCatalogListType(listType as OrgCustomListType);
 
-    if (!config.is_numeric_range) {
+    if (!listUsesNumericRangeGenerator(config)) {
       return NextResponse.json(
         { error: "This list isn't set up as a number range." },
         { status: 400 },
@@ -76,8 +78,9 @@ export async function POST(
     }
 
     const rows: { label: string; code: string; sort_order: number; is_active: boolean; notes: null }[] = [];
+    const useBands = config.numeric_range_mode === "bands" && !isAgeCatalogListType(config);
 
-    if (config.numeric_range_mode === "bands") {
+    if (useBands) {
       const length = Number(body.length);
       if (!Number.isInteger(length) || length <= 0) {
         return NextResponse.json(

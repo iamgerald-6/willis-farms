@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { slugifyJobTitle } from "@/lib/careers/jobPostings";
+import { resolveAgeRangeFromMapping } from "@/lib/organizationalStructure/ageMapping";
 
 /**
  * Job postings carry one real foreign key column per Organizational
@@ -10,9 +11,9 @@ import { slugifyJobTitle } from "@/lib/careers/jobPostings";
  * job_posting_column` currently exist, rather than hardcoding column
  * names anywhere in this route.
  *
- * Numeric-range lists (Age, Salary, ...) additionally have min/max
- * columns (docs/organizational-structure/job-postings-range-fields.sql),
- * letting a posting specify a range instead of one value.
+ * Age is not on job_postings — eligibility is set in org mapping (min/max
+ * picks from custom_age). Salary and other lists use job_posting_column as
+ * usual.
  */
 export type OrgFieldOption = {
   /** org_custom_list_types.id */
@@ -181,14 +182,8 @@ export async function generateUniquePostingSlug(
 }
 
 /**
- * Resolves the age-eligibility band for a specific job posting from its own
- * Age org-structure field, rather than from a job-grade config — used by AI
- * screening (screenApplication.ts). Age is now a required field on every
- * posting (see Create job posting), stored either as a single value column
- * or as a min/max range pair depending on which mode it was saved in; both
- * are real foreign keys into the Age list's own table. Returns null only if
- * the Age list itself doesn't exist or the posting's row can't be read —
- * should not happen for any posting created after Age became required.
+ * Resolves age eligibility for a job posting from org mapping (min/max
+ * years chosen on the Age mapping tab for that posting's position path).
  */
 export async function resolveAgeRangeFromPosting(
   supabase: SupabaseClient,
@@ -196,47 +191,12 @@ export async function resolveAgeRangeFromPosting(
 ): Promise<{ ageMin: number; ageMax: number } | null> {
   if (!jobPostingId) return null;
 
-  const options = await fetchOrgFieldOptions(supabase);
-  const ageOption = options.find((o) => o.tableName === "custom_age");
-  if (!ageOption) return null;
-
-  const columns = [ageOption.column, ageOption.minColumn, ageOption.maxColumn].filter(
-    (c): c is string => !!c,
-  );
   const { data: postingRow } = await supabase
     .from("job_postings")
-    .select(columns.join(", "))
+    .select("site_id, business_unit_id, department_id, section_id, position_id")
     .eq("id", jobPostingId)
     .maybeSingle();
   if (!postingRow) return null;
 
-  const row = postingRow as unknown as Record<string, unknown>;
-  const singleId = row[ageOption.column];
-  const minId = ageOption.minColumn ? row[ageOption.minColumn] : null;
-  const maxId = ageOption.maxColumn ? row[ageOption.maxColumn] : null;
-
-  const ids = [singleId, minId, maxId].filter((v): v is string => typeof v === "string");
-  if (ids.length === 0) return null;
-
-  const { data: ageItems } = await supabase.from(ageOption.tableName).select("id, label").in("id", ids);
-  const labelById = new Map((ageItems ?? []).map((item) => [item.id as string, item.label as string]));
-
-  const parseAge = (id: unknown): number | null => {
-    if (typeof id !== "string") return null;
-    const label = labelById.get(id);
-    if (label == null) return null;
-    const n = parseInt(label, 10);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  if (typeof minId === "string" && typeof maxId === "string") {
-    const ageMin = parseAge(minId);
-    const ageMax = parseAge(maxId);
-    if (ageMin != null && ageMax != null) return { ageMin, ageMax };
-  }
-  if (typeof singleId === "string") {
-    const age = parseAge(singleId);
-    if (age != null) return { ageMin: age, ageMax: age };
-  }
-  return null;
+  return resolveAgeRangeFromMapping(supabase, postingRow);
 }

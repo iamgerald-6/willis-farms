@@ -19,6 +19,11 @@ import type {
   OrgCustomListItem,
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
+import {
+  isAgeCatalogListType,
+  listUsesNumericRangeGenerator,
+  normalizeAgeCatalogListType,
+} from "@/lib/organizationalStructureCustomLists";
 
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -147,8 +152,11 @@ export default function ManageCustomListPage() {
     },
     enabled: !!canView,
   });
-  const config = listTypes?.find((t) => t.id === listTypeId);
+  const rawConfig = listTypes?.find((t) => t.id === listTypeId);
+  const config = rawConfig ? normalizeAgeCatalogListType(rawConfig) : undefined;
   const fields = config?.fields ?? [];
+  const isAgeCatalog = config ? isAgeCatalogListType(config) : false;
+  const usesRangeGenerator = config ? listUsesNumericRangeGenerator(config) : false;
 
   const { data: items, isLoading: itemsLoading } = useQuery<OrgCustomListItem[]>({
     queryKey: ["organizational_structure_custom_list_items", listTypeId],
@@ -346,15 +354,30 @@ export default function ManageCustomListPage() {
 
       <div className="mb-5">
         <h2 className="text-xl font-bold text-gray-900">Manage — {config.label}</h2>
+        {isAgeCatalog && (
+          <p className="text-sm text-gray-500 mt-1">
+            Min/max here fills one row per year (33, 34, 35… — not a single 33–60 row).
+            Eligibility per job path is set on{" "}
+            <Link
+              href="/dashboard/system-definitions/organizational-structure/mapping-setup"
+              className="text-red-600 hover:underline"
+            >
+              Org structure mapping
+            </Link>
+            .
+          </p>
+        )}
       </div>
 
-      {canAdd && config.is_numeric_range && (
+      {canAdd && usesRangeGenerator && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
           <p className="text-sm font-semibold text-gray-800 mb-3">Fill {config.label.toLowerCase()}</p>
           <p className="text-xs text-gray-500 mb-3">
             {isBandsMode
-              ? "Enter a minimum, maximum, and range length — bucketed ranges will be added (e.g. 1000-2000, 2000-3000...)."
-              : "Enter a minimum and maximum and every whole number in between will be added."}{" "}
+              ? "Enter minimum, maximum, and range length — bucketed ranges will be added (e.g. 1000-2000, 2000-3000…)."
+              : isAgeCatalog
+                ? "Enter minimum and maximum — each year is added as its own row (e.g. 33, 34, 35… up to 60)."
+                : "Enter a minimum and maximum and every whole number in between will be added."}{" "}
             Entries already in the list are skipped.
           </p>
           <div className={`grid ${isBandsMode ? "grid-cols-3" : "grid-cols-2"} gap-3 mb-3`}>
@@ -412,18 +435,21 @@ export default function ManageCustomListPage() {
         </div>
       )}
 
-      {canAdd && !config.is_numeric_range && (
+      {canAdd && !usesRangeGenerator && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
-          <p className="text-sm font-semibold text-gray-800 mb-3">Add {config.singular}</p>
+          <p className="text-sm font-semibold text-gray-800 mb-3">
+            Add {isAgeCatalog ? "age" : config.singular}
+          </p>
           <div className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                Label
+                {isAgeCatalog ? "Age (years)" : "Label"}
               </label>
               <input
-                type="text"
+                type={isAgeCatalog ? "number" : "text"}
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
+                placeholder={isAgeCatalog ? "e.g. 18" : undefined}
                 className={inputClass}
               />
             </div>
@@ -481,11 +507,15 @@ export default function ManageCustomListPage() {
               <button
                 type="button"
                 onClick={() => addMutation.mutate()}
-                disabled={addMutation.isPending || !newLabel.trim()}
+                disabled={
+                  addMutation.isPending ||
+                  !newLabel.trim() ||
+                  (isAgeCatalog && (!/^\d+$/.test(newLabel.trim()) || Number(newLabel) < 0))
+                }
                 className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
               >
                 {addMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Add {config.singular}
+                Add {isAgeCatalog ? "age" : config.singular}
               </button>
             </div>
           </div>

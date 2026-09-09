@@ -49,11 +49,21 @@ export async function createLevelTable(
     throw new Error("Could not resolve this level's ancestor chain.");
   }
   const tableName = mappingTableNameFor(listTypeTableName);
-  const columns = chain.map((c) => c.column_name);
+
+  // Age maps a min/max pair from the Age catalog per org path — not checkbox rows.
+  const rpcColumns =
+    listTypeTableName === "custom_age"
+      ? [
+          ...chain.slice(0, -1).map((c) => ({ column_name: c.column_name, ref_table: c.ref_table })),
+          { column_name: "age_min_id", ref_table: "custom_age" },
+          { column_name: "age_max_id", ref_table: "custom_age" },
+        ]
+      : chain.map((c) => ({ column_name: c.column_name, ref_table: c.ref_table }));
+  const columns = rpcColumns.map((c) => c.column_name);
 
   const { error: createError } = await supabase.rpc("create_org_mapping_table", {
     p_table_name: tableName,
-    p_columns: chain.map((c) => ({ column_name: c.column_name, ref_table: c.ref_table })),
+    p_columns: rpcColumns,
   });
   if (createError) throw new Error(createError.message);
 
