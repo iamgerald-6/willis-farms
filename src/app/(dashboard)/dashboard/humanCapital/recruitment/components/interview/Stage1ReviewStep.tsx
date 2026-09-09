@@ -42,6 +42,11 @@ export default function Stage1ReviewStep({
   const ready = stage1ReadyForReview(formData);
   const reviewed = formData.stage1_review?.reviewed_at;
   const passed = formData.stage1_review?.passed;
+  // "Pass to Stage 2 setup" is withheld until WillsFarms Intel has been
+  // generated at least once — so the panel/HR always sees the AI read of
+  // the scores before advancing a candidate, not just an option they can
+  // skip past.
+  const hasAnalysis = !!formData.stage1_review?.ai_analysis;
   const [selectedGrader, setSelectedGrader] = useState<GraderResult | null>(null);
 
   const submissionForGrader = (g: GraderResult): StageSubmissionData | undefined =>
@@ -193,24 +198,33 @@ export default function Stage1ReviewStep({
       )}
 
       {!readOnly && ready && !reviewed && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            type="button"
-            onClick={onReject}
-            disabled={isPending}
-            className="flex-1 py-2.5 border border-red-300 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-60"
-          >
-            Reject candidate
-          </button>
-          <button
-            type="button"
-            onClick={onPass}
-            disabled={isPending}
-            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
-          >
-            {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Pass to Stage 2 setup
-          </button>
+        <div className="space-y-1.5">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={onReject}
+              disabled={isPending}
+              className="flex-1 py-2.5 border border-red-300 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-60"
+            >
+              Reject candidate
+            </button>
+            <button
+              type="button"
+              onClick={onPass}
+              disabled={isPending || !hasAnalysis}
+              title={!hasAnalysis ? "Run Generate above first" : undefined}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+            >
+              {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Pass to Stage 2 setup
+            </button>
+          </div>
+          {!hasAnalysis && (
+            <p className="text-xs text-gray-500">
+              Run Generate above first — WillsFarms Intel needs to weigh in before you can pass this
+              candidate to Stage 2.
+            </p>
+          )}
         </div>
       )}
 
