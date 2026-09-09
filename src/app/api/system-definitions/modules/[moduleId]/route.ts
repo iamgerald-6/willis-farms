@@ -25,6 +25,7 @@ const BUSINESS_LOGIC_KEYS = [
   "interviewGuidesConfig",
   "interviewEvaluationConfig",
   "interviewBenchmarksConfig",
+  "payrollTaxConfig",
 ];
 
 function pickDefinedBusinessLogic(

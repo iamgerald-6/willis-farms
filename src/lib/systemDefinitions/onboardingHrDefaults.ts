@@ -370,6 +370,17 @@ export function getDefaultOfferTermsFields(): SystemOption[] {
     }),
     offerField("opt:recruitment:offer:income_tax", "Income tax", "income_tax", "text", 17, { required: true }),
     offerField("opt:recruitment:offer:net_payable", "Net payable", "net_payable", "text", 18, { required: true }),
+    offerField(
+      "opt:recruitment:offer:employer_tier2_contribution",
+      "Employer pension contribution (Tier 2)",
+      "employer_tier2_contribution",
+      "text",
+      18.5,
+      {
+        required: false,
+        hint: "Informational only — paid by the employer, not deducted from the employee. Blank unless an Employer Tier 2 rate is set under Payroll tax settings.",
+      },
+    ),
     offerField("opt:recruitment:offer:hr_notes", "HR notes", "hr_notes", "textarea", 19, { colSpan: "full" }),
   ];
 }

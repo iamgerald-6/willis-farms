@@ -49,6 +49,7 @@ import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
+import PayrollTaxSettingsEditor from "./components/PayrollTaxSettingsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
@@ -487,6 +488,10 @@ function getModuleSections(
           title="Offer letter"
           description="Fields on the live Offer Terms modal, shown to HR before an offer letter is generated. Independent from HR onboarding — Section O: adding or editing a field here only changes the Offer Terms modal. Already-saved offer values still show read-only on the onboarding tab."
         >
+          <div className="mb-5 pb-5 border-b border-gray-100">
+            <p className="text-xs font-semibold text-gray-800 mb-2">Payroll tax settings</p>
+            <PayrollTaxSettingsEditor moduleId={m.id} readOnly={!canEdit} />
+          </div>
           <OnboardingHrFieldsEditor
             moduleId={m.id}
             canAdd={canAdd}
