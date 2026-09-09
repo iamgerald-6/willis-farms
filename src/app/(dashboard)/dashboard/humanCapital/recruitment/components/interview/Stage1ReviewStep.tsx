@@ -203,7 +203,8 @@ export default function Stage1ReviewStep({
             <button
               type="button"
               onClick={onReject}
-              disabled={isPending}
+              disabled={isPending || !hasAnalysis}
+              title={!hasAnalysis ? "Run Generate above first" : undefined}
               className="flex-1 py-2.5 border border-red-300 text-red-700 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-60"
             >
               Reject candidate
@@ -221,8 +222,7 @@ export default function Stage1ReviewStep({
           </div>
           {!hasAnalysis && (
             <p className="text-xs text-gray-500">
-              Run Generate above first — WillsFarms Intel needs to weigh in before you can pass this
-              candidate to Stage 2.
+              Run Generate above first before you can pass or reject this candidate to Stage 2.
             </p>
           )}
         </div>
