@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Check, X, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { SystemOption } from "@/lib/systemDefinitions";
@@ -211,17 +211,88 @@ export default function OnboardingFormEditor({
     onError: () => toast.error("Could not remove field."),
   });
 
+  // Drag-to-reorder — same pattern as the Offer letter / HR onboarding
+  // field editors: sort_order drives the order fields appear in on the
+  // live onboarding form, so reordering here directly controls that order.
+  // Only active fields are reorderable; inactive ones are listed separately
+  // per step and untouched by dragging. Reordering shows instantly
+  // (localOrder overrides the server-derived order until the save
+  // completes) while sort_order updates for the affected fields save in
+  // the background via the same PATCH endpoint the rest of this editor
+  // already uses — there's no dedicated bulk-reorder endpoint. sort_order
+  // is only ever compared within a step (fields are always filtered by
+  // step first), so renumbering one step's active fields to 0..n can't
+  // collide with another step's ordering.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<Partial<Record<OnboardingFieldStep, string[]>>>(
+    {},
+  );
+  // Tracks which step a reorder affects, so reorderMutation's onError below
+  // can clear only that step's optimistic order rather than guessing.
+  const affectedStepRef = useRef<OnboardingFieldStep | null>(null);
+
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) => {
+      await Promise.all(
+        updates.map(({ id, sort_order }) =>
+          api.patch(`/system-definitions/options/${encodeURIComponent(id)}`, { sort_order }),
+        ),
+      );
+    },
+    onSuccess: () => invalidate(),
+    onError: () => {
+      toast.error("Could not save the new order.");
+      const step = affectedStepRef.current;
+      if (step) {
+        setLocalOrder((prev) => {
+          const next = { ...prev };
+          delete next[step];
+          return next;
+        });
+      }
+      invalidate();
+    },
+  });
+
   if (moduleId !== RECRUITMENT_MODULE_ID) return null;
 
-  const grouped = ONBOARDING_STEPS.map((step) => ({
-    step,
-    fields: options
-      .filter(
-        (o) =>
-          parseOnboardingFieldRules(o.rules as Record<string, unknown>).step === step,
-      )
-      .sort((a, b) => a.sort_order - b.sort_order),
-  }));
+  const grouped = ONBOARDING_STEPS.map((step) => {
+    const stepOptions = options
+      .filter((o) => parseOnboardingFieldRules(o.rules as Record<string, unknown>).step === step)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const stepActive = stepOptions.filter((o) => o.is_active);
+    const stepInactive = stepOptions.filter((o) => !o.is_active);
+
+    const order = localOrder[step];
+    const activeFields = order
+      ? (() => {
+          const byId = new Map(stepActive.map((o) => [o.id, o]));
+          const ordered = order
+            .map((id) => byId.get(id))
+            .filter((o): o is SystemOption => !!o);
+          const missing = stepActive.filter((o) => !order.includes(o.id));
+          return [...ordered, ...missing];
+        })()
+      : stepActive;
+
+    return { step, activeFields, inactiveFields: stepInactive };
+  });
+
+  const handleDrop = (step: OnboardingFieldStep, targetIndex: number) => {
+    const stepGroup = grouped.find((g) => g.step === step);
+    if (!stepGroup) return;
+    const dragIndex = stepGroup.activeFields.findIndex((f) => f.id === draggingId);
+    setDraggingId(null);
+    if (dragIndex === -1 || dragIndex === targetIndex) return;
+
+    const next = [...stepGroup.activeFields];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(targetIndex, 0, moved);
+
+    affectedStepRef.current = step;
+    setLocalOrder((prev) => ({ ...prev, [step]: next.map((f) => f.id) }));
+    reorderMutation.mutate(next.map((f, i) => ({ id: f.id, sort_order: i })));
+  };
 
   return (
     <div className="space-y-4">
@@ -270,23 +341,51 @@ export default function OnboardingFormEditor({
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
       ) : (
-        grouped.map(({ step, fields }) => (
+        grouped.map(({ step, activeFields, inactiveFields }) => (
           <div key={step} className="border border-gray-100 rounded-xl overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
               {ONBOARDING_STEP_LABELS[step]}
             </div>
-            {fields.length === 0 ? (
+            {canEdit && activeFields.length > 1 && (
+              <p className="text-xs text-gray-400 px-3 pt-2">
+                Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this
+                is the order fields appear in on the live onboarding form.
+              </p>
+            )}
+            {activeFields.length === 0 && inactiveFields.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-3 py-4">No fields in this step.</p>
             ) : (
               <ul className="divide-y divide-gray-100">
-                {fields.map((option) => {
+                {activeFields.map((option, index) => {
                   const rules = parseOnboardingFieldRules(
                     option.rules as Record<string, unknown>,
                   );
                   const isEditing = editingId === option.id;
+                  const draggable = canEdit && !isEditing;
 
                   return (
-                    <li key={option.id} className="px-3 py-3">
+                    <li
+                      key={option.id}
+                      draggable={draggable}
+                      onDragStart={() => draggable && setDraggingId(option.id)}
+                      onDragOver={(e) => {
+                        if (draggable) e.preventDefault();
+                      }}
+                      onDrop={() => draggable && handleDrop(step, index)}
+                      onDragEnd={() => setDraggingId(null)}
+                      className={`px-3 py-3 flex gap-2 ${
+                        draggingId === option.id ? "opacity-40" : ""
+                      }`}
+                    >
+                      {draggable && !isEditing && (
+                        <div
+                          className="flex items-start pt-0.5 text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                          title="Drag to reorder"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
                       {isEditing && editDraft && canEdit ? (
                         <FieldDraftForm
                           mode="edit"
@@ -326,12 +425,7 @@ export default function OnboardingFormEditor({
                       ) : (
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {option.label}
-                              {!option.is_active && (
-                                <span className="ml-2 text-xs text-gray-400">(inactive)</span>
-                              )}
-                            </p>
+                            <p className="text-sm font-medium text-gray-900">{option.label}</p>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {rules.section ? `${rules.section} · ` : ""}
                               Key: {rules.fieldKey} · Type: {rules.fieldType}
@@ -339,7 +433,7 @@ export default function OnboardingFormEditor({
                               {rules.colSpan === "half" ? " · Half width" : ""}
                             </p>
                           </div>
-                          {canEdit && option.is_active && (
+                          {canEdit && (
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
@@ -363,6 +457,26 @@ export default function OnboardingFormEditor({
                           )}
                         </div>
                       )}
+                      </div>
+                    </li>
+                  );
+                })}
+                {inactiveFields.map((option) => {
+                  const rules = parseOnboardingFieldRules(
+                    option.rules as Record<string, unknown>,
+                  );
+                  return (
+                    <li key={option.id} className="px-3 py-3 opacity-60">
+                      <p className="text-sm font-medium text-gray-900">
+                        {option.label}
+                        <span className="ml-2 text-xs text-gray-400">(inactive)</span>
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {rules.section ? `${rules.section} · ` : ""}
+                        Key: {rules.fieldKey} · Type: {rules.fieldType}
+                        {rules.required ? " · Required" : ""}
+                        {rules.colSpan === "half" ? " · Half width" : ""}
+                      </p>
                     </li>
                   );
                 })}
