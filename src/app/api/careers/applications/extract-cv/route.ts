@@ -57,6 +57,23 @@ const WORK_ENTRY_SCHEMA = {
   required: ["company", "title"],
 };
 
+const REFEREE_ENTRY_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    name: { type: "string", description: "Referee's full name." },
+    phone: {
+      type: "string",
+      description: "Referee's phone number exactly as it appears, including any country code prefix.",
+    },
+    email: { type: "string", description: "Referee's email address, if present." },
+    relationship: {
+      type: "string",
+      description: "How the referee knows the applicant (e.g. 'Former Supervisor', 'Manager', 'Colleague'), if stated.",
+    },
+  },
+  required: ["name"],
+};
+
 const EDUCATION_ENTRY_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -105,13 +122,18 @@ const EXTRACTION_TOOL = {
       },
       work_experience: { type: "array", items: WORK_ENTRY_SCHEMA },
       education: { type: "array", items: EDUCATION_ENTRY_SCHEMA },
+      references: {
+        type: "array",
+        items: REFEREE_ENTRY_SCHEMA,
+        description: "Referees/references listed on the CV, if any (e.g. under a 'References' or 'Referees' section).",
+      },
     },
     required: [],
   },
 };
 
 const INSTRUCTIONS =
-  "This is a CV/resume uploaded by someone applying for a job at Wills Farms, a farm operation in Ghana. Extract whatever matches the fields defined by the record_extracted_application tool. Only fill in what's explicitly present in the document — leave a field empty (or an array empty) rather than guessing, inferring, or estimating. In particular: don't infer gender from the applicant's name, don't infer date of birth from age or from graduation years, and don't invent a nationality if it isn't stated anywhere.";
+  "This is a CV/resume uploaded by someone applying for a job at Wills Farms, a farm operation in Ghana. Extract whatever matches the fields defined by the record_extracted_application tool. Only fill in what's explicitly present in the document — leave a field empty (or an array empty) rather than guessing, inferring, or estimating. In particular: don't infer gender from the applicant's name, don't infer date of birth from age or from graduation years, don't invent a nationality if it isn't stated anywhere, and only list a referee if the document actually names one — don't invent references.";
 
 function normalizePhone(raw: string | undefined): string {
   if (!raw) return "";
@@ -150,6 +172,7 @@ type RawEducationEntry = {
   yearCompleted?: string;
   degree?: string;
 };
+type RawRefereeEntry = { name?: string; phone?: string; email?: string; relationship?: string };
 
 export async function POST(req: NextRequest) {
   try {
@@ -245,6 +268,15 @@ export async function POST(req: NextRequest) {
       }))
       .filter((e) => e.institutionName);
 
+    const references = (Array.isArray(raw.references) ? raw.references : [])
+      .map((e: RawRefereeEntry) => ({
+        name: String(e?.name ?? "").trim(),
+        phone: normalizePhone(typeof e?.phone === "string" ? e.phone : undefined),
+        email: String(e?.email ?? "").trim().toLowerCase(),
+        relationship: String(e?.relationship ?? "").trim(),
+      }))
+      .filter((e) => e.name);
+
     const fields = {
       first_name: String(raw.first_name ?? "").trim(),
       last_name: String(raw.last_name ?? "").trim(),
@@ -257,6 +289,7 @@ export async function POST(req: NextRequest) {
       nationality: matchFromList(raw.nationality as string | undefined, COUNTRY_NAMES),
       work_experience: workExperience,
       education: education,
+      references: references,
     };
 
     const hasContent =
@@ -268,7 +301,8 @@ export async function POST(req: NextRequest) {
       fields.gender ||
       fields.nationality ||
       workExperience.length > 0 ||
-      education.length > 0;
+      education.length > 0 ||
+      references.length > 0;
 
     if (!hasContent) {
       return NextResponse.json(
