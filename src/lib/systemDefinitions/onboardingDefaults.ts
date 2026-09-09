@@ -185,7 +185,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       fieldKey: "personal.ghana_card_no",
       fieldType: "ghana_card",
       required: true,
-      showWhen: { field: "personal.is_citizen", equals: "Citizen" },
+      showWhen: { field: "personal.effective_id_document_type", equals: "Ghana Card" },
       colSpan: "half",
     }),
     field("opt:onboarding:field:passport_no", "Passport number", "personal.passport_number", 8, {
@@ -194,7 +194,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       fieldKey: "personal.passport_number",
       fieldType: "text",
       required: true,
-      showWhen: { field: "personal.is_citizen", equals: "Non-citizen" },
+      showWhen: { field: "personal.effective_id_document_type", equals: "Passport" },
       colSpan: "half",
     }),
     field("opt:onboarding:field:passport_bio", "Passport bio page (photo or PDF)", "personal.passport_bio_page", 9, {
@@ -204,7 +204,7 @@ export function getDefaultOnboardingFormFields(): SystemOption[] {
       fieldType: "file",
       required: true,
       accept: ACCEPT_PASSPORT_BIO,
-      showWhen: { field: "personal.is_citizen", equals: "Non-citizen" },
+      showWhen: { field: "personal.effective_id_document_type", equals: "Passport" },
     }),
     field("opt:onboarding:field:ssnit", "SSNIT number", "personal.ssnit_number", 10, {
       step: "personal",

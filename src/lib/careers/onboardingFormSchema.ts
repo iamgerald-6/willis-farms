@@ -18,6 +18,10 @@ import type { OnboardingQualificationEntry } from "@/lib/careers/onboardingEntry
 import type { OnboardingCertificationEntry } from "@/lib/careers/onboardingEntryTypes";
 import type { OnboardingWorkExperienceEntry } from "@/lib/careers/onboardingEntryTypes";
 import { isValidEmail, isValidName } from "@/lib/validation";
+import {
+  ID_DOCUMENT_GHANA_CARD,
+  ID_DOCUMENT_PASSPORT,
+} from "@/lib/careers/idDocumentType";
 
 export type OnboardingFieldStep = "personal" | "medical" | "referee";
 
@@ -999,6 +1003,22 @@ export function prefillFromApplicationFormData(
   } else if (applicationData.is_citizen) {
     flat["personal.is_citizen"] =
       applicationData.is_citizen === "Yes" ? "Citizen" : "Non-citizen";
+  }
+
+  // Which ID document (Ghana Card vs Passport) the candidate actually chose
+  // at application — Ghanaian applicants pick one explicitly; everyone else
+  // always uses a passport. Drives which of Ghana Card / Passport fields
+  // show on onboarding (see onboardingDefaults.ts), instead of assuming
+  // every citizen has a Ghana Card. Legacy applications from before this
+  // choice was recorded fall back to the old citizenship-based default so
+  // nothing changes for them.
+  const idDocumentType = String(applicationData.id_document_type ?? "").trim();
+  if (idDocumentType === ID_DOCUMENT_GHANA_CARD || idDocumentType === ID_DOCUMENT_PASSPORT) {
+    flat["personal.effective_id_document_type"] = idDocumentType;
+  } else if (flat["personal.is_citizen"] === "Non-citizen") {
+    flat["personal.effective_id_document_type"] = ID_DOCUMENT_PASSPORT;
+  } else if (flat["personal.is_citizen"] === "Citizen") {
+    flat["personal.effective_id_document_type"] = ID_DOCUMENT_GHANA_CARD;
   }
 
   const refs = [
