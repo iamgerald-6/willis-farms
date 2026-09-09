@@ -116,10 +116,14 @@ export default function OfferTermsPanel({
   // Social security contribution, Income tax, and Net payable are derived
   // from Basic salary (GHS) — HR fills in the allowance fields manually,
   // these three are computed and shown read-only (see
-  // computedReadOnlyFields below). Recomputes whenever the basic salary or
-  // the payroll tax settings (System Definitions > Offer letter > Payroll
-  // tax settings) change; leaves them blank when basic salary is empty or
-  // not a valid number rather than showing a stale/zero figure.
+  // computedReadOnlyFields below). Recomputes whenever the basic salary,
+  // allowances, or the payroll tax settings (System Definitions > Offer
+  // letter > Payroll tax settings) change; leaves them blank when basic
+  // salary is empty or not a valid number rather than showing a
+  // stale/zero figure. SSNIT and Income tax are based on basic salary
+  // alone (allowances aren't SSNIT-deductible or taxed here); Net payable
+  // is basic salary + housing + medical allowance, minus SSNIT and tax —
+  // the actual amount the employee takes home.
   useEffect(() => {
     const basicSalary = parseSalaryAmount(hrData.basic_salary_ghs);
     if (basicSalary === null) {
@@ -142,9 +146,13 @@ export default function OfferTermsPanel({
       });
       return;
     }
+    const otherAllowances =
+      (parseSalaryAmount(hrData.housing_allowance) ?? 0) +
+      (parseSalaryAmount(hrData.medical_allowance) ?? 0);
     const { ssnit, incomeTax, netPayable, employerTier2Contribution } = computePayrollDeductions(
       basicSalary,
       payrollTaxConfig,
+      otherAllowances,
     );
     setHrData((prev) => ({
       ...prev,
@@ -159,7 +167,12 @@ export default function OfferTermsPanel({
         : undefined,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hrData.basic_salary_ghs, payrollTaxConfig]);
+  }, [
+    hrData.basic_salary_ghs,
+    hrData.housing_allowance,
+    hrData.medical_allowance,
+    payrollTaxConfig,
+  ]);
 
   const computedReadOnlyFields = [
     "social_security_contribution",
@@ -217,10 +230,10 @@ export default function OfferTermsPanel({
         <p className="text-xs text-gray-500 mt-1">
           Role, grade, salary tier, department, employment type, and work location come
           straight from the job posting this applicant applied to — to change one of those,
-          edit the job posting itself. Social security contribution, Income tax, and Net
-          payable are calculated automatically from Basic salary (GHS) — fill in the other
-          allowance fields manually. All of it will be locked once saved and prefilled during
-          onboarding.
+          edit the job posting itself. Social security contribution and Income tax are
+          calculated automatically from Basic salary (GHS); Net payable adds Housing and
+          Medical allowance on top and subtracts both of those. Fill in the allowance fields
+          manually. All of it will be locked once saved and prefilled during onboarding.
         </p>
       </div>
 

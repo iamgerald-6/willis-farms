@@ -118,11 +118,16 @@ export type PayrollDeductions = {
  * SSNIT is deducted first (as a flat percentage of basic salary), then PAYE
  * is applied progressively to what's left (basic salary - SSNIT) — this
  * "deduct SSNIT first, tax the remainder" order matches how GRA computes
- * chargeable income, not a flat percentage of the full basic salary.
+ * chargeable income, not a flat percentage of the full basic salary. SSNIT
+ * and PAYE are both based on basic salary alone; otherAllowances (housing,
+ * medical, etc.) are added on top only for netPayable, since those amounts
+ * aren't taxed or SSNIT-deducted here — they're added in full to what the
+ * employee actually takes home.
  */
 export function computePayrollDeductions(
   basicSalaryMonthly: number,
   config: PayrollTaxConfig = DEFAULT_PAYROLL_TAX_CONFIG,
+  otherAllowancesMonthly = 0,
 ): PayrollDeductions {
   if (!Number.isFinite(basicSalaryMonthly) || basicSalaryMonthly <= 0) {
     return { ssnit: 0, incomeTax: 0, netPayable: 0, employerTier2Contribution: 0 };
@@ -145,7 +150,11 @@ export function computePayrollDeductions(
   }
 
   const incomeTax = round2(tax);
-  const netPayable = round2(basicSalaryMonthly - ssnit - incomeTax);
+  const extraAllowances =
+    Number.isFinite(otherAllowancesMonthly) && otherAllowancesMonthly > 0
+      ? otherAllowancesMonthly
+      : 0;
+  const netPayable = round2(basicSalaryMonthly + extraAllowances - ssnit - incomeTax);
   const employerTier2Contribution = config.employerTier2RatePercent
     ? round2(basicSalaryMonthly * (config.employerTier2RatePercent / 100))
     : 0;
