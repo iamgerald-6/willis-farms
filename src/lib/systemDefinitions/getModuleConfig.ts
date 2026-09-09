@@ -73,6 +73,7 @@ export async function fetchModuleConfig(
       interviewBenchmarksConfig:
         businessLogic.interviewBenchmarksConfig ??
         gitFallbackBusinessLogic(moduleId).interviewBenchmarksConfig,
+      payrollTaxConfig: businessLogic.payrollTaxConfig,
     },
     formDefinition,
   };

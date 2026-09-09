@@ -109,6 +109,16 @@ export {
 } from "./interviewBenchmarksConfig";
 
 export {
+  DEFAULT_PAYROLL_TAX_CONFIG,
+  computePayrollDeductions,
+  normalizePayrollTaxConfig,
+  parseSalaryAmount,
+  type PayrollDeductions,
+  type PayrollTaxBand,
+  type PayrollTaxConfig,
+} from "./payrollTaxConfig";
+
+export {
   DEFAULT_APPRAISAL_SCOPE,
   gitTemplateKeyForFormKey,
   isAppraisalFormKeyShape,

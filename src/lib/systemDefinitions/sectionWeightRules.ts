@@ -30,6 +30,10 @@ import {
   normalizeInterviewBenchmarksConfig,
   type InterviewBenchmarksConfig,
 } from "./interviewBenchmarksConfig";
+import {
+  normalizePayrollTaxConfig,
+  type PayrollTaxConfig,
+} from "./payrollTaxConfig";
 
 export interface ModuleBusinessLogic {
   /** Skill log — competency section titles/skills per log type. */
@@ -50,6 +54,9 @@ export interface ModuleBusinessLogic {
   interviewEvaluationConfig?: InterviewEvaluationConfig;
   /** Recruitment — per-stage score thresholds for AI progression and hire decisions. */
   interviewBenchmarksConfig?: InterviewBenchmarksConfig;
+  /** Recruitment — SSNIT rate + PAYE bands used to auto-calculate Offer
+   * Terms' Social security contribution / Income tax / Net payable. */
+  payrollTaxConfig?: PayrollTaxConfig;
 }
 
 export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
@@ -85,5 +92,6 @@ export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
     interviewBenchmarksConfig: normalizeInterviewBenchmarksConfig(
       obj.interviewBenchmarksConfig,
     ),
+    payrollTaxConfig: normalizePayrollTaxConfig(obj.payrollTaxConfig),
   };
 }

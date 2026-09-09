@@ -14,6 +14,7 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   refereeReferenceConfig: "Referee reference config",
   applicationFormConfig: "Application form config",
   appraisalScopeConfig: "Appraisal scope config",
+  payrollTaxConfig: "Payroll tax settings",
   form_definition: "Form layout",
   label: "Label",
   legacy_value: "Value code",

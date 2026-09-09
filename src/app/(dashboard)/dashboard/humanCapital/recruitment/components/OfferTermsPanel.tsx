@@ -10,6 +10,8 @@ import { validateOfferTerms } from "@/lib/careers/offerTerms";
 import { OFFER_TERMS_FIELDS_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { usePayrollTaxConfig } from "@/hooks/usePayrollTaxConfig";
+import { computePayrollDeductions, parseSalaryAmount } from "@/lib/systemDefinitions/payrollTaxConfig";
 
 type Props = {
   applicationId: string;
@@ -26,6 +28,7 @@ export default function OfferTermsPanel({
     position_title: roleTitle,
   });
   const { config: gradeConfig } = useGradeLevelsConfig();
+  const { config: payrollTaxConfig } = usePayrollTaxConfig();
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["offer-letter", applicationId],
@@ -110,6 +113,48 @@ export default function OfferTermsPanel({
     }));
   }, [suggestions]);
 
+  // Social security contribution, Income tax, and Net payable are derived
+  // from Basic salary (GHS) — HR fills in the allowance fields manually,
+  // these three are computed and shown read-only (see
+  // computedReadOnlyFields below). Recomputes whenever the basic salary or
+  // the payroll tax settings (System Definitions > Offer letter > Payroll
+  // tax settings) change; leaves them blank when basic salary is empty or
+  // not a valid number rather than showing a stale/zero figure.
+  useEffect(() => {
+    const basicSalary = parseSalaryAmount(hrData.basic_salary_ghs);
+    if (basicSalary === null) {
+      setHrData((prev) => {
+        if (!prev.social_security_contribution && !prev.income_tax && !prev.net_payable) {
+          return prev;
+        }
+        return {
+          ...prev,
+          social_security_contribution: undefined,
+          income_tax: undefined,
+          net_payable: undefined,
+        };
+      });
+      return;
+    }
+    const { ssnit, incomeTax, netPayable } = computePayrollDeductions(
+      basicSalary,
+      payrollTaxConfig,
+    );
+    setHrData((prev) => ({
+      ...prev,
+      social_security_contribution: ssnit.toFixed(2),
+      income_tax: incomeTax.toFixed(2),
+      net_payable: netPayable.toFixed(2),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hrData.basic_salary_ghs, payrollTaxConfig]);
+
+  const computedReadOnlyFields = [
+    "social_security_contribution",
+    "income_tax",
+    "net_payable",
+  ];
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const validation = validateOfferTerms(hrData, gradeConfig);
@@ -159,8 +204,10 @@ export default function OfferTermsPanel({
         <p className="text-xs text-gray-500 mt-1">
           Role, grade, salary tier, department, employment type, and work location come
           straight from the job posting this applicant applied to — to change one of those,
-          edit the job posting itself. Fill in everything else below before creating the offer
-          letter. All of it will be locked once saved and prefilled during onboarding.
+          edit the job posting itself. Social security contribution, Income tax, and Net
+          payable are calculated automatically from Basic salary (GHS) — fill in the other
+          allowance fields manually. All of it will be locked once saved and prefilled during
+          onboarding.
         </p>
       </div>
 
@@ -175,7 +222,7 @@ export default function OfferTermsPanel({
         hrData={hrData}
         setHrData={setHrData}
         optionList={OFFER_TERMS_FIELDS_LIST}
-        readOnlyFields={postingLockedFields}
+        readOnlyFields={[...postingLockedFields, ...computedReadOnlyFields]}
         hideFieldHints
       />
 
