@@ -31,9 +31,12 @@ export type DisqualifierDef = {
 export type ExtraInterviewStageDef = {
   id: string;
   label: string;
-  duration?: string;
   format: "questions" | "practicals";
   items: InterviewQuestion[] | ScenarioItem[];
+  /** @deprecated a custom stage uses the posting's own overall
+   * interview_duration_minutes, same as Stage 1/2 — no per-stage duration
+   * anymore. Kept only so old stored data still parses without error. */
+  duration?: string;
   /** @deprecated no longer meaningful — every custom stage always gets
    * panel setup + a review gate now. Kept only so old stored data
    * (recorded before this was wired up) still parses without error. */
@@ -225,7 +228,6 @@ function normalizeExtraStages(raw: unknown): ExtraInterviewStageDef[] | undefine
     out.push({
       id,
       label,
-      duration: row.duration != null ? String(row.duration).trim() : undefined,
       format,
       items,
     });
