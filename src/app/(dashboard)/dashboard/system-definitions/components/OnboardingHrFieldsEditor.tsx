@@ -35,6 +35,24 @@ type DraftRules = {
   options: string;
 };
 
+/** Field key is always derived from the label for a brand-new field —
+ * lowercase snake_case, no manual editing. Existing fields (edit form)
+ * keep whatever key they already have; this is only used on creation. */
+function toSnakeCase(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** New fields are restricted to these 4 basic types — the other types
+ * (grade_level, department, employment_type, work_location, supervisor,
+ * salary_tier, salary_range, pay_frequency, reporting_to) are already used
+ * by built-in Section O fields and stay available when editing those, but
+ * shouldn't be offered for newly created fields. */
+const NEW_FIELD_TYPE_OPTIONS: OnboardingHrFieldType[] = ["text", "select", "date", "textarea"];
+
 function rulesToDraft(rules: ReturnType<typeof parseOnboardingHrFieldRules>): DraftRules {
   return {
     fieldKey: rules.fieldKey,
@@ -183,14 +201,32 @@ export default function OnboardingHrFieldsEditor({
   const renderDraftForm = (
     draft: DraftRules,
     setDraft: (next: DraftRules) => void,
-  ) => (
+    formOptions?: {
+      /** New-field form: key is auto-derived from the label, not typed. */
+      fieldKeyReadOnly?: boolean;
+      /** New-field form: restricted type list. Omit for the full list (edit form). */
+      typeOptions?: OnboardingHrFieldType[];
+    },
+  ) => {
+    const fieldKeyReadOnly = formOptions?.fieldKeyReadOnly ?? false;
+    const typeOptions = formOptions?.typeOptions ?? ONBOARDING_HR_FIELD_TYPES;
+    return (
     <div className="grid sm:grid-cols-2 gap-2 mt-2">
       <label className="text-xs block">
-        <span className="text-gray-500">Field key (hr_data)</span>
+        <span className="text-gray-500">
+          Field key (hr_data){fieldKeyReadOnly && " — from label"}
+        </span>
         <input
-          className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+          className={`mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono${
+            fieldKeyReadOnly ? " bg-gray-100 text-gray-500 cursor-not-allowed" : ""
+          }`}
           value={draft.fieldKey}
-          onChange={(e) => setDraft({ ...draft, fieldKey: e.target.value })}
+          readOnly={fieldKeyReadOnly}
+          onChange={
+            fieldKeyReadOnly
+              ? undefined
+              : (e) => setDraft({ ...draft, fieldKey: e.target.value })
+          }
         />
       </label>
       <label className="text-xs block">
@@ -202,7 +238,7 @@ export default function OnboardingHrFieldsEditor({
             setDraft({ ...draft, fieldType: e.target.value as OnboardingHrFieldType })
           }
         >
-          {ONBOARDING_HR_FIELD_TYPES.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
@@ -246,6 +282,9 @@ export default function OnboardingHrFieldsEditor({
             value={draft.options}
             onChange={(e) => setDraft({ ...draft, options: e.target.value })}
           />
+          <p className="text-[11px] text-gray-400 mt-1">
+            Enter the options this dropdown should offer, separated by commas (e.g. Male, Female).
+          </p>
         </label>
       )}
       <label className="text-xs block sm:col-span-2">
@@ -265,7 +304,8 @@ export default function OnboardingHrFieldsEditor({
         Required before completing onboarding
       </label>
     </div>
-  );
+    );
+  };
 
   if (isLoading) {
     return (
@@ -388,10 +428,17 @@ export default function OnboardingHrFieldsEditor({
                 <input
                   className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    setNewLabel(label);
+                    setNewDraft({ ...newDraft, fieldKey: toSnakeCase(label) });
+                  }}
                 />
               </label>
-              {renderDraftForm(newDraft, setNewDraft)}
+              {renderDraftForm(newDraft, setNewDraft, {
+                fieldKeyReadOnly: true,
+                typeOptions: NEW_FIELD_TYPE_OPTIONS,
+              })}
               <div className="flex gap-2 mt-3">
                 <button
                   type="button"
