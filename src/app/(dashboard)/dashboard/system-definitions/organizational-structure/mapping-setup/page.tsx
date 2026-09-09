@@ -18,9 +18,10 @@ const inputClass =
 const selectClass = `${inputClass} mt-1 disabled:bg-gray-50 disabled:text-gray-500`;
 
 // Site, Business unit, Department, Section, and Position always exist as
-// levels here and can't be removed — Create job posting relies on this
-// exact chain for its always-required fields (see CHAIN_TABLE_ORDER in
-// create-job-posting/page.tsx). Anything else is optional, admin-added.
+// levels here and can't be removed — Add posting (Job posting tab, under
+// Recruitment) relies on this exact chain for its always-required fields
+// (see CHAIN_TABLE_ORDER in CreateJobPostingPanel.tsx). Anything else is
+// optional, admin-added.
 const REQUIRED_TABLE_ORDER = ["sites", "business_units", "departments", "sections", "custom_position"];
 
 type Item = { id: string; label: string; is_active?: boolean; sort_order?: number };

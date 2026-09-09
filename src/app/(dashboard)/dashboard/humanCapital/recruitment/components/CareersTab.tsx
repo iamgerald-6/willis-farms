@@ -9,11 +9,17 @@ import {
   JOB_POSTING_STATUS_LABELS,
   normalizePostingStatus,
 } from "@/lib/careers/jobPostings";
-import { Calendar, Clock, History, Loader2 } from "lucide-react";
+import { Calendar, Clock, History, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
+import type { User } from "@/types";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
 import PostingHistoryDrawer from "./PostingHistoryDrawer";
 import Pagination, { PAGE_SIZE } from "./Pagination";
+import CreateJobPostingPanel from "./CreateJobPostingPanel";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
 
 function formatDate(iso: string) {
@@ -41,6 +47,36 @@ function statusStyle(status: JobPostingStatus): string {
 export default function CareersTab({ adminId }: { adminId: string }) {
   const queryClient = useQueryClient();
   const [historyPosting, setHistoryPosting] = useState<JobPosting | null>(null);
+  // "Add posting" switches this whole tab over to the full Create job
+  // posting screen (its own Active/Archived list, form, JD upload,
+  // interview setup) — "Back to Job posting" on that screen switches back
+  // to this list. The two screens are independent; this one's own
+  // Close/Republish/History actions are untouched by that panel.
+  const [view, setView] = useState<"list" | "create">("list");
+
+  const { data: session } = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    },
+  });
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["get_users"],
+    queryFn: async () => {
+      const res = await api.get("/get_user");
+      return res.data;
+    },
+  });
+  const currentUser = allUsers.find((u) => u.user_id === session?.user?.id);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(currentUser, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+  const canAddPosting = Boolean(
+    accessProfile &&
+      canPerformModuleAction(accessProfile, "hc:recruitment", "add", sessionRole, groupPresets),
+  );
 
   // Republish now only asks for a new closing date/time — title,
   // description, org-structure fields, etc. can no longer be edited from
@@ -180,17 +216,30 @@ export default function CareersTab({ adminId }: { adminId: string }) {
     [sorted, page],
   );
 
+  if (view === "create") {
+    return <CreateJobPostingPanel onBack={() => setView("list")} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Career postings</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Creating and editing job postings now happens under System
-            Definitions -&gt; Create job posting. Closing and republishing a
-            posting still happens here.
+            Add a new posting below. Closing and republishing a posting
+            happens here too.
           </p>
         </div>
+        {canAddPosting && (
+          <button
+            type="button"
+            onClick={() => setView("create")}
+            className="shrink-0 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add posting
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -199,7 +248,7 @@ export default function CareersTab({ adminId }: { adminId: string }) {
         </div>
       ) : sorted.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-sm text-gray-500">
-          No career postings yet. Add one from System Definitions -&gt; Create job posting.
+          No career postings yet.{canAddPosting ? " Click \"Add posting\" to create one." : ""}
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -285,7 +334,7 @@ export default function CareersTab({ adminId }: { adminId: string }) {
               <p className="text-sm text-gray-600 mt-1">
                 {formatPublicJobTitle(republishTarget.title)} will be reposted with the
                 same content under a new closing date. To change the title, description,
-                or other details, use Create job posting under System Definitions.
+                or other details, use Add posting to edit it directly.
               </p>
 
               <div className="flex flex-wrap items-end gap-4 mt-4">

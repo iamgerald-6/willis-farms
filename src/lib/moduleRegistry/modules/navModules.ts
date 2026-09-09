@@ -66,7 +66,12 @@ export const NAV_BUILTIN_MODULES: ModuleRecord[] = [
     route: "/dashboard/humanCapital/recruitment",
     sortOrder: 60,
     icon: "user-plus",
-    supportedActions: ["view", "edit", "approve", "review"],
+    // "add" covers creating a new job posting (Job posting tab -> Add
+    // posting) — without it here, defaultFullAccessActions() (Super
+    // Admin/Executive) would never grant that action even though Human
+    // Resource's separate unconditional bypass in canPerformModuleAction
+    // ignores this list entirely.
+    supportedActions: ["view", "add", "edit", "approve", "review"],
   }),
   navModule({
     id: "mod:tm-calendar",

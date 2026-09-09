@@ -649,11 +649,6 @@ const COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS = new Set<string>([
   "grp:human-capital",
 ]);
 
-/** Stable module id for Recruitment — used to append the Create job posting
- * link into its sub-nav (see the sidebar render below). Never changes even
- * if the module's label is renamed. */
-const RECRUITMENT_MODULE_ID = "mod:recruitment";
-
 export default function SystemDefinitionsPage() {
   const pathname = usePathname();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -671,9 +666,6 @@ export default function SystemDefinitionsPage() {
     });
   const orgStructureActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/organizational-structure",
-  );
-  const createJobPostingActive = !!pathname?.startsWith(
-    "/dashboard/system-definitions/create-job-posting",
   );
   const accessControlActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/access-control",
@@ -884,9 +876,7 @@ export default function SystemDefinitionsPage() {
                     >
                       {groupModules.map((m) => {
                         const ModuleIcon = resolveNavIcon(m.sidebar.icon);
-                        const moduleActive =
-                          selectedModule?.id === m.id ||
-                          (m.id === RECRUITMENT_MODULE_ID && createJobPostingActive);
+                        const moduleActive = selectedModule?.id === m.id;
                         const moduleSections = getModuleSections(
                           m,
                           !!canAdd,
@@ -922,23 +912,6 @@ export default function SystemDefinitionsPage() {
                                 </button>
                               );
                             })}
-                            {/* Create job posting is a full separate page
-                                (its own table/form/tabs), not an inline
-                                section like the others above — so it's a
-                                real link here rather than a section-select
-                                button. */}
-                            {m.id === RECRUITMENT_MODULE_ID && (
-                              <Link
-                                href="/dashboard/system-definitions/create-job-posting"
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                                  createJobPostingActive
-                                    ? "bg-red-50 text-red-600"
-                                    : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                                }`}
-                              >
-                                Create job posting
-                              </Link>
-                            )}
                           </CollapsibleNavSection>
                         );
                       })}
