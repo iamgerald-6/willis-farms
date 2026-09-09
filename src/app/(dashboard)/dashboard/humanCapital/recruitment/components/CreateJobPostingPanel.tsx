@@ -1349,14 +1349,20 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                           >
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => archiveMutation.mutate({ id: posting.id, archived: true })}
-                            disabled={archiveMutation.isPending}
-                            className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-60"
-                          >
-                            Archive
-                          </button>
+                          {/* A published posting has active applicants and
+                              a live careers-page listing — it must be
+                              closed (back on the Job posting tab) before it
+                              can be archived. */}
+                          {normalizePostingStatus(posting) === "closed" && (
+                            <button
+                              type="button"
+                              onClick={() => archiveMutation.mutate({ id: posting.id, archived: true })}
+                              disabled={archiveMutation.isPending}
+                              className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-60"
+                            >
+                              Archive
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>

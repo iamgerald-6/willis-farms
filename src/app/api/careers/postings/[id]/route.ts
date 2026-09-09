@@ -101,6 +101,28 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     if (typeof body.archived === "boolean") {
+      if (body.archived) {
+        // A published posting has active applicants and a live careers-page
+        // listing — it must be closed first. updates.status already
+        // reflects whatever this same request is setting (e.g. closes_at
+        // pushing it past its deadline), so only fall back to the current
+        // DB value when this request isn't also changing status.
+        const effectiveStatus =
+          (updates.status as JobPostingStatus | undefined) ??
+          (
+            await supabaseAdmin
+              .from("job_postings")
+              .select("status")
+              .eq("id", id)
+              .maybeSingle()
+          ).data?.status;
+        if (effectiveStatus === "published") {
+          return NextResponse.json(
+            { error: "Close this posting before archiving it." },
+            { status: 400 },
+          );
+        }
+      }
       updates.archived_at = body.archived ? new Date().toISOString() : null;
     }
 
