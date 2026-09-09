@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { toast } from "sonner";
@@ -44,6 +44,24 @@ const FIELD_TYPES: OnboardingFieldType[] = [
   "application_certificates_view",
   "referee_submissions_view",
 ];
+
+/** Slugifies a Label into a lower snake_case field key, e.g. "Mobile number" -> "mobile_number". */
+function slugifyFieldKey(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** Appends _2, _3, ... if the slugified key collides with another field's key. */
+function generateUniqueFieldKey(label: string, existingKeys: string[]): string {
+  const base = slugifyFieldKey(label) || "field";
+  if (!existingKeys.includes(base)) return base;
+  let n = 2;
+  while (existingKeys.includes(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
 
 type DraftRules = {
   step: OnboardingFieldStep;
@@ -220,8 +238,13 @@ export default function OnboardingFormEditor({
 
       {showAdd && canAdd && (
         <FieldDraftForm
+          mode="create"
           label={newLabel}
           draft={newDraft}
+          options={options}
+          existingFieldKeys={options.map(
+            (o) => parseOnboardingFieldRules(o.rules as Record<string, unknown>).fieldKey,
+          )}
           onLabelChange={setNewLabel}
           onDraftChange={setNewDraft}
           onCancel={() => setShowAdd(false)}
@@ -266,8 +289,18 @@ export default function OnboardingFormEditor({
                     <li key={option.id} className="px-3 py-3">
                       {isEditing && editDraft && canEdit ? (
                         <FieldDraftForm
+                          mode="edit"
                           label={editLabel}
                           draft={editDraft}
+                          options={options}
+                          existingFieldKeys={options
+                            .filter((o) => o.id !== option.id)
+                            .map(
+                              (o) =>
+                                parseOnboardingFieldRules(o.rules as Record<string, unknown>)
+                                  .fieldKey,
+                            )}
+                          originalFieldKey={rules.fieldKey}
                           onLabelChange={setEditLabel}
                           onDraftChange={setEditDraft}
                           onCancel={() => setEditingId(null)}
@@ -343,16 +376,24 @@ export default function OnboardingFormEditor({
 }
 
 function FieldDraftForm({
+  mode,
   label,
   draft,
+  options,
+  existingFieldKeys,
+  originalFieldKey,
   onLabelChange,
   onDraftChange,
   onCancel,
   onSave,
   saving,
 }: {
+  mode: "create" | "edit";
   label: string;
   draft: DraftRules;
+  options: SystemOption[];
+  existingFieldKeys: string[];
+  originalFieldKey?: string;
   onLabelChange: (v: string) => void;
   onDraftChange: (v: DraftRules) => void;
   onCancel: () => void;
@@ -361,6 +402,78 @@ function FieldDraftForm({
 }) {
   const inputClass =
     "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm";
+
+  // New fields only: keep the auto-generated key in sync with the Label.
+  // Existing fields keep their original key even if the Label is edited,
+  // since other fields' "show when" conditions and already-submitted
+  // onboarding data may reference it by that exact key.
+  useEffect(() => {
+    if (mode !== "create") return;
+    const generated = generateUniqueFieldKey(label, existingFieldKeys);
+    if (generated !== draft.fieldKey) {
+      onDraftChange({ ...draft, fieldKey: generated });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [label, mode]);
+
+  // Sections already used on the currently selected Step, in their existing
+  // display order — lets HR pick a heading instead of retyping it.
+  const sectionsForStep = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    [...options]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .forEach((o) => {
+        const r = parseOnboardingFieldRules(o.rules as Record<string, unknown>);
+        if (r.step === draft.step && r.section && !seen.has(r.section)) {
+          seen.add(r.section);
+          result.push(r.section);
+        }
+      });
+    return result;
+  }, [options, draft.step]);
+
+  // Other fields on the same Step — candidates for "show when field".
+  const showWhenFieldOptions = useMemo(() => {
+    return [...options]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((o) => ({
+        option: o,
+        rules: parseOnboardingFieldRules(o.rules as Record<string, unknown>),
+      }))
+      .filter(
+        ({ rules }) =>
+          rules.step === draft.step &&
+          rules.fieldKey &&
+          rules.fieldKey !== originalFieldKey,
+      )
+      .map(({ option, rules }) => ({ fieldKey: rules.fieldKey, label: option.label }));
+  }, [options, draft.step, originalFieldKey]);
+
+  // The field currently picked as "show when field", if any — its type and
+  // options determine what "Value" choices make sense.
+  const showWhenTargetRules = useMemo(() => {
+    if (!draft.showWhenField) return undefined;
+    const target = options.find(
+      (o) =>
+        parseOnboardingFieldRules(o.rules as Record<string, unknown>).fieldKey ===
+        draft.showWhenField,
+    );
+    return target
+      ? parseOnboardingFieldRules(target.rules as Record<string, unknown>)
+      : undefined;
+  }, [options, draft.showWhenField]);
+
+  const valueChoices: { value: string; label: string }[] | null = !showWhenTargetRules
+    ? null
+    : showWhenTargetRules.fieldType === "select"
+      ? (showWhenTargetRules.options ?? []).map((o) => ({ value: o, label: o }))
+      : showWhenTargetRules.fieldType === "checkbox"
+        ? [
+            { value: "true", label: "Checked" },
+            { value: "false", label: "Unchecked" },
+          ]
+        : null;
 
   return (
     <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-xl p-3">
@@ -371,21 +484,35 @@ function FieldDraftForm({
         </label>
         <label className="block sm:col-span-2">
           <span className="text-xs text-gray-500">Section heading (optional)</span>
-          <input
+          <select
             className={inputClass}
-            placeholder="e.g. A. Personal information"
-            value={draft.section}
-            onChange={(e) => onDraftChange({ ...draft, section: e.target.value })}
-          />
+            value={sectionsForStep.includes(draft.section) ? draft.section : "__new__"}
+            onChange={(e) => {
+              const v = e.target.value;
+              onDraftChange({ ...draft, section: v === "__new__" ? "" : v });
+            }}
+          >
+            <option value="__new__">+ Add new section</option>
+            {sectionsForStep.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {!sectionsForStep.includes(draft.section) && (
+            <input
+              className={`${inputClass} mt-1.5`}
+              placeholder="e.g. A. Personal information"
+              value={draft.section}
+              onChange={(e) => onDraftChange({ ...draft, section: e.target.value })}
+            />
+          )}
         </label>
         <label className="block">
-          <span className="text-xs text-gray-500">Field key (dot path)</span>
-          <input
-            className={inputClass}
-            placeholder="personal.mobile"
-            value={draft.fieldKey}
-            onChange={(e) => onDraftChange({ ...draft, fieldKey: e.target.value })}
-          />
+          <span className="text-xs text-gray-500">Field key (auto-generated)</span>
+          <div className={`${inputClass} bg-gray-100 text-gray-500`}>
+            {draft.fieldKey || "—"}
+          </div>
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Step</span>
@@ -468,11 +595,20 @@ function FieldDraftForm({
       <div className="grid sm:grid-cols-3 gap-2">
         <label className="block">
           <span className="text-xs text-gray-500">Show when field (optional)</span>
-          <input
+          <select
             className={inputClass}
             value={draft.showWhenField}
-            onChange={(e) => onDraftChange({ ...draft, showWhenField: e.target.value })}
-          />
+            onChange={(e) =>
+              onDraftChange({ ...draft, showWhenField: e.target.value, showWhenValue: "" })
+            }
+          >
+            <option value="">— None —</option>
+            {showWhenFieldOptions.map((o) => (
+              <option key={o.fieldKey} value={o.fieldKey}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Condition</span>
@@ -492,11 +628,28 @@ function FieldDraftForm({
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Value</span>
-          <input
-            className={inputClass}
-            value={draft.showWhenValue}
-            onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
-          />
+          {valueChoices ? (
+            <select
+              className={inputClass}
+              value={draft.showWhenValue}
+              onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
+            >
+              <option value="">Select…</option>
+              {valueChoices.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={inputClass}
+              disabled={!draft.showWhenField}
+              placeholder={draft.showWhenField ? "Enter the exact value" : "Select a field first"}
+              value={draft.showWhenValue}
+              onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
+            />
+          )}
         </label>
       </div>
 
