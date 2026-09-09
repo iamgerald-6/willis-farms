@@ -210,7 +210,12 @@ export default function OnboardingHrFieldsForm({
       supervisor_name: sup
         ? `${sup.first_name} ${sup.last_name}`.trim()
         : undefined,
-      reporting_to: sup ? lineManagerLabel(sup) : undefined,
+      // Reporting to is the ROLE this hire reports into, not who currently
+      // holds it — so it's saved (and shown in the dropdown below) as just
+      // the job title, e.g. "Farm Manager", never "Name (Farm Manager)".
+      // The specific person is still captured separately via supervisor_id
+      // / supervisor_name (Assigned supervisor).
+      reporting_to: sup ? sup.job_position?.trim() || lineManagerLabel(sup) : undefined,
     }));
   };
 
@@ -427,7 +432,7 @@ export default function OnboardingHrFieldsForm({
             </option>
             {lineManagers.map((sup) => (
               <option key={sup.user_id} value={sup.user_id}>
-                {lineManagerLabel(sup)}
+                {sup.job_position?.trim() || lineManagerLabel(sup)}
               </option>
             ))}
           </select>
