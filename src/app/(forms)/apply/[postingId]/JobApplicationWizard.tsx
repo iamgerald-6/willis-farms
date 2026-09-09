@@ -377,13 +377,13 @@ export default function JobApplicationWizard({
 
       // setValues' updater isn't guaranteed to run synchronously (it's
       // batched into the next render), so a variable mutated inside it and
-      // read right after can still be stale — compute the merge and the
-      // "did we fill anything" flag together, inside the updater, and only
-      // react to the result from there.
-      const newlyLockedFields: Record<string, boolean> = {};
+      // read right after can still be stale. Every reaction to the merge
+      // result — the fill notice AND which fields to lock — has to happen
+      // from inside the updater itself, not after calling setValues.
       setValues((prev) => {
         const next = { ...prev };
         let filledAnything = false;
+        const newlyLockedFields: Record<string, boolean> = {};
         const overwriteText = (key: string, val: string) => {
           if (val) {
             next[key] = val;
@@ -438,12 +438,12 @@ export default function JobApplicationWizard({
             ? "We've pre-filled some fields from your CV — please review everything before continuing."
             : "We couldn't find anything in that CV to pre-fill — no problem, just fill in the fields below.",
         );
+        if (Object.keys(newlyLockedFields).length > 0) {
+          setCvLockedFields((prevLocked) => ({ ...prevLocked, ...newlyLockedFields }));
+        }
 
         return next;
       });
-      if (Object.keys(newlyLockedFields).length > 0) {
-        setCvLockedFields((prev) => ({ ...prev, ...newlyLockedFields }));
-      }
     } catch (e) {
       // CV auto-fill is a convenience, not a requirement — fail quietly and
       // let them fill the form manually.
