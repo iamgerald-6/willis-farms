@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Check, X, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { SystemOption } from "@/lib/systemDefinitions";
@@ -141,6 +141,8 @@ export default function OnboardingHrFieldsEditor({
     .filter((f): f is OnboardingHrFieldDef => f !== null)
     .sort((a, b) => a.sort_order - b.sort_order);
 
+  const activeFields = fields.filter((f) => f.is_active);
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const createMutation = useMutation({
@@ -197,6 +199,56 @@ export default function OnboardingHrFieldsEditor({
     },
     onError: () => toast.error("Could not remove HR field."),
   });
+
+  // Drag-to-reorder — this list's sort_order is the same value the live
+  // onboarding form (Section O) sorts by, so reordering here directly
+  // controls the order fields appear in on the actual form. Reordering
+  // shows instantly (orderedActiveFields overrides the server-derived
+  // order until the save completes), while sort_order updates for every
+  // affected field save in the background via the same PATCH endpoint the
+  // rest of this editor already uses — there's no dedicated bulk-reorder
+  // endpoint.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+
+  const orderedActiveFields = useMemo(() => {
+    if (!localOrder) return activeFields;
+    const byId = new Map(activeFields.map((f) => [f.id, f]));
+    const ordered = localOrder
+      .map((id) => byId.get(id))
+      .filter((f): f is OnboardingHrFieldDef => !!f);
+    const missing = activeFields.filter((f) => !localOrder.includes(f.id));
+    return [...ordered, ...missing];
+  }, [activeFields, localOrder]);
+
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) => {
+      await Promise.all(
+        updates.map(({ id, sort_order }) =>
+          api.patch(`/system-definitions/options/${encodeURIComponent(id)}`, { sort_order }),
+        ),
+      );
+    },
+    onSuccess: () => invalidate(),
+    onError: () => {
+      toast.error("Could not save the new order.");
+      setLocalOrder(null);
+      invalidate();
+    },
+  });
+
+  const handleDrop = (targetIndex: number) => {
+    const dragIndex = orderedActiveFields.findIndex((f) => f.id === draggingId);
+    setDraggingId(null);
+    if (dragIndex === -1 || dragIndex === targetIndex) return;
+
+    const next = [...orderedActiveFields];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(targetIndex, 0, moved);
+
+    setLocalOrder(next.map((f) => f.id));
+    reorderMutation.mutate(next.map((f, i) => ({ id: f.id, sort_order: i })));
+  };
 
   const renderDraftForm = (
     draft: DraftRules,
@@ -316,8 +368,6 @@ export default function OnboardingHrFieldsEditor({
     );
   }
 
-  const activeFields = fields.filter((f) => f.is_active);
-
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
@@ -325,18 +375,44 @@ export default function OnboardingHrFieldsEditor({
         &quot;Employment placement&quot; for department, location, and similar dropdowns.
       </p>
 
+      {canEdit && activeFields.length > 1 && (
+        <p className="text-xs text-gray-400">
+          Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this is the
+          order fields appear in on the live onboarding form.
+        </p>
+      )}
+
       <div className="space-y-2">
-        {activeFields.map((field) => {
+        {orderedActiveFields.map((field, index) => {
           const groupLabel =
             ONBOARDING_HR_FIELD_GROUPS.find((g) => g.value === field.group)?.label ??
             field.group;
           const isEditing = editingId === field.id;
+          const draggable = canEdit && !isEditing;
 
           return (
             <div
               key={field.id}
-              className="border border-gray-200 rounded-lg p-3 bg-white"
+              draggable={draggable}
+              onDragStart={() => draggable && setDraggingId(field.id)}
+              onDragOver={(e) => {
+                if (draggable) e.preventDefault();
+              }}
+              onDrop={() => draggable && handleDrop(index)}
+              onDragEnd={() => setDraggingId(null)}
+              className={`flex gap-2 border border-gray-200 rounded-lg p-3 bg-white ${
+                draggingId === field.id ? "opacity-40" : ""
+              }`}
             >
+              {draggable && (
+                <div
+                  className="flex items-start pt-0.5 text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                  title="Drag to reorder"
+                >
+                  <GripVertical className="w-4 h-4" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
               {isEditing && editDraft ? (
                 <>
                   <input
@@ -405,6 +481,7 @@ export default function OnboardingHrFieldsEditor({
                   )}
                 </div>
               )}
+              </div>
             </div>
           );
         })}
