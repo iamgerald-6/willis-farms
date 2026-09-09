@@ -5,6 +5,10 @@ import { inferGradeLevel } from "@/lib/careers/hrEmployeeDefaults";
 import { fetchGradeLevelsConfig } from "@/lib/grades/fetchGradeLevelsConfig";
 import { formatGrossSalaryAmount } from "@/lib/systemDefinitions/salaryRanges";
 import { fetchRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
+import {
+  canBeAssignedAsSupervisorAtOnboardingByRoleLabel,
+  resolveUserRoleLabelById,
+} from "@/lib/userRoleAccessControl";
 
 export type OfferLetterContext = {
   candidateName: string;
@@ -23,7 +27,10 @@ export type OfferLetterContext = {
   medicalReports: string[];
   letterDate: string;
   salaryDisplay?: string;
-  /** Line manager this hire reports to (name, from reporting_to). */
+  /** Role this hire reports into (job title only, never a person's name —
+   * see resolveReportingToRole below), for use in the offer letter itself.
+   * The Offer Terms / Section O forms separately show and store the actual
+   * "Name (Role)" in hr.reporting_to for HR's own reference. */
   reportingTo?: string;
   noticePeriod?: string;
   workingHours?: string;
@@ -56,6 +63,40 @@ function formatDisplayDate(raw: string | null | undefined): string | undefined {
   });
 }
 
+/**
+ * The offer letter document should only ever state the ROLE this hire
+ * reports into (e.g. "Assistant Farm Manager"), never a specific person's
+ * name — unlike the Offer Terms / Section O forms, which intentionally show
+ * "Name (Role)" so HR can see exactly who was picked. This re-derives the
+ * role live from the saved supervisor_id each time a letter is generated,
+ * confirming their role still qualifies as a line manager (Supervisory,
+ * Executive, or HR), rather than trusting whatever's stored in
+ * hr.reporting_to (which is "Name (Role)" text meant for the HR-facing
+ * forms). Falls back to hr.reporting_to only if there's no supervisor_id on
+ * file or that person no longer qualifies — covers offers saved before
+ * supervisor_id existed.
+ */
+async function resolveReportingToRole(
+  supabase: SupabaseClient,
+  hr: OnboardingHrData,
+): Promise<string | undefined> {
+  const supervisorId = hr.supervisor_id?.trim();
+  if (supervisorId) {
+    const { data: supervisor } = await supabase
+      .from("users")
+      .select("job_position, user_role_id")
+      .eq("user_id", supervisorId)
+      .maybeSingle();
+    if (supervisor?.job_position?.trim()) {
+      const roleLabel = await resolveUserRoleLabelById(supabase, supervisor.user_role_id);
+      if (canBeAssignedAsSupervisorAtOnboardingByRoleLabel(roleLabel)) {
+        return supervisor.job_position.trim();
+      }
+    }
+  }
+  return hr.reporting_to?.trim() || undefined;
+}
+
 export async function resolveOfferLetterContext(
   supabase: SupabaseClient,
   application: JobApplication,
@@ -70,6 +111,7 @@ export async function resolveOfferLetterContext(
     undefined;
 
   const medicalReports = await fetchRequiredMedicalReports(supabase);
+  const reportingToRole = await resolveReportingToRole(supabase, hr);
 
   const salaryGhs = hr.salary_ghs?.trim() || undefined;
   const payFrequency = hr.pay_frequency?.trim() || undefined;
@@ -104,7 +146,7 @@ export async function resolveOfferLetterContext(
       month: "long",
       year: "numeric",
     }),
-    reportingTo: hr.reporting_to?.trim() || undefined,
+    reportingTo: reportingToRole,
     noticePeriod: hr.notice_period?.trim() || undefined,
     workingHours: hr.working_hours?.trim() || undefined,
     acceptanceDeadline,
