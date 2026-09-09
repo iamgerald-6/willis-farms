@@ -1,5 +1,23 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { OfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
+import {
+  WILLS_FARMS_LETTERHEAD_DATA_URI,
+  WILLS_FARMS_LOGO_MARK_DATA_URI,
+} from "@/lib/reports/assets/offerLetterBranding";
+
+// A4 page size in points, used to center the background watermark.
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+
+// Letterhead artwork is 1205x342px — sized to roughly match its footprint
+// in the original Wills Farms template (~260pt wide).
+const LETTERHEAD_WIDTH = 260;
+const LETTERHEAD_HEIGHT = LETTERHEAD_WIDTH * (342 / 1205);
+
+// Logo-mark crop is 411x275px — sized large and centered as a faint
+// background watermark, low enough opacity to stay behind the letter text.
+const WATERMARK_WIDTH = 320;
+const WATERMARK_HEIGHT = WATERMARK_WIDTH * (275 / 411);
 
 const RED = "#991B1B";
 const DARK = "#111827";
@@ -21,21 +39,18 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     marginBottom: 24,
   },
-  companyName: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: RED,
-    letterSpacing: 0.4,
+  letterheadLogo: {
+    width: LETTERHEAD_WIDTH,
+    height: LETTERHEAD_HEIGHT,
+    objectFit: "contain",
   },
-  companyTagline: {
-    fontSize: 8.5,
-    color: GRAY,
-    marginTop: 4,
-  },
-  companyContact: {
-    fontSize: 8,
-    color: GRAY,
-    marginTop: 6,
+  watermark: {
+    position: "absolute",
+    top: (PAGE_HEIGHT - WATERMARK_HEIGHT) / 2,
+    left: (PAGE_WIDTH - WATERMARK_WIDTH) / 2,
+    width: WATERMARK_WIDTH,
+    height: WATERMARK_HEIGHT,
+    opacity: 0.07,
   },
   metaDate: {
     fontSize: 10,
@@ -179,14 +194,10 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        <Image src={WILLS_FARMS_LOGO_MARK_DATA_URI} style={styles.watermark} />
+
         <View style={styles.letterheadBar}>
-          <Text style={styles.companyName}>Wills Farms Ltd.</Text>
-          <Text style={styles.companyTagline}>
-            Genetics-led agribusiness · Professional farm management
-          </Text>
-          <Text style={styles.companyContact}>
-            info@willsfarms.com · www.willsfarms.com · Ghana
-          </Text>
+          <Image src={WILLS_FARMS_LETTERHEAD_DATA_URI} style={styles.letterheadLogo} />
         </View>
 
         <Text style={styles.metaDate}>{data.letterDate}</Text>
@@ -228,11 +239,10 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
       </Page>
 
       <Page size="A4" style={styles.page}>
+        <Image src={WILLS_FARMS_LOGO_MARK_DATA_URI} style={styles.watermark} />
+
         <View style={styles.letterheadBar}>
-          <Text style={styles.companyName}>Wills Farms Ltd.</Text>
-          <Text style={styles.companyTagline}>
-            Genetics-led agribusiness · Professional farm management
-          </Text>
+          <Image src={WILLS_FARMS_LETTERHEAD_DATA_URI} style={styles.letterheadLogo} />
         </View>
 
         <Text style={styles.annexTitle}>Annex 1 — Compensation Details</Text>
