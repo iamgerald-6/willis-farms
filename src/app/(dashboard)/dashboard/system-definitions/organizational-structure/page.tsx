@@ -364,7 +364,7 @@ export default function OrganizationalStructurePage() {
                         onChange={(e) =>
                           updateFieldRow(index, { type: e.target.value as CustomFieldType })
                         }
-                        className={`${inputClass} w-36 shrink-0`}
+                        className="w-36 shrink-0 border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500"
                       >
                         {CUSTOM_FIELD_TYPES.map((t) => (
                           <option key={t.value} value={t.value}>
