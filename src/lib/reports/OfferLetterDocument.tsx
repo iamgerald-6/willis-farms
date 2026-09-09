@@ -112,6 +112,11 @@ const styles = StyleSheet.create({
     borderTop: `0.5pt solid ${BORDER}`,
     paddingTop: 8,
   },
+  annexSeparator: {
+    borderTop: `0.75pt solid ${BORDER}`,
+    marginTop: 28,
+    paddingTop: 22,
+  },
   annexTitle: {
     fontSize: 13,
     fontWeight: 700,
@@ -194,7 +199,10 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Image src={WILLS_FARMS_LOGO_MARK_DATA_URI} style={styles.watermark} />
+        {/* fixed: repeats identically on every physical page this content
+           flows onto (including auto-generated overflow pages), unlike the
+           letterhead below which should only ever appear once. */}
+        <Image src={WILLS_FARMS_LOGO_MARK_DATA_URI} style={styles.watermark} fixed />
 
         <View style={styles.letterheadBar}>
           <Image src={WILLS_FARMS_LETTERHEAD_DATA_URI} style={styles.letterheadLogo} />
@@ -233,45 +241,39 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
           <Text style={styles.signTitle}>{data.signerTitle || "Wills Farms Ltd."}</Text>
         </View>
 
-        <Text style={styles.footer}>
-          Confidential — This letter is intended solely for the named recipient.
-        </Text>
-      </Page>
+        {/* Annex continues in the same content flow right after the
+           sign-off — not a separate Page — so it starts wherever the
+           letter happens to end (same page if there's room) instead of
+           always forcing a new page and leaving a gap behind it. */}
+        <View style={styles.annexSeparator}>
+          <Text style={styles.annexTitle}>Annex 1 — Compensation Details</Text>
+          <Text style={styles.annexSubtitle}>
+            {data.candidateName} · {data.roleTitle} · Ref: {data.referenceNumber}
+          </Text>
 
-      <Page size="A4" style={styles.page}>
-        <Image src={WILLS_FARMS_LOGO_MARK_DATA_URI} style={styles.watermark} />
+          <Text style={styles.annexSectionLabel}>Earnings</Text>
+          <View style={styles.table}>
+            <AnnexRow label="Basic Salary" value={data.basicSalaryGhs} />
+            <AnnexRow label="Housing Allowance" value={data.housingAllowance} />
+            <AnnexRow label="Medical Allowance" value={data.medicalAllowance} last />
+          </View>
 
-        <View style={styles.letterheadBar}>
-          <Image src={WILLS_FARMS_LETTERHEAD_DATA_URI} style={styles.letterheadLogo} />
-        </View>
+          <Text style={styles.annexSectionLabel}>Deductions</Text>
+          <View style={styles.table}>
+            <AnnexRow label="Social Security Contribution (SSNIT)" value={data.socialSecurityContribution} />
+            <AnnexRow label="Income Tax" value={data.incomeTax} last />
+          </View>
 
-        <Text style={styles.annexTitle}>Annex 1 — Compensation Details</Text>
-        <Text style={styles.annexSubtitle}>
-          {data.candidateName} · {data.roleTitle} · Ref: {data.referenceNumber}
-        </Text>
-
-        <Text style={styles.annexSectionLabel}>Earnings</Text>
-        <View style={styles.table}>
-          <AnnexRow label="Basic Salary" value={data.basicSalaryGhs} />
-          <AnnexRow label="Housing Allowance" value={data.housingAllowance} />
-          <AnnexRow label="Medical Allowance" value={data.medicalAllowance} last />
-        </View>
-
-        <Text style={styles.annexSectionLabel}>Deductions</Text>
-        <View style={styles.table}>
-          <AnnexRow label="Social Security Contribution (SSNIT)" value={data.socialSecurityContribution} />
-          <AnnexRow label="Income Tax" value={data.incomeTax} last />
-        </View>
-
-        <Text style={styles.annexSectionLabel}>Net Payable</Text>
-        <View style={styles.table}>
-          <View style={styles.tableRowNet}>
-            <Text style={styles.tableCellLabelBold}>Net Payable</Text>
-            <Text style={styles.tableCellValueBold}>{data.netPayable || "[HR TO COMPLETE]"}</Text>
+          <Text style={styles.annexSectionLabel}>Net Payable</Text>
+          <View style={styles.table}>
+            <View style={styles.tableRowNet}>
+              <Text style={styles.tableCellLabelBold}>Net Payable</Text>
+              <Text style={styles.tableCellValueBold}>{data.netPayable || "[HR TO COMPLETE]"}</Text>
+            </View>
           </View>
         </View>
 
-        <Text style={styles.footer}>
+        <Text style={styles.footer} fixed>
           Confidential — This letter is intended solely for the named recipient.
         </Text>
       </Page>
