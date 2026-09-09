@@ -37,7 +37,9 @@ import {
   canFillSkillLog,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
+import { hasFullSkillLogAccess } from "@/lib/accessControl";
 import SkillLogDetailModal from "./component/SkillLogDetailModal";
+import SkillLogTemplatesManager from "./component/SkillLogTemplatesManager";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
@@ -439,6 +441,7 @@ export default function SkillLogsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [signOffLog, setSignOffLog] = useState<SkillLog | null>(null);
   const [viewLogId, setViewLogId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"logs" | "manage">("logs");
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -484,6 +487,11 @@ export default function SkillLogsPage() {
         groupPresets,
       )
     : false;
+  // Configuring skill log templates (scope + competency sections) is a
+  // separate, broader concern from filling/reviewing/approving a specific
+  // employee's log — same tier as Manage appraisals: Super Admin, Executive,
+  // or HR only.
+  const canManageTemplates = hasFullSkillLogAccess(accessProfile?.role);
 
   const canApproveLog = (log: SkillLog) =>
     accessProfile
@@ -625,6 +633,49 @@ export default function SkillLogsPage() {
           onClose={() => setSignOffLog(null)}
         />
       )}
+
+      {/* Toggle — manage side only for Super Admin/Executive/HR */}
+      {canManageTemplates && (
+        <div className="flex items-center gap-1 mb-6">
+          <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden bg-white">
+            <button
+              onClick={() => setViewMode("logs")}
+              className={`px-4 py-2 text-sm font-medium transition ${
+                viewMode === "logs"
+                  ? "text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+              style={viewMode === "logs" ? { background: BRAND } : undefined}
+            >
+              Skill Logs
+            </button>
+            <button
+              onClick={() => setViewMode("manage")}
+              className={`px-4 py-2 text-sm font-medium transition ${
+                viewMode === "manage"
+                  ? "text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+              style={viewMode === "manage" ? { background: BRAND } : undefined}
+            >
+              Manage skill logs
+            </button>
+          </div>
+        </div>
+      )}
+
+      {canManageTemplates && viewMode === "manage" ? (
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Manage skill logs</h2>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5 mb-4">
+            Build the skill log form for an exact Site/Business
+            unit/Department/Section/Position/Grade level combination —
+            matched against each employee&apos;s own org placement.
+          </p>
+          <SkillLogTemplatesManager canAdd canEdit />
+        </div>
+      ) : (
+        <>
       {/* ── Header ── */}
       <div className="flex items-start sm:items-center justify-between gap-3 mb-6">
         <div>
@@ -1001,6 +1052,8 @@ export default function SkillLogsPage() {
               </tbody>
             </table>
           </div>
+        </>
+      )}
         </>
       )}
     </div>

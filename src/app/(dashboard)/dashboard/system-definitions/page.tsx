@@ -38,16 +38,12 @@ import type {
 import {
   isEditableApplicationFormModule,
   isEditableOnboardingFormModule,
-  isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
-  isEditableRatingSectionModule,
   isEditableRefereeReferenceModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
 import OptionsEditor from "./components/OptionsEditor";
-import AppraisalGradeTemplatesManager from "./components/AppraisalGradeTemplatesManager";
-import SkillLogTemplatesManager from "./components/SkillLogTemplatesManager";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
@@ -550,48 +546,14 @@ function getModuleSections(
 
   }
 
-  if (isEditableCompetencySectionModule(m.id)) {
-    sections.push({
-      key: "skill-log-scope",
-      label: "Skill log scope",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Skill log scope"
-          description="Build the skill log form for an exact Site/Business unit/Department/Section/Position/Grade level combination — matched against each employee's own org placement."
-        >
-          <SkillLogTemplatesManager canAdd={canAdd} canEdit={canEdit} />
-        </SectionCard>
-      ),
-    });
-  }
+  // Skill log scope and Competency sections moved to a "Manage skill logs"
+  // tab on the Skill Log feature page (dashboard/humanCapital/skillLog),
+  // gated by hasFullSkillLogAccess — no longer configured here.
 
   // Appraisal scope, Rating sections, Rating section weights, and Extra
-  // rules by grade are four related pieces of the same appraisal-form
-  // configuration — combined into one "Appraisal scope" sub-nav entry
-  // rather than four separate clicks, each still gated by its own
-  // isEditable*Module check exactly as before.
-  if (isEditableRatingSectionModule(m.id)) {
-    sections.push({
-      key: "appraisal-scope",
-      label: "Appraisal scope",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Appraisal scope"
-          description="Build the appraisal question set for an exact Site/Business unit/Department/Section/Position/Grade level combination — matched against each employee's own org placement."
-        >
-          <AppraisalGradeTemplatesManager
-            moduleId={m.id}
-            canAdd={canAdd}
-            canEdit={canEdit}
-          />
-        </SectionCard>
-      ),
-    });
-  }
+  // rules by grade moved to a "Manage appraisals" tab on the Appraisal
+  // feature page itself (dashboard/humanCapital/appraisal), gated by
+  // hasFullAppraisalAccess — no longer configured here.
 
   return sections;
 }
@@ -657,6 +619,14 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
   "mod:overview",
   "mod:notifications",
   "mod:system-definitions",
+  // Appraisal scope moved to the "Manage appraisals" tab on the Appraisal
+  // feature page — it was the only section this module ever had here
+  // (Overview is hidden for it too, see HIDE_OVERVIEW_SECTION_MODULE_IDS),
+  // so it would otherwise show as an empty, clickable module row.
+  "mod:appraisal",
+  // Same story: Skill log scope moved to "Manage skill logs" on the Skill
+  // Log feature page — its only section here, Overview already hidden.
+  "mod:skill-log",
 ]);
 
 /** Organizational structure isn't a module-registry group (its two links are
@@ -679,11 +649,6 @@ const COLLAPSIBLE_GROUP_IDS_IN_SYSTEM_DEFINITIONS = new Set<string>([
   "grp:human-capital",
 ]);
 
-/** Stable module id for Recruitment — used to append the Create job posting
- * link into its sub-nav (see the sidebar render below). Never changes even
- * if the module's label is renamed. */
-const RECRUITMENT_MODULE_ID = "mod:recruitment";
-
 export default function SystemDefinitionsPage() {
   const pathname = usePathname();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -701,9 +666,6 @@ export default function SystemDefinitionsPage() {
     });
   const orgStructureActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/organizational-structure",
-  );
-  const createJobPostingActive = !!pathname?.startsWith(
-    "/dashboard/system-definitions/create-job-posting",
   );
   const accessControlActive = !!pathname?.startsWith(
     "/dashboard/system-definitions/access-control",
@@ -914,9 +876,7 @@ export default function SystemDefinitionsPage() {
                     >
                       {groupModules.map((m) => {
                         const ModuleIcon = resolveNavIcon(m.sidebar.icon);
-                        const moduleActive =
-                          selectedModule?.id === m.id ||
-                          (m.id === RECRUITMENT_MODULE_ID && createJobPostingActive);
+                        const moduleActive = selectedModule?.id === m.id;
                         const moduleSections = getModuleSections(
                           m,
                           !!canAdd,
@@ -952,23 +912,6 @@ export default function SystemDefinitionsPage() {
                                 </button>
                               );
                             })}
-                            {/* Create job posting is a full separate page
-                                (its own table/form/tabs), not an inline
-                                section like the others above — so it's a
-                                real link here rather than a section-select
-                                button. */}
-                            {m.id === RECRUITMENT_MODULE_ID && (
-                              <Link
-                                href="/dashboard/system-definitions/create-job-posting"
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                                  createJobPostingActive
-                                    ? "bg-red-50 text-red-600"
-                                    : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
-                                }`}
-                              >
-                                Create job posting
-                              </Link>
-                            )}
                           </CollapsibleNavSection>
                         );
                       })}

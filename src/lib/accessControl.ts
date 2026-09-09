@@ -57,6 +57,16 @@ export function canViewAllAppraisalPeriods(
   return hasBroadElevatedAccessByRoleLabel(role);
 }
 
+/** May configure skill log templates (Manage skill logs tab) — Super Admin,
+ * Executive, or Human Resource. Mirrors hasFullAppraisalAccess; not the same
+ * as canFillSkillLog/canApproveSkillLogRecord, which govern filling out and
+ * signing off an individual employee's log. */
+export function hasFullSkillLogAccess(
+  role: string | null | undefined,
+): boolean {
+  return hasBroadElevatedAccessByRoleLabel(role);
+}
+
 export function canArchiveAppraisal(
   role: string | null | undefined,
   pagePermissionLevels?: Partial<Record<string, "view" | "add" | "edit">> | null,

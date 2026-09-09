@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -39,7 +38,7 @@ import { SectionTextEditor } from "@/components/SectionTextEditor";
 import PostingInterviewSetup, {
   type PostingInterviewSetupHandle,
   type PostingOverviewRow,
-} from "../components/PostingInterviewSetup";
+} from "./PostingInterviewSetup";
 import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
 
 const inputClass =
@@ -47,8 +46,8 @@ const inputClass =
 
 // The org structure mapping cascade (see Org structure mapping set up) —
 // Site is always first, then Business unit, Department, Section, Position
-// in that order. These five are always shown on Create job posting and
-// always required; every other org-structure field is opt-in per posting.
+// in that order. These five are always shown on Add posting and always
+// required; every other org-structure field is opt-in per posting.
 const CHAIN_TABLE_ORDER = ["sites", "business_units", "departments", "sections", "custom_position"];
 
 // Grade level and Salary are also always required — every posting needs
@@ -103,7 +102,16 @@ const emptyForm = (): FormState => ({
   jd_file_public_id: null,
 });
 
-export default function CreateJobPostingPage() {
+/**
+ * The full "Add posting" experience — org-structure fields, JD upload +
+ * AI extract, the content form, and interview setup — plus its own
+ * Active/Archived list with Edit/Archive. Lives inside the Job posting tab
+ * (see CareersTab), reached by its "Add posting" button and returned from
+ * via onBack, rather than as its own System Definitions page. Close,
+ * Republish, and History stay on CareersTab's own list and are untouched
+ * by this panel.
+ */
+export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient();
 
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -129,13 +137,13 @@ export default function CreateJobPostingPage() {
   const groupPresets = groupPresetData?.presets;
   const canView =
     accessProfile &&
-    canPerformModuleAction(accessProfile, "sys:definitions", "view", sessionRole, groupPresets);
+    canPerformModuleAction(accessProfile, "hc:recruitment", "view", sessionRole, groupPresets);
   const canAdd =
     accessProfile &&
-    canPerformModuleAction(accessProfile, "sys:definitions", "add", sessionRole, groupPresets);
+    canPerformModuleAction(accessProfile, "hc:recruitment", "add", sessionRole, groupPresets);
   const canEdit =
     accessProfile &&
-    canPerformModuleAction(accessProfile, "sys:definitions", "edit", sessionRole, groupPresets);
+    canPerformModuleAction(accessProfile, "hc:recruitment", "edit", sessionRole, groupPresets);
 
   // --- Org-structure list types + their items (drives one <select> per list) ---
   const { data: listTypes = [], isLoading: listTypesLoading } = useQuery<OrgCustomListType[]>({
@@ -191,7 +199,7 @@ export default function CreateJobPostingPage() {
   // Department -> Section -> Position) — see Organizational structure ->
   // Org structure mapping set up. That tool is fully general (any list can
   // be added as a level, in any order, e.g. Salary could be mapped too),
-  // but Create job posting only ever treats these five as its always-shown,
+  // but Add posting only ever treats these five as its always-shown,
   // always-required, cascading fields — anything else added to the mapping
   // chain is irrelevant here and simply ignored for this purpose. A level
   // that hasn't been added at all yet, or has been added but has zero
@@ -741,7 +749,7 @@ export default function CreateJobPostingPage() {
       <div className="p-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
           <p className="text-gray-600 text-sm">
-            System Definitions view access is required to open this page.
+            Recruitment view access is required to open this page.
           </p>
         </div>
       </div>
@@ -750,24 +758,25 @@ export default function CreateJobPostingPage() {
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 min-h-full">
-      <Link
-        href="/dashboard/system-definitions"
+      <button
+        type="button"
+        onClick={onBack}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to System Definitions
-      </Link>
+        <ArrowLeft className="w-4 h-4" /> Back to Job posting
+      </button>
 
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Briefcase className="w-5 h-5 text-red-600" />
-            Create job posting
+            Add posting
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
             Publish and edit career postings, including which site, business
             unit, department, and other organizational structure lists they
-            belong to. Closing and republishing a posting still happens on
-            the Recruitment page.
+            belong to. Closing and republishing a posting happens back on
+            the main Job posting screen.
           </p>
           {canEdit && (
             <button
@@ -1340,14 +1349,20 @@ export default function CreateJobPostingPage() {
                           >
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => archiveMutation.mutate({ id: posting.id, archived: true })}
-                            disabled={archiveMutation.isPending}
-                            className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-60"
-                          >
-                            Archive
-                          </button>
+                          {/* A published posting has active applicants and
+                              a live careers-page listing — it must be
+                              closed (back on the Job posting tab) before it
+                              can be archived. */}
+                          {normalizePostingStatus(posting) === "closed" && (
+                            <button
+                              type="button"
+                              onClick={() => archiveMutation.mutate({ id: posting.id, archived: true })}
+                              disabled={archiveMutation.isPending}
+                              className="text-xs font-medium text-gray-500 hover:underline disabled:opacity-60"
+                            >
+                              Archive
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>

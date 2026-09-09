@@ -66,7 +66,6 @@ function labelForItem(items: OrgCustomListItem[] | undefined, id: string | null 
 }
 
 type Props = {
-  moduleId: string;
   canAdd: boolean;
   canEdit: boolean;
 };

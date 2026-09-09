@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Check, X, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { SystemOption } from "@/lib/systemDefinitions";
@@ -44,6 +44,24 @@ const FIELD_TYPES: OnboardingFieldType[] = [
   "application_certificates_view",
   "referee_submissions_view",
 ];
+
+/** Slugifies a Label into a lower snake_case field key, e.g. "Mobile number" -> "mobile_number". */
+function slugifyFieldKey(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** Appends _2, _3, ... if the slugified key collides with another field's key. */
+function generateUniqueFieldKey(label: string, existingKeys: string[]): string {
+  const base = slugifyFieldKey(label) || "field";
+  if (!existingKeys.includes(base)) return base;
+  let n = 2;
+  while (existingKeys.includes(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
 
 type DraftRules = {
   step: OnboardingFieldStep;
@@ -193,17 +211,90 @@ export default function OnboardingFormEditor({
     onError: () => toast.error("Could not remove field."),
   });
 
+  // Drag-to-reorder — same pattern as the Offer letter / HR onboarding
+  // field editors: sort_order drives the order fields appear in on the
+  // live onboarding form, so reordering here directly controls that order.
+  // Only active fields are reorderable; inactive ones are listed separately
+  // per step and untouched by dragging. Reordering shows instantly
+  // (localOrder overrides the server-derived order until the save
+  // completes) while sort_order updates for the affected fields save in
+  // the background via the same PATCH endpoint the rest of this editor
+  // already uses — there's no dedicated bulk-reorder endpoint. sort_order
+  // is only ever compared within a step (fields are always filtered by
+  // step first), so renumbering one step's active fields to 0..n can't
+  // collide with another step's ordering.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<Partial<Record<OnboardingFieldStep, string[]>>>(
+    {},
+  );
+  // Tracks which step a reorder affects, so reorderMutation's onError below
+  // can clear only that step's optimistic order rather than guessing.
+  const affectedStepRef = useRef<OnboardingFieldStep | null>(null);
+
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) => {
+      await Promise.all(
+        updates.map(({ id, sort_order }) =>
+          api.patch(`/system-definitions/options/${encodeURIComponent(id)}`, { sort_order }),
+        ),
+      );
+    },
+    onSuccess: () => invalidate(),
+    onError: () => {
+      toast.error("Could not save the new order.");
+      const step = affectedStepRef.current;
+      if (step) {
+        setLocalOrder((prev) => {
+          const next = { ...prev };
+          delete next[step];
+          return next;
+        });
+      }
+      invalidate();
+    },
+  });
+
   if (moduleId !== RECRUITMENT_MODULE_ID) return null;
 
-  const grouped = ONBOARDING_STEPS.map((step) => ({
-    step,
-    fields: options
-      .filter(
-        (o) =>
-          parseOnboardingFieldRules(o.rules as Record<string, unknown>).step === step,
-      )
-      .sort((a, b) => a.sort_order - b.sort_order),
-  }));
+  // Single interleaved list per step (active + inactive together, in
+  // sort_order), same as before drag-to-reorder was added. Only active
+  // rows are draggable; dropping one renumbers sort_order for the whole
+  // step's list (both active and inactive) to keep everything consistent.
+  const grouped = ONBOARDING_STEPS.map((step) => {
+    const stepOptions = options
+      .filter((o) => parseOnboardingFieldRules(o.rules as Record<string, unknown>).step === step)
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    const order = localOrder[step];
+    const fields = order
+      ? (() => {
+          const byId = new Map(stepOptions.map((o) => [o.id, o]));
+          const ordered = order
+            .map((id) => byId.get(id))
+            .filter((o): o is SystemOption => !!o);
+          const missing = stepOptions.filter((o) => !order.includes(o.id));
+          return [...ordered, ...missing];
+        })()
+      : stepOptions;
+
+    return { step, fields };
+  });
+
+  const handleDrop = (step: OnboardingFieldStep, targetIndex: number) => {
+    const stepGroup = grouped.find((g) => g.step === step);
+    if (!stepGroup) return;
+    const dragIndex = stepGroup.fields.findIndex((f) => f.id === draggingId);
+    setDraggingId(null);
+    if (dragIndex === -1 || dragIndex === targetIndex) return;
+
+    const next = [...stepGroup.fields];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(targetIndex, 0, moved);
+
+    affectedStepRef.current = step;
+    setLocalOrder((prev) => ({ ...prev, [step]: next.map((f) => f.id) }));
+    reorderMutation.mutate(next.map((f, i) => ({ id: f.id, sort_order: i })));
+  };
 
   return (
     <div className="space-y-4">
@@ -220,8 +311,13 @@ export default function OnboardingFormEditor({
 
       {showAdd && canAdd && (
         <FieldDraftForm
+          mode="create"
           label={newLabel}
           draft={newDraft}
+          options={options}
+          existingFieldKeys={options.map(
+            (o) => parseOnboardingFieldRules(o.rules as Record<string, unknown>).fieldKey,
+          )}
           onLabelChange={setNewLabel}
           onDraftChange={setNewDraft}
           onCancel={() => setShowAdd(false)}
@@ -252,22 +348,60 @@ export default function OnboardingFormEditor({
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
               {ONBOARDING_STEP_LABELS[step]}
             </div>
+            {canEdit && fields.filter((f) => f.is_active).length > 1 && (
+              <p className="text-xs text-gray-400 px-3 pt-2">
+                Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this
+                is the order fields appear in on the live onboarding form.
+              </p>
+            )}
             {fields.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-3 py-4">No fields in this step.</p>
             ) : (
               <ul className="divide-y divide-gray-100">
-                {fields.map((option) => {
+                {fields.map((option, index) => {
                   const rules = parseOnboardingFieldRules(
                     option.rules as Record<string, unknown>,
                   );
                   const isEditing = editingId === option.id;
+                  const draggable = canEdit && option.is_active && !isEditing;
 
                   return (
-                    <li key={option.id} className="px-3 py-3">
+                    <li
+                      key={option.id}
+                      draggable={draggable}
+                      onDragStart={() => draggable && setDraggingId(option.id)}
+                      onDragOver={(e) => {
+                        if (draggable) e.preventDefault();
+                      }}
+                      onDrop={() => draggable && handleDrop(step, index)}
+                      onDragEnd={() => setDraggingId(null)}
+                      className={`px-3 py-3 flex gap-2 ${
+                        draggingId === option.id ? "opacity-40" : ""
+                      }`}
+                    >
+                      {draggable && (
+                        <div
+                          className="flex items-start pt-0.5 text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                          title="Drag to reorder"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
                       {isEditing && editDraft && canEdit ? (
                         <FieldDraftForm
+                          mode="edit"
                           label={editLabel}
                           draft={editDraft}
+                          options={options}
+                          existingFieldKeys={options
+                            .filter((o) => o.id !== option.id)
+                            .map(
+                              (o) =>
+                                parseOnboardingFieldRules(o.rules as Record<string, unknown>)
+                                  .fieldKey,
+                            )}
+                          originalFieldKey={rules.fieldKey}
                           onLabelChange={setEditLabel}
                           onDraftChange={setEditDraft}
                           onCancel={() => setEditingId(null)}
@@ -330,6 +464,7 @@ export default function OnboardingFormEditor({
                           )}
                         </div>
                       )}
+                      </div>
                     </li>
                   );
                 })}
@@ -343,16 +478,24 @@ export default function OnboardingFormEditor({
 }
 
 function FieldDraftForm({
+  mode,
   label,
   draft,
+  options,
+  existingFieldKeys,
+  originalFieldKey,
   onLabelChange,
   onDraftChange,
   onCancel,
   onSave,
   saving,
 }: {
+  mode: "create" | "edit";
   label: string;
   draft: DraftRules;
+  options: SystemOption[];
+  existingFieldKeys: string[];
+  originalFieldKey?: string;
   onLabelChange: (v: string) => void;
   onDraftChange: (v: DraftRules) => void;
   onCancel: () => void;
@@ -361,6 +504,78 @@ function FieldDraftForm({
 }) {
   const inputClass =
     "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm";
+
+  // New fields only: keep the auto-generated key in sync with the Label.
+  // Existing fields keep their original key even if the Label is edited,
+  // since other fields' "show when" conditions and already-submitted
+  // onboarding data may reference it by that exact key.
+  useEffect(() => {
+    if (mode !== "create") return;
+    const generated = generateUniqueFieldKey(label, existingFieldKeys);
+    if (generated !== draft.fieldKey) {
+      onDraftChange({ ...draft, fieldKey: generated });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [label, mode]);
+
+  // Sections already used on the currently selected Step, in their existing
+  // display order — lets HR pick a heading instead of retyping it.
+  const sectionsForStep = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    [...options]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .forEach((o) => {
+        const r = parseOnboardingFieldRules(o.rules as Record<string, unknown>);
+        if (r.step === draft.step && r.section && !seen.has(r.section)) {
+          seen.add(r.section);
+          result.push(r.section);
+        }
+      });
+    return result;
+  }, [options, draft.step]);
+
+  // Other fields on the same Step — candidates for "show when field".
+  const showWhenFieldOptions = useMemo(() => {
+    return [...options]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((o) => ({
+        option: o,
+        rules: parseOnboardingFieldRules(o.rules as Record<string, unknown>),
+      }))
+      .filter(
+        ({ rules }) =>
+          rules.step === draft.step &&
+          rules.fieldKey &&
+          rules.fieldKey !== originalFieldKey,
+      )
+      .map(({ option, rules }) => ({ fieldKey: rules.fieldKey, label: option.label }));
+  }, [options, draft.step, originalFieldKey]);
+
+  // The field currently picked as "show when field", if any — its type and
+  // options determine what "Value" choices make sense.
+  const showWhenTargetRules = useMemo(() => {
+    if (!draft.showWhenField) return undefined;
+    const target = options.find(
+      (o) =>
+        parseOnboardingFieldRules(o.rules as Record<string, unknown>).fieldKey ===
+        draft.showWhenField,
+    );
+    return target
+      ? parseOnboardingFieldRules(target.rules as Record<string, unknown>)
+      : undefined;
+  }, [options, draft.showWhenField]);
+
+  const valueChoices: { value: string; label: string }[] | null = !showWhenTargetRules
+    ? null
+    : showWhenTargetRules.fieldType === "select"
+      ? (showWhenTargetRules.options ?? []).map((o) => ({ value: o, label: o }))
+      : showWhenTargetRules.fieldType === "checkbox"
+        ? [
+            { value: "true", label: "Checked" },
+            { value: "false", label: "Unchecked" },
+          ]
+        : null;
 
   return (
     <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-xl p-3">
@@ -371,21 +586,35 @@ function FieldDraftForm({
         </label>
         <label className="block sm:col-span-2">
           <span className="text-xs text-gray-500">Section heading (optional)</span>
-          <input
+          <select
             className={inputClass}
-            placeholder="e.g. A. Personal information"
-            value={draft.section}
-            onChange={(e) => onDraftChange({ ...draft, section: e.target.value })}
-          />
+            value={sectionsForStep.includes(draft.section) ? draft.section : "__new__"}
+            onChange={(e) => {
+              const v = e.target.value;
+              onDraftChange({ ...draft, section: v === "__new__" ? "" : v });
+            }}
+          >
+            <option value="__new__">+ Add new section</option>
+            {sectionsForStep.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {!sectionsForStep.includes(draft.section) && (
+            <input
+              className={`${inputClass} mt-1.5`}
+              placeholder="e.g. A. Personal information"
+              value={draft.section}
+              onChange={(e) => onDraftChange({ ...draft, section: e.target.value })}
+            />
+          )}
         </label>
         <label className="block">
-          <span className="text-xs text-gray-500">Field key (dot path)</span>
-          <input
-            className={inputClass}
-            placeholder="personal.mobile"
-            value={draft.fieldKey}
-            onChange={(e) => onDraftChange({ ...draft, fieldKey: e.target.value })}
-          />
+          <span className="text-xs text-gray-500">Field key (auto-generated)</span>
+          <div className={`${inputClass} bg-gray-100 text-gray-500`}>
+            {draft.fieldKey || "—"}
+          </div>
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Step</span>
@@ -468,11 +697,20 @@ function FieldDraftForm({
       <div className="grid sm:grid-cols-3 gap-2">
         <label className="block">
           <span className="text-xs text-gray-500">Show when field (optional)</span>
-          <input
+          <select
             className={inputClass}
             value={draft.showWhenField}
-            onChange={(e) => onDraftChange({ ...draft, showWhenField: e.target.value })}
-          />
+            onChange={(e) =>
+              onDraftChange({ ...draft, showWhenField: e.target.value, showWhenValue: "" })
+            }
+          >
+            <option value="">— None —</option>
+            {showWhenFieldOptions.map((o) => (
+              <option key={o.fieldKey} value={o.fieldKey}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Condition</span>
@@ -492,11 +730,28 @@ function FieldDraftForm({
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">Value</span>
-          <input
-            className={inputClass}
-            value={draft.showWhenValue}
-            onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
-          />
+          {valueChoices ? (
+            <select
+              className={inputClass}
+              value={draft.showWhenValue}
+              onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
+            >
+              <option value="">Select…</option>
+              {valueChoices.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={inputClass}
+              disabled={!draft.showWhenField}
+              placeholder={draft.showWhenField ? "Enter the exact value" : "Select a field first"}
+              value={draft.showWhenValue}
+              onChange={(e) => onDraftChange({ ...draft, showWhenValue: e.target.value })}
+            />
+          )}
         </label>
       </div>
 
