@@ -256,36 +256,38 @@ export default function OnboardingFormEditor({
 
   if (moduleId !== RECRUITMENT_MODULE_ID) return null;
 
+  // Single interleaved list per step (active + inactive together, in
+  // sort_order), same as before drag-to-reorder was added. Only active
+  // rows are draggable; dropping one renumbers sort_order for the whole
+  // step's list (both active and inactive) to keep everything consistent.
   const grouped = ONBOARDING_STEPS.map((step) => {
     const stepOptions = options
       .filter((o) => parseOnboardingFieldRules(o.rules as Record<string, unknown>).step === step)
       .sort((a, b) => a.sort_order - b.sort_order);
-    const stepActive = stepOptions.filter((o) => o.is_active);
-    const stepInactive = stepOptions.filter((o) => !o.is_active);
 
     const order = localOrder[step];
-    const activeFields = order
+    const fields = order
       ? (() => {
-          const byId = new Map(stepActive.map((o) => [o.id, o]));
+          const byId = new Map(stepOptions.map((o) => [o.id, o]));
           const ordered = order
             .map((id) => byId.get(id))
             .filter((o): o is SystemOption => !!o);
-          const missing = stepActive.filter((o) => !order.includes(o.id));
+          const missing = stepOptions.filter((o) => !order.includes(o.id));
           return [...ordered, ...missing];
         })()
-      : stepActive;
+      : stepOptions;
 
-    return { step, activeFields, inactiveFields: stepInactive };
+    return { step, fields };
   });
 
   const handleDrop = (step: OnboardingFieldStep, targetIndex: number) => {
     const stepGroup = grouped.find((g) => g.step === step);
     if (!stepGroup) return;
-    const dragIndex = stepGroup.activeFields.findIndex((f) => f.id === draggingId);
+    const dragIndex = stepGroup.fields.findIndex((f) => f.id === draggingId);
     setDraggingId(null);
     if (dragIndex === -1 || dragIndex === targetIndex) return;
 
-    const next = [...stepGroup.activeFields];
+    const next = [...stepGroup.fields];
     const [moved] = next.splice(dragIndex, 1);
     next.splice(targetIndex, 0, moved);
 
@@ -341,27 +343,27 @@ export default function OnboardingFormEditor({
           <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
         </div>
       ) : (
-        grouped.map(({ step, activeFields, inactiveFields }) => (
+        grouped.map(({ step, fields }) => (
           <div key={step} className="border border-gray-100 rounded-xl overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-700">
               {ONBOARDING_STEP_LABELS[step]}
             </div>
-            {canEdit && activeFields.length > 1 && (
+            {canEdit && fields.filter((f) => f.is_active).length > 1 && (
               <p className="text-xs text-gray-400 px-3 pt-2">
                 Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this
                 is the order fields appear in on the live onboarding form.
               </p>
             )}
-            {activeFields.length === 0 && inactiveFields.length === 0 ? (
+            {fields.length === 0 ? (
               <p className="text-xs text-gray-400 italic px-3 py-4">No fields in this step.</p>
             ) : (
               <ul className="divide-y divide-gray-100">
-                {activeFields.map((option, index) => {
+                {fields.map((option, index) => {
                   const rules = parseOnboardingFieldRules(
                     option.rules as Record<string, unknown>,
                   );
                   const isEditing = editingId === option.id;
-                  const draggable = canEdit && !isEditing;
+                  const draggable = canEdit && option.is_active && !isEditing;
 
                   return (
                     <li
@@ -377,7 +379,7 @@ export default function OnboardingFormEditor({
                         draggingId === option.id ? "opacity-40" : ""
                       }`}
                     >
-                      {draggable && !isEditing && (
+                      {draggable && (
                         <div
                           className="flex items-start pt-0.5 text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
                           title="Drag to reorder"
@@ -425,7 +427,12 @@ export default function OnboardingFormEditor({
                       ) : (
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{option.label}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {option.label}
+                              {!option.is_active && (
+                                <span className="ml-2 text-xs text-gray-400">(inactive)</span>
+                              )}
+                            </p>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {rules.section ? `${rules.section} · ` : ""}
                               Key: {rules.fieldKey} · Type: {rules.fieldType}
@@ -433,7 +440,7 @@ export default function OnboardingFormEditor({
                               {rules.colSpan === "half" ? " · Half width" : ""}
                             </p>
                           </div>
-                          {canEdit && (
+                          {canEdit && option.is_active && (
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
@@ -458,25 +465,6 @@ export default function OnboardingFormEditor({
                         </div>
                       )}
                       </div>
-                    </li>
-                  );
-                })}
-                {inactiveFields.map((option) => {
-                  const rules = parseOnboardingFieldRules(
-                    option.rules as Record<string, unknown>,
-                  );
-                  return (
-                    <li key={option.id} className="px-3 py-3 opacity-60">
-                      <p className="text-sm font-medium text-gray-900">
-                        {option.label}
-                        <span className="ml-2 text-xs text-gray-400">(inactive)</span>
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {rules.section ? `${rules.section} · ` : ""}
-                        Key: {rules.fieldKey} · Type: {rules.fieldType}
-                        {rules.required ? " · Required" : ""}
-                        {rules.colSpan === "half" ? " · Half width" : ""}
-                      </p>
                     </li>
                   );
                 })}
