@@ -18,12 +18,27 @@ export type DisqualifierDef = {
   label: string;
 };
 
+/**
+ * A custom stage reuses one of the two existing item formats rather than
+ * inventing a third UI — "questions" gives it its own Stage-1-style bank of
+ * { id, section, question, lookFor } items scored via RatingRow the same
+ * way; "practicals" gives it a Stage-2-style bank of
+ * { id, section, title, observe } items. Fully wired: its own panel setup
+ * (date/location/invites), its own fill-in form, and its own AI
+ * analysis + Pass/Reject review gate before the interview moves on — see
+ * panelInterview.ts and InterviewPanelForm.tsx.
+ */
 export type ExtraInterviewStageDef = {
   id: string;
   label: string;
   duration?: string;
-  /** Reserved for future recruitment wiring (panel setup + review). */
+  format: "questions" | "practicals";
+  items: InterviewQuestion[] | ScenarioItem[];
+  /** @deprecated no longer meaningful — every custom stage always gets
+   * panel setup + a review gate now. Kept only so old stored data
+   * (recorded before this was wired up) still parses without error. */
   hasPanelSetup?: boolean;
+  /** @deprecated see hasPanelSetup. */
   hasReviewStep?: boolean;
 };
 
@@ -202,12 +217,17 @@ function normalizeExtraStages(raw: unknown): ExtraInterviewStageDef[] | undefine
     if (!id) id = slugifyId(label) || `stage_${out.length + 1}`;
     while (usedIds.has(id)) id = `${id}_${out.length + 1}`;
     usedIds.add(id);
+    const format: "questions" | "practicals" = row.format === "practicals" ? "practicals" : "questions";
+    const items =
+      format === "practicals"
+        ? normalizeScenarios(row.items) ?? []
+        : normalizeQuestions(row.items) ?? [];
     out.push({
       id,
       label,
       duration: row.duration != null ? String(row.duration).trim() : undefined,
-      hasPanelSetup: row.hasPanelSetup === true,
-      hasReviewStep: row.hasReviewStep === true,
+      format,
+      items,
     });
   }
 
