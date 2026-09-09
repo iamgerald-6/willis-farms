@@ -7,17 +7,12 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
-import {
-  RATING_LABELS,
-  type InterviewQuestion,
-  type ScenarioItem,
-} from "@/lib/careers/interviewFormConfigs";
+import { RATING_LABELS } from "@/lib/careers/interviewFormConfigs";
 import {
   groupBySection,
   normalizePostingInterviewSetup,
   type PostingInterviewSetupContent,
 } from "@/lib/careers/postingInterviewSetup";
-import type { ExtraInterviewStageDef } from "@/lib/systemDefinitions/interviewGuidesConfig";
 import { DEFAULT_INTERVIEW_EVALUATION_LABELS } from "@/lib/systemDefinitions/interviewEvaluationConfig";
 import {
   INTERVIEW_BENCHMARK_FIELD_DEFS,
@@ -783,238 +778,67 @@ function PostingInterviewSetup(
       {activeTab === "extra_stages" && (
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Add extra interview stages beyond Stage 1 and Stage 2, run one
-            after another in the order below. Each one is fully wired into
-            the interview process — its own panel setup and invites, its
-            own fill-in form, and its own AI analysis + Pass/Reject review
-            before moving on — the same as Stage 1 and Stage 2. Pick
-            whichever item format fits: "Questions" gives it a Stage
-            1-style bank of structured questions; "Practicals" gives it a
-            Stage 2-style bank of scenarios/observations.
+            Define additional interview stages for this posting.
           </p>
-
-          {setup.extraStages.length === 0 ? (
-            <p className="text-sm text-gray-400 italic py-2">No extra stages yet.</p>
-          ) : (
-            <div className="space-y-5">
-              {setup.extraStages.map((stage, stageIndex) => {
-                const patchStage = (updates: Partial<ExtraInterviewStageDef>) => {
-                  const next = [...setup.extraStages];
-                  next[stageIndex] = { ...stage, ...updates } as ExtraInterviewStageDef;
-                  patchSetup({ extraStages: next });
-                };
-                const removeStage = () => {
-                  patchSetup({
-                    extraStages: setup.extraStages.filter((_, i) => i !== stageIndex),
-                  });
-                };
-                const setFormat = (format: "questions" | "practicals") => {
-                  if (format === stage.format) return;
-                  // Switching format starts that stage's item bank fresh —
-                  // question rows and scenario rows have different shapes,
-                  // so there's nothing sensible to carry over.
-                  patchStage({ format, items: [] });
-                };
-
-                return (
-                  <div key={stage.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <input
-                        value={stage.id}
-                        onChange={(e) => patchStage({ id: e.target.value })}
-                        className="w-28 border border-gray-200 rounded px-2 py-1 text-xs"
-                        readOnly={!allowEdit}
-                      />
-                      <input
-                        value={stage.label}
-                        onChange={(e) => patchStage({ label: e.target.value })}
-                        placeholder="Stage label"
-                        className="flex-1 min-w-[140px] border border-gray-200 rounded px-2 py-1 text-sm font-medium"
-                        readOnly={!allowEdit}
-                      />
-                      <input
-                        value={stage.duration ?? ""}
-                        onChange={(e) => patchStage({ duration: e.target.value })}
-                        placeholder="Duration"
-                        className="w-32 border border-gray-200 rounded px-2 py-1 text-sm"
-                        readOnly={!allowEdit}
-                      />
-                      {allowEdit && (
-                        <button
-                          type="button"
-                          onClick={removeStage}
-                          className="text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-xs">
-                      <button
-                        type="button"
-                        disabled={!allowEdit}
-                        onClick={() => setFormat("questions")}
-                        className={`px-3 py-1.5 font-medium transition-colors ${
-                          stage.format === "questions"
-                            ? "bg-red-600 text-white"
-                            : "bg-white text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        Questions
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!allowEdit}
-                        onClick={() => setFormat("practicals")}
-                        className={`px-3 py-1.5 font-medium transition-colors border-l border-gray-200 ${
-                          stage.format === "practicals"
-                            ? "bg-red-600 text-white"
-                            : "bg-white text-gray-500 hover:bg-gray-50"
-                        }`}
-                      >
-                        Practicals
-                      </button>
-                    </div>
-
-                    {stage.format === "practicals" ? (
-                      <ListEditor
-                        title={`${stage.label || "Stage"} — practicals`}
-                        allowEdit={allowEdit}
-                        items={stage.items as ScenarioItem[]}
-                        onChange={(items) => patchStage({ items })}
-                        renderRow={(item, onPatch, onRemove) => (
-                          <div className="space-y-2 border border-gray-100 rounded-lg p-3">
-                            <div className="flex gap-2">
-                              <input
-                                value={item.id}
-                                onChange={(e) => onPatch({ id: e.target.value })}
-                                className="w-16 border border-gray-200 rounded px-2 py-1 text-xs"
-                                readOnly={!allowEdit}
-                              />
-                              <input
-                                value={item.section}
-                                onChange={(e) => onPatch({ section: e.target.value })}
-                                placeholder="Section"
-                                className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm"
-                                readOnly={!allowEdit}
-                              />
-                              {allowEdit && (
-                                <button
-                                  type="button"
-                                  onClick={onRemove}
-                                  className="text-gray-400 hover:text-red-600"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                            <input
-                              value={item.title}
-                              onChange={(e) => onPatch({ title: e.target.value })}
-                              placeholder="Practical title"
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm"
-                              readOnly={!allowEdit}
-                            />
-                            <textarea
-                              value={item.observe}
-                              onChange={(e) => onPatch({ observe: e.target.value })}
-                              placeholder="What to observe"
-                              rows={2}
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm"
-                              readOnly={!allowEdit}
-                            />
-                          </div>
-                        )}
-                        onAdd={() => ({
-                          id: `${stage.id}_P${(stage.items as ScenarioItem[]).length + 1}`,
-                          section: "",
-                          title: "",
-                          observe: "",
-                        })}
-                      />
-                    ) : (
-                      <ListEditor
-                        title={`${stage.label || "Stage"} — questions`}
-                        allowEdit={allowEdit}
-                        items={stage.items as InterviewQuestion[]}
-                        onChange={(items) => patchStage({ items })}
-                        renderRow={(item, onPatch, onRemove) => (
-                          <div className="space-y-2 border border-gray-100 rounded-lg p-3">
-                            <div className="flex gap-2">
-                              <input
-                                value={item.id}
-                                onChange={(e) => onPatch({ id: e.target.value })}
-                                className="w-16 border border-gray-200 rounded px-2 py-1 text-xs"
-                                readOnly={!allowEdit}
-                              />
-                              <input
-                                value={item.section}
-                                onChange={(e) => onPatch({ section: e.target.value })}
-                                placeholder="Section"
-                                className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm"
-                                readOnly={!allowEdit}
-                              />
-                              {allowEdit && (
-                                <button
-                                  type="button"
-                                  onClick={onRemove}
-                                  className="text-gray-400 hover:text-red-600"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                            <textarea
-                              value={item.question}
-                              onChange={(e) => onPatch({ question: e.target.value })}
-                              placeholder="Question"
-                              rows={2}
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm"
-                              readOnly={!allowEdit}
-                            />
-                            <textarea
-                              value={item.lookFor}
-                              onChange={(e) => onPatch({ lookFor: e.target.value })}
-                              placeholder="Look for"
-                              rows={2}
-                              className="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm"
-                              readOnly={!allowEdit}
-                            />
-                          </div>
-                        )}
-                        onAdd={() => ({
-                          id: `${stage.id}_Q${(stage.items as InterviewQuestion[]).length + 1}`,
-                          section: "",
-                          question: "",
-                          lookFor: "",
-                        })}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {allowEdit && (
-            <button
-              type="button"
-              onClick={() => {
-                const n = setup.extraStages.length + 3;
-                const id = `stage_${n}`;
-                patchSetup({
-                  extraStages: [
-                    ...setup.extraStages,
-                    { id, label: `Stage ${n}`, format: "questions", items: [] },
-                  ],
-                });
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-600 text-white hover:bg-red-700"
-            >
-              + Add stage
-            </button>
-          )}
+          <ListEditor
+            title="Extra stages"
+            allowEdit={allowEdit}
+            items={setup.extraStages}
+            onChange={(extraStages) => patchSetup({ extraStages })}
+            renderRow={(item, onPatch, onRemove) => (
+              <div className="flex flex-wrap gap-2 items-center border border-gray-100 rounded-lg p-3">
+                <input
+                  value={item.id}
+                  onChange={(e) => onPatch({ id: e.target.value })}
+                  className="w-24 border border-gray-200 rounded px-2 py-1 text-xs"
+                  readOnly={!allowEdit}
+                />
+                <input
+                  value={item.label}
+                  onChange={(e) => onPatch({ label: e.target.value })}
+                  placeholder="Stage label"
+                  className="flex-1 min-w-[140px] border border-gray-200 rounded px-2 py-1 text-sm"
+                  readOnly={!allowEdit}
+                />
+                <input
+                  value={item.duration ?? ""}
+                  onChange={(e) => onPatch({ duration: e.target.value })}
+                  placeholder="Duration"
+                  className="w-32 border border-gray-200 rounded px-2 py-1 text-sm"
+                  readOnly={!allowEdit}
+                />
+                <label className="text-xs flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={item.hasPanelSetup === true}
+                    onChange={(e) => onPatch({ hasPanelSetup: e.target.checked })}
+                    disabled={!allowEdit}
+                  />
+                  Panel setup
+                </label>
+                <label className="text-xs flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={item.hasReviewStep === true}
+                    onChange={(e) => onPatch({ hasReviewStep: e.target.checked })}
+                    disabled={!allowEdit}
+                  />
+                  Review step
+                </label>
+                {allowEdit && (
+                  <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
+            onAdd={() => ({
+              id: `stage_${setup.extraStages.length + 1}`,
+              label: `Stage ${setup.extraStages.length + 1}`,
+              hasPanelSetup: true,
+              hasReviewStep: true,
+            })}
+          />
         </div>
       )}
 
