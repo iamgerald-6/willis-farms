@@ -104,7 +104,7 @@ export default function AuditLogDrawer({
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-sm font-semibold text-gray-900">Created</p>
                   <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full">
-                    AI extracted
+                    WillsFarms Intel extracted
                   </span>
                 </div>
               ) : (

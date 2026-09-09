@@ -168,13 +168,13 @@ export async function POST(req: NextRequest) {
 
     const toolBlock = response.content.find((b) => b.type === "tool_use");
     if (!toolBlock || toolBlock.type !== "tool_use") {
-      return NextResponse.json({ error: "AI did not return an offer letter." }, { status: 502 });
+      return NextResponse.json({ error: "WillsFarms Intel did not return an offer letter." }, { status: 502 });
     }
 
     const input = toolBlock.input as { letter_body?: string };
     const letterBody = input.letter_body?.trim();
     if (!letterBody) {
-      return NextResponse.json({ error: "AI returned an empty offer letter." }, { status: 502 });
+      return NextResponse.json({ error: "WillsFarms Intel returned an empty offer letter." }, { status: 502 });
     }
 
     const now = new Date().toISOString();

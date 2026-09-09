@@ -403,10 +403,10 @@ export default function InterviewPanelForm({
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
-      toast.success("AI analysis ready.");
+      toast.success("WillsFarms Intel analysis ready.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+      toast.error(error?.response?.data?.error ?? "WillsFarms Intel analysis failed.");
     },
   });
 
@@ -426,10 +426,10 @@ export default function InterviewPanelForm({
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
-      toast.success("AI analysis ready.");
+      toast.success("WillsFarms Intel analysis ready.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "AI analysis failed.");
+      toast.error(error?.response?.data?.error ?? "WillsFarms Intel analysis failed.");
     },
   });
 
@@ -692,7 +692,7 @@ export default function InterviewPanelForm({
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col gap-2 shrink-0">
             {!formData.summary?.ai_analysis && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                Generate the AI analysis above before finishing.
+                Generate the WillsFarms Intel analysis above before finishing.
               </p>
             )}
             <div className="flex flex-col sm:flex-row gap-2">

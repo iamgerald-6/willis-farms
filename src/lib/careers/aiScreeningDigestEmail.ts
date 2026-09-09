@@ -38,7 +38,7 @@ export function buildAiScreeningDigestEmail(
     `Here's yesterday's careers portal summary (${dateLabel}):`,
     "",
     `Total applications: ${total}`,
-    `Shortlisted by AI: ${shortlisted}`,
+    `Shortlisted by WillsFarms Intel: ${shortlisted}`,
     `Sent to Rejects for review: ${underReview}`,
     pendingLine,
     "",

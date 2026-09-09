@@ -128,7 +128,7 @@ export const INTERVIEW_BENCHMARK_FIELD_DEFS: {
     key: "hireMin",
     label: "Hire minimum",
     description:
-      "Minimum combined score for HR to confirm hire. AI must not recommend hire below this.",
+      "Minimum combined score for HR to confirm hire. WillsFarms Intel must not recommend hire below this.",
   },
   {
     key: "holdMin",
@@ -140,13 +140,13 @@ export const INTERVIEW_BENCHMARK_FIELD_DEFS: {
     key: "stage1AdvanceMin",
     label: "Stage 1 → Stage 2",
     description:
-      "Minimum Stage 1 average for AI to recommend advancing to Stage 2.",
+      "Minimum Stage 1 average for WillsFarms Intel to recommend advancing to Stage 2.",
   },
   {
     key: "stage2AdvanceMin",
     label: "Stage 2 → Evaluation",
     description:
-      "Minimum Stage 2 average for AI to support proceeding to final evaluation.",
+      "Minimum Stage 2 average for WillsFarms Intel to support proceeding to final evaluation.",
   },
 ];
 

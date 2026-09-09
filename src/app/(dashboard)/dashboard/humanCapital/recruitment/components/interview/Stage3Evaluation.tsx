@@ -354,7 +354,7 @@ export default function Stage3Evaluation({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" />
-            AI analysis & recommendation
+            WillsFarms Intel analysis & recommendation
           </p>
           {!readOnly && onGenerateAnalysis && (
             <button
@@ -371,7 +371,7 @@ export default function Stage3Evaluation({
 
         {!readOnly && !allDisqualifiersAnswered && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            Answer every item in the critical concerns checklist above (yes or no) before generating the AI analysis.
+            Answer every item in the critical concerns checklist above (yes or no) before generating the WillsFarms Intel analysis.
           </p>
         )}
 
@@ -386,7 +386,7 @@ export default function Stage3Evaluation({
                   RECOMMENDATION_CLASSES[formData.summary.ai_recommendation ?? "hold"]
                 }`}
               >
-                AI recommends: {RECOMMENDATION_LABELS[formData.summary.ai_recommendation ?? "hold"]}
+                WillsFarms Intel recommends: {RECOMMENDATION_LABELS[formData.summary.ai_recommendation ?? "hold"]}
               </span>
               {formData.summary.ai_generated_at && (
                 <span className="text-xs text-purple-500">
@@ -400,7 +400,7 @@ export default function Stage3Evaluation({
           </>
         ) : (
           <p className="text-xs text-purple-700">
-            Get a quick AI read of the full Stage 1 + Stage 2 record before deciding.
+            Get a quick WillsFarms Intel read of the full Stage 1 + Stage 2 record before deciding.
           </p>
         )}
       </div>

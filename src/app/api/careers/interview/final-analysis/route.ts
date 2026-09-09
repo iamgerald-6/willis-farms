@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
         : "hold";
 
     if (!analysis) {
-      return NextResponse.json({ error: "AI did not return an analysis." }, { status: 502 });
+      return NextResponse.json({ error: "WillsFarms Intel did not return an analysis." }, { status: 502 });
     }
 
     const updatedFormData = {

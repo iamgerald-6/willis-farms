@@ -91,7 +91,7 @@ export function validateHrStatusChange(
     return "This application status cannot be changed manually.";
   }
   if (allowed.length === 0) {
-    return "Run AI shortlisting before changing status.";
+    return "Run WillsFarms Intel shortlisting before changing status.";
   }
   if (!allowed.includes(nextStatus)) {
     return `Cannot change status from ${STATUS_LABELS[application.status]} to ${STATUS_LABELS[nextStatus]}.`;

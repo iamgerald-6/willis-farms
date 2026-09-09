@@ -73,7 +73,12 @@ export function canViewSkillLogRecord(
   const empId = employeeId(log);
   const supId = supervisorId(log);
 
-  if (empId === userId || supId === userId) return true;
+  // Filler always sees their own drafts, submissions, and signed-off logs.
+  if (supId === userId) return true;
+
+  // The employee (supervisee) only sees the log after Executive sign-off —
+  // not while it is still a draft or sitting in the submitted queue.
+  if (empId === userId) return log.status === "signed_off";
 
   if (
     (log.status === "submitted" || log.status === "signed_off") &&

@@ -84,7 +84,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           <p>
             ${
               hasBothCopies
-                ? "Both the AI-generated report and HR's edited version are attached as PDFs."
+                ? "Both the WillsFarms Intel-generated report and HR's edited version are attached as PDFs."
                 : "The full hiring summary report is attached as a PDF."
             }
           </p>
@@ -92,7 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         </div>
       `,
       text: hasBothCopies
-        ? `Role hiring summary for ${row.role_title} is attached — both the AI-generated version and HR's edited version.`
+        ? `Role hiring summary for ${row.role_title} is attached — both the WillsFarms Intel-generated version and HR's edited version.`
         : `Role hiring summary for ${row.role_title} is attached.`,
       attachments,
     });

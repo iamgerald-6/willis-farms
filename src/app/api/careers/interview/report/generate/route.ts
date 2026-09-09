@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
 
     const executiveSummary = typeof result.executive_summary === "string" ? result.executive_summary : "";
     if (!executiveSummary) {
-      return NextResponse.json({ error: "AI did not return a report." }, { status: 502 });
+      return NextResponse.json({ error: "WillsFarms Intel did not return a report." }, { status: 502 });
     }
 
     const aiCompetencies = Array.isArray(result.core_competencies)

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireUserManagementAccess, jsonForbidden } from "@/lib/apiRequestAuth";
+import {
+  EMPTY_ORG_MAP_ROWS,
+  ORG_MAP_TABLES,
+  type OrgMapKey,
+  type OrgMapRows,
+} from "@/lib/organizationalStructureMapping";
 
 /**
  * The 6 fixed org-structure lists an employee's placement can be set from —
@@ -26,10 +32,6 @@ const BASE_PLACEMENT_LISTS: { field: string; tableName: string }[] = [
  * (or the matching users.* column, see docs/access-control/users-org-
  * placement-user-role.sql) doesn't exist yet.
  */
-const CUSTOM_PLACEMENT_LIST_LABELS: { field: string; label: string }[] = [
-  { field: "user_role_id", label: "user role" },
-];
-
 export async function GET(req: NextRequest) {
   const caller = await requireUserManagementAccess(req, "view");
   if (!caller) {
@@ -46,19 +48,30 @@ export async function GET(req: NextRequest) {
 
   const { data: allListTypes } = await supabaseAdmin
     .from("org_custom_list_types")
-    .select("id, label, singular, table_name");
+    .select("id, label, singular, table_name, job_posting_column");
 
   const placementLists = [...BASE_PLACEMENT_LISTS];
-  for (const custom of CUSTOM_PLACEMENT_LIST_LABELS) {
-    const match = (allListTypes ?? []).find((row) => {
-      const name = ((row.singular as string) || (row.label as string) || "")
-        .trim()
-        .toLowerCase();
-      return name === custom.label;
+  const userRoleList = (allListTypes ?? []).find((row) => {
+    const name = ((row.singular as string) || (row.label as string) || "")
+      .trim()
+      .toLowerCase();
+    const column = (
+      (row as { job_posting_column?: string | null }).job_posting_column ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    return (
+      name === "user role" ||
+      name === "supervisory role" ||
+      column === "supervisory_role_id" ||
+      column === "user_role_id"
+    );
+  });
+  if (userRoleList) {
+    placementLists.push({
+      field: "user_role_id",
+      tableName: userRoleList.table_name as string,
     });
-    if (match) {
-      placementLists.push({ field: custom.field, tableName: match.table_name as string });
-    }
   }
 
   const labelByTable = new Map(
@@ -88,5 +101,11 @@ export async function GET(req: NextRequest) {
     }),
   );
 
-  return NextResponse.json({ data: lists });
+  const maps: OrgMapRows = { ...EMPTY_ORG_MAP_ROWS };
+  for (const key of Object.keys(ORG_MAP_TABLES) as OrgMapKey[]) {
+    const { data: rows } = await supabaseAdmin.from(ORG_MAP_TABLES[key]).select("*");
+    maps[key] = (rows ?? []) as OrgMapRows[OrgMapKey];
+  }
+
+  return NextResponse.json({ data: lists, maps });
 }

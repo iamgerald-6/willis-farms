@@ -122,7 +122,7 @@ export default function Stage1ReviewStep({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" />
-            AI analysis & recommendation
+            WillsFarms Intel analysis & recommendation
           </p>
           {!readOnly && ready && onGenerateAnalysis && (
             <button
@@ -150,7 +150,7 @@ export default function Stage1ReviewStep({
                     : "bg-green-100 text-green-800"
                 }`}
               >
-                AI recommends:{" "}
+                WillsFarms Intel recommends:{" "}
                 {formData.stage1_review.ai_recommendation === "reject"
                   ? "Reject"
                   : "Advance to Stage 2"}
@@ -171,7 +171,7 @@ export default function Stage1ReviewStep({
           </p>
         ) : (
           <p className="text-xs text-purple-700">
-            Get a quick AI read of everyone&apos;s scores and notes before deciding.
+            Get a quick WillsFarms Intel read of everyone&apos;s scores and notes before deciding.
           </p>
         )}
       </div>

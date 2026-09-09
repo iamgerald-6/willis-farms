@@ -400,12 +400,12 @@ export default function DocumentExtractionModal({
                   <p className="text-sm text-gray-500 mb-4">
                     Upload one or more related documents — a permit, licence,
                     regulatory document, or a photo/scan (including handwritten
-                    pages). If you upload more than one, Claude reads them
+                    pages). If you upload more than one, WillsFarms Intel reads them
                     together as a single set (e.g. a policy and a separate
                     document describing it) instead of one at a time. Up to{" "}
                     {MAX_FILES} at once. Each document is read in full — a PDF
                     longer than {MAX_DOCUMENT_PAGES} pages, or one with too many
-                    obligations for Claude to get through in one pass, will
+                    obligations for WillsFarms Intel to get through in one pass, will
                     instead ask you to pick which pages to read. You review
                     and edit the proposed tasks before anything is saved.
                   </p>
@@ -574,7 +574,7 @@ export default function DocumentExtractionModal({
               <p className="text-sm text-gray-500 mb-1">
                 {selectPagesReason === "pages"
                   ? `${pendingBatch.length > 1 ? "One of these documents is" : "This document is"} longer than ${MAX_DOCUMENT_PAGES} pages.`
-                  : `${pendingBatch.length > 1 ? "These documents have" : "This document has"} too many obligations for Claude to read in one pass.`}
+                  : `${pendingBatch.length > 1 ? "These documents have" : "This document has"} too many obligations for WillsFarms Intel to read in one pass.`}
               </p>
               <p className="text-sm text-gray-500 mb-4">
                 Pick up to {MAX_EXTRACTION_PAGES} pages per PDF below, then try again — anything

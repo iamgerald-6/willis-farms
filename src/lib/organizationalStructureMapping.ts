@@ -81,6 +81,35 @@ export function parentOrgTable(tableName: string): OrgScopeTable | undefined {
   return idx > 0 ? ORG_SCOPE_CHAIN[idx - 1] : undefined;
 }
 
+export function orgSelectionsFromPlacement(placement: {
+  site_id?: string | null;
+  business_unit_id?: string | null;
+  department_id?: string | null;
+  section_id?: string | null;
+  position_id?: string | null;
+  grade_level_id?: string | null;
+}): Record<string, string | undefined> {
+  return {
+    sites: placement.site_id ?? undefined,
+    business_units: placement.business_unit_id ?? undefined,
+    departments: placement.department_id ?? undefined,
+    sections: placement.section_id ?? undefined,
+    custom_position: placement.position_id ?? undefined,
+    grade_levels: placement.grade_level_id ?? undefined,
+  };
+}
+
+export function ensureCatalogItem<T extends { id: string }>(
+  items: T[],
+  catalog: T[],
+  currentId: string | null | undefined,
+): T[] {
+  if (!currentId) return items;
+  if (items.some((item) => item.id === currentId)) return items;
+  const current = catalog.find((item) => item.id === currentId);
+  return current ? [current, ...items] : items;
+}
+
 export function itemsForOrgMapField<T extends { id: string }>(
   tableName: string,
   catalog: T[],

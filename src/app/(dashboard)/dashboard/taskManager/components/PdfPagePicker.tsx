@@ -107,7 +107,7 @@ export default function PdfPagePicker({
         <p className="text-[11px] text-gray-500 mb-1.5">
           {pageCount <= MAX_EXTRACTION_PAGES
             ? `${pageCount} page${pageCount === 1 ? "" : "s"} — all will be read.`
-            : `Select up to ${MAX_EXTRACTION_PAGES} pages for Claude to read (${pages.length} of ${MAX_EXTRACTION_PAGES} selected):`}
+            : `Select up to ${MAX_EXTRACTION_PAGES} pages for WillsFarms Intel to read (${pages.length} of ${MAX_EXTRACTION_PAGES} selected):`}
         </p>
         {pageCount > MAX_EXTRACTION_PAGES && (
           <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">

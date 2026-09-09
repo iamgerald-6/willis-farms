@@ -657,7 +657,7 @@ function SectionsTab({
               <Sparkles className="w-4 h-4 text-red-600" />
             )}
             <span className="text-sm font-medium text-red-700">
-              {autofilling ? "Reading document…" : "Prefill with AI"}
+              {autofilling ? "Reading document…" : "Prefill with WillsFarms Intel"}
             </span>
             <span className="text-xs text-gray-400">
               — upload an SOP, old skill log, or job description (Word, PDF, or image)

@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
       result.recommendation === "reject" ? "reject" : "advance_to_stage2";
 
     if (!analysis) {
-      return NextResponse.json({ error: "AI did not return an analysis." }, { status: 502 });
+      return NextResponse.json({ error: "WillsFarms Intel did not return an analysis." }, { status: 502 });
     }
 
     const updatedFormData = {

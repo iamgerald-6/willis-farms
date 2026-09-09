@@ -126,7 +126,7 @@ export default function OnboardingMedicalReportPanel({
       <div>
         <h3 className="text-sm font-bold text-gray-900">Medical report (HR upload)</h3>
         <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-          Upload the candidate&apos;s pre-employment medical certificate here. AI checks it
+          Upload the candidate&apos;s pre-employment medical certificate here. WillsFarms Intel checks it
           against what they declared on the onboarding form (blood group, allergies,
           conditions). The submitted date is filled automatically.
         </p>

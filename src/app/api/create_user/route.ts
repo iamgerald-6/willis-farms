@@ -6,6 +6,10 @@ import {
 } from "@/lib/apiRequestAuth";
 import { isSuperAdmin } from "@/lib/accessControl";
 import { invitePlatformEmployee } from "@/lib/careers/invitePlatformEmployee";
+import {
+  isCoreOrgPlacementComplete,
+  resolveOrgPlacementForInvite,
+} from "@/lib/careers/resolveEmployeeOrgPlacement";
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -37,10 +41,38 @@ export async function POST(req: NextRequest) {
       grade_level,
       supervisor_id,
       application_id,
+      site_id,
+      business_unit_id,
+      department_id,
+      section_id,
+      position_id,
+      grade_level_id,
+      user_role_id,
     } = await req.json();
 
     if (isSuperAdmin(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 403 });
+    }
+
+    const orgPlacement = await resolveOrgPlacementForInvite(supabaseAdmin, {
+      application_id,
+      site_id,
+      business_unit_id,
+      department_id,
+      section_id,
+      position_id,
+      grade_level_id,
+      user_role_id,
+    });
+
+    if (!application_id && !isCoreOrgPlacementComplete(orgPlacement)) {
+      return NextResponse.json(
+        {
+          error:
+            "Pick Site, Business unit, Department, Section, Position, and Grade level for a direct invite.",
+        },
+        { status: 400 },
+      );
     }
 
     const result = await invitePlatformEmployee(supabaseAdmin, {
@@ -56,6 +88,7 @@ export async function POST(req: NextRequest) {
       supervisor_id,
       application_id,
       created_by: caller.id,
+      ...orgPlacement,
     });
 
     if (!result.ok) {

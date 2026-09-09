@@ -21,6 +21,13 @@ import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
+import {
+  EMPTY_ORG_MAP_ROWS,
+  ensureCatalogItem,
+  itemsForOrgMapField,
+  orgSelectionsFromPlacement,
+  type OrgMapRows,
+} from "@/lib/organizationalStructureMapping";
 
 const userSchema = z.object({
   first_name: z
@@ -36,10 +43,45 @@ const userSchema = z.object({
   role: z.enum(["admin", "manager", "employee"]),
   company_id: z.string().min(1, "Company ID is required"),
   job_position: z.string().optional(),
-  grade_level: z.string().min(1, "Select a valid grade level"),
+  grade_level: z.string().optional(),
 });
 
 type UserForm = z.infer<typeof userSchema>;
+
+type OrgPlacementField =
+  | "site_id"
+  | "business_unit_id"
+  | "department_id"
+  | "section_id"
+  | "position_id"
+  | "grade_level_id"
+  | "user_role_id";
+
+const ORG_CHAIN_FIELDS: OrgPlacementField[] = [
+  "site_id",
+  "business_unit_id",
+  "department_id",
+  "section_id",
+  "position_id",
+  "grade_level_id",
+];
+
+const EMPTY_ORG_PLACEMENT: Record<OrgPlacementField, string> = {
+  site_id: "",
+  business_unit_id: "",
+  department_id: "",
+  section_id: "",
+  position_id: "",
+  grade_level_id: "",
+  user_role_id: "",
+};
+
+type OrgPlacementList = {
+  field: OrgPlacementField;
+  tableName: string;
+  label: string;
+  items: { id: string; label: string }[];
+};
 
 type OnboardedCandidate = {
   application_id: string;
@@ -83,6 +125,9 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
   const [pendingSupervisorId, setPendingSupervisorId] = useState<string | null>(
     null,
   );
+  const [orgPlacement, setOrgPlacement] =
+    useState<Record<OrgPlacementField, string>>(EMPTY_ORG_PLACEMENT);
+  const [orgPlacementError, setOrgPlacementError] = useState("");
 
   const { data: onboardedCandidates = [], isLoading: loadingCandidates } =
     useQuery({
@@ -94,12 +139,40 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
       enabled: open,
     });
 
+  const { data: orgPlacementOptions } = useQuery<{
+    lists: OrgPlacementList[];
+    maps: OrgMapRows;
+  }>({
+    queryKey: ["access_control_org_placement_options"],
+    queryFn: async () => {
+      const res = await api.get("/access-control/org-placement/options");
+      return {
+        lists: (res.data?.data ?? []) as OrgPlacementList[],
+        maps: (res.data?.maps as OrgMapRows | undefined) ?? EMPTY_ORG_MAP_ROWS,
+      };
+    },
+    enabled: open,
+  });
+  const orgPlacementLists = orgPlacementOptions?.lists ?? [];
+  const orgMaps = orgPlacementOptions?.maps ?? EMPTY_ORG_MAP_ROWS;
+
   async function createUser(data: UserForm) {
     const res = await api.post("/create_user", {
       ...data,
       supervisor_id: pendingSupervisorId ?? undefined,
       application_id: selectedOnboardingId || undefined,
       invite_delivery_email: inviteDeliveryEmail || undefined,
+      ...(selectedOnboardingId
+        ? {}
+        : {
+            site_id: orgPlacement.site_id || null,
+            business_unit_id: orgPlacement.business_unit_id || null,
+            department_id: orgPlacement.department_id || null,
+            section_id: orgPlacement.section_id || null,
+            position_id: orgPlacement.position_id || null,
+            grade_level_id: orgPlacement.grade_level_id || null,
+            user_role_id: orgPlacement.user_role_id || null,
+          }),
     });
     return res.data;
   }
@@ -122,10 +195,52 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     setDeliveryEmailError("");
     setLockedFields(new Set());
     setPendingSupervisorId(null);
+    setOrgPlacement(EMPTY_ORG_PLACEMENT);
+    setOrgPlacementError("");
     reset({ role: "employee" });
   };
 
   const isManualInvite = !selectedOnboardingId;
+
+  function itemsForOrgList(list: OrgPlacementList): { id: string; label: string }[] {
+    if (list.field === "user_role_id") return list.items;
+    const mapRows =
+      list.tableName in orgMaps
+        ? orgMaps[list.tableName as keyof OrgMapRows]
+        : undefined;
+    if (list.tableName !== "sites" && mapRows && mapRows.length === 0) {
+      return ensureCatalogItem(list.items, list.items, orgPlacement[list.field]);
+    }
+    const filtered = itemsForOrgMapField(
+      list.tableName,
+      list.items,
+      orgSelectionsFromPlacement(orgPlacement),
+      orgMaps,
+    );
+    return ensureCatalogItem(filtered, list.items, orgPlacement[list.field]);
+  }
+
+  function setOrgField(field: OrgPlacementField, value: string) {
+    setOrgPlacement((prev) => {
+      const next = { ...prev, [field]: value };
+      const chainIdx = ORG_CHAIN_FIELDS.indexOf(field);
+      if (chainIdx >= 0) {
+        for (const downstream of ORG_CHAIN_FIELDS.slice(chainIdx + 1)) {
+          next[downstream] = "";
+        }
+      }
+      return next;
+    });
+    setOrgPlacementError("");
+
+    if (field === "position_id") {
+      const list = orgPlacementLists.find((l) => l.field === "position_id");
+      const label = list?.items.find((i) => i.id === value)?.label ?? "";
+      setValue("job_position", label || undefined);
+    }
+  }
+
+  const coreOrgPicked = ORG_CHAIN_FIELDS.every((field) => orgPlacement[field]);
 
   useEffect(() => {
     if (!open) resetForm();
@@ -138,6 +253,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
       setLockedFields(new Set());
       setPendingSupervisorId(null);
       setInviteDeliveryEmail("");
+      setOrgPlacement(EMPTY_ORG_PLACEMENT);
       reset({ role: "employee" });
       return;
     }
@@ -333,6 +449,12 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
         return;
       }
       setDeliveryEmailError("");
+      if (!coreOrgPicked) {
+        setOrgPlacementError(
+          "Pick Site, Business unit, Department, Section, Position, and Grade level.",
+        );
+        return;
+      }
     }
     mutate(data);
   };
@@ -341,7 +463,7 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-lg w-[480px] max-h-[90vh] overflow-y-auto">
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-xl shadow-lg w-[560px] max-h-[90vh] overflow-y-auto">
           <Dialog.Title className="text-lg font-bold text-gray-900 mb-1">
             Invite New User
           </Dialog.Title>
@@ -535,33 +657,77 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
               )}
             </div>
 
-            <input
-              type="text"
-              placeholder="Job Position (optional)"
-              readOnly={lockedFields.has("job_position")}
-              {...register("job_position")}
-              className={fieldClass("job_position")}
-            />
-
-            <div>
-              <select
-                {...register("grade_level")}
-                disabled={lockedFields.has("grade_level")}
-                className={`${fieldClass("grade_level")} bg-white text-gray-700 disabled:cursor-not-allowed`}
-              >
-                <option value="">Grade Level</option>
-                {gradeLevels.map((g) => (
-                  <option key={g.value} value={g.value}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-              {errors.grade_level && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.grade_level.message}
+            {isManualInvite ? (
+              <div className="space-y-3 rounded-lg border border-gray-100 p-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Org placement
                 </p>
-              )}
-            </div>
+                <p className="text-[11px] text-gray-500 -mt-1">
+                  Direct invite — pick the employee&apos;s Site through Grade
+                  level. Onboarded hires get this from their job posting.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(["site_id", "business_unit_id", "department_id", "section_id", "position_id", "grade_level_id", "user_role_id"] as OrgPlacementField[]).map(
+                    (field) => {
+                      const list = orgPlacementLists.find((l) => l.field === field);
+                      return (
+                        <div key={field}>
+                          <label className="text-xs font-medium text-gray-600 block mb-1">
+                            {list?.label ?? field}
+                            {field !== "user_role_id" ? " *" : ""}
+                          </label>
+                          <select
+                            value={orgPlacement[field]}
+                            onChange={(e) => setOrgField(field, e.target.value)}
+                            className={`${inputClass} bg-white text-gray-700`}
+                          >
+                            <option value="">Select</option>
+                            {(list ? itemsForOrgList(list) : []).map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+                {orgPlacementError && (
+                  <p className="text-red-500 text-xs">{orgPlacementError}</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Job Position (optional)"
+                  readOnly={lockedFields.has("job_position")}
+                  {...register("job_position")}
+                  className={fieldClass("job_position")}
+                />
+
+                <div>
+                  <select
+                    {...register("grade_level")}
+                    disabled={lockedFields.has("grade_level")}
+                    className={`${fieldClass("grade_level")} bg-white text-gray-700 disabled:cursor-not-allowed`}
+                  >
+                    <option value="">Grade Level</option>
+                    {gradeLevels.map((g) => (
+                      <option key={g.value} value={g.value}>
+                        {g.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.grade_level && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.grade_level.message}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
 
             <div>
               <select
@@ -586,7 +752,8 @@ export default function CreateUserModal({ open, setOpen, refetch }: Props) {
                 emailTaken ||
                 companyIdTaken ||
                 deliveryEmailInvalid ||
-                (isManualInvite && !inviteDeliveryEmail.trim())
+                (isManualInvite && !inviteDeliveryEmail.trim()) ||
+                (isManualInvite && !coreOrgPicked)
               }
               className="w-full flex items-center justify-center bg-red-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
             >

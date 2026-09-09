@@ -37,6 +37,13 @@ import {
   eligibleSupervisorsForEmployee,
   supervisorDisplayName,
 } from "@/lib/supervisorAssignment";
+import {
+  EMPTY_ORG_MAP_ROWS,
+  ensureCatalogItem,
+  itemsForOrgMapField,
+  orgSelectionsFromPlacement,
+  type OrgMapRows,
+} from "@/lib/organizationalStructureMapping";
 
 const inputClass =
   "w-full border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
@@ -67,25 +74,14 @@ type OrgPlacementList = {
   items: { id: string; label: string }[];
 };
 
-/** Org structure mapping tree — same shape/tables the Create job posting
- * cascading dropdowns and Appraisal grade templates wizard use (see
- * AppraisalGradeTemplatesManager.tsx). Any Org placement field that's been
- * mapped under another one (e.g. User role mapped under Position, same as
- * Grade level) gets its dropdown filtered down to what's actually mapped,
- * rather than showing every item in the list. */
-type MappingLevel = {
-  id: string;
-  position: number;
-  parent_level_id: string | null;
-  list_type_id: string;
-  list_type: { id: string; label: string; singular: string; table_name: string };
-};
-type MappingNode = {
-  id: string;
-  level_id: string;
-  item_id: string;
-  parent_node_id: string | null;
-};
+const ORG_CHAIN_FIELDS: OrgPlacementField[] = [
+  "site_id",
+  "business_unit_id",
+  "department_id",
+  "section_id",
+  "position_id",
+  "grade_level_id",
+];
 
 export default function ManageUserAccessPage() {
   const params = useParams();
@@ -141,78 +137,51 @@ export default function ManageUserAccessPage() {
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
-  const { data: orgPlacementLists = [] } = useQuery<OrgPlacementList[]>({
+  const { data: orgPlacementOptions } = useQuery<{
+    lists: OrgPlacementList[];
+    maps: OrgMapRows;
+  }>({
     queryKey: ["access_control_org_placement_options"],
     queryFn: async () => {
       const res = await api.get("/access-control/org-placement/options");
-      return res.data?.data ?? [];
+      return {
+        lists: (res.data?.data ?? []) as OrgPlacementList[],
+        maps: (res.data?.maps as OrgMapRows | undefined) ?? EMPTY_ORG_MAP_ROWS,
+      };
     },
   });
+  const orgPlacementLists = orgPlacementOptions?.lists ?? [];
+  const orgMaps = orgPlacementOptions?.maps ?? EMPTY_ORG_MAP_ROWS;
 
-  const { data: mappingLevels = [] } = useQuery<MappingLevel[]>({
-    queryKey: ["org_mapping_levels_list"],
-    queryFn: async () => (await api.get("/organizational-structure/mapping-levels")).data.data,
-  });
-  const { data: mappingNodes = [] } = useQuery<MappingNode[]>({
-    queryKey: ["org_mapping_nodes_list"],
-    queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
-  });
-
-  function chainLevel(tableName: string): MappingLevel | undefined {
-    return mappingLevels.find((l) => l.list_type.table_name === tableName);
-  }
-
-  function fieldForTable(tableName: string): OrgPlacementField | undefined {
-    return orgPlacementLists.find((l) => l.tableName === tableName)?.field;
-  }
-
-  /** Same fail-open chain resolution as the Appraisal grade templates wizard
-   * and Create job posting cascading dropdowns — walks up the mapping tree
-   * from the field's current selection to find its mapped node. */
-  function resolvedNodeIdFor(tableName: string): string | undefined {
-    const level = chainLevel(tableName);
-    if (!level) return undefined;
-    const field = fieldForTable(tableName);
-    const itemId = field ? orgPlacement[field] : undefined;
-    if (!itemId) return undefined;
-
-    let parentNodeId: string | null | undefined = null;
-    if (level.parent_level_id) {
-      const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
-      parentNodeId = parentLevel ? resolvedNodeIdFor(parentLevel.list_type.table_name) : undefined;
-    }
-    if (parentNodeId === undefined) return undefined;
-
-    return mappingNodes.find(
-      (n) => n.level_id === level.id && n.item_id === itemId && n.parent_node_id === parentNodeId,
-    )?.id;
-  }
-
-  /** Filters a field's dropdown options strictly to whatever's mapped under
-   * its parent field's current selection — no fallback. A field that isn't
-   * part of the mapping tree at all (or sits at its root, with no parent
-   * level) shows its full list, same as before. But once a field IS mapped
-   * under another one, it shows ONLY items with a mapping node for the
-   * parent's current selection — nothing selected on the parent, no
-   * matching mapping configured, or no items mapped at all for that
-   * combination all mean an empty dropdown, not "show everything". */
   function itemsForList(list: OrgPlacementList): { id: string; label: string }[] {
-    const level = chainLevel(list.tableName);
-    if (!level) return list.items;
-    if (!level.parent_level_id) return list.items;
-
-    const parentLevel = mappingLevels.find((l) => l.id === level.parent_level_id);
-    if (!parentLevel) return [];
-
-    const parentNodeId = resolvedNodeIdFor(parentLevel.list_type.table_name);
-    if (parentNodeId === undefined) return [];
-
-    const ids = new Set(
-      mappingNodes
-        .filter((n) => n.level_id === level.id && n.parent_node_id === parentNodeId)
-        .map((n) => n.item_id),
+    if (list.field === "user_role_id") return list.items;
+    const mapRows =
+      list.tableName in orgMaps
+        ? orgMaps[list.tableName as keyof OrgMapRows]
+        : undefined;
+    if (list.tableName !== "sites" && mapRows && mapRows.length === 0) {
+      return ensureCatalogItem(list.items, list.items, orgPlacement[list.field]);
+    }
+    const filtered = itemsForOrgMapField(
+      list.tableName,
+      list.items,
+      orgSelectionsFromPlacement(orgPlacement),
+      orgMaps,
     );
-    return list.items.filter((i) => ids.has(i.id));
+    return ensureCatalogItem(filtered, list.items, orgPlacement[list.field]);
+  }
+
+  function setOrgPlacementField(field: OrgPlacementField, value: string) {
+    setOrgPlacement((prev) => {
+      const next = { ...prev, [field]: value };
+      const chainIdx = ORG_CHAIN_FIELDS.indexOf(field);
+      if (chainIdx >= 0) {
+        for (const downstream of ORG_CHAIN_FIELDS.slice(chainIdx + 1)) {
+          next[downstream] = "";
+        }
+      }
+      return next;
+    });
   }
 
   const target = useMemo(
@@ -534,8 +503,9 @@ export default function ManageUserAccessPage() {
               Org placement
             </label>
             <p className="text-xs text-gray-500 mb-2">
-              Copied from the job posting at hire time. Editable for
-              transfers, promotions, or corrections.
+              Onboarding hires: filled from the job posting on their
+              application. Direct invites: set here (or on the invite form).
+              Editable afterward for transfers, promotions, or corrections.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {ORG_PLACEMENT_FIELDS.map((field) => {
@@ -552,10 +522,7 @@ export default function ManageUserAccessPage() {
                       id={`org-${field}`}
                       value={orgPlacement[field]}
                       onChange={(e) =>
-                        setOrgPlacement((prev) => ({
-                          ...prev,
-                          [field]: e.target.value,
-                        }))
+                        setOrgPlacementField(field, e.target.value)
                       }
                       className={inputClass}
                     >

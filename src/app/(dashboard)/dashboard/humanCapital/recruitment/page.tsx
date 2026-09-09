@@ -489,13 +489,13 @@ function ApplicationDetail({
       const screening = res.data.screening as { status: string; score: number };
       toast.success(
         screening.status === "shortlisted"
-          ? `Shortlisted by AI (${screening.score}% match). Review the application, then move to Interview when ready.`
+          ? `Shortlisted by WillsFarms Intel (${screening.score}% match). Review the application, then move to Interview when ready.`
           : `Sent to Rejects for your review (${screening.score}% match).`,
       );
       void onRefreshApplication();
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "AI shortlisting failed.");
+      toast.error(error?.response?.data?.error ?? "WillsFarms Intel shortlisting failed.");
     },
   });
 
@@ -729,7 +729,7 @@ function ApplicationDetail({
             {awaitingAiScreening && (
               <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 space-y-3">
                 <p className="text-sm text-blue-900">
-                  This application is waiting for AI shortlisting. Run it now to
+                  This application is waiting for WillsFarms Intel shortlisting. Run it now to
                   review the candidate, or wait for the daily batch.
                 </p>
                 <button
@@ -776,7 +776,7 @@ function ApplicationDetail({
                   </label>
                   {awaitingAiScreening ? (
                     <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                      {STATUS_LABELS.applied} — status unlocks after AI
+                      {STATUS_LABELS.applied} — status unlocks after WillsFarms Intel
                       shortlisting.
                     </p>
                   ) : !statusEditable ? (
@@ -848,7 +848,7 @@ function ApplicationDetail({
                   {application.status === "under_review" &&
                     application.ai_screening && (
                       <p className="text-xs text-gray-500 mt-2">
-                        Shortlist to override the AI recommendation, or confirm
+                        Shortlist to override the WillsFarms Intel recommendation, or confirm
                         Rejected.
                       </p>
                     )}
@@ -890,7 +890,7 @@ function ApplicationDetail({
                           onClick={() => setShowOriginalReportModal(true)}
                           className="text-xs font-medium text-gray-600 hover:underline"
                         >
-                          View original AI report
+                          View original WillsFarms Intel report
                         </button>
                       )}
                       <button
@@ -1384,7 +1384,7 @@ function ApplicationDetail({
                       onClick={() => setShowOriginalReportModal(true)}
                       className="text-xs font-medium text-gray-600 hover:underline"
                     >
-                      View AI-generated report
+                      View WillsFarms Intel-generated report
                     </button>
                     {hasEditedReport && (
                       <button
@@ -1427,7 +1427,7 @@ function ApplicationDetail({
                           onClick={() => setShowRoleReportModal(true)}
                           className="text-xs font-medium text-gray-600 hover:underline"
                         >
-                          View AI-generated role hiring summary
+                          View WillsFarms Intel-generated role hiring summary
                         </button>
                       )}
                       <a
@@ -1632,7 +1632,7 @@ function ApplicationDetail({
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       After offer terms are saved, generate a professional offer
-                      letter with AI, edit as needed, then save the PDF.
+                      letter with WillsFarms Intel, edit as needed, then save the PDF.
                     </p>
                   </div>
                   {!offerTermsReady ? (
@@ -1876,7 +1876,7 @@ function ApplicationDetail({
               {application.interview_form_data.summary?.ai_analysis && (
                 <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
                   <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">
-                    AI analysis
+                    WillsFarms Intel analysis
                   </p>
                   <p className="text-sm text-gray-800 leading-relaxed">
                     {application.interview_form_data.summary.ai_analysis}
@@ -1891,7 +1891,7 @@ function ApplicationDetail({
                         ]
                       }`}
                     >
-                      AI recommends:{" "}
+                      WillsFarms Intel recommends:{" "}
                       {
                         AI_RECOMMENDATION_LABELS[
                           application.interview_form_data.summary
@@ -1919,7 +1919,7 @@ function ApplicationDetail({
             >
               <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
                 <h2 className="text-base font-bold text-gray-900">
-                  Original AI report
+                  Original WillsFarms Intel report
                 </h2>
                 <button
                   type="button"
@@ -1931,7 +1931,7 @@ function ApplicationDetail({
               </div>
               <div className="p-5 overflow-y-auto min-h-0">
                 <p className="text-xs text-gray-400 mb-4">
-                  This is the report exactly as AI generated it — unaffected by
+                  This is the report exactly as WillsFarms Intel generated it — unaffected by
                   any edits made below.
                 </p>
                 <InterviewReportReadOnly
@@ -1992,7 +1992,7 @@ function ApplicationDetail({
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
               <h2 className="text-base font-bold text-gray-900">
-                Role hiring summary — AI-generated
+                Role hiring summary — WillsFarms Intel-generated
               </h2>
               <button
                 type="button"
@@ -2005,7 +2005,7 @@ function ApplicationDetail({
             <div className="p-5 overflow-y-auto min-h-0">
               <p className="text-xs text-gray-400 mb-4">
                 The consolidated report covering every applicant for{" "}
-                {application.role_title}, exactly as AI generated it —
+                {application.role_title}, exactly as WillsFarms Intel generated it —
                 unaffected by any HR edits.
               </p>
               <RoleInterviewReportReadOnly
@@ -3038,7 +3038,7 @@ function ScreeningStageTab({
     <div className="space-y-6">
       <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-800">
         Shortlisted, under review, and rejected applicants — in that order.
-        Open one to review its AI screening score and details, or to move it
+        Open one to review its WillsFarms Intel screening score and details, or to move it
         forward.
       </div>
 
@@ -3111,7 +3111,7 @@ function ScreeningStageTab({
               <th className="px-4 py-3 font-semibold text-gray-600">Candidate</th>
               <th className="px-4 py-3 font-semibold text-gray-600">Role</th>
               <th className="px-4 py-3 font-semibold text-gray-600">
-                AI screening
+                WillsFarms Intel screening
               </th>
               <th className="px-4 py-3 font-semibold text-gray-600">Status</th>
               <th className="px-4 py-3 font-semibold text-gray-600 text-right">
@@ -4140,7 +4140,7 @@ function RoleReportModal({
                     onClick={() => setShowOriginal(true)}
                     className="text-xs font-medium text-gray-600 hover:underline"
                   >
-                    View original AI report
+                    View original WillsFarms Intel report
                   </button>
                 )}
                 <a
@@ -4776,7 +4776,7 @@ function RoleReportModal({
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 flex-shrink-0">
               <h2 className="text-base font-bold text-gray-900">
-                Original AI report
+                Original WillsFarms Intel report
               </h2>
               <button
                 type="button"
@@ -4788,7 +4788,7 @@ function RoleReportModal({
             </div>
             <div className="p-5 overflow-y-auto min-h-0 space-y-3 text-sm text-gray-800">
               <p className="text-xs text-gray-400 mb-2">
-                This is the report exactly as AI generated it — unaffected by
+                This is the report exactly as WillsFarms Intel generated it — unaffected by
                 any edits made above.
               </p>
               <p className="whitespace-pre-wrap text-justify">
@@ -5120,7 +5120,7 @@ function RecruitmentPageContent() {
         </div>
         {awaitingScreeningCount > 0 && activeTab === "applications" && (
           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-xs font-medium w-fit">
-            {awaitingScreeningCount} awaiting AI shortlisting
+            {awaitingScreeningCount} awaiting WillsFarms Intel shortlisting
           </span>
         )}
       </div>

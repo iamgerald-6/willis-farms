@@ -1172,7 +1172,7 @@ export default function CreateJobPostingPage() {
                     ) : (
                       <Sparkles className="w-4 h-4" />
                     )}
-                    {extracting ? "Reading document…" : "Auto-fill fields with AI"}
+                    {extracting ? "Reading document…" : "Auto-fill fields with WillsFarms Intel"}
                   </button>
                 )}
               </div>

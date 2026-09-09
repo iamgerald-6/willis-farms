@@ -126,8 +126,8 @@ function PostingInterviewSetup(
   const patchSetup = (patch: Partial<PostingInterviewSetupContent>) =>
     setSetup((prev) => ({ ...prev, ...patch }));
 
-  // "Autofill with AI" — upload an existing interview guide document (Word
-  // or PDF) and have Claude read it straight into every tab here, the same
+  // "Autofill with WillsFarms Intel" — upload an existing interview guide document (Word
+  // or PDF) and have it read straight into every tab here, the same
   // way the CV screening and JD auto-fill features read a document. Local
   // state only, same as any other edit — nothing is saved until the usual
   // Save button is clicked.
@@ -309,7 +309,7 @@ function PostingInterviewSetup(
                   <Sparkles className="w-4 h-4 text-red-600" />
                 )}
                 <span className="text-sm font-medium text-red-700">
-                  {autofilling ? "Reading document…" : "Autofill with AI"}
+                  {autofilling ? "Reading document…" : "Autofill with WillsFarms Intel"}
                 </span>
                 <span className="text-xs text-gray-400">
                   — upload an existing interview guide document (Word or PDF)
@@ -718,7 +718,7 @@ function PostingInterviewSetup(
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
             Weighted interview scores use a 1–5 scale. These thresholds apply
-            to this posting's own interview and are fed to AI stage
+            to this posting's own interview and are fed to WillsFarms Intel stage
             analysis, final recommendations, and hire validation.
           </p>
 
@@ -766,7 +766,7 @@ function PostingInterviewSetup(
 
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              AI prompt preview
+              WillsFarms Intel prompt preview
             </p>
             <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
               {formatInterviewBenchmarksForPrompt(setup.benchmarks)}

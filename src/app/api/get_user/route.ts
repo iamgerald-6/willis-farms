@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { fetchUserRoleLabelMap } from "@/lib/userRoleAccessControl";
+import { overlayPlacementFromApplications } from "@/lib/careers/resolveEmployeeOrgPlacement";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -58,7 +59,34 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(withRoleLabels);
+    const withPlacement = await overlayPlacementFromApplications(
+      supabaseAdmin,
+      withRoleLabels,
+    );
+
+    const missingGradeIds = [
+      ...new Set(
+        withPlacement
+          .filter((u) => u.grade_level_id && !u.grade_level)
+          .map((u) => u.grade_level_id as string),
+      ),
+    ];
+    if (missingGradeIds.length > 0) {
+      const { data: grades } = await supabaseAdmin
+        .from("grade_levels")
+        .select("id, code")
+        .in("id", missingGradeIds);
+      const codeById = new Map(
+        (grades ?? []).map((g) => [g.id as string, g.code as string | null]),
+      );
+      for (const u of withPlacement) {
+        if (!u.grade_level && u.grade_level_id) {
+          u.grade_level = codeById.get(u.grade_level_id) ?? u.grade_level;
+        }
+      }
+    }
+
+    return NextResponse.json(withPlacement);
   } catch (err) {
     return NextResponse.json([], { status: 500 });
   }

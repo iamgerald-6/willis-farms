@@ -337,7 +337,7 @@ export default function OfferLetterEditorModal({
                   Letter preview
                 </p>
                 <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[8rem]">
-                  {draft.trim() || "Generate a draft with AI, then edit the text below."}
+                  {draft.trim() || "Generate a draft with WillsFarms Intel, then edit the text below."}
                 </p>
               </div>
 
@@ -477,7 +477,7 @@ export default function OfferLetterEditorModal({
             ) : (
               <Sparkles className="w-4 h-4" />
             )}
-            {draft.trim() ? "Regenerate with AI" : "Generate with AI"}
+            {draft.trim() ? "Regenerate with WillsFarms Intel" : "Generate with WillsFarms Intel"}
           </button>
           {draft.trim() && (
             <a

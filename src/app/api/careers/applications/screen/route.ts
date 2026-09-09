@@ -37,14 +37,14 @@ export async function POST(req: NextRequest) {
 
     if (application.ai_screening) {
       return NextResponse.json(
-        { error: "This application has already been screened by AI." },
+        { error: "This application has already been screened by WillsFarms Intel." },
         { status: 400 },
       );
     }
 
     if (application.status !== "applied") {
       return NextResponse.json(
-        { error: "Only new applications awaiting AI shortlisting can be screened." },
+        { error: "Only new applications awaiting WillsFarms Intel shortlisting can be screened." },
         { status: 400 },
       );
     }
