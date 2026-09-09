@@ -20,6 +20,12 @@ export type PayrollTaxConfig = {
   ssnitEmployeeRatePercent: number;
   /** Progressive monthly PAYE bands, applied to (basic salary - SSNIT). */
   payeBands: PayrollTaxBand[];
+  /** Optional — employer's Tier 2 pension contribution, as a percentage of
+   * basic salary. Paid entirely by the employer, never deducted from the
+   * employee, so it's informational only (total cost to the company) and
+   * never subtracted from Net payable. Undefined/0 means not configured —
+   * no Employer Tier 2 figure is shown at all. */
+  employerTier2RatePercent?: number;
 };
 
 /** Ghana Revenue Authority 2026 monthly PAYE bands + SSNIT employee rate. */
@@ -75,9 +81,14 @@ export function normalizePayrollTaxConfig(raw: unknown): PayrollTaxConfig {
     .map(normalizeBand)
     .filter((b): b is PayrollTaxBand => b !== null);
 
+  const tier2Rate = Number(obj.employerTier2RatePercent);
+  const employerTier2RatePercent =
+    Number.isFinite(tier2Rate) && tier2Rate > 0 ? tier2Rate : undefined;
+
   return {
     ssnitEmployeeRatePercent,
     payeBands: bands.length > 0 ? sortBands(bands) : DEFAULT_PAYROLL_TAX_CONFIG.payeBands,
+    employerTier2RatePercent,
   };
 }
 
@@ -98,6 +109,9 @@ export type PayrollDeductions = {
   ssnit: number;
   incomeTax: number;
   netPayable: number;
+  /** Employer's Tier 2 contribution — informational only, 0 when the rate
+   * isn't configured. Never subtracted from netPayable. */
+  employerTier2Contribution: number;
 };
 
 /**
@@ -111,7 +125,7 @@ export function computePayrollDeductions(
   config: PayrollTaxConfig = DEFAULT_PAYROLL_TAX_CONFIG,
 ): PayrollDeductions {
   if (!Number.isFinite(basicSalaryMonthly) || basicSalaryMonthly <= 0) {
-    return { ssnit: 0, incomeTax: 0, netPayable: 0 };
+    return { ssnit: 0, incomeTax: 0, netPayable: 0, employerTier2Contribution: 0 };
   }
 
   const ssnit = round2(basicSalaryMonthly * (config.ssnitEmployeeRatePercent / 100));
@@ -132,5 +146,8 @@ export function computePayrollDeductions(
 
   const incomeTax = round2(tax);
   const netPayable = round2(basicSalaryMonthly - ssnit - incomeTax);
-  return { ssnit, incomeTax, netPayable };
+  const employerTier2Contribution = config.employerTier2RatePercent
+    ? round2(basicSalaryMonthly * (config.employerTier2RatePercent / 100))
+    : 0;
+  return { ssnit, incomeTax, netPayable, employerTier2Contribution };
 }

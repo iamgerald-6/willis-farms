@@ -267,6 +267,10 @@ export interface OnboardingHrData {
   social_security_contribution?: string;
   income_tax?: string;
   net_payable?: string;
+  /** Informational only — employer's Tier 2 pension contribution, never
+   * deducted from the employee. Blank when no Employer Tier 2 rate is set
+   * under System Definitions > Offer letter > Payroll tax settings. */
+  employer_tier2_contribution?: string;
   /** Offer letter sign-off — who signed and how (Stage 3). */
   signer_user_id?: string;
   signer_name?: string;

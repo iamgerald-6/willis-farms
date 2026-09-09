@@ -71,10 +71,16 @@ export default function PayrollTaxSettingsEditor({ moduleId, readOnly = false }:
   const savedConfig = normalizePayrollTaxConfig(data?.businessLogic.payrollTaxConfig);
 
   const [ssnitDraft, setSsnitDraft] = useState("");
+  const [tier2Draft, setTier2Draft] = useState("");
   const [bandsDraft, setBandsDraft] = useState<DraftBand[]>([]);
 
   useEffect(() => {
     setSsnitDraft(String(savedConfig.ssnitEmployeeRatePercent));
+    setTier2Draft(
+      savedConfig.employerTier2RatePercent != null
+        ? String(savedConfig.employerTier2RatePercent)
+        : "",
+    );
     setBandsDraft(bandsToDraft(savedConfig.payeBands));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -89,11 +95,24 @@ export default function PayrollTaxSettingsEditor({ moduleId, readOnly = false }:
       if (!bands || bands.length === 0) {
         throw new Error("Each PAYE band needs a valid rate, and a valid upper limit except the last.");
       }
+      const tier2Trimmed = tier2Draft.trim();
+      let employerTier2RatePercent: number | undefined;
+      if (tier2Trimmed) {
+        const tier2Rate = Number(tier2Trimmed);
+        if (!Number.isFinite(tier2Rate) || tier2Rate < 0) {
+          throw new Error("Enter a valid Employer Tier 2 rate, or leave it blank.");
+        }
+        employerTier2RatePercent = tier2Rate;
+      }
       const current = data?.businessLogic ?? {};
       await api.patch(`/system-definitions/modules/${encodeURIComponent(moduleId)}`, {
         business_logic: {
           ...current,
-          payrollTaxConfig: { ssnitEmployeeRatePercent: rate, payeBands: bands },
+          payrollTaxConfig: {
+            ssnitEmployeeRatePercent: rate,
+            payeBands: bands,
+            employerTier2RatePercent,
+          },
         },
       });
     },
@@ -129,6 +148,11 @@ export default function PayrollTaxSettingsEditor({ moduleId, readOnly = false }:
 
   const resetToDefaults = () => {
     setSsnitDraft(String(DEFAULT_PAYROLL_TAX_CONFIG.ssnitEmployeeRatePercent));
+    setTier2Draft(
+      DEFAULT_PAYROLL_TAX_CONFIG.employerTier2RatePercent != null
+        ? String(DEFAULT_PAYROLL_TAX_CONFIG.employerTier2RatePercent)
+        : "",
+    );
     setBandsDraft(bandsToDraft(DEFAULT_PAYROLL_TAX_CONFIG.payeBands));
   };
 
@@ -161,6 +185,28 @@ export default function PayrollTaxSettingsEditor({ moduleId, readOnly = false }:
         />
         <span className="text-gray-500">% of basic salary</span>
       </label>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-gray-700">Employer Tier 2 rate (optional)</span>
+          <input
+            type="number"
+            min={0}
+            step="0.1"
+            value={tier2Draft}
+            onChange={(e) => setTier2Draft(e.target.value)}
+            disabled={readOnly}
+            placeholder="—"
+            className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-gray-50 disabled:text-gray-500"
+          />
+          <span className="text-gray-500">% of basic salary</span>
+        </label>
+        <p className="text-[11px] text-gray-400 mt-1">
+          Paid entirely by the employer — never deducted from the employee. Leave blank to hide
+          this from the Offer Terms form; fill it in to show an "Employer pension contribution
+          (Tier 2)" reference figure alongside Net payable.
+        </p>
+      </div>
 
       <div>
         <p className="text-xs font-medium text-gray-700 mb-1.5">

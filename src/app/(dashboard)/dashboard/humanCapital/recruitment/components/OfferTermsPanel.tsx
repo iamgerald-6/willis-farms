@@ -124,7 +124,12 @@ export default function OfferTermsPanel({
     const basicSalary = parseSalaryAmount(hrData.basic_salary_ghs);
     if (basicSalary === null) {
       setHrData((prev) => {
-        if (!prev.social_security_contribution && !prev.income_tax && !prev.net_payable) {
+        if (
+          !prev.social_security_contribution &&
+          !prev.income_tax &&
+          !prev.net_payable &&
+          !prev.employer_tier2_contribution
+        ) {
           return prev;
         }
         return {
@@ -132,11 +137,12 @@ export default function OfferTermsPanel({
           social_security_contribution: undefined,
           income_tax: undefined,
           net_payable: undefined,
+          employer_tier2_contribution: undefined,
         };
       });
       return;
     }
-    const { ssnit, incomeTax, netPayable } = computePayrollDeductions(
+    const { ssnit, incomeTax, netPayable, employerTier2Contribution } = computePayrollDeductions(
       basicSalary,
       payrollTaxConfig,
     );
@@ -145,6 +151,12 @@ export default function OfferTermsPanel({
       social_security_contribution: ssnit.toFixed(2),
       income_tax: incomeTax.toFixed(2),
       net_payable: netPayable.toFixed(2),
+      // Only set when an Employer Tier 2 rate is actually configured —
+      // stays blank (never "0.00") otherwise, so the field just reads
+      // empty rather than implying a rate of zero was intentional.
+      employer_tier2_contribution: payrollTaxConfig.employerTier2RatePercent
+        ? employerTier2Contribution.toFixed(2)
+        : undefined,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hrData.basic_salary_ghs, payrollTaxConfig]);
@@ -153,6 +165,7 @@ export default function OfferTermsPanel({
     "social_security_contribution",
     "income_tax",
     "net_payable",
+    "employer_tier2_contribution",
   ];
 
   const saveMutation = useMutation({
