@@ -63,6 +63,15 @@ type OnboardingHrFieldsFormProps = {
   readOnlyFields?: string[];
   /** Hide helper text under fields (offer tab). */
   hideFieldHints?: boolean;
+  /** Onboarding tab only: fetch the current Offer letter field list live and
+   * render whatever's defined there as a read-only reference block, sourced
+   * from the same shared hr_data. Field keys from that list are excluded
+   * from this form's own Section O grid, so a field never needs to be
+   * defined in both lists. */
+  showOfferTermsReference?: boolean;
+  /** Only render the offer-terms reference block once offer terms have
+   * actually been saved — before that there's nothing to show. */
+  offerTermsSaved?: boolean;
 };
 
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
@@ -87,6 +96,8 @@ export default function OnboardingHrFieldsForm({
   excludeFieldKeys = [],
   readOnlyFields = [],
   hideFieldHints = false,
+  showOfferTermsReference = false,
+  offerTermsSaved = false,
 }: OnboardingHrFieldsFormProps) {
   const readOnlySet = useMemo(() => new Set(readOnlyFields), [readOnlyFields]);
   const shouldShowHint = (hint?: string) => Boolean(!hideFieldHints && hint?.trim());
@@ -104,6 +115,27 @@ export default function OnboardingHrFieldsForm({
       return isOfferTermsList ? resolveOfferTermsFields(rows) : resolveOnboardingHrFields(rows);
     },
   });
+
+  // Onboarding tab only: live Offer letter field list, used to (a) exclude
+  // those field keys from this form's own Section O grid and (b) render
+  // them as a read-only reference block below once offer terms are saved.
+  const { data: offerTermsFields = [] } = useQuery({
+    queryKey: ["onboarding-hr-fields", OFFER_TERMS_FIELDS_LIST],
+    queryFn: async () => {
+      const res = await api.get("/system-definitions/options", {
+        params: {
+          module_id: RECRUITMENT_MODULE_ID,
+          option_list: OFFER_TERMS_FIELDS_LIST,
+        },
+      });
+      return resolveOfferTermsFields((res.data.data ?? []) as SystemOption[]);
+    },
+    enabled: showOfferTermsReference,
+  });
+  const offerTermsFieldKeys = useMemo(
+    () => offerTermsFields.map((f) => f.fieldKey),
+    [offerTermsFields],
+  );
 
   const { data: optionLists } = useQuery({
     queryKey: ["onboarding-hr-option-lists"],
@@ -188,7 +220,14 @@ export default function OnboardingHrFieldsForm({
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
   const payFrequencyOptions = optionLists?.[ONBOARDING_PAY_FREQUENCIES_LIST] ?? [];
 
-  const excludeSet = useMemo(() => new Set(excludeFieldKeys), [excludeFieldKeys]);
+  const excludeSet = useMemo(
+    () =>
+      new Set([
+        ...excludeFieldKeys,
+        ...(showOfferTermsReference ? offerTermsFieldKeys : []),
+      ]),
+    [excludeFieldKeys, showOfferTermsReference, offerTermsFieldKeys],
+  );
 
   const fieldAllowed = (fieldKey: string) =>
     !excludeSet.has(fieldKey) &&
@@ -595,6 +634,22 @@ export default function OnboardingHrFieldsForm({
             </div>
           ))}
         </>
+      )}
+
+      {showOfferTermsReference && offerTermsSaved && offerTermsFields.length > 0 && (
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+          <p className="text-xs font-semibold text-gray-800">Offer terms (locked)</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {offerTermsFields.map((field) => (
+              <div key={field.id} className={field.colSpan === "full" ? "sm:col-span-2" : ""}>
+                <ReadOnlyValue
+                  label={field.label}
+                  value={String(hrData[field.fieldKey as keyof OnboardingHrData] ?? "")}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </>
   );

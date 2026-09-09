@@ -28,7 +28,6 @@ import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
 import OnboardingMedicalReportPanel from "./OnboardingMedicalReportPanel";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { gitFallbackRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
-import { OFFER_TERMS_LOCKED_FIELD_KEYS } from "@/lib/careers/offerTerms";
 import {
   STATUS_LABELS,
   STATUS_STYLES,
@@ -247,7 +246,6 @@ function OnboardingDetail({
   const offerResponse = resolveOfferResponseStatus(row);
   const offerResponseAt = resolveOfferResponseAt(row);
   const offerTermsLocked = Boolean(row.hr_data?.offer_terms_saved_at?.trim());
-  const lockedOfferFields = offerTermsLocked ? [...OFFER_TERMS_LOCKED_FIELD_KEYS] : [];
   const requiredMedicalReports = useMemo(() => gitFallbackRequiredMedicalReports(), []);
   const candidateSubmitted = Boolean(row.submitted_at);
   const pipelineStatus = resolveOnboardingHrPipelineStatus(row);
@@ -539,7 +537,8 @@ function OnboardingDetail({
                 hrData={hrData}
                 setHrData={setHrData}
                 excludeFieldKeys={sectionOExcludeKeys}
-                readOnlyFields={lockedOfferFields}
+                showOfferTermsReference
+                offerTermsSaved={offerTermsLocked}
                 onGradeChange={() => {
                   employeeIdTouched.current = false;
                 }}
