@@ -76,15 +76,6 @@ export function isEditableLeavePolicyModule(moduleId: string): boolean {
 /** Modules with editable business logic (weight rules, etc.). */
 export const EDITABLE_BUSINESS_LOGIC_MODULES = ["mod:appraisal"] as const;
 
-/** Modules whose competency sections can be edited in System Definitions. */
-export const EDITABLE_COMPETENCY_SECTION_MODULES = ["mod:skill-log"] as const;
-
-export function isEditableCompetencySectionModule(moduleId: string): boolean {
-  return EDITABLE_COMPETENCY_SECTION_MODULES.includes(
-    moduleId as (typeof EDITABLE_COMPETENCY_SECTION_MODULES)[number],
-  );
-}
-
 /** Modules whose public referee reference form can be edited in System Definitions. */
 export const EDITABLE_REFEREE_REFERENCE_MODULES = ["mod:recruitment"] as const;
 

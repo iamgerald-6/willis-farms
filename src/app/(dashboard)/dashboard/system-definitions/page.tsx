@@ -38,14 +38,12 @@ import type {
 import {
   isEditableApplicationFormModule,
   isEditableOnboardingFormModule,
-  isEditableCompetencySectionModule,
   isEditableLeavePolicyModule,
   isEditableRefereeReferenceModule,
   isEditableOptionList,
   registryRefToOptionList,
 } from "@/lib/systemDefinitions";
 import OptionsEditor from "./components/OptionsEditor";
-import SkillLogTemplatesManager from "./components/SkillLogTemplatesManager";
 import LeavePolicyEditor from "./components/LeavePolicyEditor";
 import CompanyEmailDomainEditor from "./components/CompanyEmailDomainEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
@@ -548,22 +546,9 @@ function getModuleSections(
 
   }
 
-  if (isEditableCompetencySectionModule(m.id)) {
-    sections.push({
-      key: "skill-log-scope",
-      label: "Skill log scope",
-      icon: Settings2,
-      render: () => (
-        <SectionCard
-          icon={Settings2}
-          title="Skill log scope"
-          description="Build the skill log form for an exact Site/Business unit/Department/Section/Position/Grade level combination — matched against each employee's own org placement."
-        >
-          <SkillLogTemplatesManager canAdd={canAdd} canEdit={canEdit} />
-        </SectionCard>
-      ),
-    });
-  }
+  // Skill log scope and Competency sections moved to a "Manage skill logs"
+  // tab on the Skill Log feature page (dashboard/humanCapital/skillLog),
+  // gated by hasFullSkillLogAccess — no longer configured here.
 
   // Appraisal scope, Rating sections, Rating section weights, and Extra
   // rules by grade moved to a "Manage appraisals" tab on the Appraisal
@@ -639,6 +624,9 @@ const HIDDEN_SYSTEM_DEFINITIONS_MODULE_IDS = new Set([
   // (Overview is hidden for it too, see HIDE_OVERVIEW_SECTION_MODULE_IDS),
   // so it would otherwise show as an empty, clickable module row.
   "mod:appraisal",
+  // Same story: Skill log scope moved to "Manage skill logs" on the Skill
+  // Log feature page — its only section here, Overview already hidden.
+  "mod:skill-log",
 ]);
 
 /** Organizational structure isn't a module-registry group (its two links are
