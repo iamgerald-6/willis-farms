@@ -832,6 +832,13 @@ function PostingInterviewSetup(
                         className="flex-1 min-w-[140px] border border-gray-200 rounded px-2 py-1 text-sm font-medium"
                         readOnly={!allowEdit}
                       />
+                      <input
+                        value={stage.duration ?? ""}
+                        onChange={(e) => patchStage({ duration: e.target.value })}
+                        placeholder="Duration"
+                        className="w-32 border border-gray-200 rounded px-2 py-1 text-sm"
+                        readOnly={!allowEdit}
+                      />
                       {allowEdit && (
                         <button
                           type="button"
