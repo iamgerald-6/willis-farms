@@ -23,6 +23,14 @@ type OnboardingHrFieldsEditorProps = {
   moduleId: string;
   canAdd?: boolean;
   canEdit?: boolean;
+  /** Which System Definitions field list this instance manages — defaults
+   * to HR onboarding Section O. Pass a different list (e.g.
+   * OFFER_TERMS_FIELDS_LIST) to reuse this editor for another independent
+   * field list. */
+  optionList?: string;
+  /** Name of the live form this list drives, used in helper copy below
+   * (e.g. "onboarding form" vs "offer letter form"). */
+  liveFormLabel?: string;
 };
 
 type DraftRules = {
@@ -102,9 +110,11 @@ export default function OnboardingHrFieldsEditor({
   moduleId,
   canAdd = true,
   canEdit = true,
+  optionList = ONBOARDING_HR_FIELDS_LIST,
+  liveFormLabel = "onboarding form",
 }: OnboardingHrFieldsEditorProps) {
   const queryClient = useQueryClient();
-  const queryKey = ["system_options", moduleId, ONBOARDING_HR_FIELDS_LIST];
+  const queryKey = ["system_options", moduleId, optionList];
 
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -127,7 +137,7 @@ export default function OnboardingHrFieldsEditor({
       const res = await api.get("/system-definitions/options", {
         params: {
           module_id: moduleId,
-          option_list: ONBOARDING_HR_FIELDS_LIST,
+          option_list: optionList,
           include_inactive: true,
         },
       });
@@ -154,7 +164,7 @@ export default function OnboardingHrFieldsEditor({
     }) =>
       api.post("/system-definitions/options", {
         module_id: moduleId,
-        option_list: ONBOARDING_HR_FIELDS_LIST,
+        option_list: optionList,
         ...payload,
       }),
     onSuccess: () => {
@@ -371,14 +381,15 @@ export default function OnboardingHrFieldsEditor({
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
-        These fields appear in HR Section O only — not on the candidate onboarding link. Use
-        &quot;Employment placement&quot; for department, location, and similar dropdowns.
+        These fields appear on the live {liveFormLabel} only — not on the candidate onboarding
+        link. Use &quot;Employment placement&quot; for department, location, and similar
+        dropdowns.
       </p>
 
       {canEdit && activeFields.length > 1 && (
         <p className="text-xs text-gray-400">
           Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this is the
-          order fields appear in on the live onboarding form.
+          order fields appear in on the live {liveFormLabel}.
         </p>
       )}
 

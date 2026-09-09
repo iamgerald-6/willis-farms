@@ -13,9 +13,11 @@ import {
   getDefaultOnboardingMedicalReports,
 } from "./onboardingDefaults";
 import {
+  OFFER_TERMS_FIELDS_LIST,
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
+  getDefaultOfferTermsFields,
   getDefaultOnboardingEmploymentTypes,
   getDefaultOnboardingHrFields,
   getDefaultPayFrequencies,
@@ -88,6 +90,13 @@ export function getGitFallbackOptions(
 
   if (
     moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === OFFER_TERMS_FIELDS_LIST
+  ) {
+    return getDefaultOfferTermsFields();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
     optionList === ONBOARDING_EMPLOYMENT_TYPES_LIST
   ) {
     return getDefaultOnboardingEmploymentTypes();
@@ -142,6 +151,7 @@ export function getGitFallbackOptionById(id: string): SystemOption | null {
       RECRUITMENT_JOB_POSTINGS_LIST,
       ONBOARDING_FIELDS_LIST,
       ONBOARDING_HR_FIELDS_LIST,
+      OFFER_TERMS_FIELDS_LIST,
       ONBOARDING_EMPLOYMENT_TYPES_LIST,
       ONBOARDING_MEDICAL_REPORTS_LIST,
     ],

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import {
+  resolveOfferTermsFields,
   resolveOnboardingHrFields,
   type OnboardingHrFieldDef,
 } from "@/lib/careers/onboardingHrFormSchema";
@@ -14,6 +15,7 @@ import {
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/onboardingDefaults";
 import {
+  OFFER_TERMS_FIELDS_LIST,
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
@@ -49,6 +51,10 @@ type OnboardingHrFieldsFormProps = {
   onGradeChange?: () => void;
   onEmployeeIdChange?: () => void;
   onCompanyEmailChange?: () => void;
+  /** Which System Definitions field list to render — defaults to HR
+   * onboarding Section O. Pass OFFER_TERMS_FIELDS_LIST to render the
+   * independent Offer letter field list instead. */
+  optionList?: string;
   /** When set, only these field keys are rendered (offer tab subset). */
   includeFieldKeys?: string[];
   /** Field keys omitted from Section O (e.g. review-only fields). */
@@ -76,6 +82,7 @@ export default function OnboardingHrFieldsForm({
   onGradeChange,
   onEmployeeIdChange,
   onCompanyEmailChange,
+  optionList = ONBOARDING_HR_FIELDS_LIST,
   includeFieldKeys,
   excludeFieldKeys = [],
   readOnlyFields = [],
@@ -83,16 +90,18 @@ export default function OnboardingHrFieldsForm({
 }: OnboardingHrFieldsFormProps) {
   const readOnlySet = useMemo(() => new Set(readOnlyFields), [readOnlyFields]);
   const shouldShowHint = (hint?: string) => Boolean(!hideFieldHints && hint?.trim());
+  const isOfferTermsList = optionList === OFFER_TERMS_FIELDS_LIST;
   const { data: hrFields = [] } = useQuery({
-    queryKey: ["onboarding-hr-fields"],
+    queryKey: ["onboarding-hr-fields", optionList],
     queryFn: async () => {
       const res = await api.get("/system-definitions/options", {
         params: {
           module_id: RECRUITMENT_MODULE_ID,
-          option_list: ONBOARDING_HR_FIELDS_LIST,
+          option_list: optionList,
         },
       });
-      return resolveOnboardingHrFields((res.data.data ?? []) as SystemOption[]);
+      const rows = (res.data.data ?? []) as SystemOption[];
+      return isOfferTermsList ? resolveOfferTermsFields(rows) : resolveOnboardingHrFields(rows);
     },
   });
 
@@ -553,15 +562,17 @@ export default function OnboardingHrFieldsForm({
     );
   };
 
+  const useFlatLayout = Boolean(includeFieldKeys) || isOfferTermsList;
+
   return (
     <>
-      {includeFieldKeys ? (
+      {useFlatLayout ? (
         <div className="grid sm:grid-cols-2 gap-3">
           {[...placementFields, ...hrGroupFields, ...notesFields]
-            .sort(
-              (a, b) =>
-                includeFieldKeys.indexOf(a.fieldKey) -
-                includeFieldKeys.indexOf(b.fieldKey),
+            .sort((a, b) =>
+              includeFieldKeys
+                ? includeFieldKeys.indexOf(a.fieldKey) - includeFieldKeys.indexOf(b.fieldKey)
+                : a.sort_order - b.sort_order,
             )
             .map(renderField)}
         </div>

@@ -3,7 +3,10 @@ import type {
   OnboardingHrFieldGroup,
   OnboardingHrFieldType,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
-import { getDefaultOnboardingHrFields } from "@/lib/systemDefinitions/onboardingHrDefaults";
+import {
+  getDefaultOfferTermsFields,
+  getDefaultOnboardingHrFields,
+} from "@/lib/systemDefinitions/onboardingHrDefaults";
 
 export type OnboardingHrFieldDef = {
   id: string;
@@ -80,9 +83,12 @@ export const DEPRECATED_ONBOARDING_HR_FIELD_KEYS = new Set([
   "approved_by",
 ]);
 
-export function resolveOnboardingHrFields(options: SystemOption[]): OnboardingHrFieldDef[] {
+function resolveFieldsAgainstDefaults(
+  options: SystemOption[],
+  defaultOptions: SystemOption[],
+): OnboardingHrFieldDef[] {
   const fromDb = normalizeOnboardingHrFields(options);
-  const defaults = normalizeOnboardingHrFields(getDefaultOnboardingHrFields());
+  const defaults = normalizeOnboardingHrFields(defaultOptions);
   const base = fromDb.length === 0 ? defaults : fromDb;
 
   const byKey = new Map<string, OnboardingHrFieldDef>();
@@ -95,6 +101,19 @@ export function resolveOnboardingHrFields(options: SystemOption[]): OnboardingHr
   return [...byKey.values()]
     .filter((f) => !DEPRECATED_ONBOARDING_HR_FIELD_KEYS.has(f.fieldKey))
     .sort((a, b) => a.sort_order - b.sort_order);
+}
+
+export function resolveOnboardingHrFields(options: SystemOption[]): OnboardingHrFieldDef[] {
+  return resolveFieldsAgainstDefaults(options, getDefaultOnboardingHrFields());
+}
+
+/**
+ * Same resolution logic as resolveOnboardingHrFields, but against the
+ * independent Offer letter field list's own defaults — never merged with
+ * Section O's defaults, even though several field keys are shared.
+ */
+export function resolveOfferTermsFields(options: SystemOption[]): OnboardingHrFieldDef[] {
+  return resolveFieldsAgainstDefaults(options, getDefaultOfferTermsFields());
 }
 
 export const ONBOARDING_HR_FIELD_TYPES: OnboardingHrFieldType[] = [

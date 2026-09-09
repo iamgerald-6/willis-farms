@@ -8,6 +8,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  FileText,
   History,
   Layers,
   ListChecks,
@@ -55,7 +56,10 @@ import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
-import { ONBOARDING_EMPLOYMENT_TYPES_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
+import {
+  OFFER_TERMS_FIELDS_LIST,
+  ONBOARDING_EMPLOYMENT_TYPES_LIST,
+} from "@/lib/systemDefinitions/onboardingHrDefaults";
 
 const ACTION_LABELS: Record<PermissionAction, string> = {
   view: "Can view",
@@ -472,6 +476,27 @@ function getModuleSections(
             moduleId={m.id}
             canAdd={canAdd}
             canEdit={canEdit}
+          />
+        </SectionCard>
+      ),
+    });
+
+    sections.push({
+      key: "offer-letter-fields",
+      label: "Offer letter",
+      icon: FileText,
+      render: () => (
+        <SectionCard
+          icon={FileText}
+          title="Offer letter"
+          description="Fields on the live Offer Terms modal, shown to HR before an offer letter is generated. Independent from HR onboarding — Section O: adding or editing a field here only changes the Offer Terms modal. Already-saved offer values still show read-only on the onboarding tab."
+        >
+          <OnboardingHrFieldsEditor
+            moduleId={m.id}
+            canAdd={canAdd}
+            canEdit={canEdit}
+            optionList={OFFER_TERMS_FIELDS_LIST}
+            liveFormLabel="offer letter form"
           />
         </SectionCard>
       ),
