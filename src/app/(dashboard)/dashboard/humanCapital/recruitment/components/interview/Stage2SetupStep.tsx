@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CalendarClock,
   Clock,
@@ -78,6 +79,18 @@ export default function Stage2SetupStep({
 }: Props) {
   const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  // Same live Sites catalog already used for HR onboarding's "Work
+  // location" dropdown — so the Onsite location list here always matches
+  // whatever's configured under Organizational Structure, instead of
+  // letting HR hand-type a location that could drift or typo.
+  const { data: orgLists } = useQuery({
+    queryKey: ["onboarding_org_lists"],
+    queryFn: async () =>
+      (await api.get("/careers/onboarding/org-lists")).data?.data as
+        | { sites: string[]; departments: string[] }
+        | undefined,
+  });
+  const siteOptions = orgLists?.sites ?? [];
   const setup = formData.setup ?? {};
   const stage1Members = stageMembers(formData, 1);
 
@@ -355,9 +368,7 @@ export default function Stage2SetupStep({
               <label className="text-xs text-gray-500 block mb-1">
                 Location *
               </label>
-              <input
-                type="text"
-                placeholder="Practical assessment location"
+              <select
                 value={setup.stage2_location ?? ""}
                 disabled={readOnly}
                 onChange={(e) =>
@@ -371,7 +382,14 @@ export default function Stage2SetupStep({
                   })
                 }
                 className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
-              />
+              >
+                <option value="">Select a site…</option>
+                {siteOptions.map((site) => (
+                  <option key={site} value={site}>
+                    {site}
+                  </option>
+                ))}
+              </select>
             </div>
           ) : null}
         </div>
