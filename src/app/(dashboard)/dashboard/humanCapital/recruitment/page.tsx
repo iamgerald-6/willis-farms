@@ -1476,13 +1476,20 @@ function ApplicationDetail({
                     value={hrNotes}
                     onChange={(e) => setHrNotes(e.target.value)}
                     rows={3}
-                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white"
+                    disabled={!roleReportRow?.report}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-amber-100/60 disabled:cursor-not-allowed"
                     placeholder="Record your team's reasoning before choosing an outcome — required."
                   />
-                  {!hrNotes.trim() && (
+                  {!roleReportRow?.report ? (
                     <p className="text-[11px] text-amber-700 mt-1">
-                      Add HR notes before you can choose an outcome.
+                      Generate the role hiring summary report before writing your decision notes.
                     </p>
+                  ) : (
+                    !hrNotes.trim() && (
+                      <p className="text-[11px] text-amber-700 mt-1">
+                        Add HR notes before you can choose an outcome.
+                      </p>
+                    )
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">

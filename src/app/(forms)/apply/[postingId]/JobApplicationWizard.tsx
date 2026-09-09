@@ -121,6 +121,13 @@ export default function JobApplicationWizard({
   const [activeDraftToken, setActiveDraftToken] = useState(draftToken);
   const [extractingCv, setExtractingCv] = useState(false);
   const [cvFillNotice, setCvFillNotice] = useState<string | null>(null);
+  // Personal-info fields (Step 1) that CV extraction successfully filled —
+  // these render read-only/disabled so the applicant can't edit a value we
+  // pulled off their CV. A field extraction couldn't find stays unlocked and
+  // fully editable. Re-uploading a different CV and getting a new value for
+  // one of these fields overwrites it and (re-)locks it — see
+  // handleExtractCv below.
+  const [cvLockedFields, setCvLockedFields] = useState<Record<string, boolean>>({});
   const [passportBioStatus, setPassportBioStatus] = useState<PassportBioStatus>("idle");
   const [passportBioMessage, setPassportBioMessage] = useState<string | null>(null);
   // Tracks the in-flight verification request so a superseded call (e.g. a
@@ -314,6 +321,13 @@ export default function JobApplicationWizard({
     }
   };
 
+  type ExtractedRefereeEntry = {
+    name: string;
+    phone: string;
+    email: string;
+    relationship: string;
+  };
+
   type ExtractedCvFields = {
     first_name: string;
     last_name: string;
@@ -324,12 +338,30 @@ export default function JobApplicationWizard({
     nationality: string;
     work_experience: WorkHistoryEntry[];
     education: EducationEntry[];
+    references: ExtractedRefereeEntry[];
   };
 
-  // Reads whatever the CV extraction route found and fills in ONLY the
-  // fields still blank — never overwrites something the applicant already
-  // typed (e.g. if they re-upload a different CV after editing manually).
-  // Everything it fills stays fully editable afterward.
+  // Step 1 personal-info fields that get locked once CV extraction fills
+  // them — see cvLockedFields above.
+  const CV_LOCKABLE_FIELD_KEYS = [
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "date_of_birth",
+    "gender",
+    "nationality",
+  ];
+
+  // Reads whatever the CV extraction route found and fills the form.
+  // Personal-info fields (first/last name, email, phone, DOB, gender,
+  // nationality) and referee fields always take the newly extracted value —
+  // re-uploading a different CV overrides whatever an earlier upload filled
+  // in. Personal-info fields also get locked (read-only) once filled this
+  // way; a field extraction couldn't find is left open for the applicant to
+  // fill in themselves. Work experience and education stay fully editable,
+  // but a fresh extraction with entries still replaces the whole list, same
+  // override-on-reupload behavior.
   const handleExtractCv = async (fileUrl: string, fileName: string) => {
     setExtractingCv(true);
     setCvFillNotice(null);
@@ -345,51 +377,70 @@ export default function JobApplicationWizard({
 
       // setValues' updater isn't guaranteed to run synchronously (it's
       // batched into the next render), so a variable mutated inside it and
-      // read right after can still be stale — compute the merge and the
-      // "did we fill anything" flag together, inside the updater, and only
-      // react to the result from there.
+      // read right after can still be stale. Every reaction to the merge
+      // result — the fill notice AND which fields to lock — has to happen
+      // from inside the updater itself, not after calling setValues.
       setValues((prev) => {
         const next = { ...prev };
         let filledAnything = false;
-        const fillText = (key: string, val: string) => {
-          if (val && !String(next[key] ?? "").trim()) {
+        const newlyLockedFields: Record<string, boolean> = {};
+        const overwriteText = (key: string, val: string) => {
+          if (val) {
             next[key] = val;
             filledAnything = true;
+            newlyLockedFields[key] = true;
           }
         };
-        fillText("first_name", extracted.first_name);
-        fillText("last_name", extracted.last_name);
-        fillText("email", extracted.email);
-        fillText("phone", extracted.phone);
-        fillText("date_of_birth", extracted.date_of_birth);
-        fillText("gender", extracted.gender);
-        if (extracted.nationality && !String(next.nationality ?? "").trim()) {
+        overwriteText("first_name", extracted.first_name);
+        overwriteText("last_name", extracted.last_name);
+        overwriteText("email", extracted.email);
+        overwriteText("phone", extracted.phone);
+        overwriteText("date_of_birth", extracted.date_of_birth);
+        overwriteText("gender", extracted.gender);
+        if (extracted.nationality) {
           next.nationality = extracted.nationality;
           next.is_citizen = extracted.nationality === "Ghana" ? "Yes" : "No";
           next.id_document_type =
             extracted.nationality === "Ghana" ? ID_DOCUMENT_GHANA_CARD : ID_DOCUMENT_PASSPORT;
           filledAnything = true;
+          newlyLockedFields.nationality = true;
         }
-        if (
-          extracted.work_experience.length > 0 &&
-          !(Array.isArray(next.work_experience) && next.work_experience.length > 0)
-        ) {
+        if (extracted.work_experience.length > 0) {
           next.work_experience = extracted.work_experience;
           filledAnything = true;
         }
-        if (
-          extracted.education.length > 0 &&
-          !(Array.isArray(next.education) && next.education.length > 0)
-        ) {
+        if (extracted.education.length > 0) {
           next.education = extracted.education;
           filledAnything = true;
         }
+        (extracted.references ?? []).forEach((ref, i) => {
+          const prefix = `reference_${i + 1}_`;
+          if (ref.name) {
+            next[`${prefix}name`] = ref.name;
+            filledAnything = true;
+          }
+          if (ref.phone) {
+            next[`${prefix}phone`] = ref.phone;
+            filledAnything = true;
+          }
+          if (ref.email) {
+            next[`${prefix}email`] = ref.email;
+            filledAnything = true;
+          }
+          if (ref.relationship) {
+            next[`${prefix}relationship`] = ref.relationship;
+            filledAnything = true;
+          }
+        });
 
         setCvFillNotice(
           filledAnything
             ? "We've pre-filled some fields from your CV — please review everything before continuing."
             : "We couldn't find anything in that CV to pre-fill — no problem, just fill in the fields below.",
         );
+        if (Object.keys(newlyLockedFields).length > 0) {
+          setCvLockedFields((prevLocked) => ({ ...prevLocked, ...newlyLockedFields }));
+        }
 
         return next;
       });
@@ -591,13 +642,15 @@ export default function JobApplicationWizard({
     const { fieldKey, fieldType, required, placeholder, options, accept } =
       field.rules;
     const value = values[fieldKey];
+    const isCvLocked = CV_LOCKABLE_FIELD_KEYS.includes(fieldKey) && !!cvLockedFields[fieldKey];
 
     if (fieldType === "select") {
       return (
         <FieldBlock key={field.id} label={field.label} required={required}>
           <select
-            className={inputClass}
+            className={`${inputClass}${isCvLocked ? " bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
             value={String(value ?? "")}
+            disabled={isCvLocked}
             onChange={(e) => setFieldValue(fieldKey, e.target.value)}
           >
             <option value="">Select…</option>
@@ -854,6 +907,7 @@ export default function JobApplicationWizard({
           <PhoneNumberInput
             value={String(value ?? "")}
             onChange={(next) => setFieldValue(fieldKey, next)}
+            disabled={isCvLocked}
           />
         </FieldBlock>
       );
@@ -909,11 +963,12 @@ export default function JobApplicationWizard({
     return (
       <FieldBlock key={field.id} label={field.label} required={required}>
         <input
-          className={inputClass}
+          className={`${inputClass}${isCvLocked ? " bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
           type={inputType}
           placeholder={placeholder}
           max={dateMax}
           value={String(value ?? "")}
+          readOnly={isCvLocked}
           {...(isEmailField
             ? {
                 inputMode: "email" as const,

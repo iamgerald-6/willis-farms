@@ -45,6 +45,11 @@ const MEDICAL_REPORT_TOOL = {
         description:
           "True only if this is a genuine medical/fitness certificate from a clinic or hospital — false for unrelated documents, blank pages, or unreadable uploads.",
       },
+      patient_name: {
+        type: "string",
+        description:
+          "Full name of the patient/candidate as printed on the report (e.g. next to 'Name:' or 'Patient'). Empty if not legible or not present.",
+      },
       blood_group: {
         type: "string",
         description: "Blood group as printed on the report (e.g. O+, A-, B+). Empty if not found.",
@@ -69,7 +74,7 @@ const MEDICAL_REPORT_TOOL = {
 
 const INSTRUCTIONS =
   "This upload is a pre-employment medical certificate or fitness report for a Wills Farms job candidate. " +
-  "Extract blood group, any allergies, and any medical conditions or findings if legible. " +
+  "Extract the patient's name, blood group, any allergies, and any medical conditions or findings if legible. " +
   "Leave fields empty rather than guessing. Set is_medical_report to false if this is not a medical document.";
 
 export async function POST(req: NextRequest) {
@@ -103,16 +108,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
-    const { data: submission, error: subError } = await supabaseAdmin
-      .from("onboarding_submissions")
-      .select("form_data")
-      .eq("application_id", applicationId)
-      .maybeSingle();
+    const [{ data: submission, error: subError }, { data: application, error: appError }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("onboarding_submissions")
+          .select("form_data")
+          .eq("application_id", applicationId)
+          .maybeSingle(),
+        supabaseAdmin
+          .from("job_applications")
+          .select("full_name")
+          .eq("id", applicationId)
+          .maybeSingle(),
+      ]);
 
     if (subError) {
       return NextResponse.json({ error: subError.message }, { status: 500 });
     }
+    if (appError) {
+      return NextResponse.json({ error: appError.message }, { status: 500 });
+    }
 
+    const applicantName = application?.full_name?.trim() ?? "";
     const formData = (submission?.form_data ?? {}) as OnboardingFormData;
     const declared = {
       blood_group: formData.medical?.blood_group,
@@ -201,13 +218,14 @@ export async function POST(req: NextRequest) {
 
     const extracted: ExtractedMedicalReport = {
       isMedicalReport: raw.is_medical_report === true,
+      patientName: String(raw.patient_name ?? "").trim(),
       bloodGroup: String(raw.blood_group ?? "").trim(),
       allergiesNoted: String(raw.allergies_noted ?? "").trim(),
       conditionsNoted: String(raw.conditions_noted ?? "").trim(),
       summary: String(raw.summary ?? "").trim(),
     };
 
-    const match = evaluateMedicalReportMatch(declared, extracted);
+    const match = evaluateMedicalReportMatch(declared, extracted, applicantName);
 
     return NextResponse.json({
       ok: match.ok,

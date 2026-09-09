@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { FormDefinition } from "@/lib/moduleRegistry/types";
@@ -93,7 +93,6 @@ export default function CompanyEmailDomainEditor({
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <AtSign className="w-4 h-4 text-gray-400" />
           <span className="text-sm text-gray-500">@</span>
           <input
             type="text"

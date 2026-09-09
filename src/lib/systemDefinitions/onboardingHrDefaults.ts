@@ -2,6 +2,7 @@ import type { SystemOption } from "./types";
 import { RECRUITMENT_MODULE_ID } from "./recruitmentDefaults";
 
 export const ONBOARDING_HR_FIELDS_LIST = "careers.onboardingHrFields";
+export const OFFER_TERMS_FIELDS_LIST = "careers.offerTermsFields";
 export const ONBOARDING_EMPLOYMENT_TYPES_LIST = "careers.onboardingEmploymentTypes";
 export const ONBOARDING_PAY_FREQUENCIES_LIST = "careers.payFrequencies";
 
@@ -294,6 +295,82 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
       31,
       { fieldKey: "hr_notes", fieldType: "textarea", group: "notes", colSpan: "full", required: false },
     ),
+  ];
+}
+
+function offerField(
+  id: string,
+  label: string,
+  fieldKey: string,
+  fieldType: OnboardingHrFieldType,
+  sortOrder: number,
+  extraRules: Record<string, unknown> = {},
+): SystemOption {
+  return {
+    id,
+    module_id: RECRUITMENT_MODULE_ID,
+    option_list: OFFER_TERMS_FIELDS_LIST,
+    label,
+    legacy_value: fieldKey,
+    sort_order: sortOrder,
+    is_active: true,
+    rules: {
+      fieldKey,
+      fieldType,
+      group: "hr",
+      required: false,
+      ...extraRules,
+    } as SystemOption["rules"],
+  };
+}
+
+/**
+ * Git defaults for the Offer letter fields — an independent field list from
+ * HR onboarding Section O (getDefaultOnboardingHrFields above), even though
+ * several of these field keys are shared with it (same hr_data key, so a
+ * value filled in here is what Section O later shows read-only). Editing or
+ * adding a field here only ever affects the live Offer Terms modal.
+ */
+export function getDefaultOfferTermsFields(): SystemOption[] {
+  return [
+    offerField("opt:recruitment:offer:position_title", "Position title", "position_title", "text", 0),
+    offerField("opt:recruitment:offer:grade_level", "Grade / level", "grade_level", "grade_level", 1, { colSpan: "full" }),
+    offerField("opt:recruitment:offer:salary_tier", "Salary tier", "salary_tier", "salary_tier", 2),
+    offerField("opt:recruitment:offer:salary_ghs", "Gross salary (GHS)", "salary_ghs", "text", 3),
+    offerField("opt:recruitment:offer:pay_frequency", "Pay frequency", "pay_frequency", "pay_frequency", 4),
+    offerField("opt:recruitment:offer:department", "Department / division", "department", "department", 5),
+    offerField("opt:recruitment:offer:employment_type", "Employment type", "employment_type", "employment_type", 6),
+    offerField("opt:recruitment:offer:work_location", "Farm site / work location", "work_location", "work_location", 7),
+    offerField("opt:recruitment:offer:reporting_to", "Reporting to", "reporting_to", "reporting_to", 8, {
+      required: true,
+      hint: "Staff with Supervisory Role, Executive Role, or Human Resource — the person this hire will report to.",
+    }),
+    offerField("opt:recruitment:offer:start_date", "Start date", "start_date", "date", 9, {
+      required: true,
+      hint: "Effective employment start date — used throughout the offer letter as both the appointment date and Position Details start date.",
+    }),
+    offerField("opt:recruitment:offer:notice_period", "Notice period", "notice_period", "text", 10, {
+      required: true,
+      hint: "e.g. \"3 months\" — used in the offer letter's Terms of Employment clause.",
+    }),
+    offerField("opt:recruitment:offer:working_hours", "Working hours", "working_hours", "text", 11, {
+      required: true,
+      hint: "e.g. \"40 hours per week, Monday to Sunday with one day off duty.\"",
+    }),
+    offerField("opt:recruitment:offer:acceptance_deadline", "Offer acceptance deadline", "acceptance_deadline", "date", 12, { required: true }),
+    offerField("opt:recruitment:offer:basic_salary_ghs", "Basic salary (GHS)", "basic_salary_ghs", "text", 13, { required: true }),
+    offerField("opt:recruitment:offer:housing_allowance", "Housing allowance", "housing_allowance", "text", 14, {
+      required: true,
+      hint: "Amount, or how it's provided — e.g. \"Provided by the Company upon signing a Housing Agreement.\"",
+    }),
+    offerField("opt:recruitment:offer:medical_allowance", "Medical allowance", "medical_allowance", "text", 15, { required: true }),
+    offerField("opt:recruitment:offer:social_security_contribution", "Social security contribution", "social_security_contribution", "text", 16, {
+      required: true,
+      hint: "SSNIT deduction amount for Annex 1 of the offer letter.",
+    }),
+    offerField("opt:recruitment:offer:income_tax", "Income tax", "income_tax", "text", 17, { required: true }),
+    offerField("opt:recruitment:offer:net_payable", "Net payable", "net_payable", "text", 18, { required: true }),
+    offerField("opt:recruitment:offer:hr_notes", "HR notes", "hr_notes", "textarea", 19, { colSpan: "full" }),
   ];
 }
 

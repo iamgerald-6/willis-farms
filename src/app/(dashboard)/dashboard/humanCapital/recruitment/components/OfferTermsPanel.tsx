@@ -6,10 +6,8 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
-import {
-  OFFER_TERMS_FIELD_KEYS,
-  validateOfferTerms,
-} from "@/lib/careers/offerTerms";
+import { validateOfferTerms } from "@/lib/careers/offerTerms";
+import { OFFER_TERMS_FIELDS_LIST } from "@/lib/systemDefinitions/onboardingHrDefaults";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 
@@ -176,7 +174,7 @@ export default function OfferTermsPanel({
       <OnboardingHrFieldsForm
         hrData={hrData}
         setHrData={setHrData}
-        includeFieldKeys={[...OFFER_TERMS_FIELD_KEYS]}
+        optionList={OFFER_TERMS_FIELDS_LIST}
         readOnlyFields={postingLockedFields}
         hideFieldHints
       />

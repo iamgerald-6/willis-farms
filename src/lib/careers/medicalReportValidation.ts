@@ -5,6 +5,7 @@ export const INVALID_MEDICAL_REPORT_MESSAGE =
 
 export type ExtractedMedicalReport = {
   isMedicalReport: boolean;
+  patientName: string;
   bloodGroup: string;
   allergiesNoted: string;
   conditionsNoted: string;
@@ -57,6 +58,26 @@ function textTokens(raw: string | undefined | null): string[] {
     .filter((t) => t.length >= 3 && !stop.has(t));
 }
 
+/** Tokens of a person's name for loose matching — OCR noise, missing middle
+ * names, or word-order differences shouldn't fail a genuine match, but a
+ * different surname should. */
+function nameTokens(raw: string | undefined | null): string[] {
+  return normalizeText(raw)
+    .split(" ")
+    .filter((t) => t.length >= 2);
+}
+
+/** True if enough of the candidate's name tokens appear on the report to
+ * call it the same person — at least half (rounded up), so a two-word name
+ * needs both words but a four-word name only needs two. */
+function namesMatch(expectedName: string, extractedName: string): boolean {
+  const expected = nameTokens(expectedName);
+  const extracted = new Set(nameTokens(extractedName));
+  if (expected.length === 0 || extracted.size === 0) return true;
+  const matched = expected.filter((t) => extracted.has(t)).length;
+  return matched >= Math.ceil(expected.length / 2);
+}
+
 /** True when declared free-text overlaps document text (for allergies / conditions). */
 function freeTextConsistent(declared: string | undefined, extracted: string | undefined): {
   ok: boolean;
@@ -89,6 +110,7 @@ function freeTextConsistent(declared: string | undefined, extracted: string | un
 export function evaluateMedicalReportMatch(
   declared: DeclaredMedicalInfo,
   extracted: ExtractedMedicalReport,
+  expectedName?: string,
 ): MedicalReportMatchResult {
   const warnings: string[] = [];
 
@@ -97,6 +119,22 @@ export function evaluateMedicalReportMatch(
       ok: false,
       message: INVALID_MEDICAL_REPORT_MESSAGE,
       warnings: [],
+      extracted,
+    };
+  }
+
+  const expected = expectedName?.trim() ?? "";
+  const patientName = extracted.patientName?.trim() ?? "";
+
+  if (expected && !patientName) {
+    warnings.push(
+      "Could not read the patient's name on the report — confirm it belongs to this candidate.",
+    );
+  } else if (expected && patientName && !namesMatch(expected, patientName)) {
+    return {
+      ok: false,
+      message: `The name on the medical report ("${patientName}") does not appear to match the candidate's name ("${expected}"). Please confirm this report belongs to the candidate.`,
+      warnings,
       extracted,
     };
   }

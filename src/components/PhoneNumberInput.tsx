@@ -51,9 +51,11 @@ function parseValue(value: string): { code: string; digits: string } {
 export function PhoneNumberInput({
   value,
   onChange,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const { code, digits } = parseValue(value);
   // Only judge once there's a plausible amount typed — flagging "invalid"
@@ -65,13 +67,16 @@ export function PhoneNumberInput({
     onChange(`${nextCode}${nextDigits}`);
   }
 
+  const disabledClass = disabled ? " bg-gray-50 text-gray-500 cursor-not-allowed" : "";
+
   return (
     <div>
       <div className="flex gap-2">
         <select
           value={code}
           onChange={(e) => commit(e.target.value, digits)}
-          className={`w-32 shrink-0 ${fieldClass}`}
+          disabled={disabled}
+          className={`w-32 shrink-0 ${fieldClass}${disabledClass}`}
         >
           {COUNTRY_CODES.map((c) => (
             <option key={`${c.code}-${c.country}`} value={c.code}>
@@ -85,8 +90,9 @@ export function PhoneNumberInput({
           maxLength={MAX_NATIONAL_DIGITS}
           placeholder="Phone number"
           value={digits}
+          disabled={disabled}
           onChange={(e) => commit(code, e.target.value.replace(/\D/g, "").slice(0, MAX_NATIONAL_DIGITS))}
-          className={`flex-1 ${fieldClass}`}
+          className={`flex-1 ${fieldClass}${disabledClass}`}
         />
       </div>
       {showInvalidHint && (

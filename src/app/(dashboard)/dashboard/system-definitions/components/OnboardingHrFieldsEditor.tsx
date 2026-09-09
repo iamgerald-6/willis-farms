@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Check, X, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import type { SystemOption } from "@/lib/systemDefinitions";
@@ -23,6 +23,14 @@ type OnboardingHrFieldsEditorProps = {
   moduleId: string;
   canAdd?: boolean;
   canEdit?: boolean;
+  /** Which System Definitions field list this instance manages — defaults
+   * to HR onboarding Section O. Pass a different list (e.g.
+   * OFFER_TERMS_FIELDS_LIST) to reuse this editor for another independent
+   * field list. */
+  optionList?: string;
+  /** Name of the live form this list drives, used in helper copy below
+   * (e.g. "onboarding form" vs "offer letter form"). */
+  liveFormLabel?: string;
 };
 
 type DraftRules = {
@@ -34,6 +42,24 @@ type DraftRules = {
   colSpan: "half" | "full";
   options: string;
 };
+
+/** Field key is always derived from the label for a brand-new field —
+ * lowercase snake_case, no manual editing. Existing fields (edit form)
+ * keep whatever key they already have; this is only used on creation. */
+function toSnakeCase(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** New fields are restricted to these 4 basic types — the other types
+ * (grade_level, department, employment_type, work_location, supervisor,
+ * salary_tier, salary_range, pay_frequency, reporting_to) are already used
+ * by built-in Section O fields and stay available when editing those, but
+ * shouldn't be offered for newly created fields. */
+const NEW_FIELD_TYPE_OPTIONS: OnboardingHrFieldType[] = ["text", "select", "date", "textarea"];
 
 function rulesToDraft(rules: ReturnType<typeof parseOnboardingHrFieldRules>): DraftRules {
   return {
@@ -84,9 +110,11 @@ export default function OnboardingHrFieldsEditor({
   moduleId,
   canAdd = true,
   canEdit = true,
+  optionList = ONBOARDING_HR_FIELDS_LIST,
+  liveFormLabel = "onboarding form",
 }: OnboardingHrFieldsEditorProps) {
   const queryClient = useQueryClient();
-  const queryKey = ["system_options", moduleId, ONBOARDING_HR_FIELDS_LIST];
+  const queryKey = ["system_options", moduleId, optionList];
 
   const [showAdd, setShowAdd] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -109,7 +137,7 @@ export default function OnboardingHrFieldsEditor({
       const res = await api.get("/system-definitions/options", {
         params: {
           module_id: moduleId,
-          option_list: ONBOARDING_HR_FIELDS_LIST,
+          option_list: optionList,
           include_inactive: true,
         },
       });
@@ -123,6 +151,8 @@ export default function OnboardingHrFieldsEditor({
     .filter((f): f is OnboardingHrFieldDef => f !== null)
     .sort((a, b) => a.sort_order - b.sort_order);
 
+  const activeFields = fields.filter((f) => f.is_active);
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const createMutation = useMutation({
@@ -134,7 +164,7 @@ export default function OnboardingHrFieldsEditor({
     }) =>
       api.post("/system-definitions/options", {
         module_id: moduleId,
-        option_list: ONBOARDING_HR_FIELDS_LIST,
+        option_list: optionList,
         ...payload,
       }),
     onSuccess: () => {
@@ -180,17 +210,85 @@ export default function OnboardingHrFieldsEditor({
     onError: () => toast.error("Could not remove HR field."),
   });
 
+  // Drag-to-reorder — this list's sort_order is the same value the live
+  // onboarding form (Section O) sorts by, so reordering here directly
+  // controls the order fields appear in on the actual form. Reordering
+  // shows instantly (orderedActiveFields overrides the server-derived
+  // order until the save completes), while sort_order updates for every
+  // affected field save in the background via the same PATCH endpoint the
+  // rest of this editor already uses — there's no dedicated bulk-reorder
+  // endpoint.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+
+  const orderedActiveFields = useMemo(() => {
+    if (!localOrder) return activeFields;
+    const byId = new Map(activeFields.map((f) => [f.id, f]));
+    const ordered = localOrder
+      .map((id) => byId.get(id))
+      .filter((f): f is OnboardingHrFieldDef => !!f);
+    const missing = activeFields.filter((f) => !localOrder.includes(f.id));
+    return [...ordered, ...missing];
+  }, [activeFields, localOrder]);
+
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; sort_order: number }[]) => {
+      await Promise.all(
+        updates.map(({ id, sort_order }) =>
+          api.patch(`/system-definitions/options/${encodeURIComponent(id)}`, { sort_order }),
+        ),
+      );
+    },
+    onSuccess: () => invalidate(),
+    onError: () => {
+      toast.error("Could not save the new order.");
+      setLocalOrder(null);
+      invalidate();
+    },
+  });
+
+  const handleDrop = (targetIndex: number) => {
+    const dragIndex = orderedActiveFields.findIndex((f) => f.id === draggingId);
+    setDraggingId(null);
+    if (dragIndex === -1 || dragIndex === targetIndex) return;
+
+    const next = [...orderedActiveFields];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(targetIndex, 0, moved);
+
+    setLocalOrder(next.map((f) => f.id));
+    reorderMutation.mutate(next.map((f, i) => ({ id: f.id, sort_order: i })));
+  };
+
   const renderDraftForm = (
     draft: DraftRules,
     setDraft: (next: DraftRules) => void,
-  ) => (
+    formOptions?: {
+      /** New-field form: key is auto-derived from the label, not typed. */
+      fieldKeyReadOnly?: boolean;
+      /** New-field form: restricted type list. Omit for the full list (edit form). */
+      typeOptions?: OnboardingHrFieldType[];
+    },
+  ) => {
+    const fieldKeyReadOnly = formOptions?.fieldKeyReadOnly ?? false;
+    const typeOptions = formOptions?.typeOptions ?? ONBOARDING_HR_FIELD_TYPES;
+    return (
     <div className="grid sm:grid-cols-2 gap-2 mt-2">
       <label className="text-xs block">
-        <span className="text-gray-500">Field key (hr_data)</span>
+        <span className="text-gray-500">
+          Field key (hr_data){fieldKeyReadOnly && " — from label"}
+        </span>
         <input
-          className="mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono"
+          className={`mt-1 w-full border border-gray-200 rounded px-2 py-1 text-sm font-mono${
+            fieldKeyReadOnly ? " bg-gray-100 text-gray-500 cursor-not-allowed" : ""
+          }`}
           value={draft.fieldKey}
-          onChange={(e) => setDraft({ ...draft, fieldKey: e.target.value })}
+          readOnly={fieldKeyReadOnly}
+          onChange={
+            fieldKeyReadOnly
+              ? undefined
+              : (e) => setDraft({ ...draft, fieldKey: e.target.value })
+          }
         />
       </label>
       <label className="text-xs block">
@@ -202,7 +300,7 @@ export default function OnboardingHrFieldsEditor({
             setDraft({ ...draft, fieldType: e.target.value as OnboardingHrFieldType })
           }
         >
-          {ONBOARDING_HR_FIELD_TYPES.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
@@ -246,6 +344,9 @@ export default function OnboardingHrFieldsEditor({
             value={draft.options}
             onChange={(e) => setDraft({ ...draft, options: e.target.value })}
           />
+          <p className="text-[11px] text-gray-400 mt-1">
+            Enter the options this dropdown should offer, separated by commas (e.g. Male, Female).
+          </p>
         </label>
       )}
       <label className="text-xs block sm:col-span-2">
@@ -265,7 +366,8 @@ export default function OnboardingHrFieldsEditor({
         Required before completing onboarding
       </label>
     </div>
-  );
+    );
+  };
 
   if (isLoading) {
     return (
@@ -276,27 +378,52 @@ export default function OnboardingHrFieldsEditor({
     );
   }
 
-  const activeFields = fields.filter((f) => f.is_active);
-
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-500">
-        These fields appear in HR Section O only — not on the candidate onboarding link. Use
-        &quot;Employment placement&quot; for department, location, and similar dropdowns.
+        These fields appear on the live {liveFormLabel} only — not on the candidate onboarding
+        link. Use &quot;Employment placement&quot; for department, location, and similar
+        dropdowns.
       </p>
 
+      {canEdit && activeFields.length > 1 && (
+        <p className="text-xs text-gray-400">
+          Drag <GripVertical className="w-3 h-3 inline-block -mt-0.5" /> to reorder — this is the
+          order fields appear in on the live {liveFormLabel}.
+        </p>
+      )}
+
       <div className="space-y-2">
-        {activeFields.map((field) => {
+        {orderedActiveFields.map((field, index) => {
           const groupLabel =
             ONBOARDING_HR_FIELD_GROUPS.find((g) => g.value === field.group)?.label ??
             field.group;
           const isEditing = editingId === field.id;
+          const draggable = canEdit && !isEditing;
 
           return (
             <div
               key={field.id}
-              className="border border-gray-200 rounded-lg p-3 bg-white"
+              draggable={draggable}
+              onDragStart={() => draggable && setDraggingId(field.id)}
+              onDragOver={(e) => {
+                if (draggable) e.preventDefault();
+              }}
+              onDrop={() => draggable && handleDrop(index)}
+              onDragEnd={() => setDraggingId(null)}
+              className={`flex gap-2 border border-gray-200 rounded-lg p-3 bg-white ${
+                draggingId === field.id ? "opacity-40" : ""
+              }`}
             >
+              {draggable && (
+                <div
+                  className="flex items-start pt-0.5 text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                  title="Drag to reorder"
+                >
+                  <GripVertical className="w-4 h-4" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
               {isEditing && editDraft ? (
                 <>
                   <input
@@ -365,6 +492,7 @@ export default function OnboardingHrFieldsEditor({
                   )}
                 </div>
               )}
+              </div>
             </div>
           );
         })}
@@ -388,10 +516,17 @@ export default function OnboardingHrFieldsEditor({
                 <input
                   className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
+                  onChange={(e) => {
+                    const label = e.target.value;
+                    setNewLabel(label);
+                    setNewDraft({ ...newDraft, fieldKey: toSnakeCase(label) });
+                  }}
                 />
               </label>
-              {renderDraftForm(newDraft, setNewDraft)}
+              {renderDraftForm(newDraft, setNewDraft, {
+                fieldKeyReadOnly: true,
+                typeOptions: NEW_FIELD_TYPE_OPTIONS,
+              })}
               <div className="flex gap-2 mt-3">
                 <button
                   type="button"
