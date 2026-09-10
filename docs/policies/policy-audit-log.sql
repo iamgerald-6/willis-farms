@@ -21,7 +21,7 @@ create table if not exists policy_audit_log (
   manual_id uuid not null,
   manual_title text not null,
 
-  action text not null check (action in ('added', 'version_added', 'edited', 'deleted')),
+  action text not null check (action in ('added', 'version_added', 'edited', 'archived', 'restored', 'deleted')),
 
   -- Optional detail line — e.g. which version was edited/added, or what
   -- changed. Kept short and free-text rather than a structured diff.

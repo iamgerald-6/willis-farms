@@ -9,6 +9,8 @@ const ACTION_LABEL: Record<PolicyAuditLogEntry["action"], string> = {
   added: "Added",
   version_added: "Version added",
   edited: "Edited",
+  archived: "Archived",
+  restored: "Restored",
   deleted: "Deleted",
 };
 

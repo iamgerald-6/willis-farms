@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Mail,
   Sparkles,
   X,
 } from "lucide-react";
@@ -13,7 +14,12 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_IMAGE_JPEG_PNG, ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
-import { hasBroadElevatedAccessByRoleLabel } from "@/lib/userRoleAccessControl";
+import { supabase } from "@/lib/supabaseClient";
+import {
+  hasBroadElevatedAccessByRoleLabel,
+  isExecutiveRoleLabel,
+  isHumanResourceRoleLabel,
+} from "@/lib/userRoleAccessControl";
 import type { User } from "@/types";
 import SignaturePad from "./SignaturePad";
 
@@ -45,6 +51,7 @@ type OfferLetterData = {
     recommended_start_date: string | null;
     reporting_to: string | null;
     notice_period: string | null;
+    notice_period_frequency: string | null;
     working_hours: string | null;
     acceptance_deadline: string | null;
     basic_salary_ghs: string | null;
@@ -61,6 +68,7 @@ type OfferLetterData = {
     signature_type?: "typed" | "drawn" | null;
     signature_text?: string | null;
     signature_image?: SignatureImage | null;
+    signed_at?: string | null;
   } | null;
 };
 
@@ -86,6 +94,21 @@ function isEligibleSigner(user: User): boolean {
     hasBroadElevatedAccessByRoleLabel(user.user_role_label) ||
     Boolean(user.page_permissions?.includes("hc:recruitment"))
   );
+}
+
+/** Executive Role or Human Resource — required notice recipients. */
+function isNoticeRecipient(user: User): boolean {
+  if (user.is_disabled || !user.email?.trim()) return false;
+  return (
+    isExecutiveRoleLabel(user.user_role_label) ||
+    isHumanResourceRoleLabel(user.user_role_label)
+  );
+}
+
+function formatStaffOption(user: User): string {
+  const name = `${user.first_name} ${user.last_name}`.trim();
+  const title = user.job_position?.trim();
+  return title ? `${name} (${title})` : name;
 }
 
 function formatCurrencyGhs(value: string | null | undefined): string | null {
@@ -123,7 +146,16 @@ export default function OfferLetterEditorModal({
   const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
   const [savedSignatureImage, setSavedSignatureImage] = useState<SignatureImage | null>(null);
   const [signatureHydrated, setSignatureHydrated] = useState(false);
+  const [noticeRecipientIds, setNoticeRecipientIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
+
+  const { data: session } = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session;
+    },
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["offer-letter", applicationId],
@@ -146,6 +178,16 @@ export default function OfferLetterEditorModal({
   const eligibleSigners = useMemo(
     () => allUsers.filter(isEligibleSigner),
     [allUsers],
+  );
+
+  const noticeRecipients = useMemo(
+    () => allUsers.filter(isNoticeRecipient),
+    [allUsers],
+  );
+
+  const currentUser = useMemo(
+    () => allUsers.find((u) => u.user_id === session?.user?.id),
+    [allUsers, session?.user?.id],
   );
 
   const showInitialLoader = isLoading && !data;
@@ -230,89 +272,232 @@ export default function OfferLetterEditorModal({
   ]);
 
   const selectedSigner = eligibleSigners.find((u) => u.user_id === signerUserId);
+  const signingAsSomeoneElse = Boolean(
+    signerUserId && session?.user?.id && signerUserId !== session.user.id,
+  );
+  const designatedSignerHasSigned = Boolean(
+    signingAsSomeoneElse &&
+      data?.hr_data?.signer_user_id === signerUserId &&
+      data?.hr_data?.signature_type &&
+      (data?.hr_data?.signature_text?.trim() ||
+        data?.hr_data?.signature_image?.secure_url),
+  );
+  const showFinalNotifications = !signingAsSomeoneElse || designatedSignerHasSigned;
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const trimmed = draft.trim();
-      if (!trimmed) {
-        throw new Error("Offer letter text is empty.");
-      }
-      if (!selectedSigner) {
-        throw new Error("Select who is signing this offer letter.");
-      }
+  const toggleNoticeRecipient = (userId: string) => {
+    setNoticeRecipientIds((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId],
+    );
+  };
 
-      let signatureImage: SignatureImage | undefined;
-      if (signatureMode === "drawn") {
-        if (drawnSignature) {
-          const blob = await (await fetch(drawnSignature)).blob();
-          const file = new File([blob], `signature-${applicationId}.png`, {
-            type: "image/png",
-          });
-          signatureImage = await uploadCareersFile(
-            file,
-            "careers/offer-letters/signatures",
-            ACCEPT_IMAGE_JPEG_PNG,
-            "signature_image",
-          );
-        } else if (savedSignatureImage) {
-          signatureImage = savedSignatureImage;
-        } else {
-          throw new Error("Draw a signature, or switch to typing your name.");
+  const persistOfferLetter = async (options: {
+    includeSignature: boolean;
+    generatePdf: boolean;
+    requireSigner?: boolean;
+  }) => {
+    const trimmed = draft.trim();
+    if (!trimmed) {
+      throw new Error("Offer letter text is empty.");
+    }
+    if (options.requireSigner !== false && !selectedSigner) {
+      throw new Error("Select who is signing this offer letter.");
+    }
+
+    const patchBody: {
+      application_id: string;
+      offer_letter_draft: string;
+      signature?: {
+        signer_user_id: string;
+        signer_name: string;
+        signer_title: string;
+        signature_type?: "typed" | "drawn";
+        signature_text?: string;
+        signature_image?: SignatureImage;
+      };
+    } = {
+      application_id: applicationId,
+      offer_letter_draft: trimmed,
+    };
+
+    if (selectedSigner) {
+      let signaturePayload: NonNullable<(typeof patchBody)["signature"]> = {
+        signer_user_id: selectedSigner.user_id,
+        signer_name: `${selectedSigner.first_name} ${selectedSigner.last_name}`.trim(),
+        signer_title:
+          selectedSigner.job_position?.trim() || roleFallbackTitle(selectedSigner.role),
+      };
+
+      if (options.includeSignature) {
+        let signatureImage: SignatureImage | undefined;
+        if (signatureMode === "drawn") {
+          if (drawnSignature) {
+            const blob = await (await fetch(drawnSignature)).blob();
+            const file = new File([blob], `signature-${applicationId}.png`, {
+              type: "image/png",
+            });
+            signatureImage = await uploadCareersFile(
+              file,
+              "careers/offer-letters/signatures",
+              ACCEPT_IMAGE_JPEG_PNG,
+              "signature_image",
+            );
+          } else if (savedSignatureImage) {
+            signatureImage = savedSignatureImage;
+          } else {
+            throw new Error("Draw a signature, or switch to typing your name.");
+          }
+        } else if (!typedSignature.trim()) {
+          throw new Error("Type the signer's name, or switch to drawing a signature.");
         }
-      } else if (!typedSignature.trim()) {
-        throw new Error("Type the signer's name, or switch to drawing a signature.");
-      }
 
-      await api.patch("/careers/onboarding/offer-letter", {
-        application_id: applicationId,
-        offer_letter_draft: trimmed,
-        signature: {
-          signer_user_id: selectedSigner.user_id,
-          signer_name: `${selectedSigner.first_name} ${selectedSigner.last_name}`.trim(),
-          signer_title:
-            selectedSigner.job_position?.trim() || roleFallbackTitle(selectedSigner.role),
+        signaturePayload = {
+          ...signaturePayload,
           signature_type: signatureMode,
           signature_text: signatureMode === "typed" ? typedSignature.trim() : undefined,
           signature_image: signatureMode === "drawn" ? signatureImage : undefined,
-        },
-      });
-
-      const pdfRes = await fetch(
-        `/api/careers/onboarding/offer-letter/pdf?application_id=${encodeURIComponent(applicationId)}`,
-      );
-      if (!pdfRes.ok) {
-        const json = await pdfRes.json().catch(() => ({}));
-        throw new Error(json.error ?? "PDF generation failed.");
+        };
       }
 
-      const blob = await pdfRes.blob();
-      const file = new File(
-        [blob],
-        `offer-letter-${referenceNumber}.pdf`,
-        { type: "application/pdf" },
-      );
+      patchBody.signature = signaturePayload;
+    }
 
-      const uploaded = await uploadCareersFile(
-        file,
-        "careers/offer-letters",
-        ACCEPT_PDF_OR_WORD,
-        "offer_letter",
-      );
+    await api.patch("/careers/onboarding/offer-letter", patchBody);
 
-      await api.patch("/careers/onboarding/offer-letter", {
-        application_id: applicationId,
-        offer_letter: uploaded,
+    if (!options.generatePdf) {
+      void queryClient.invalidateQueries({ queryKey: ["offer-letter", applicationId] });
+      return;
+    }
+
+    const pdfRes = await fetch(
+      `/api/careers/onboarding/offer-letter/pdf?application_id=${encodeURIComponent(applicationId)}`,
+    );
+    if (!pdfRes.ok) {
+      const json = await pdfRes.json().catch(() => ({}));
+      throw new Error(json.error ?? "PDF generation failed.");
+    }
+
+    const blob = await pdfRes.blob();
+    const file = new File(
+      [blob],
+      `offer-letter-${referenceNumber}.pdf`,
+      { type: "application/pdf" },
+    );
+
+    const uploaded = await uploadCareersFile(
+      file,
+      "careers/offer-letters",
+      ACCEPT_PDF_OR_WORD,
+      "offer_letter",
+    );
+
+    await api.patch("/careers/onboarding/offer-letter", {
+      application_id: applicationId,
+      offer_letter: uploaded,
+    });
+
+    void queryClient.invalidateQueries({ queryKey: ["offer-letter", applicationId] });
+  };
+
+  const saveDraftMutation = useMutation({
+    mutationFn: async () => {
+      const includeSignature = !signingAsSomeoneElse && signatureComplete;
+      await persistOfferLetter({
+        includeSignature,
+        generatePdf: includeSignature,
+        requireSigner: false,
       });
     },
     onSuccess: () => {
-      toast.success("Offer letter saved and PDF ready.");
+      toast.success("Offer letter saved — you can close and return to it later.");
       onSaved();
-      handleClose();
     },
     onError: (error: Error) => {
       toast.error(error.message ?? "Save failed.");
     },
   });
+
+  const sendNotificationsMutation = useMutation({
+    mutationFn: async () => {
+      if (noticeRecipientIds.length === 0) {
+        throw new Error("Select at least one executive or HR colleague to notify.");
+      }
+
+      await persistOfferLetter({
+        includeSignature: !signingAsSomeoneElse,
+        generatePdf: true,
+        requireSigner: true,
+      });
+
+      const notifyRes = await api.post("/careers/onboarding/offer-letter/notify", {
+        application_id: applicationId,
+        notice_recipient_user_ids: noticeRecipientIds,
+        send_notice: true,
+        send_approval_request: false,
+        signer_user_id: selectedSigner!.user_id,
+      });
+
+      if (notifyRes.data.warning) {
+        throw new Error(notifyRes.data.warning);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Executive / HR colleagues notified.");
+      onSaved();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Failed to send notifications.");
+    },
+  });
+
+  const sendApprovalMutation = useMutation({
+    mutationFn: async () => {
+      await persistOfferLetter({
+        includeSignature: false,
+        generatePdf: true,
+        requireSigner: true,
+      });
+
+      const notifyRes = await api.post("/careers/onboarding/offer-letter/notify", {
+        application_id: applicationId,
+        notice_recipient_user_ids: [],
+        send_notice: false,
+        send_approval_request: true,
+        signer_user_id: selectedSigner!.user_id,
+      });
+
+      if (notifyRes.data.warning) {
+        throw new Error(notifyRes.data.warning);
+      }
+    },
+    onSuccess: () => {
+      toast.success(
+        `Approval request sent to ${formatStaffOption(selectedSigner!)}.`,
+      );
+      onSaved();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message ?? "Failed to send approval request.");
+    },
+  });
+
+  const isBusy =
+    saveDraftMutation.isPending ||
+    sendNotificationsMutation.isPending ||
+    sendApprovalMutation.isPending;
+  const signatureComplete =
+    signatureMode === "typed"
+      ? Boolean(typedSignature.trim())
+      : Boolean(drawnSignature || savedSignatureImage);
+  const canSaveDraft = Boolean(draft.trim());
+  const canSendNotifications =
+    Boolean(draft.trim()) &&
+    Boolean(signerUserId) &&
+    noticeRecipientIds.length > 0 &&
+    (signingAsSomeoneElse || signatureComplete);
+  const canSendForSignOff =
+    signingAsSomeoneElse && Boolean(draft.trim()) && Boolean(signerUserId);
 
   const ctx = data?.context;
   const grossSalary = ctx?.salary_display ?? formatCurrencyGhs(ctx?.salary_ghs);
@@ -387,6 +572,12 @@ export default function OfferLetterEditorModal({
                     <p className="font-semibold text-gray-900">{ctx.pay_frequency}</p>
                   </div>
                 )}
+                {ctx?.notice_period && (
+                  <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                    <p className="text-xs text-gray-500">Notice period</p>
+                    <p className="font-semibold text-gray-900">{ctx.notice_period}</p>
+                  </div>
+                )}
                 {ctx?.grade_level && (
                   <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
                     <p className="text-xs text-gray-500">Grade level</p>
@@ -448,8 +639,7 @@ export default function OfferLetterEditorModal({
                     <option value="">Select a signer…</option>
                     {eligibleSigners.map((u) => (
                       <option key={u.user_id} value={u.user_id}>
-                        {u.first_name} {u.last_name}
-                        {u.job_position?.trim() ? ` — ${u.job_position.trim()}` : ""}
+                        {formatStaffOption(u)}
                       </option>
                     ))}
                   </select>
@@ -459,29 +649,81 @@ export default function OfferLetterEditorModal({
                   </p>
                 </div>
 
-                {savedSignatureImage && signatureMode === "drawn" && !drawnSignature && (
-                  <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={savedSignatureImage.secure_url}
-                      alt="Signature on file"
-                      className="h-10 object-contain"
+                {signingAsSomeoneElse && selectedSigner ? (
+                  <p className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                    Preparing for{" "}
+                    <strong>{formatStaffOption(selectedSigner)}</strong>. They will add
+                    their name and signature when they sign online — use{" "}
+                    <strong>Send for sign-off</strong> below.
+                  </p>
+                ) : (
+                  <>
+                    {savedSignatureImage && signatureMode === "drawn" && !drawnSignature && (
+                      <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={savedSignatureImage.secure_url}
+                          alt="Signature on file"
+                          className="h-10 object-contain"
+                        />
+                        <p className="text-xs text-gray-500">
+                          Signature on file — draw below to replace it.
+                        </p>
+                      </div>
+                    )}
+
+                    <SignaturePad
+                      mode={signatureMode}
+                      onModeChange={setSignatureMode}
+                      typedValue={typedSignature}
+                      onTypedChange={setTypedSignature}
+                      drawnValue={drawnSignature}
+                      onDrawnChange={setDrawnSignature}
                     />
-                    <p className="text-xs text-gray-500">
-                      Signature on file — draw below to replace it.
+                  </>
+                )}
+              </div>
+
+              {showFinalNotifications && (
+                <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      Notify executives / HR
+                    </label>
+                    <p className="mt-1 text-xs text-gray-500">
+                      For final sending — colleagues who receive a copy of the signed
+                      offer letter and a notice that{" "}
+                      {currentUser
+                        ? formatStaffOption(currentUser)
+                        : "you"}{" "}
+                      submitted it for {candidateName} ({roleTitle}).
                     </p>
                   </div>
-                )}
-
-                <SignaturePad
-                  mode={signatureMode}
-                  onModeChange={setSignatureMode}
-                  typedValue={typedSignature}
-                  onTypedChange={setTypedSignature}
-                  drawnValue={drawnSignature}
-                  onDrawnChange={setDrawnSignature}
-                />
-              </div>
+                  {noticeRecipients.length === 0 ? (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      No executive or HR staff with email on file. Add colleagues under
+                      Access Control first.
+                    </p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+                      {noticeRecipients.map((u) => (
+                        <label
+                          key={u.user_id}
+                          className="flex items-start gap-3 px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={noticeRecipientIds.includes(u.user_id)}
+                            onChange={() => toggleNoticeRecipient(u.user_id)}
+                            className="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-200"
+                          />
+                          <span>{formatStaffOption(u)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {data?.offer_letter?.secure_url && (
                 <a
@@ -499,50 +741,77 @@ export default function OfferLetterEditorModal({
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2 p-5 border-t border-gray-100 bg-gray-50/80 rounded-b-2xl">
-          <button
-            type="button"
-            onClick={() => generateMutation.mutate()}
-            disabled={!termsReady || isGenerating || saveMutation.isPending}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-200 bg-white text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-          >
-            {isGenerating ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            {isGenerating
-              ? "Generating…"
-              : draft.trim()
-                ? "Regenerate with WillsFarms Intel"
-                : "Generate with WillsFarms Intel"}
-          </button>
-          {draft.trim() && (
-            <a
-              href={pdfPreviewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+        <div className="border-t border-gray-100 bg-gray-50/80 rounded-b-2xl p-5 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => generateMutation.mutate()}
+              disabled={!termsReady || isGenerating || isBusy}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-200 bg-white text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
             >
-              <FileText className="w-4 h-4" />
-              Preview PDF
-            </a>
-          )}
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={
-              !draft.trim() ||
-              !signerUserId ||
-              (signatureMode === "typed" ? !typedSignature.trim() : !drawnSignature && !savedSignatureImage) ||
-              saveMutation.isPending ||
-              isGenerating
-            }
-            className="sm:ml-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Save offer letter PDF
-          </button>
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {isGenerating
+                ? "Generating…"
+                : draft.trim()
+                  ? "Regenerate with WillsFarms Intel"
+                  : "Generate with WillsFarms Intel"}
+            </button>
+            {draft.trim() && (
+              <a
+                href={pdfPreviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <FileText className="w-4 h-4" />
+                Preview PDF
+              </a>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3 pt-1 border-t border-gray-200/70 sm:flex-row sm:items-center sm:justify-end">
+            <button
+              type="button"
+              onClick={() => saveDraftMutation.mutate()}
+              disabled={!canSaveDraft || isBusy || isGenerating}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60 sm:min-w-[8.5rem]"
+            >
+              {saveDraftMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Save draft
+            </button>
+            {signingAsSomeoneElse && selectedSigner && (
+              <button
+                type="button"
+                onClick={() => sendApprovalMutation.mutate()}
+                disabled={!canSendForSignOff || isBusy || isGenerating}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-red-300 bg-white text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 sm:min-w-[10rem]"
+              >
+                {sendApprovalMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                {!sendApprovalMutation.isPending && <Mail className="w-4 h-4" />}
+                Send for sign-off
+              </button>
+            )}
+            {showFinalNotifications && (
+              <button
+                type="button"
+                onClick={() => sendNotificationsMutation.mutate()}
+                disabled={!canSendNotifications || isBusy || isGenerating}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 sm:min-w-[11rem]"
+              >
+                {sendNotificationsMutation.isPending && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+                {!sendNotificationsMutation.isPending && <Mail className="w-4 h-4" />}
+                Send notifications
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -92,7 +92,9 @@ export async function GET(req: NextRequest) {
             medical_reports: context.medicalReports,
             recommended_start_date: context.recommendedStartDate ?? null,
             reporting_to: context.reportingTo ?? null,
-            notice_period: context.noticePeriod ?? null,
+            notice_period:
+              context.noticePeriodDisplay ?? context.noticePeriod ?? null,
+            notice_period_frequency: context.noticePeriodFrequency ?? null,
             working_hours: context.workingHours ?? null,
             acceptance_deadline: context.acceptanceDeadline ?? null,
             basic_salary_ghs: context.basicSalaryGhs ?? null,
@@ -185,10 +187,14 @@ export async function PATCH(req: NextRequest) {
           signer_user_id: signature.signer_user_id,
           signer_name: signature.signer_name,
           signer_title: signature.signer_title,
-          signature_type: signature.signature_type,
-          signature_text: signature.signature_text,
-          signature_image: signature.signature_image,
-          signed_at: now,
+          ...(signature.signature_type
+            ? {
+                signature_type: signature.signature_type,
+                signature_text: signature.signature_text,
+                signature_image: signature.signature_image,
+                signed_at: now,
+              }
+            : {}),
         }
       : {}),
   };

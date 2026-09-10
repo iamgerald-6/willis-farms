@@ -9,6 +9,7 @@ import {
   canBeAssignedAsSupervisorAtOnboardingByRoleLabel,
   resolveUserRoleLabelById,
 } from "@/lib/userRoleAccessControl";
+import { formatNoticePeriodForOfferLetter } from "@/lib/careers/noticePeriod";
 
 export type OfferLetterContext = {
   candidateName: string;
@@ -33,6 +34,9 @@ export type OfferLetterContext = {
    * "Name (Role)" in hr.reporting_to for HR's own reference. */
   reportingTo?: string;
   noticePeriod?: string;
+  noticePeriodFrequency?: string;
+  /** Combined display — e.g. "12 Week(s)" for the offer letter. */
+  noticePeriodDisplay?: string;
   workingHours?: string;
   /** Formatted for display — e.g. "20 September 2026". */
   acceptanceDeadline?: string;
@@ -148,6 +152,11 @@ export async function resolveOfferLetterContext(
     }),
     reportingTo: reportingToRole,
     noticePeriod: hr.notice_period?.trim() || undefined,
+    noticePeriodFrequency: hr.notice_period_frequency?.trim() || undefined,
+    noticePeriodDisplay: formatNoticePeriodForOfferLetter(
+      hr.notice_period,
+      hr.notice_period_frequency,
+    ),
     workingHours: hr.working_hours?.trim() || undefined,
     acceptanceDeadline,
     basicSalaryGhs: hr.basic_salary_ghs?.trim() || undefined,

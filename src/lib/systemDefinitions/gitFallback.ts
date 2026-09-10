@@ -16,10 +16,12 @@ import {
   OFFER_TERMS_FIELDS_LIST,
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
+  ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
   getDefaultOfferTermsFields,
   getDefaultOnboardingEmploymentTypes,
   getDefaultOnboardingHrFields,
+  getDefaultNoticePeriodFrequencies,
   getDefaultPayFrequencies,
 } from "./onboardingHrDefaults";
 import {
@@ -107,6 +109,13 @@ export function getGitFallbackOptions(
     optionList === ONBOARDING_PAY_FREQUENCIES_LIST
   ) {
     return getDefaultPayFrequencies();
+  }
+
+  if (
+    moduleId === RECRUITMENT_MODULE_ID &&
+    optionList === ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST
+  ) {
+    return getDefaultNoticePeriodFrequencies();
   }
 
   if (

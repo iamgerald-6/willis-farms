@@ -18,6 +18,7 @@ import {
   OFFER_TERMS_FIELDS_LIST,
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
   ONBOARDING_HR_FIELDS_LIST,
+  ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST,
   ONBOARDING_PAY_FREQUENCIES_LIST,
 } from "@/lib/systemDefinitions/onboardingHrDefaults";
 import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
@@ -140,7 +141,11 @@ export default function OnboardingHrFieldsForm({
   const { data: optionLists } = useQuery({
     queryKey: ["onboarding-hr-option-lists"],
     queryFn: async () => {
-      const lists = [ONBOARDING_EMPLOYMENT_TYPES_LIST, ONBOARDING_PAY_FREQUENCIES_LIST] as const;
+      const lists = [
+        ONBOARDING_EMPLOYMENT_TYPES_LIST,
+        ONBOARDING_PAY_FREQUENCIES_LIST,
+        ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST,
+      ] as const;
       const [entries, orgLists] = await Promise.all([
         Promise.all(
           lists.map(async (option_list) => {
@@ -219,6 +224,8 @@ export default function OnboardingHrFieldsForm({
   const locationOptions = optionLists?.[ONBOARDING_LOCATIONS_LIST] ?? [];
   const employmentTypeOptions = optionLists?.[ONBOARDING_EMPLOYMENT_TYPES_LIST] ?? [];
   const payFrequencyOptions = optionLists?.[ONBOARDING_PAY_FREQUENCIES_LIST] ?? [];
+  const noticePeriodFrequencyOptions =
+    optionLists?.[ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST] ?? [];
 
   const excludeSet = useMemo(
     () =>
@@ -449,6 +456,31 @@ export default function OnboardingHrFieldsForm({
           >
             <option value="">Select pay frequency…</option>
             {payFrequencyOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+          {shouldShowHint(field.hint) && (
+            <p className="text-[11px] text-gray-400 mt-1">{field.hint}</p>
+          )}
+        </label>
+      );
+    }
+
+    if (field.fieldType === "notice_period_frequency") {
+      return (
+        <label key={field.id} className={`block ${spanClass}`}>
+          <span className="text-xs text-gray-500">{field.label}</span>
+          <select
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            value={hrData.notice_period_frequency ?? ""}
+            onChange={(e) =>
+              setField("notice_period_frequency", e.target.value || undefined)
+            }
+          >
+            <option value="">Select notice period frequency…</option>
+            {noticePeriodFrequencyOptions.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
               </option>

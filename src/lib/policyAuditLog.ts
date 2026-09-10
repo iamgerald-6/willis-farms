@@ -1,6 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-export type PolicyAuditAction = "added" | "version_added" | "edited" | "deleted";
+export type PolicyAuditAction =
+  | "added"
+  | "version_added"
+  | "edited"
+  | "archived"
+  | "restored"
+  | "deleted";
 
 /**
  * Writes one row to policy_audit_log (see docs/policies/policy-audit-log.sql).

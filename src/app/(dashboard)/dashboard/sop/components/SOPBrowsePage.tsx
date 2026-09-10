@@ -337,7 +337,7 @@ export default function SOPBrowsePage() {
     queryFn: getContent,
   });
 
-  const contents = data ?? [];
+  const contents = (data ?? []).filter((c) => !c.archived_at);
 
   const filtered = contents.filter(
     (c) => activeFilter === "All" || c.category === activeFilter,

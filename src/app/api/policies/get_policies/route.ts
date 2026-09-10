@@ -10,14 +10,16 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
+    const includeArchived = searchParams.get("include_archived") === "true";
 
     // ── Fetch manuals ──
     let manualQuery = supabase
       .from("manuals")
-      .select("id, title, category, description, created_at")
+      .select("id, title, category, description, created_at, archived_at")
       .order("created_at", { ascending: false });
 
     if (category) manualQuery = manualQuery.eq("category", category);
+    if (!includeArchived) manualQuery = manualQuery.is("archived_at", null);
 
     const { data: manuals, error: manualsError } = await manualQuery;
     if (manualsError) throw manualsError;
@@ -82,6 +84,7 @@ export async function GET(req: NextRequest) {
         category: m.category,
         description: m.description,
         created_at: m.created_at,
+        archived_at: m.archived_at ?? null,
         versions, // sorted newest → oldest
       };
     });

@@ -5,6 +5,8 @@ export const ONBOARDING_HR_FIELDS_LIST = "careers.onboardingHrFields";
 export const OFFER_TERMS_FIELDS_LIST = "careers.offerTermsFields";
 export const ONBOARDING_EMPLOYMENT_TYPES_LIST = "careers.onboardingEmploymentTypes";
 export const ONBOARDING_PAY_FREQUENCIES_LIST = "careers.payFrequencies";
+export const ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST =
+  "careers.noticePeriodFrequencies";
 
 export type OnboardingHrFieldGroup = "placement" | "hr" | "notes";
 
@@ -21,6 +23,7 @@ export type OnboardingHrFieldType =
   | "salary_tier"
   | "salary_range"
   | "pay_frequency"
+  | "notice_period_frequency"
   | "reporting_to";
 
 function hrField(
@@ -192,7 +195,20 @@ export function getDefaultOnboardingHrFields(): SystemOption[] {
         fieldType: "text",
         group: "hr",
         required: true,
-        hint: "e.g. \"3 months\" — used in the offer letter's Terms of Employment clause.",
+        hint: "Numeric value only — e.g. \"12\". Pair with Notice period frequency.",
+      },
+    ),
+    hrField(
+      "opt:recruitment:hr:notice_period_frequency",
+      "Notice period frequency",
+      "notice_period_frequency",
+      19.5,
+      {
+        fieldKey: "notice_period_frequency",
+        fieldType: "notice_period_frequency",
+        group: "hr",
+        required: true,
+        hint: "Unit for the notice period — e.g. \"Week(s)\".",
       },
     ),
     hrField(
@@ -351,8 +367,19 @@ export function getDefaultOfferTermsFields(): SystemOption[] {
     }),
     offerField("opt:recruitment:offer:notice_period", "Notice period", "notice_period", "text", 10, {
       required: true,
-      hint: "e.g. \"3 months\" — used in the offer letter's Terms of Employment clause.",
+      hint: "Numeric value only — e.g. \"12\". Pair with Notice period frequency.",
     }),
+    offerField(
+      "opt:recruitment:offer:notice_period_frequency",
+      "Notice period frequency",
+      "notice_period_frequency",
+      "notice_period_frequency",
+      10.5,
+      {
+        required: true,
+        hint: "Unit for the notice period — e.g. \"Week(s)\".",
+      },
+    ),
     offerField("opt:recruitment:offer:working_hours", "Working hours", "working_hours", "text", 11, {
       required: true,
       hint: "e.g. \"40 hours per week, Monday to Sunday with one day off duty.\"",
@@ -426,5 +453,30 @@ export function getDefaultPayFrequencies(): SystemOption[] {
     payFrequencyOption("opt:recruitment:pay:weekly", "Weekly", 0),
     payFrequencyOption("opt:recruitment:pay:monthly", "Monthly", 1),
     payFrequencyOption("opt:recruitment:pay:hourly", "Hourly", 2),
+  ];
+}
+
+function noticePeriodFrequencyOption(
+  id: string,
+  label: string,
+  sortOrder: number,
+): SystemOption {
+  return {
+    id,
+    module_id: RECRUITMENT_MODULE_ID,
+    option_list: ONBOARDING_NOTICE_PERIOD_FREQUENCIES_LIST,
+    label,
+    legacy_value: label,
+    sort_order: sortOrder,
+    is_active: true,
+    rules: {},
+  };
+}
+
+export function getDefaultNoticePeriodFrequencies(): SystemOption[] {
+  return [
+    noticePeriodFrequencyOption("opt:recruitment:notice:days", "Day(s)", 0),
+    noticePeriodFrequencyOption("opt:recruitment:notice:weeks", "Week(s)", 1),
+    noticePeriodFrequencyOption("opt:recruitment:notice:months", "Month(s)", 2),
   ];
 }

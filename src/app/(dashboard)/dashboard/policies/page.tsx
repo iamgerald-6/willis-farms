@@ -16,8 +16,10 @@ import {
   Check,
   Grid,
   List,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
@@ -70,6 +72,7 @@ interface Manual {
   description: string | null;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
   versions: ManualVersion[];
 }
 
@@ -327,15 +330,23 @@ function VersionHistory({ versions }: { versions: ManualVersion[] }) {
 function ManualCard({
   manual,
   isAdmin,
+  isArchived,
+  isArchiving,
   onDelete,
   onEdit,
   onHistory,
+  onArchive,
+  onRestore,
 }: {
   manual: Manual;
   isAdmin: boolean;
+  isArchived: boolean;
+  isArchiving: boolean;
   onDelete: (id: string, title: string) => void;
   onEdit: (manual: Manual) => void;
   onHistory: (manual: Manual) => void;
+  onArchive: (id: string) => void;
+  onRestore: (id: string) => void;
 }) {
   const latest = manual.versions[0];
 
@@ -361,13 +372,15 @@ function ManualCard({
         </div>
         {isAdmin && (
           <div className="flex items-center gap-0.5 flex-shrink-0">
-            <button
-              onClick={() => onEdit(manual)}
-              className="p-1.5 rounded-lg text-gray-300 hover:text-[#C62828] hover:bg-red-50 transition"
-              title="Edit"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
+            {!isArchived && (
+              <button
+                onClick={() => onEdit(manual)}
+                className="p-1.5 rounded-lg text-gray-300 hover:text-[#C62828] hover:bg-red-50 transition"
+                title="Edit"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => onHistory(manual)}
               className="p-1.5 rounded-lg text-gray-300 hover:text-gray-700 hover:bg-gray-100 transition"
@@ -375,6 +388,25 @@ function ManualCard({
             >
               <History className="w-4 h-4" />
             </button>
+            {isArchived ? (
+              <button
+                onClick={() => onRestore(manual.manual_id)}
+                disabled={isArchiving}
+                className="p-1.5 rounded-lg text-gray-300 hover:text-green-600 hover:bg-green-50 transition disabled:opacity-50"
+                title="Restore manual"
+              >
+                <ArchiveRestore className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => onArchive(manual.manual_id)}
+                disabled={isArchiving}
+                className="p-1.5 rounded-lg text-gray-300 hover:text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
+                title="Archive manual"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => onDelete(manual.manual_id, manual.title)}
               className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition"
@@ -406,14 +438,22 @@ function ManualCard({
 
 function AdminTableView({
   manuals,
+  isArchived,
+  isArchiving,
   onDelete,
   onEdit,
   onHistory,
+  onArchive,
+  onRestore,
 }: {
   manuals: Manual[];
+  isArchived: boolean;
+  isArchiving: boolean;
   onDelete: (id: string, title: string) => void;
   onEdit: (manual: Manual) => void;
   onHistory: (manual: Manual) => void;
+  onArchive: (id: string) => void;
+  onRestore: (id: string) => void;
 }) {
   return (
     <div className="w-full flex-1 flex flex-col">
@@ -421,7 +461,7 @@ function AdminTableView({
       <div className="block lg:hidden space-y-3 flex-1">
         {manuals.length === 0 ? (
           <div className="bg-white p-8 text-center text-gray-400 rounded-xl border border-gray-200 h-full flex flex-col items-center justify-center min-h-[250px]">
-            No manuals found.
+            {isArchived ? "No archived policies." : "No manuals found."}
           </div>
         ) : (
           manuals.map((manual) => {
@@ -443,13 +483,15 @@ function AdminTableView({
                     )}
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      onClick={() => onEdit(manual)}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
-                      title="Edit"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    {!isArchived && (
+                      <button
+                        onClick={() => onEdit(manual)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                        title="Edit"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => onHistory(manual)}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
@@ -457,6 +499,25 @@ function AdminTableView({
                     >
                       <History className="w-4 h-4" />
                     </button>
+                    {isArchived ? (
+                      <button
+                        onClick={() => onRestore(manual.manual_id)}
+                        disabled={isArchiving}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition disabled:opacity-50"
+                        title="Restore manual"
+                      >
+                        <ArchiveRestore className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onArchive(manual.manual_id)}
+                        disabled={isArchiving}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
+                        title="Archive manual"
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => onDelete(manual.manual_id, manual.title)}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
@@ -529,7 +590,7 @@ function AdminTableView({
                   colSpan={7}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No manuals found.
+                  {isArchived ? "No archived policies." : "No manuals found."}
                 </td>
               </tr>
             ) : (
@@ -582,13 +643,15 @@ function AdminTableView({
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-0.5">
-                        <button
-                          onClick={() => onEdit(manual)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
-                          title="Edit"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
+                        {!isArchived && (
+                          <button
+                            onClick={() => onEdit(manual)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-[#C62828] hover:bg-red-50 transition"
+                            title="Edit"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => onHistory(manual)}
                           className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
@@ -596,6 +659,25 @@ function AdminTableView({
                         >
                           <History className="w-4 h-4" />
                         </button>
+                        {isArchived ? (
+                          <button
+                            onClick={() => onRestore(manual.manual_id)}
+                            disabled={isArchiving}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition disabled:opacity-50"
+                            title="Restore manual"
+                          >
+                            <ArchiveRestore className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onArchive(manual.manual_id)}
+                            disabled={isArchiving}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
+                            title="Archive manual"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() =>
                             onDelete(manual.manual_id, manual.title)
@@ -657,7 +739,9 @@ export default function PoliciesPage() {
       ),
   );
 
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [statusTab, setStatusTab] = useState<"active" | "archived">("active");
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [searchValue, setSearchValue] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -674,31 +758,43 @@ export default function PoliciesPage() {
   // set any more (see docs/policies/allow-custom-manual-categories.sql), so
   // the category filter is applied client-side below, the same way it
   // drives the dynamic category dropdown options.
-  const { data, refetch, isLoading } = useQuery<{ manuals: Manual[] }>({
-    queryKey: ["polices"],
+  const { data, isLoading } = useQuery<{ manuals: Manual[] }>({
+    queryKey: ["policies", isAdmin ? "all" : "active"],
     queryFn: async () => {
-      const res = await api.get("/policies/get_policies");
+      const url = isAdmin
+        ? "/policies/get_policies?include_archived=true"
+        : "/policies/get_policies";
+      const res = await api.get(url);
       return res.data;
     },
   });
 
   const manuals = data?.manuals ?? [];
+  const activeManuals = useMemo(
+    () => manuals.filter((m) => !m.archived_at),
+    [manuals],
+  );
+  const archivedManuals = useMemo(
+    () => manuals.filter((m) => !!m.archived_at),
+    [manuals],
+  );
+  const tabManuals = statusTab === "active" ? activeManuals : archivedManuals;
 
   // Built-in categories are always offered even with zero manuals in them
   // yet; anything else (custom categories actually used, e.g. "Fire
   // Service") is picked up automatically from the fetched data — mirrors
   // the Skill Log page's employee/log-type filter dropdowns.
   const categoryOptions = useMemo(() => {
-    const fromData = manuals.map((m) => m.category).filter(Boolean);
+    const fromData = tabManuals.map((m) => m.category).filter(Boolean);
     return Array.from(new Set([...BUILT_IN_CATEGORIES, ...fromData])).sort(
       (a, b) => a.localeCompare(b),
     );
-  }, [manuals]);
+  }, [tabManuals]);
 
   // Combines the category pill filter with the search box's client-side
   // pass over title/category/description.
   const filtered = useMemo(() => {
-    return manuals.filter((m) => {
+    return tabManuals.filter((m) => {
       if (activeCategory !== "All" && m.category !== activeCategory) {
         return false;
       }
@@ -710,14 +806,43 @@ export default function PoliciesPage() {
         m.description?.toLowerCase().includes(q)
       );
     });
-  }, [manuals, activeCategory, searchValue]);
+  }, [tabManuals, activeCategory, searchValue]);
+
+  const archivePolicies = async ({
+    id,
+    restore,
+  }: {
+    id: string;
+    restore: boolean;
+  }) => {
+    const res = await api.post(
+      restore ? "/policies/restore" : "/policies/archive",
+      { id },
+    );
+    return res.data;
+  };
+
+  const { mutate: toggleArchive, isPending: isArchiving } = useMutation({
+    mutationFn: archivePolicies,
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.restore ? "Policy restored." : "Policy archived.",
+      );
+      queryClient.invalidateQueries({ queryKey: ["policies"] });
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(
+        error?.response?.data?.error ?? "Could not update policy.",
+      );
+    },
+  });
 
   // ── Delete ──
   const { mutate: deleteManual, isPending: isDeleting } = useMutation({
     mutationFn: (manualId: string) => api.delete(`/policies/${manualId}`),
     onSuccess: () => {
       toast.success(`"${confirmDelete.label}" deleted.`);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ["policies"] });
       setConfirmDelete({ open: false, manualId: "", label: "" });
     },
     onError: (error: any) => {
@@ -738,8 +863,13 @@ export default function PoliciesPage() {
               {POLICIES_PAGE_COPY.title}
             </h2>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-              {manuals.length} manual{manuals.length !== 1 ? "s" : ""} ·{" "}
-              {manuals.reduce((a, m) => a + m.versions.length, 0)} total
+              {activeManuals.length} active manual
+              {activeManuals.length !== 1 ? "s" : ""}
+              {isAdmin && archivedManuals.length > 0
+                ? ` · ${archivedManuals.length} archived`
+                : ""}{" "}
+              ·{" "}
+              {activeManuals.reduce((a, m) => a + m.versions.length, 0)} active
               versions
             </p>
           </div>
@@ -789,6 +919,34 @@ export default function PoliciesPage() {
         </div>
       </div>
 
+      {isAdmin && (
+        <div className="flex items-center gap-1 mb-4 shrink-0">
+          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white">
+            <button
+              onClick={() => setStatusTab("active")}
+              className={`px-4 py-1.5 text-sm font-medium transition ${
+                statusTab === "active"
+                  ? "bg-red-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setStatusTab("archived")}
+              className={`px-4 py-1.5 text-sm font-medium transition ${
+                statusTab === "archived"
+                  ? "bg-red-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              Archived
+              {archivedManuals.length > 0 ? ` (${archivedManuals.length})` : ""}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Category select (centered, matching the SOP browse page) ── */}
       <div className="flex justify-center mb-6 shrink-0">
         <CategorySelect
@@ -805,22 +963,30 @@ export default function PoliciesPage() {
         ) : isAdmin && viewMode === "table" ? (
           <AdminTableView
             manuals={filtered}
+            isArchived={statusTab === "archived"}
+            isArchiving={isArchiving}
             onDelete={(id, title) =>
               setConfirmDelete({ open: true, manualId: id, label: title })
             }
             onEdit={setEditingManual}
             onHistory={setHistoryManual}
+            onArchive={(id) => toggleArchive({ id, restore: false })}
+            onRestore={(id) => toggleArchive({ id, restore: true })}
           />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 sm:p-16 text-center flex-1 flex flex-col items-center justify-center min-h-[320px]">
             <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 font-medium text-sm sm:text-base">
-              {POLICIES_PAGE_COPY.emptyTitle}
+              {statusTab === "archived"
+                ? "No archived policies."
+                : POLICIES_PAGE_COPY.emptyTitle}
             </p>
             <p className="text-xs sm:text-sm text-gray-400 mt-1">
-              {isAdmin
-                ? POLICIES_PAGE_COPY.emptyAdminDescription
-                : POLICIES_PAGE_COPY.emptyUserDescription}
+              {statusTab === "archived"
+                ? "Archived manuals are hidden from staff until restored."
+                : isAdmin
+                  ? POLICIES_PAGE_COPY.emptyAdminDescription
+                  : POLICIES_PAGE_COPY.emptyUserDescription}
             </p>
           </div>
         ) : (
@@ -830,11 +996,15 @@ export default function PoliciesPage() {
                 key={manual.manual_id}
                 manual={manual}
                 isAdmin={isAdmin}
+                isArchived={statusTab === "archived"}
+                isArchiving={isArchiving}
                 onDelete={(id, title) =>
                   setConfirmDelete({ open: true, manualId: id, label: title })
                 }
                 onEdit={setEditingManual}
                 onHistory={setHistoryManual}
+                onArchive={(id) => toggleArchive({ id, restore: false })}
+                onRestore={(id) => toggleArchive({ id, restore: true })}
               />
             ))}
           </div>
@@ -856,7 +1026,9 @@ export default function PoliciesPage() {
       <UploadManualModal
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={refetch}
+        onSuccess={() =>
+          queryClient.invalidateQueries({ queryKey: ["policies"] })
+        }
         uploadedById={currentUserId ?? ""}
         categories={categoryOptions}
       />
@@ -864,7 +1036,9 @@ export default function PoliciesPage() {
       <EditManualModal
         open={!!editingManual}
         onClose={() => setEditingManual(null)}
-        onSuccess={refetch}
+        onSuccess={() =>
+          queryClient.invalidateQueries({ queryKey: ["policies"] })
+        }
         manual={editingManual}
         categories={categoryOptions}
       />

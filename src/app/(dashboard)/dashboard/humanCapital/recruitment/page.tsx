@@ -130,6 +130,8 @@ function ApplicationDetail({
   adminId,
   openInterviewOnMount,
   onInterviewOpened,
+  openOfferLetterOnMount,
+  onOfferLetterOpened,
 }: {
   application: JobApplication;
   onClose: () => void;
@@ -138,6 +140,8 @@ function ApplicationDetail({
   adminId: string;
   openInterviewOnMount?: boolean;
   onInterviewOpened?: () => void;
+  openOfferLetterOnMount?: boolean;
+  onOfferLetterOpened?: () => void;
 }) {
   const [status, setStatus] = useState<ApplicationStatus>(application.status);
   const [hrNotes, setHrNotes] = useState(application.hr_notes ?? "");
@@ -393,7 +397,16 @@ function ApplicationDetail({
     },
   });
 
-  const [showOfferLetterModal, setShowOfferLetterModal] = useState(false);
+  const [showOfferLetterModal, setShowOfferLetterModal] = useState(
+    openOfferLetterOnMount ?? false,
+  );
+
+  useEffect(() => {
+    if (openOfferLetterOnMount && application.status === "offer") {
+      setShowOfferLetterModal(true);
+      onOfferLetterOpened?.();
+    }
+  }, [openOfferLetterOnMount, application.status, onOfferLetterOpened]);
 
   const { data: offerLetterData, refetch: refetchOfferLetter } = useQuery({
     queryKey: ["offer-letter", application.id],
@@ -4829,6 +4842,7 @@ function RoleReportModal({
 function RecruitmentPageContent() {
   const searchParams = useSearchParams();
   const interviewParam = searchParams?.get("interview");
+  const offerParam = searchParams?.get("offer");
   const tabParam = searchParams?.get("tab");
   const [activeTab, setActiveTab] = useState<
     | "applications"
@@ -4866,6 +4880,7 @@ function RecruitmentPageContent() {
   const [autoOpenInterviewId, setAutoOpenInterviewId] = useState<string | null>(
     null,
   );
+  const [autoOpenOfferId, setAutoOpenOfferId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: session } = useQuery({
@@ -5091,6 +5106,15 @@ function RecruitmentPageContent() {
     setSelected(app);
     setAutoOpenInterviewId(app.id);
   }, [interviewParam, data, session?.user?.id]);
+
+  useEffect(() => {
+    if (!offerParam || !data?.length || !session?.user?.id) return;
+    const app = data.find((a) => a.id === offerParam);
+    if (!app || app.status !== "offer") return;
+    setActiveTab("offer");
+    setSelected(app);
+    setAutoOpenOfferId(app.id);
+  }, [offerParam, data, session?.user?.id]);
 
   if (!session) {
     return (
@@ -5405,6 +5429,8 @@ function RecruitmentPageContent() {
             adminId={session.user!.id}
             openInterviewOnMount={autoOpenInterviewId === selected.id}
             onInterviewOpened={() => setAutoOpenInterviewId(null)}
+            openOfferLetterOnMount={autoOpenOfferId === selected.id}
+            onOfferLetterOpened={() => setAutoOpenOfferId(null)}
             onRefreshApplication={async () => {
               await queryClient.invalidateQueries({
                 queryKey: ["job_applications"],

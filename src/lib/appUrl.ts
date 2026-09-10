@@ -27,6 +27,16 @@ export function recruitmentInterviewUrl(applicationId: string): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?interview=${applicationId}`;
 }
 
+/** Opens Recruitment → Offer tab with this application selected and the offer letter modal. */
+export function recruitmentOfferLetterUrl(applicationId: string): string {
+  return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?tab=offer&offer=${applicationId}`;
+}
+
+export function loginWithRedirectUrl(redirectPath: string): string {
+  const path = redirectPath.startsWith("/") ? redirectPath : `/${redirectPath}`;
+  return `${getAppBaseUrl()}/login?redirect=${encodeURIComponent(path)}`;
+}
+
 export function panelInterviewUrl(accessToken: string): string {
   return `${getAppBaseUrl()}/interview/${accessToken}`;
 }

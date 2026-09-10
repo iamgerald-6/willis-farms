@@ -103,7 +103,7 @@ export interface PolicyAuditLogEntry {
   id: string;
   manual_id: string;
   manual_title: string;
-  action: "added" | "version_added" | "edited" | "deleted";
+  action: "added" | "version_added" | "edited" | "archived" | "restored" | "deleted";
   detail?: string | null;
   performed_by: string;
   performed_by_name: string;
