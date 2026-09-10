@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Check, Plus, FileUp } from "lucide-react";
 import api from "@/lib/api";
@@ -103,6 +103,17 @@ export default function TaskListView({
     .filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"))
     .filter((t) => !activeView.statusFilter || (t.display_status ?? "Not Started") === activeView.statusFilter);
 
+  // Who a given viewer can actually assign a task to — mirrors the POST
+  // /task-manager/tasks check: Senior Management can assign anyone; anyone
+  // else can only assign themselves or someone who has them recorded as
+  // supervisor_id (not gated on a "Supervisory Role" label — see
+  // src/app/api/task-manager/tasks/route.ts). Used for both creating a new
+  // task and reassigning an existing one's owner while editing.
+  const assignableUsers = useMemo(() => {
+    if (isSeniorManagement) return users;
+    return users.filter((u) => u.user_id === currentUserId || u.supervisor_id === currentUserId);
+  }, [users, isSeniorManagement, currentUserId]);
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between mb-4">
@@ -122,47 +133,54 @@ export default function TaskListView({
           </div>
         </div>
 
-        {isSeniorManagement && (
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {editMode && lifecycleView === "all" && (
-              <>
-                {variant === "register" && (
-                  <button
-                    onClick={() => setExtractOpen(true)}
-                    className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
-                  >
-                    <FileUp className="w-3.5 h-3.5" /> From Document
-                  </button>
-                )}
+        {/* "Edit List" + "Add Task" are available to everyone now, not just
+            Senior Management (per Sheila) — what the toggle actually reveals
+            for a given viewer still differs: Senior Management gets the full
+            toolkit (add, edit any task, archive, delete), everyone else only
+            gets a pencil-edit icon on tasks they personally created (see
+            TaskRow's per-row gating) plus this shared "Add Task" entry
+            point. "From Document" (bulk AI extraction) stays Senior
+            Management only — it's a heavier admin import tool, not asked
+            for here. */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {editMode && lifecycleView === "all" && (
+            <>
+              {variant === "register" && isSeniorManagement && (
                 <button
-                  onClick={() => setAddingTask(true)}
+                  onClick={() => setExtractOpen(true)}
                   className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add Task
+                  <FileUp className="w-3.5 h-3.5" /> From Document
                 </button>
+              )}
+              <button
+                onClick={() => setAddingTask(true)}
+                className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Task
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => {
+              setEditMode((v) => !v);
+              setAddingTask(false);
+            }}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition ${
+              editMode ? "bg-red-600 text-white hover:bg-red-700" : "border-2 border-red-600 text-red-600 hover:bg-red-50"
+            }`}
+          >
+            {editMode ? (
+              <>
+                <Check className="w-3.5 h-3.5" /> Done Editing
+              </>
+            ) : (
+              <>
+                <Pencil className="w-3.5 h-3.5" /> Edit List
               </>
             )}
-            <button
-              onClick={() => {
-                setEditMode((v) => !v);
-                setAddingTask(false);
-              }}
-              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition ${
-                editMode ? "bg-red-600 text-white hover:bg-red-700" : "border-2 border-red-600 text-red-600 hover:bg-red-50"
-              }`}
-            >
-              {editMode ? (
-                <>
-                  <Check className="w-3.5 h-3.5" /> Done Editing
-                </>
-              ) : (
-                <>
-                  <Pencil className="w-3.5 h-3.5" /> Edit List
-                </>
-              )}
-            </button>
-          </div>
-        )}
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -190,7 +208,7 @@ export default function TaskListView({
             <div className="px-1 py-1">
               <NewTaskRow
                 projectId={project.id}
-                users={users}
+                users={assignableUsers}
                 variant={variant}
                 onCancel={() => setAddingTask(false)}
                 onCreated={() => {
@@ -200,27 +218,38 @@ export default function TaskListView({
               />
             </div>
           )}
-          {tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              editMode={editMode}
-              users={users}
-              projects={projects}
-              currentUserId={currentUserId}
-              isSeniorManagement={isSeniorManagement}
-              variant={variant}
-              onChanged={refresh}
-              onOpenAudit={setAuditTask}
-            />
-          ))}
+          {tasks.map((task) => {
+            // Always include this task's current owner in its own
+            // OwnerSelect options, even if they've since fallen outside the
+            // viewer's assignable set (e.g. no longer a direct report) —
+            // otherwise the edit form would show no matching selection for
+            // the task's actual current owner.
+            const rowUsers =
+              isSeniorManagement || assignableUsers.some((u) => u.user_id === task.owner_id)
+                ? assignableUsers
+                : [...assignableUsers, ...users.filter((u) => u.user_id === task.owner_id)];
+            return (
+              <TaskRow
+                key={task.id}
+                task={task}
+                editMode={editMode}
+                users={rowUsers}
+                projects={projects}
+                currentUserId={currentUserId}
+                isSeniorManagement={isSeniorManagement}
+                variant={variant}
+                onChanged={refresh}
+                onOpenAudit={setAuditTask}
+              />
+            );
+          })}
         </div>
       </div>
 
       <p className="text-xs text-gray-400 italic mt-3">
         {isSeniorManagement
-          ? "Only Senior Management can edit, archive, or delete tasks. Every change is logged with who made it and when — tap the clock icon on any task to see its history."
-          : "You can update the progress on your own tasks — everything else here is read-only."}
+          ? "You can edit, archive, or delete any task. Every change is logged with who made it and when — tap the clock icon on any task to see its history."
+          : "You can create tasks, edit tasks you created, and update progress on tasks assigned to you. Archiving and deleting are Senior Management only. Every change is logged — tap the clock icon on any task to see its history."}
       </p>
 
       {auditTask && <AuditLogDrawer task={auditTask} onClose={() => setAuditTask(null)} />}

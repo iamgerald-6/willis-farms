@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
-import { EDITABLE_TASK_FIELDS, type EditableTaskField } from "@/lib/taskAccessControl";
+import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
+import { isSeniorManagement, EDITABLE_TASK_FIELDS, type EditableTaskField } from "@/lib/taskAccessControl";
 import { enrichSingleTask, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
 
-// PATCH /api/task-manager/tasks/[id] — Senior Management only.
+// PATCH /api/task-manager/tasks/[id] — Senior Management can edit any task;
+// anyone else can only edit a task they personally created (created_by).
 // Only title, owner_id, due_date, description, frequency, indicator,
 // method_provider are writable — status is never accepted here, it's always
-// computed. Every change is logged with a before/after diff.
+// computed. Every change is logged with a before/after diff, same as before.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json();
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("tm_tasks")
       .select("*")
@@ -21,6 +21,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .single();
     if (fetchError || !existing) return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
+    if (!isSeniorManagement(user.role) && existing.created_by !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden — you can only edit tasks you created." },
+        { status: 403 },
+      );
+    }
+
+    const body = await req.json();
     const updates: Record<string, unknown> = {};
     const changedFields: string[] = [];
     const previousValues: Record<string, unknown> = {};
