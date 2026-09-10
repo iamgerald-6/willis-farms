@@ -91,8 +91,13 @@ export function resolveLeaveReviewScope(
 }
 
 /** Stage 1 — the employee's assigned supervisor approves/rejects first.
- * Super Admin can also act at this stage as an override, same as every
- * other approval gate in the app. */
+ * "Supervisor" here means whoever is actually recorded in this employee's
+ * supervisor_id — not specifically someone with the Supervisory Role label.
+ * A supervisor can also hold Executive Role, Human Resource, or Super Admin
+ * (see canBeAssignedAsSupervisorByRoleLabel), so the role check below is
+ * intentionally NOT restricted to isSupervisoryRoleLabel. Super Admin can
+ * also act here as an override even when not the assigned supervisor, same
+ * as every other approval gate in the app. */
 export function canApproveLeaveSupervisorStage(
   callerId: string,
   requesterUserId: string,
@@ -101,7 +106,7 @@ export function canApproveLeaveSupervisorStage(
 ): boolean {
   if (callerId === requesterUserId) return false;
   if (isSuperAdminRoleLabel(role)) return true;
-  return isSupervisoryRoleLabel(role) && requesterSupervisorId === callerId;
+  return !!requesterSupervisorId && requesterSupervisorId === callerId;
 }
 
 /** Stage 2 — final sign-off, once the supervisor stage is done (or skipped,
