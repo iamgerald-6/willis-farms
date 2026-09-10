@@ -24,6 +24,9 @@ create table if not exists skill_log_templates (
   tier_auth_options jsonb not null default
     '["None yet","GP","PS","External GGP semen handling"]'::jsonb,
 
+  -- Multiple competency forms per template: [{ name, sections: [{ key, title, skills }] }]
+  skill_variants jsonb not null default '[]'::jsonb,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
@@ -42,5 +45,8 @@ create index if not exists skill_log_templates_lookup_idx
 alter table skill_log_templates
   add column if not exists tier_auth_options jsonb not null default
     '["None yet","GP","PS","External GGP semen handling"]'::jsonb;
+
+alter table skill_log_templates
+  add column if not exists skill_variants jsonb not null default '[]'::jsonb;
 
 notify pgrst, 'reload schema';

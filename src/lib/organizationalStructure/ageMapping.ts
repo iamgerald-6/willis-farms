@@ -113,13 +113,17 @@ export async function ancestorValuesForParentNode(
 }
 
 export async function fetchAgeMappingRows(supabase: SupabaseClient): Promise<AgeMappingRowOut[]> {
+  // Look up by physical mapping table — not list_type.table_name. A join filter
+  // on list_type can match multiple org_mapping_levels rows (orphaned levels,
+  // duplicate chains) and maybeSingle() then returns nothing even when rows exist
+  // in org_map_custom_age.
   const { data: level } = await supabase
     .from("org_mapping_levels")
-    .select("id, parent_level_id, table_name, mapping_columns, list_type:org_custom_list_types(table_name)")
-    .eq("list_type.table_name", AGE_LIST_TABLE)
+    .select("id, parent_level_id, table_name, mapping_columns")
+    .eq("table_name", AGE_MAPPING_TABLE)
     .maybeSingle();
 
-  const levelRow = level as (LevelRow & { list_type?: { table_name: string } }) | null;
+  const levelRow = level as LevelRow | null;
   if (!levelRow?.table_name || !levelRow.mapping_columns?.includes("age_min_id")) {
     return [];
   }

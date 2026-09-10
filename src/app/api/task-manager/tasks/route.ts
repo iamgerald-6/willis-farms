@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
 import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
+import {
+  applyTaskListVisibilityFilter,
+  resolveTaskViewScope,
+} from "@/lib/taskManagerScope";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
 // project_id is optional — omit it to get tasks across every active project
@@ -25,9 +29,13 @@ export async function GET(req: NextRequest) {
 
     if (projectId) query = query.eq("project_id", projectId);
 
-    // Read scope: distinct from write permission (isSeniorManagement, used
-    // below for POST) — see canViewAllTasks() in taskAccessControl.ts.
-    if (!user.canViewAllTasks) query = query.eq("owner_id", user.id);
+    const scope = resolveTaskViewScope(user.role, user.tm_can_view_all_tasks);
+    query = await applyTaskListVisibilityFilter(
+      query,
+      supabaseAdmin,
+      user.id,
+      scope,
+    );
 
     const { data: tasks, error } = await query;
     if (error) throw error;
@@ -61,6 +69,9 @@ export async function POST(req: NextRequest) {
     }
 
     let canCreate = (await requireSeniorManagement(req)) !== null;
+    if (!canCreate && owner_id === user.id) {
+      canCreate = true;
+    }
     if (!canCreate && isSupervisoryRoleLabel(user.role) && owner_id) {
       const { data: owner } = await supabaseAdmin
         .from("users")

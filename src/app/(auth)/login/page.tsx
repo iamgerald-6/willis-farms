@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -37,14 +37,22 @@ function LoginForm() {
   const passwordSetup = searchParams?.get("setup") === "success";
   const fromPasswordFlow = passwordReset || passwordSetup;
 
-  // "checking": might already be signed in, hold off rendering the form.
-  // "guest": confirmed no session — safe to show the form immediately.
-  const [screen, setScreen] = useState<"checking" | "guest">(
-    fromPasswordFlow || !hasLocalSupabaseSession() ? "guest" : "checking",
-  );
+  // Always start as "guest" so SSR and the first client render match (localStorage
+  // is unavailable on the server). Promote to "checking" in useLayoutEffect when
+  // a local token exists, before paint, then confirm with getSession().
+  const [screen, setScreen] = useState<"checking" | "guest">("guest");
+
+  useLayoutEffect(() => {
+    if (fromPasswordFlow) return;
+    if (hasLocalSupabaseSession()) {
+      setScreen("checking");
+    }
+  }, [fromPasswordFlow]);
 
   useEffect(() => {
     if (fromPasswordFlow) return;
+    if (!hasLocalSupabaseSession()) return;
+
     let active = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;

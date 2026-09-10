@@ -2,17 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import {
+  normalizeSkillLogTemplateRow,
   normalizeSkillLogTemplateSections,
+  normalizeSkillLogTemplateVariants,
   normalizeSkillLogTierAuthOptions,
   type SkillLogTemplate,
 } from "@/lib/skillLog/templates";
 
 function asTemplate(row: SkillLogTemplate): SkillLogTemplate {
-  return {
-    ...row,
-    sections: normalizeSkillLogTemplateSections(row.sections),
-    tier_auth_options: normalizeSkillLogTierAuthOptions(row.tier_auth_options),
-  };
+  return normalizeSkillLogTemplateRow(row);
+}
+
+function isMissingSkillVariantsColumn(message: string | undefined): boolean {
+  if (!message) return false;
+  return /skill_variants/i.test(message);
 }
 
 export async function GET(
@@ -63,8 +66,15 @@ export async function PATCH(
 
   const body = await req.json();
   const updates: Record<string, unknown> = {};
-  if ("sections" in body) {
-    updates.sections = normalizeSkillLogTemplateSections(body.sections);
+  if ("skill_variants" in body) {
+    const skill_variants = normalizeSkillLogTemplateVariants(body.skill_variants);
+    updates.skill_variants = skill_variants;
+    updates.sections =
+      skill_variants[0]?.sections ?? normalizeSkillLogTemplateSections([]);
+  } else if ("sections" in body) {
+    const sections = normalizeSkillLogTemplateSections(body.sections);
+    updates.sections = sections;
+    updates.skill_variants = normalizeSkillLogTemplateVariants(null, sections);
   }
   if ("tier_auth_options" in body) {
     updates.tier_auth_options = normalizeSkillLogTierAuthOptions(body.tier_auth_options);
@@ -76,12 +86,30 @@ export async function PATCH(
 
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from("skill_log_templates")
     .update(updates)
     .eq("id", id)
     .select()
     .single();
+
+  if (error && isMissingSkillVariantsColumn(error.message) && "skill_variants" in updates) {
+    const fallback: Record<string, unknown> = { ...updates };
+    delete fallback.skill_variants;
+    ({ data, error } = await supabaseAdmin
+      .from("skill_log_templates")
+      .update(fallback)
+      .eq("id", id)
+      .select()
+      .single());
+    if (!error) {
+      return NextResponse.json({
+        data: asTemplate(data as SkillLogTemplate),
+        warning:
+          "Saved the first skill form only — run docs/skill-log/skill-log-skill-variants-migration.sql in Supabase to enable multiple skills per role.",
+      });
+    }
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

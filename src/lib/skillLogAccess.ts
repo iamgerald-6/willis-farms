@@ -2,6 +2,7 @@ import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { AccessProfile } from "@/lib/pagePermissions";
+import { STANDARD_EMPLOYEE_PAGES } from "@/lib/pagePermissions";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   canBeAssignedAsSupervisorByRoleLabel,
@@ -57,6 +58,40 @@ function supervisorId(log: SkillLogRecord): string | undefined {
 }
 
 
+/** May call GET /skillLog/get_skillLog (rows are filtered per-record). */
+export function canAccessSkillLogList(
+  profile: AccessProfile | null | undefined,
+  sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
+): boolean {
+  if (!profile) return false;
+  if (
+    canPerformModuleAction(profile, "hc:skillLog", "view", sessionRole, groupPresets)
+  ) {
+    return true;
+  }
+  // Standard employees use Skill Logs to read their own signed-off forms even
+  // when a customised group preset narrowed the matrix view flag.
+  return (STANDARD_EMPLOYEE_PAGES as readonly string[]).includes("hc:skillLog");
+}
+
+export function isEmployeeSelfServiceSkillLogViewer(
+  profile: AccessProfile | null | undefined,
+  userId: string,
+  groupPresets?: GroupPresetsMap | null,
+  sessionRole?: string | null,
+): boolean {
+  if (!profile || !userId) return false;
+  if (
+    canPerformModuleAction(profile, "hc:skillLog", "add", sessionRole, groupPresets) ||
+    canPerformModuleAction(profile, "hc:skillLog", "review", sessionRole, groupPresets) ||
+    canPerformModuleAction(profile, "hc:skillLog", "approve", sessionRole, groupPresets)
+  ) {
+    return false;
+  }
+  return canAccessSkillLogList(profile, sessionRole, groupPresets);
+}
+
 export function canViewSkillLogRecord(
   profile: AccessProfile | null | undefined,
   userId: string,
@@ -66,12 +101,20 @@ export function canViewSkillLogRecord(
   _hasSupervisees = false,
 ): boolean {
   if (!profile || !userId) return false;
-  if (!canPerformModuleAction(profile, "hc:skillLog", "view", sessionRole, groupPresets)) {
-    return false;
-  }
 
   const empId = employeeId(log);
   const supId = supervisorId(log);
+
+  // Employee (Standard Role) — signed-off form only, regardless of matrix view.
+  if (empId === userId && log.status === "signed_off") {
+    return true;
+  }
+
+  if (
+    !canPerformModuleAction(profile, "hc:skillLog", "view", sessionRole, groupPresets)
+  ) {
+    return false;
+  }
 
   // Filler always sees their own drafts, submissions, and signed-off logs.
   if (supId === userId) return true;

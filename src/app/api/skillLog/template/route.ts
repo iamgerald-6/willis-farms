@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireAuth } from "@/lib/apiRequestAuth";
-import { findSkillLogTemplateForPlacement } from "@/lib/skillLog/templates";
+import {
+  findSkillLogTemplateForPlacement,
+  resolveSkillLogTemplateVariants,
+  skillVariantNames,
+} from "@/lib/skillLog/templates";
 
 export async function GET(req: NextRequest) {
   const caller = await requireAuth(req);
@@ -54,6 +58,8 @@ export async function GET(req: NextRequest) {
       data: {
         id: null,
         sections: [],
+        skill_variants: [],
+        skill_options: [],
         tier_auth_options: [],
         section_id: sectionId,
         section_label,
@@ -62,10 +68,14 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const skill_variants = resolveSkillLogTemplateVariants(template);
+
   return NextResponse.json({
     data: {
       id: template.id,
       sections: template.sections,
+      skill_variants,
+      skill_options: skillVariantNames(skill_variants),
       tier_auth_options: template.tier_auth_options,
       section_id: template.section_id,
       section_label,

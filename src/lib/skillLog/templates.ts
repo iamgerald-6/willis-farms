@@ -8,6 +8,12 @@ export type SkillLogTemplateSection = {
   skills: string[];
 };
 
+/** One competency form keyed by skill name (e.g. GP Breeding & Farrowing). */
+export type SkillLogTemplateVariant = {
+  name: string;
+  sections: SkillLogTemplateSection[];
+};
+
 export type SkillLogTemplate = {
   id: string;
   site_id: string;
@@ -16,7 +22,9 @@ export type SkillLogTemplate = {
   section_id: string;
   position_id: string;
   grade_level_id: string;
+  /** @deprecated Legacy single form — use skill_variants when present. */
   sections: SkillLogTemplateSection[];
+  skill_variants: SkillLogTemplateVariant[];
   tier_auth_options: string[];
   created_at: string;
   updated_at: string;
@@ -30,6 +38,8 @@ export type SkillLogTemplatePlacement = {
   position_id: string | null | undefined;
   grade_level_id: string | null | undefined;
 };
+
+export const DEFAULT_SKILL_VARIANT_NAME = "General";
 
 export function defaultSkillLogTypeNames(): string[] {
   return Object.keys(SKILL_LOG_TYPES);
@@ -88,6 +98,82 @@ export function normalizeSkillLogTemplateSections(
     .filter((s): s is SkillLogTemplateSection => s != null);
 }
 
+export function normalizeSkillLogTemplateVariants(
+  raw: unknown,
+  legacySections?: SkillLogTemplateSection[],
+): SkillLogTemplateVariant[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .map((entry, index) => {
+        if (!entry || typeof entry !== "object") return null;
+        const row = entry as Record<string, unknown>;
+        const name = String(row.name ?? "").trim();
+        const sections = normalizeSkillLogTemplateSections(row.sections);
+        if (!name && sections.length === 0) return null;
+        return {
+          name: name || `Skill ${index + 1}`,
+          sections,
+        };
+      })
+      .filter((v): v is SkillLogTemplateVariant => v != null);
+  }
+
+  if (legacySections && legacySections.length > 0) {
+    return [{ name: DEFAULT_SKILL_VARIANT_NAME, sections: legacySections }];
+  }
+
+  return [];
+}
+
+/** Resolve skill variants — legacy `sections` becomes a single default variant. */
+export function resolveSkillLogTemplateVariants(
+  template: Pick<SkillLogTemplate, "sections" | "skill_variants">,
+): SkillLogTemplateVariant[] {
+  const normalized = normalizeSkillLogTemplateVariants(
+    template.skill_variants,
+    normalizeSkillLogTemplateSections(template.sections),
+  );
+  return normalized.filter((v) => v.sections.some((s) => s.skills.length > 0));
+}
+
+export function sectionsForSkillVariant(
+  variants: SkillLogTemplateVariant[],
+  skillName: string | null | undefined,
+): SkillLogTemplateSection[] {
+  if (!variants.length) return [];
+  const trimmed = skillName?.trim();
+  if (trimmed) {
+    const match = variants.find((v) => v.name === trimmed);
+    if (match) return match.sections.filter((s) => s.skills.length > 0);
+  }
+  return variants[0]?.sections.filter((s) => s.skills.length > 0) ?? [];
+}
+
+export function skillVariantNames(
+  variants: SkillLogTemplateVariant[],
+): string[] {
+  return variants.map((v) => v.name).filter(Boolean);
+}
+
+export function normalizeSkillLogTemplateRow(
+  row: SkillLogTemplate,
+): SkillLogTemplate {
+  const sections = normalizeSkillLogTemplateSections(row.sections);
+  const skill_variants = normalizeSkillLogTemplateVariants(
+    row.skill_variants,
+    sections,
+  );
+  return {
+    ...row,
+    sections:
+      skill_variants[0]?.sections.length > 0
+        ? skill_variants[0].sections
+        : sections,
+    skill_variants,
+    tier_auth_options: normalizeSkillLogTierAuthOptions(row.tier_auth_options),
+  };
+}
+
 export async function findSkillLogTemplateForPlacement(
   supabase: SupabaseClient,
   placement: SkillLogTemplatePlacement,
@@ -106,10 +192,5 @@ export async function findSkillLogTemplateForPlacement(
     .maybeSingle();
 
   if (!data) return null;
-  const row = data as SkillLogTemplate;
-  return {
-    ...row,
-    sections: normalizeSkillLogTemplateSections(row.sections),
-    tier_auth_options: normalizeSkillLogTierAuthOptions(row.tier_auth_options),
-  };
+  return normalizeSkillLogTemplateRow(data as SkillLogTemplate);
 }

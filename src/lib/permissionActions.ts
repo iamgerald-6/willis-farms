@@ -10,7 +10,9 @@ import {
   type PermissionLevel,
 } from "@/lib/permissionLevels";
 import {
-  resolveGroupPresetActions,
+  getBuiltInRolePermissionActions,
+  standardRolePermissionActions,
+  withUniversalStaffPageAccess,
   type GroupPresetsMap,
 } from "@/lib/groupPermissionPresets";
 import {
@@ -24,10 +26,8 @@ import {
 } from "@/lib/pagePermissions";
 import {
   hasSystemAccessByRoleLabel,
-  HUMAN_RESOURCE_FULL_ACCESS_KEYS,
   isHumanResourceRoleLabel,
   userRoleGroupKeyFromLabel,
-  type UserRoleGroupKey,
 } from "@/lib/userRoleAccessControl";
 
 export type { ModuleActions, PagePermissionActions, PermissionAction };
@@ -265,17 +265,7 @@ export function actionsToLegacyPageKeys(
 }
 
 export function defaultStandardEmployeeActions(): PagePermissionActions {
-  const out: PagePermissionActions = {};
-  for (const key of STANDARD_EMPLOYEE_PAGES) {
-    const row = registryRow(key);
-    if (!row) continue;
-    const actions: ModuleActions = { view: true };
-    if (key === "hc:leave") {
-      actions.add = true;
-    }
-    out[key] = actions;
-  }
-  return out;
+  return standardRolePermissionActions();
 }
 
 /** Full (every supported action) access, but only for the given keys —
@@ -358,24 +348,26 @@ export function getEffectivePermissionActions(
 
   const tier = (profile.access_tier ?? "standard") as AccessTier;
   const stored = mergeStoredActions(profile);
+  const roleKey = userRoleGroupKeyFromLabel(role);
 
   // Individual override — set via Manage User (access_tier = delegated)
   if (tier === "delegated" && Object.keys(stored).length > 0) {
-    return stored;
-  }
-
-  // Group presets — role group + grade band merged
-  if (groupPresets && Object.keys(groupPresets).length > 0) {
-    const fromGroups = resolveGroupPresetActions(profile, groupPresets);
-    if (Object.keys(fromGroups).length > 0) return fromGroups;
+    return withUniversalStaffPageAccess(stored);
   }
 
   if (tier === "delegated") {
-    if (Object.keys(stored).length > 0) return stored;
-    return {};
+    return withUniversalStaffPageAccess(
+      Object.keys(stored).length > 0 ? stored : {},
+    );
   }
 
-  return defaultStandardEmployeeActions();
+  // Standard tier — built-in role matrix is authoritative (see
+  // getBuiltInRolePermissionActions in groupPermissionPresets.ts).
+  if (roleKey) {
+    return getBuiltInRolePermissionActions(roleKey);
+  }
+
+  return withUniversalStaffPageAccess(defaultStandardEmployeeActions());
 }
 
 export function hasModuleAction(
@@ -403,16 +395,13 @@ export function canPerformModuleAction(
     return true;
   }
 
-  // Human Resource: full (edit-equivalent) access to every Human Capital
-  // page plus Task Manager, by default — see
-  // HUMAN_RESOURCE_FULL_ACCESS_KEYS in userRoleAccessControl.ts. Deliberately
-  // does NOT cover "users"/"sys:definitions" (Human Resource has no default
-  // access there) or anything else outside that list.
+  // Human Resource never signs off skill logs — Executive / Super Admin only.
   if (
     isHumanResourceRoleLabel(role) &&
-    (HUMAN_RESOURCE_FULL_ACCESS_KEYS as readonly string[]).includes(key)
+    key === "hc:skillLog" &&
+    action === "approve"
   ) {
-    return true;
+    return false;
   }
 
   const effective = getEffectivePermissionActions(
@@ -421,6 +410,53 @@ export function canPerformModuleAction(
     groupPresets,
   );
   return hasModuleAction(effective, key, action);
+}
+
+const PAGE_LANDING_PATHS: Partial<Record<PagePermissionKey, string>> = {
+  dashboard: "/dashboard",
+  users: "/dashboard/access-control",
+  "hc:leave": "/dashboard/humanCapital/leave",
+  "hc:appraisal": "/dashboard/humanCapital/appraisal",
+  "hc:justifications": "/dashboard/humanCapital/appraisal/justifications",
+  "hc:skillLog": "/dashboard/humanCapital/skillLog",
+  "hc:promotion": "/dashboard/humanCapital/promotion",
+  "hc:recruitment": "/dashboard/humanCapital/recruitment",
+  "tm:tasks": "/dashboard/taskManager",
+  "tm:calendar": "/dashboard/taskManager/calendar",
+  policies: "/dashboard/policies",
+  "sop:view": "/dashboard/sop",
+  "sop:add": "/dashboard/addSop",
+  notifications: "/dashboard/notifications",
+  "sys:definitions": "/dashboard/system-definitions",
+};
+
+/** First page this user can open — used when denying access so we never
+ * redirect to /dashboard unless they can actually view the dashboard. */
+export function resolveDefaultLandingPath(
+  profile: AccessProfile,
+  groupPresets?: GroupPresetsMap | null,
+  sessionRole?: string | null,
+): string {
+  const order: PagePermissionKey[] = [
+    "dashboard",
+    "hc:leave",
+    "hc:appraisal",
+    "hc:recruitment",
+    "hc:skillLog",
+    "hc:promotion",
+    "tm:tasks",
+    "sys:definitions",
+    "users",
+    "policies",
+    "sop:view",
+    "notifications",
+  ];
+  for (const key of order) {
+    if (canAccessPage(profile, key, groupPresets, sessionRole)) {
+      return PAGE_LANDING_PATHS[key] ?? "/dashboard";
+    }
+  }
+  return "/dashboard";
 }
 
 /** Whether the user can open a module page (view action). */

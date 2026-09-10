@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
 import { hasLocalSupabaseSession } from "@/lib/auth/hasLocalSupabaseSession";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 
 export default function HomePage() {
@@ -25,15 +25,20 @@ export default function HomePage() {
     "Hello Wills Farms. I would like to make an inquiry (please indicate: Gilts or Pork)."
   );
 
-  // "checking": might already be signed in (e.g. staff hitting Back into the
-  // marketing site), hold off rendering the landing page. "guest": confirmed
-  // no session — render immediately, which is the case for ~all visitors.
-  const [screen, setScreen] = useState<"checking" | "guest">(() =>
-    hasLocalSupabaseSession() ? "checking" : "guest",
-  );
+  // Always start as "guest" so SSR matches hydration; promote to "checking" in
+  // useLayoutEffect when a local token exists, before paint.
+  const [screen, setScreen] = useState<"checking" | "guest">("guest");
+
+  useLayoutEffect(() => {
+    if (hasLocalSupabaseSession()) {
+      setScreen("checking");
+    }
+  }, []);
 
   // Redirect staff who are already logged in straight to their dashboard
   useEffect(() => {
+    if (!hasLocalSupabaseSession()) return;
+
     let active = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;

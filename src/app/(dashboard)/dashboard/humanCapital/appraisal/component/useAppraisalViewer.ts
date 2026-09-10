@@ -49,6 +49,7 @@ export function useAppraisalViewer(): {
       userId,
       accessTier: profile?.access_tier ?? null,
       pagePermissionLevels: profile?.page_permission_levels ?? null,
+      pagePermissionActions: profile?.page_permission_actions ?? null,
     },
     isLoading: sessionLoading || usersLoading,
   };

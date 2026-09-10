@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
+  requireOrganizationalStructureReadAccess,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import {
@@ -18,9 +19,11 @@ import {
  */
 export async function GET(req: NextRequest) {
   try {
-    const caller = await requireSystemDefinitionsAccess(req, "view");
+    const caller = await requireOrganizationalStructureReadAccess(req);
     if (!caller) {
-      return jsonForbidden("System Definitions view access is required.");
+      return jsonForbidden(
+        "You do not have permission to view organizational structure mapping.",
+      );
     }
 
     const supabase = getSupabaseAdminFromAuth();

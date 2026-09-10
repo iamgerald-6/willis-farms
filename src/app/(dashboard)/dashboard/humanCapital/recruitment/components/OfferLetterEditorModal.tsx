@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_IMAGE_JPEG_PNG, ACCEPT_PDF_OR_WORD } from "@/lib/uploadConstraints";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { hasBroadElevatedAccessByRoleLabel } from "@/lib/userRoleAccessControl";
 import type { User } from "@/types";
 import SignaturePad from "./SignaturePad";
 
@@ -77,9 +77,15 @@ function roleFallbackTitle(role: string): string {
   }
 }
 
-/** Senior management, or anyone granted the Recruitment module directly (HR). */
+/** Executive Role, Human Resource, Super Admin (User role labels), or
+ * anyone explicitly granted Recruitment module access. Uses user_role_label —
+ * not the legacy users.role column. */
 function isEligibleSigner(user: User): boolean {
-  return isSeniorManagement(user.role) || Boolean(user.page_permissions?.includes("hc:recruitment"));
+  if (user.is_disabled) return false;
+  return (
+    hasBroadElevatedAccessByRoleLabel(user.user_role_label) ||
+    Boolean(user.page_permissions?.includes("hc:recruitment"))
+  );
 }
 
 function formatCurrencyGhs(value: string | null | undefined): string | null {
@@ -161,11 +167,14 @@ export default function OfferLetterEditorModal({
     setSignatureHydrated(true);
   }, [signatureHydrated, data?.hr_data]);
 
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const generateMutation = useMutation({
     mutationFn: () =>
       api.post("/careers/onboarding/offer-letter/generate", {
         application_id: applicationId,
       }),
+    onMutate: () => setIsGenerating(true),
     onSuccess: (res) => {
       const body = res.data.data.offer_letter_draft as string;
       setDraft(body);
@@ -173,23 +182,29 @@ export default function OfferLetterEditorModal({
         ["offer-letter", applicationId],
         (prev) =>
           prev
-            ? { ...prev, offer_letter_draft: body }
+            ? {
+                ...prev,
+                offer_letter_draft: body,
+                context: res.data.data.context ?? prev.context,
+              }
             : {
                 offer_letter: null,
                 offer_letter_draft: body,
-                offer_terms_saved_at: null,
+                offer_terms_saved_at: data?.offer_terms_saved_at ?? null,
                 context: res.data.data.context ?? null,
               },
       );
+      void queryClient.invalidateQueries({ queryKey: ["offer-letter", applicationId] });
       toast.success("Offer letter generated — review and edit before saving.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      clearOfferLetterAutoGenerate(applicationId);
       toast.error(error?.response?.data?.error ?? "Generation failed.");
     },
+    onSettled: () => {
+      setIsGenerating(false);
+      clearOfferLetterAutoGenerate(applicationId);
+    },
   });
-
-  const isGenerating = generateMutation.isPending;
 
   const handleClose = () => {
     clearOfferLetterAutoGenerate(applicationId);
@@ -198,13 +213,21 @@ export default function OfferLetterEditorModal({
 
   useEffect(() => {
     if (showInitialLoader || !data?.offer_terms_saved_at) return;
-    if (data.offer_letter_draft?.trim()) return;
+    if (data.offer_letter_draft?.trim() || draft.trim()) return;
+    if (isGenerating || generateMutation.isPending) return;
     if (offerLetterAutoGenerateStarted.has(applicationId)) return;
     offerLetterAutoGenerateStarted.add(applicationId);
     generateMutation.mutate();
     // One-shot auto-generate when the modal opens with no draft yet.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit generateMutation
-  }, [showInitialLoader, applicationId, data?.offer_terms_saved_at, data?.offer_letter_draft]);
+  }, [
+    showInitialLoader,
+    applicationId,
+    data?.offer_terms_saved_at,
+    data?.offer_letter_draft,
+    draft,
+    isGenerating,
+  ]);
 
   const selectedSigner = eligibleSigners.find((u) => u.user_id === signerUserId);
 
@@ -431,7 +454,8 @@ export default function OfferLetterEditorModal({
                     ))}
                   </select>
                   <p className="mt-1 text-xs text-gray-400">
-                    Senior management and HR staff with Recruitment access only.
+                    Staff with Executive Role, Human Resource, or Super Admin User role
+                    (or Recruitment module access).
                   </p>
                 </div>
 

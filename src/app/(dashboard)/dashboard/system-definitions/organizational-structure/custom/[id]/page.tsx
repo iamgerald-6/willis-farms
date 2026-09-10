@@ -21,8 +21,10 @@ import type {
 } from "@/lib/organizationalStructureCustomLists";
 import {
   isAgeCatalogListType,
+  isSalaryBandTierListType,
   listUsesNumericRangeGenerator,
-  normalizeAgeCatalogListType,
+  normalizeOrgCustomListType,
+  SALARY_BAND_TIER_LABELS,
 } from "@/lib/organizationalStructureCustomLists";
 
 const inputClass =
@@ -153,9 +155,10 @@ export default function ManageCustomListPage() {
     enabled: !!canView,
   });
   const rawConfig = listTypes?.find((t) => t.id === listTypeId);
-  const config = rawConfig ? normalizeAgeCatalogListType(rawConfig) : undefined;
+  const config = rawConfig ? normalizeOrgCustomListType(rawConfig) : undefined;
   const fields = config?.fields ?? [];
   const isAgeCatalog = config ? isAgeCatalogListType(config) : false;
+  const isSalaryBandTier = config ? isSalaryBandTierListType(config) : false;
   const usesRangeGenerator = config ? listUsesNumericRangeGenerator(config) : false;
 
   const { data: items, isLoading: itemsLoading } = useQuery<OrgCustomListItem[]>({
@@ -168,6 +171,13 @@ export default function ManageCustomListPage() {
     },
     enabled: !!canView && !!listTypeId,
   });
+
+  const existingTierLabels = new Set(
+    (items ?? []).map((item) => item.label.trim().toLowerCase()),
+  );
+  const missingTierLabels = SALARY_BAND_TIER_LABELS.filter(
+    (label) => !existingTierLabels.has(label.toLowerCase()),
+  );
 
   const invalidate = () => {
     queryClient.invalidateQueries({
@@ -218,6 +228,32 @@ export default function ManageCustomListPage() {
   const [rangeMax, setRangeMax] = useState("");
   const [rangeLength, setRangeLength] = useState("");
   const isBandsMode = config?.numeric_range_mode === "bands";
+
+  const seedSalaryBandsMutation = useMutation({
+    mutationFn: async () => {
+      let added = 0;
+      for (const label of missingTierLabels) {
+        await api.post(`/organizational-structure/custom-list-types/${listTypeId}/items`, {
+          label,
+          is_active: true,
+          custom_fields: {},
+        });
+        added += 1;
+      }
+      return added;
+    },
+    onSuccess: (added) => {
+      toast.success(
+        added > 0
+          ? `Added ${added} salary band${added === 1 ? "" : "s"} (High, Medium, Low).`
+          : "High, Medium, and Low are already in the list.",
+      );
+      invalidate();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error?.response?.data?.error ?? "Could not add salary bands.");
+    },
+  });
 
   const generateRangeMutation = useMutation({
     mutationFn: async () => {
@@ -367,6 +403,11 @@ export default function ManageCustomListPage() {
             .
           </p>
         )}
+        {isSalaryBandTier && (
+          <p className="text-sm text-gray-500 mt-1">
+            Salary bands are discrete tiers — High, Medium, and Low — not numeric min/max ranges.
+          </p>
+        )}
       </div>
 
       {canAdd && usesRangeGenerator && (
@@ -435,23 +476,57 @@ export default function ManageCustomListPage() {
         </div>
       )}
 
+      {canAdd && isSalaryBandTier && missingTierLabels.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
+          <p className="text-sm font-semibold text-gray-800 mb-2">Standard salary bands</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Add the standard tiers in one step: {SALARY_BAND_TIER_LABELS.join(", ")}.
+          </p>
+          <button
+            type="button"
+            onClick={() => seedSalaryBandsMutation.mutate()}
+            disabled={seedSalaryBandsMutation.isPending}
+            className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
+          >
+            {seedSalaryBandsMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            Add High, Medium, Low
+          </button>
+        </div>
+      )}
+
       {canAdd && !usesRangeGenerator && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 max-w-lg">
           <p className="text-sm font-semibold text-gray-800 mb-3">
-            Add {isAgeCatalog ? "age" : config.singular}
+            Add {isAgeCatalog ? "age" : isSalaryBandTier ? "salary band" : config.singular}
           </p>
           <div className="space-y-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
-                {isAgeCatalog ? "Age (years)" : "Label"}
+                {isAgeCatalog ? "Age (years)" : isSalaryBandTier ? "Band tier" : "Label"}
               </label>
-              <input
-                type={isAgeCatalog ? "number" : "text"}
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                placeholder={isAgeCatalog ? "e.g. 18" : undefined}
-                className={inputClass}
-              />
+              {isSalaryBandTier ? (
+                <select
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select a tier</option>
+                  {SALARY_BAND_TIER_LABELS.map((tier) => (
+                    <option key={tier} value={tier} disabled={existingTierLabels.has(tier.toLowerCase())}>
+                      {tier}
+                      {existingTierLabels.has(tier.toLowerCase()) ? " (already added)" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={isAgeCatalog ? "number" : "text"}
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder={isAgeCatalog ? "e.g. 18" : undefined}
+                  className={inputClass}
+                />
+              )}
             </div>
             {config.has_region && (
               <div>
@@ -515,7 +590,7 @@ export default function ManageCustomListPage() {
                 className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors flex items-center gap-2"
               >
                 {addMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Add {isAgeCatalog ? "age" : config.singular}
+                Add {isAgeCatalog ? "age" : isSalaryBandTier ? "salary band" : config.singular}
               </button>
             </div>
           </div>

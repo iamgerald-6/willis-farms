@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
+  requireOrganizationalStructureReadAccess,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import { slugifyLabel } from "@/lib/organizationalStructure";
@@ -44,10 +45,10 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const caller = await requireSystemDefinitionsAccess(req, "view");
+    const caller = await requireOrganizationalStructureReadAccess(req);
     if (!caller) {
       return jsonForbidden(
-        "System Definitions view access is required to view this list.",
+        "You do not have permission to view organizational structure lists.",
       );
     }
 

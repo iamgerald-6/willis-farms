@@ -9,13 +9,15 @@ import {
   type UserListGroup,
 } from "@/lib/permissionActions";
 import {
-  HUMAN_RESOURCE_FULL_ACCESS_KEYS,
   USER_ROLE_GROUP_KEYS,
   userRoleGroupKeyLabel,
   type UserRoleGroupKey,
 } from "@/lib/userRoleAccessControl";
 import type { AccessProfile } from "@/lib/pagePermissions";
-import type { PagePermissionKey } from "@/lib/pagePermissions";
+import {
+  UNIVERSAL_STAFF_PAGES,
+  type PagePermissionKey,
+} from "@/lib/pagePermissions";
 
 /** One shared permission preset per role in the new 7-role system. Replaces
  * the old role-literal + grade-band groups ("employees"/"managers"/
@@ -55,32 +57,101 @@ export function isGroupPresetKey(key: string): key is GroupPresetKey {
   return (GROUP_PRESET_KEYS as readonly string[]).includes(key);
 }
 
-/** Built-in defaults when no DB row exists yet for a role. Super Admin and
- * Executive Role always get unconditional full access regardless of what's
- * saved here (see isFullRoleAccess bypass in getEffectivePermissionActions)
- * — their preset content is shown for completeness but has no effect.
- * System Administrator's sys:definitions/users access and Human Resource's
- * Human Capital/Task Manager access are likewise unconditional bypasses
- * (see canPerformModuleAction) — pre-ticking them here just keeps the
- * matrix consistent with what they actually already have. */
-export function getDefaultGroupPreset(key: GroupPresetKey): PagePermissionActions {
-  switch (key) {
+/** Every role preset includes dashboard + notifications so route guards
+ * never redirect to a page the user cannot open. */
+export function withUniversalStaffPageAccess(
+  actions: PagePermissionActions,
+): PagePermissionActions {
+  const out = { ...actions };
+  for (const key of UNIVERSAL_STAFF_PAGES) {
+    out[key] = { ...(out[key] ?? {}), view: true };
+  }
+  return out;
+}
+
+export const HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS: PagePermissionKey[] = [
+  "sys:definitions",
+];
+
+/** Standard Role and Consultant — identical access. */
+export function standardRolePermissionActions(): PagePermissionActions {
+  return {
+    dashboard: { view: true },
+    notifications: { view: true },
+    "hc:leave": { view: true, add: true },
+    "hc:appraisal": { view: true, add: true },
+    "hc:skillLog": { view: true },
+    "tm:tasks": { view: true, add: true },
+    "tm:calendar": { view: true },
+    policies: { view: true },
+    "sop:view": { view: true },
+  };
+}
+
+/** Supervisory Role — supervisor-scoped HC; record scope enforced in module
+ * access helpers and APIs (leaveAccess, appraisalAccess, skillLogAccess). */
+export function supervisoryRolePermissionActions(): PagePermissionActions {
+  return {
+    ...standardRolePermissionActions(),
+    "hc:leave": { view: true, add: true, approve: true },
+    "hc:appraisal": { view: true, add: true, edit: true },
+    "hc:skillLog": { view: true, add: true, edit: true },
+  };
+}
+
+/** Human Resource — all modules except System Definitions; no skill-log sign-off. */
+export function humanResourceRolePermissionActions(): PagePermissionActions {
+  const excluded = new Set<string>(HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS);
+  const out: PagePermissionActions = {};
+  for (const [key, mod] of Object.entries(defaultFullAccessActions())) {
+    if (excluded.has(key)) continue;
+    out[key as PagePermissionKey] = { ...mod };
+  }
+  out["hc:skillLog"] = {
+    view: true,
+    add: true,
+    edit: true,
+    review: true,
+  };
+  return out;
+}
+
+export function systemAdministratorRolePermissionActions(): PagePermissionActions {
+  return defaultFullAccessActionsFor(["sys:definitions", "users"]);
+}
+
+/** Canonical built-in matrix for each User role (standard-tier accounts). */
+export function getBuiltInRolePermissionActions(
+  roleKey: GroupPresetKey,
+): PagePermissionActions {
+  let actions: PagePermissionActions;
+  switch (roleKey) {
     case "standard_role":
     case "consultant":
+      actions = standardRolePermissionActions();
+      break;
     case "supervisory_role":
-      return defaultStandardEmployeeActions();
+      actions = supervisoryRolePermissionActions();
+      break;
     case "human_resource":
-      return defaultFullAccessActionsFor(
-        HUMAN_RESOURCE_FULL_ACCESS_KEYS as readonly PagePermissionKey[],
-      );
+      actions = humanResourceRolePermissionActions();
+      break;
     case "system_administrator":
-      return defaultFullAccessActionsFor(["sys:definitions", "users"]);
+      actions = systemAdministratorRolePermissionActions();
+      break;
     case "executive_role":
     case "super_admin":
-      return defaultFullAccessActions();
+      actions = defaultFullAccessActions();
+      break;
     default:
-      return {};
+      actions = standardRolePermissionActions();
   }
+  return withUniversalStaffPageAccess(actions);
+}
+
+/** Built-in defaults when no DB row exists yet for a role. */
+export function getDefaultGroupPreset(key: GroupPresetKey): PagePermissionActions {
+  return getBuiltInRolePermissionActions(key);
 }
 
 export function mergePermissionActions(
@@ -127,7 +198,7 @@ export function normalizeGroupPresetsMap(
       ? sanitizePermissionActions(row.page_permission_actions)
       : getDefaultGroupPreset(key);
     if (Object.keys(actions).length > 0) {
-      out[key] = actions;
+      out[key] = withUniversalStaffPageAccess(actions);
     }
   }
   return out;

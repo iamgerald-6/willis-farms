@@ -5,6 +5,7 @@ import {
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { overlayJobPositionFromCatalog } from "@/lib/careers/resolveEmployeeOrgPlacement";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from("users")
     .select(
-      "user_id, email, first_name, last_name, role, grade_level_id, grade_levels(code), job_position, phone, company_id",
+      "user_id, email, first_name, last_name, role, grade_level_id, grade_levels(code), position_id, job_position, phone, company_id",
     )
     .eq("user_id", caller.id)
     .maybeSingle();
@@ -66,9 +67,11 @@ export async function GET(req: NextRequest) {
   const { grade_levels, ...rest } = data as typeof data & {
     grade_levels?: { code: string | null } | null;
   };
+  const [withJobTitle] = await overlayJobPositionFromCatalog(supabaseAdmin, [
+    { ...rest, grade_level: grade_levels?.code ?? null },
+  ]);
   return NextResponse.json({
-    ...rest,
-    grade_level: grade_levels?.code ?? null,
+    ...withJobTitle,
     auth_only: false,
   });
 }

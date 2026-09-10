@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
+import {
+  fetchDirectReportUserIds,
+  isTaskVisibleToViewer,
+  resolveTaskViewScope,
+} from "@/lib/taskManagerScope";
 import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/projects
@@ -31,15 +36,18 @@ export async function GET(req: NextRequest) {
     const { data: projects, error } = await projectsQuery;
     if (error) throw error;
 
-    // Read scope, not write permission — see canViewAllTasks() in
-    // taskAccessControl.ts, already resolved onto user.canViewAllTasks by
-    // getRequestUser. Project/task creation, editing, etc. still go through
-    // requireSeniorManagement (role-based) unchanged.
-    const canSeeAll = user.canViewAllTasks;
+    const scope = resolveTaskViewScope(user.role, user.tm_can_view_all_tasks);
+    const canSeeAll = scope === "all";
+    const directReportIds =
+      scope === "reports"
+        ? await fetchDirectReportUserIds(supabaseAdmin, user.id)
+        : [];
 
     const { data: taskCounts, error: countsError } = await supabaseAdmin
       .from("tm_tasks")
-      .select("project_id, owner_id, lifecycle_status, due_date, is_recurring, progress_percent")
+      .select(
+        "project_id, owner_id, created_by, lifecycle_status, due_date, is_recurring, progress_percent",
+      )
       .neq("lifecycle_status", "deleted");
     if (countsError) throw countsError;
 
@@ -47,7 +55,11 @@ export async function GET(req: NextRequest) {
     const statsByProject: Record<string, { total: number; open: number; overdue: number }> = {};
 
     for (const t of taskCounts ?? []) {
-      if (!canSeeAll && t.owner_id !== user.id) continue;
+      if (
+        !isTaskVisibleToViewer(t, user.id, scope, directReportIds)
+      ) {
+        continue;
+      }
       visibleProjectIds.add(t.project_id);
 
       const stats = statsByProject[t.project_id] ?? { total: 0, open: 0, overdue: 0 };

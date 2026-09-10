@@ -12,6 +12,8 @@ import {
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { enrichAppraisalWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
+import { fetchEmployeeSupervisorId } from "@/lib/appraisalAccess";
+import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 
 export async function GET(
   req: NextRequest,
@@ -30,6 +32,8 @@ export async function GET(
   const caller = await requireAuth(req);
   if (!caller) return jsonUnauthorized();
 
+  const { presets } = await fetchGroupPresetsFromDb(supabaseAdmin);
+
   if (!id) {
     return NextResponse.json(
       { error: "Appraisal ID is required" },
@@ -47,7 +51,12 @@ export async function GET(
     return NextResponse.json({ error: "Appraisal not found" }, { status: 404 });
   }
 
-  if (!canAccessAppraisalRecord(caller, data)) {
+  const employeeSupervisorId = await fetchEmployeeSupervisorId(
+    supabaseAdmin,
+    data.employee_user_id,
+  );
+
+  if (!canAccessAppraisalRecord(caller, data, employeeSupervisorId, presets)) {
     return jsonForbidden("You do not have access to this appraisal.");
   }
 
@@ -91,6 +100,8 @@ export async function PATCH(
     const caller = await requireAuth(req);
     if (!caller) return jsonUnauthorized();
 
+    const { presets } = await fetchGroupPresetsFromDb(supabaseAdmin);
+
     const body = await req.json();
 
     if (!appraisalId) {
@@ -115,7 +126,15 @@ export async function PATCH(
       );
     }
 
-    if (!canAccessAppraisalRecord(caller, existing)) {
+    const employeeSupervisorId = await fetchEmployeeSupervisorId(
+      supabaseAdmin,
+      existing.employee_user_id,
+    );
+    const employeeUser = employeeSupervisorId
+      ? { supervisor_id: employeeSupervisorId }
+      : null;
+
+    if (!canAccessAppraisalRecord(caller, existing, employeeSupervisorId, presets)) {
       return jsonForbidden("You do not have access to this appraisal.");
     }
 
@@ -128,14 +147,18 @@ export async function PATCH(
       {
         employee_user_id: existing.employee_user_id,
         company_id: existing.company_id,
+        supervisor_id: employeeSupervisorId ?? existing.supervisor_id,
       },
+      employeeUser,
+      caller,
+      presets,
     );
 
     const rejectSupervisorAction = () =>
       isOwnRecord
         ? jsonForbidden("You cannot act as your own supervisor.")
         : jsonForbidden(
-            "Only Supervisory Role, Executive Role, Human Resource, or Super Admin can complete this evaluation.",
+            "You may only complete supervisor evaluations for employees assigned to you.",
           );
 
     // Archiving is a filing action, not a workflow state — an archived record

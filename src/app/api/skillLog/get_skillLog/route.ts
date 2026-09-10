@@ -5,8 +5,8 @@ import {
   jsonForbidden,
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
-import { canPerformModuleAction } from "@/lib/permissionActions";
 import {
+  canAccessSkillLogList,
   canViewSkillLogRecord,
   flattenSkillLogGradeLevels,
   type SkillLogRecord,
@@ -58,15 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     const ctx = await getSkillLogAuthContext(req);
     if (!ctx) return jsonUnauthorized();
-    if (
-      !canPerformModuleAction(
-        ctx.profile,
-        "hc:skillLog",
-        "view",
-        ctx.user.role,
-        ctx.presets,
-      )
-    ) {
+    if (!canAccessSkillLogList(ctx.profile, ctx.user.role, ctx.presets)) {
       return jsonForbidden();
     }
 

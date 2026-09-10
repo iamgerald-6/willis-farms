@@ -5,8 +5,7 @@ import {
   jsonForbidden,
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
-import { isSeniorManagement } from "@/lib/taskAccessControl";
-import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
+import { canApproveLeaveRequest, getLeaveAuthContext } from "@/lib/leaveAccess";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,18 +55,29 @@ export async function PATCH(req: NextRequest) {
       return jsonForbidden("You cannot approve or reject your own leave request.");
     }
 
-    // Broad: Senior Management (admin/manager/super_admin, or the new
-    // Executive/Human Resource/Super Admin roles). Scoped: Supervisory role
-    // can only review leave for whoever's supervisor_id points at them.
+    const ctx = await getLeaveAuthContext(req);
+    if (!ctx) {
+      return jsonForbidden(
+        "Forbidden — leave review access, or being this employee's assigned supervisor, is required.",
+      );
+    }
+
     const requesterSupervisorId = (
       existing.users as unknown as { supervisor_id?: string | null } | null
     )?.supervisor_id;
-    const canReviewAsSupervisor =
-      isSupervisoryRoleLabel(caller.role) && requesterSupervisorId === caller.id;
 
-    if (!isSeniorManagement(caller.role) && !canReviewAsSupervisor) {
+    if (
+      !canApproveLeaveRequest(
+        caller.id,
+        existing.user_id,
+        requesterSupervisorId,
+        ctx.profile,
+        caller.role,
+        ctx.presets,
+      )
+    ) {
       return jsonForbidden(
-        "Forbidden — Senior Management access, or being this employee's assigned supervisor, is required.",
+        "Forbidden — you may only approve leave for employees assigned to you.",
       );
     }
 

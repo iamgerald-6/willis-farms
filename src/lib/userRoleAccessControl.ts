@@ -15,8 +15,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * Administrator", "Consultant", "Super Admin".
  *
  * The 7 roles and what each one means for access control:
- *   Standard Role          - baseline access, nothing elevated. Default for
- *                            anyone with no User role assigned.
+ *   Standard Role          - overview; own leave/appraisal/skill log; SOP/
+ *                            policies view; task manager (self tasks). Default
+ *                            when no User role is assigned.
  *   Executive Role          - full role access (User Management, System
  *                            Definitions, everything) — see isFullRoleAccess
  *                            in pagePermissions.ts.
@@ -25,23 +26,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *                            tracks "Consultant" separately for other
  *                            things (program eligibility, salary tiers) —
  *                            nothing to do with access control.
- *   Human Resource          - full access to every Human Capital + Task
- *                            Manager page. No User Management / System
- *                            Definitions access by default.
+ *   Human Resource          - access to all modules except System
+ *                            Definitions. Cannot sign off skill logs.
  *   System Administrator   - System Definitions + User Management access.
  *                            Explicitly NOT granted appraise / approve leave
  *                            / fill skill log / create tasks for others —
  *                            deliberately narrower than "full role access".
- *   Supervisory Role        - may use supervisor features (appraise, approve
- *                            leave, fill skill logs, create tasks for others).
- *                            WHICH people they can act on is still whoever
- *                            has users.supervisor_id pointing at them
- *                            (assigned in onboarding or Manage User).
- *                            Executive Role, Human Resource, and Super Admin
- *                            can also be picked as someone's assigned
- *                            supervisor. Standard, Consultant, and System
- *                            Administrator cannot.
+ *   Supervisory Role        - Standard access plus appraise/fill skill logs
+ *                            and approve leave for assigned reports only;
+ *                            create tasks for self and supervisees. Scope is
+ *                            always users.supervisor_id assignment.
  *   Super Admin             - bypasses everything.
+ *   Built-in matrices live in groupPermissionPresets.ts
+ *   (getBuiltInRolePermissionActions).
  */
 
 export const USER_ROLE_LIST_LABEL = "user role";
@@ -242,11 +239,11 @@ export function canBeAssignedAsSupervisorAtOnboardingByRoleLabel(
   );
 }
 
-/** Module keys Human Resource gets full (edit-equivalent) access to by
- * default — every Human Capital page plus Task Manager. Kept here (rather
- * than duplicated in permissionActions.ts) so the "what does HR get"
- * definition lives in one place alongside the rest of the role taxonomy. */
+/** @deprecated Use humanResourceRolePermissionActions() in
+ * groupPermissionPresets.ts — HR gets all page keys except sys:definitions. */
 export const HUMAN_RESOURCE_FULL_ACCESS_KEYS = [
+  "dashboard",
+  "users",
   "hc:leave",
   "hc:appraisal",
   "hc:justifications",
@@ -255,6 +252,10 @@ export const HUMAN_RESOURCE_FULL_ACCESS_KEYS = [
   "hc:recruitment",
   "tm:tasks",
   "tm:calendar",
+  "policies",
+  "sop:view",
+  "sop:add",
+  "notifications",
 ] as const;
 
 let cachedUserRoleTableName: string | null | undefined;

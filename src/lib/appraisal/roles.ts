@@ -1,11 +1,13 @@
-import { canBeAssignedAsSupervisorByRoleLabel } from "@/lib/userRoleAccessControl";
+import type { ApiRequestUser } from "@/lib/apiRequestAuth";
+import { canSuperviseAppraisalRecord } from "@/lib/appraisalAccess";
+import type { GroupPresetsMap } from "@/lib/groupPermissionPresets";
 
 /**
  * Which side of an appraisal a given person occupies.
  *
- * Everyone completes their own self-assessment. The supervisor side is
- * available to anyone whose user_role_id is Supervisory Role, Executive
- * Role, Human Resource, or Super Admin — not users.supervisor_id.
+ * Everyone completes their own self-assessment. Executive / HR / Super Admin
+ * may complete the supervisor side for anyone; Supervisory Role only for
+ * employees assigned via users.supervisor_id.
  */
 export type AppraisalSide = "employee" | "supervisor" | "observer";
 
@@ -14,6 +16,13 @@ export interface AppraisalViewer {
   role?: string | null;
   gradeLevel?: string | null;
   companyId?: string | null;
+  accessTier?: string | null;
+  pagePermissionLevels?: Partial<
+    Record<string, "view" | "add" | "edit">
+  > | null;
+  pagePermissionActions?: Partial<
+    Record<string, Partial<Record<string, boolean>>>
+  > | null;
 }
 
 export interface AppraisalSubject {
@@ -38,14 +47,22 @@ export function isOwnAppraisal(
   return false;
 }
 
-/** Supervisor side: user_role_id is Supervisory / Executive / Human Resource
- * / Super Admin, and this is not their own record. */
+/** Supervisor side: Executive / HR / Super Admin may act on any record;
+ * Supervisory Role only on employees assigned via users.supervisor_id. */
 export function canSuperviseAppraisal(
   viewer: AppraisalViewer,
   subject: AppraisalSubject,
+  employee?: { supervisor_id?: string | null } | null,
+  apiUser?: ApiRequestUser | null,
+  presets?: GroupPresetsMap | null,
 ): boolean {
-  if (isOwnAppraisal(viewer, subject)) return false;
-  return canBeAssignedAsSupervisorByRoleLabel(viewer.role);
+  return canSuperviseAppraisalRecord(
+    viewer,
+    subject,
+    employee,
+    apiUser,
+    presets,
+  );
 }
 
 export function appraisalSideFor(

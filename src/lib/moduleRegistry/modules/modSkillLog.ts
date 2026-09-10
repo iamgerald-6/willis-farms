@@ -40,7 +40,7 @@ export const skillLogFormDefinition: FormDefinition = {
     },
     {
       id: "log_type",
-      label: "Skills Log Type",
+      label: "Skill",
       type: "select",
       required: true,
       optionsRef: "taxonomy.skillLog.types",

@@ -17,7 +17,8 @@ import {
   isPeriodAlreadyAppraised,
   periodLabel,
 } from "@/lib/appraisal/deadlines";
-import { canAppraiseOthers } from "@/lib/appraisal/sections";
+import { findOwnAppraisalRow } from "@/lib/appraisalAccess";
+import { viewerCanActOnTeamAppraisals } from "@/lib/appraisal/viewerAccess";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
 import {
@@ -51,7 +52,14 @@ function AppraisalFormPageContent() {
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
-  const role = resolveAccessProfile(profile, sessionRole)?.role ?? sessionRole;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const role = accessProfile?.role ?? sessionRole;
+  const viewerForAccess = {
+    role,
+    accessTier: profile?.access_tier,
+    pagePermissionLevels: profile?.page_permission_levels,
+    pagePermissionActions: profile?.page_permission_actions,
+  };
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
     profile?.grade_level,
@@ -73,10 +81,9 @@ function AppraisalFormPageContent() {
       activePeriod.quarter,
       activePeriod.year,
     ],
-    enabled: isFreshFill && !!profile?.company_id,
+    enabled: isFreshFill && !!userId,
     queryFn: async () => {
       const params = new URLSearchParams({
-        company_id: profile!.company_id!,
         review_quarter: activePeriod.quarter,
         review_year: String(activePeriod.year),
         archived: "all",
@@ -87,14 +94,13 @@ function AppraisalFormPageContent() {
         status?: string | null;
         submitted_by?: string | null;
         employee_user_id?: string | null;
+        company_id?: string | null;
       }>;
-      return (
-        rows.find((r) => r.employee_user_id === userId) ?? rows[0] ?? null
-      );
+      return findOwnAppraisalRow(rows, userId, profile?.company_id);
     },
   });
 
-  const canSuperviseOthers = canAppraiseOthers(role);
+  const canSuperviseOthers = viewerCanActOnTeamAppraisals(viewerForAccess);
 
   const blockConsultantSelfStart =
     isFreshFill && isConsultant && !existingAppraisalId && !canSuperviseOthers;

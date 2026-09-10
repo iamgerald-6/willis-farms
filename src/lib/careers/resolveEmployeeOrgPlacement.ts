@@ -327,3 +327,39 @@ export async function overlayPlacementFromApplications<
   if (persist.length > 0) await Promise.all(persist);
   return next;
 }
+
+/**
+ * job_position is a display snapshot written at invite time. When HR later
+ * changes Position under Manage User, only position_id is updated — derive
+ * the live title from the Position catalog so listings never show stale text.
+ */
+export async function overlayJobPositionFromCatalog<
+  T extends { position_id?: string | null; job_position?: string | null },
+>(supabase: SupabaseClient, users: T[]): Promise<T[]> {
+  const positionIds = [
+    ...new Set(
+      users
+        .map((u) => u.position_id)
+        .filter((id): id is string => typeof id === "string" && !!id),
+    ),
+  ];
+  if (positionIds.length === 0) return users;
+
+  const { data: positions } = await supabase
+    .from("custom_position")
+    .select("id, label")
+    .in("id", positionIds);
+
+  const labelById = new Map(
+    (positions ?? []).map((row) => [
+      row.id as string,
+      String(row.label ?? "").trim(),
+    ]),
+  );
+
+  return users.map((user) => {
+    if (!user.position_id) return user;
+    const label = labelById.get(user.position_id);
+    return label ? { ...user, job_position: label } : user;
+  });
+}

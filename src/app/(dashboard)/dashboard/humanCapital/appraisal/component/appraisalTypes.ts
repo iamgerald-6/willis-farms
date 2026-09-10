@@ -96,6 +96,9 @@ export interface ViewerContext {
   pagePermissionLevels?: Partial<
     Record<string, "view" | "add" | "edit">
   > | null;
+  pagePermissionActions?: Partial<
+    Record<string, Partial<Record<string, boolean>>>
+  > | null;
   hasSupervisees?: boolean;
 }
 

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
-import { canAppraiseOthers } from "@/lib/appraisal/sections";
 import { isSeniorManagement, canViewAllTasks } from "@/lib/taskAccessControl";
 import {
   canAddUser,
@@ -12,14 +11,26 @@ import {
 import {
   resolveAccessProfile,
   type AccessProfile,
+  type PagePermissionKey,
 } from "@/lib/pagePermissions";
 import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import type { PermissionAction } from "@/lib/moduleRegistry/types";
 import {
+  hasBroadElevatedAccessByRoleLabel,
   resolveEffectiveUserRoleLabel,
   resolveUserRoleLabelById,
 } from "@/lib/userRoleAccessControl";
+
+/** HC modules that read org-structure dropdowns without opening System Definitions. */
+const HC_ORG_STRUCTURE_READ_KEYS: PagePermissionKey[] = [
+  "hc:recruitment",
+  "hc:appraisal",
+  "hc:skillLog",
+  "hc:leave",
+  "hc:promotion",
+  "hc:justifications",
+];
 
 /**
  * Shared API auth: verify Supabase JWT, resolve role from public.users with
@@ -227,6 +238,51 @@ export async function requireSeniorManagement(
   return user;
 }
 
+/**
+ * Read org-structure catalogs (custom lists, mapping levels/nodes) for Human
+ * Capital workflows. Does not grant System Definitions edit access or the
+ * sys:definitions page — only GET data needed by recruitment, appraisal, etc.
+ */
+export async function requireOrganizationalStructureReadAccess(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+
+  if (
+    canPerformModuleAction(
+      profile,
+      "sys:definitions",
+      "view",
+      user.role,
+      presets,
+    )
+  ) {
+    return user;
+  }
+
+  if (hasBroadElevatedAccessByRoleLabel(user.role)) {
+    return user;
+  }
+
+  if (
+    HC_ORG_STRUCTURE_READ_KEYS.some((key) =>
+      canPerformModuleAction(profile, key, "view", user.role, presets),
+    )
+  ) {
+    return user;
+  }
+
+  return null;
+}
+
 /** System Definitions — permission matrix (sys:definitions). Pass one action or any-of. */
 export async function requireSystemDefinitionsAccess(
   req: NextRequest,
@@ -310,19 +366,7 @@ export async function requireSkillLogAccess(
   return ctx;
 }
 
-export function canAccessAppraisalRecord(
-  user: ApiRequestUser,
-  record: {
-    company_id?: string | null;
-    employee_user_id?: string | null;
-    supervisor_id?: string | null;
-  },
-): boolean {
-  if (hasFullAppraisalAccess(user.role) || canAppraiseOthers(user.role)) return true;
-  if (user.id && record.employee_user_id === user.id) return true;
-  if (user.company_id && record.company_id === user.company_id) return true;
-  return false;
-}
+export { canAccessAppraisalRecord } from "@/lib/appraisalAccess";
 
 /** Admin client for routes that import from taskManagerAuth. */
 export function getSupabaseAdminFromAuth(): SupabaseClient | null {

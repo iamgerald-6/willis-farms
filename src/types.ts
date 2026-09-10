@@ -64,9 +64,8 @@ export interface User {
    * userRoleAccessControl.ts; this is what access-control decisions should
    * key off going forward, not the old `role` field. */
   user_role_label?: string | null;
-  // Task Manager: can this user see every task/project, or only their own?
-  // See canViewAllTasks() in src/lib/taskAccessControl.ts. Defaults to
-  // false except super_admin, who always has it regardless of this value.
+  // Task Manager: optional grant to see every task/project. Executive Role,
+  // Human Resource, and Super Admin see all by role — see canViewAllTasks().
   tm_can_view_all_tasks?: boolean;
 }
 

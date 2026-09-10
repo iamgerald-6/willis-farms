@@ -5,12 +5,15 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { Loader2, Plus, Trash2, ArrowLeft, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import { isNavigationAbortError } from "@/lib/navigation/safeNavigation";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import {
   defaultSkillLogTypeNames,
+  resolveSkillLogTemplateVariants,
   sectionsFromDefaultSkillLogType,
   type SkillLogTemplate,
   type SkillLogTemplateSection,
+  type SkillLogTemplateVariant,
 } from "@/lib/skillLog/templates";
 import type {
   OrgCustomListItem,
@@ -141,8 +144,17 @@ export default function SkillLogTemplatesManager({ canAdd, canEdit }: Props) {
       queryClient.invalidateQueries({ queryKey: ["skill_log_templates"] });
       setActiveTab("sections");
     },
-    onError: (err: { response?: { data?: { error?: string } } }) => {
-      toast.error(err?.response?.data?.error ?? "Could not save scope.");
+    onError: (err: unknown) => {
+      if (isNavigationAbortError(err)) return;
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ??
+        (err instanceof Error ? err.message : null);
+      if (message && !/aborted|cancel/i.test(message)) {
+        toast.error(message);
+      } else {
+        toast.error("Could not save scope.");
+      }
     },
   });
 
@@ -335,14 +347,19 @@ export default function SkillLogTemplatesManager({ canAdd, canEdit }: Props) {
           canAdd={canAdd}
           canEdit={canEdit}
           otherTemplates={templates.filter(
-            (t) => t.id !== activeTemplate.id && t.sections.length > 0,
+            (t) =>
+              t.id !== activeTemplate.id &&
+              resolveSkillLogTemplateVariants(t).length > 0,
           )}
           describeTemplate={(t) => templateName(t)}
-          onSaved={(t) => {
+          onSaved={(t, meta) => {
             setActiveTemplate(t);
             queryClient.invalidateQueries({ queryKey: ["skill_log_templates"] });
-            toast.success("Template saved.");
-            setView("list");
+            if (meta?.warning) {
+              toast.warning(meta.warning, { duration: 8000 });
+            } else {
+              toast.success("Skill log forms saved.");
+            }
           }}
         />
       )}
@@ -456,6 +473,36 @@ function ScopeTab({
   );
 }
 
+function cloneVariantSections(sections: SkillLogTemplateSection[]) {
+  return sections.map((s) => ({ ...s, skills: [...s.skills] }));
+}
+
+function skillVariantLabel(variant: SkillLogTemplateVariant, index: number) {
+  return variant.name.trim() || `Untitled skill ${index + 1}`;
+}
+
+function skillVariantSummary(variant: SkillLogTemplateVariant) {
+  const sections = variant.sections.filter(
+    (s) => s.title.trim() || s.skills.some((sk) => sk.trim()),
+  );
+  const competencies = sections.reduce(
+    (total, section) => total + section.skills.filter((sk) => sk.trim()).length,
+    0,
+  );
+  return { sectionCount: sections.length, competencyCount: competencies };
+}
+
+function initialSkillVariants(template: SkillLogTemplate): SkillLogTemplateVariant[] {
+  const resolved = resolveSkillLogTemplateVariants(template);
+  if (resolved.length > 0) {
+    return resolved.map((v) => ({
+      name: v.name,
+      sections: cloneVariantSections(v.sections),
+    }));
+  }
+  return [{ name: "", sections: [{ key: `sec-${Date.now()}`, title: "", skills: [""] }] }];
+}
+
 function SectionsTab({
   template,
   canAdd,
@@ -469,11 +516,12 @@ function SectionsTab({
   canEdit: boolean;
   otherTemplates: SkillLogTemplate[];
   describeTemplate: (t: SkillLogTemplate) => string;
-  onSaved: (t: SkillLogTemplate) => void;
+  onSaved: (t: SkillLogTemplate, meta?: { warning?: string }) => void;
 }) {
-  const [draft, setDraft] = useState<SkillLogTemplateSection[]>(() =>
-    template.sections.map((s) => ({ ...s, skills: [...s.skills] })),
+  const [skillVariants, setSkillVariants] = useState<SkillLogTemplateVariant[]>(() =>
+    initialSkillVariants(template),
   );
+  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const [tierAuth, setTierAuth] = useState<string[]>(() =>
     template.tier_auth_options?.length ? [...template.tier_auth_options] : ["None yet"],
   );
@@ -481,26 +529,81 @@ function SectionsTab({
   const [defaultSelection, setDefaultSelection] = useState("");
   const [autofilling, setAutofilling] = useState(false);
 
+  const activeVariant = skillVariants[activeSkillIndex] ?? skillVariants[0];
+  const draft = activeVariant?.sections ?? [];
+
+  function updateActiveSections(
+    updater: (prev: SkillLogTemplateSection[]) => SkillLogTemplateSection[],
+  ) {
+    setSkillVariants((prev) =>
+      prev.map((variant, index) =>
+        index === activeSkillIndex
+          ? { ...variant, sections: updater(variant.sections) }
+          : variant,
+      ),
+    );
+  }
+
+  function updateActiveSkillName(name: string) {
+    setSkillVariants((prev) =>
+      prev.map((variant, index) =>
+        index === activeSkillIndex ? { ...variant, name } : variant,
+      ),
+    );
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const unnamed = skillVariants.filter((variant) => !variant.name.trim());
+      if (unnamed.length > 0) {
+        throw new Error("Every skill form needs a name before saving.");
+      }
+
+      const skill_variants = skillVariants
+        .map((variant) => ({
+          name: variant.name.trim(),
+          sections: variant.sections
+            .map((s, i) => ({
+              key: s.key || `sec-${i}`,
+              title: s.title.trim(),
+              skills: s.skills.map((sk) => sk.trim()).filter(Boolean),
+            }))
+            .filter((s) => s.title || s.skills.length > 0),
+        }))
+        .filter((variant) => variant.name && variant.sections.length > 0);
+
+      if (skill_variants.length === 0) {
+        throw new Error(
+          "Add at least one skill form with a name and competency sections before saving.",
+        );
+      }
+
       const res = await api.patch(`/system-definitions/skill-log-templates/${template.id}`, {
-        sections: draft
-          .map((s, i) => ({
-            key: s.key || `sec-${i}`,
-            title: s.title.trim(),
-            skills: s.skills.map((sk) => sk.trim()).filter(Boolean),
-          }))
-          .filter((s) => s.title || s.skills.length > 0),
+        skill_variants,
         tier_auth_options: tierAuth.map((t) => t.trim()).filter(Boolean),
       });
-      return res.data.data as SkillLogTemplate;
+      return {
+        template: res.data.data as SkillLogTemplate,
+        warning: res.data.warning as string | undefined,
+      };
     },
-    onSuccess: onSaved,
-    onError: () => toast.error("Could not save competency sections."),
+    onSuccess: ({ template: saved, warning }) => {
+      setSkillVariants(initialSkillVariants(saved));
+      onSaved(saved, warning ? { warning } : undefined);
+    },
+    onError: (err: unknown) => {
+      if (isNavigationAbortError(err)) return;
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error ??
+        (err instanceof Error ? err.message : null);
+      if (message && /aborted|cancel/i.test(message)) return;
+      toast.error(message ?? "Could not save competency sections.");
+    },
   });
 
   function addSection() {
-    setDraft((prev) => [
+    updateActiveSections((prev) => [
       ...prev,
       { key: `sec-${Date.now()}`, title: "New section", skills: [""] },
     ]);
@@ -509,25 +612,61 @@ function SectionsTab({
   function handleReuse(sourceId: string) {
     const source = otherTemplates.find((t) => t.id === sourceId);
     if (!source) return;
-    setDraft(source.sections.map((s) => ({ ...s, skills: [...s.skills] })));
+    const reused = resolveSkillLogTemplateVariants(source);
+    if (reused.length > 0) {
+      setSkillVariants(
+        reused.map((v) => ({
+          name: v.name,
+          sections: cloneVariantSections(v.sections),
+        })),
+      );
+      setActiveSkillIndex(0);
+    } else {
+      setSkillVariants([
+        {
+          name: "",
+          sections: cloneVariantSections(source.sections),
+        },
+      ]);
+      setActiveSkillIndex(0);
+    }
     if (source.tier_auth_options?.length) {
       setTierAuth([...source.tier_auth_options]);
     }
-    toast.success(`Reused competency sections from "${describeTemplate(source)}".`);
+    toast.success(`Reused skill log setup from "${describeTemplate(source)}".`);
     setReuseSelection("");
   }
 
   function handleLoadDefault(logType: string) {
     const sections = sectionsFromDefaultSkillLogType(logType);
     if (sections.length === 0) return;
-    setDraft(sections);
-    toast.success(`Loaded default skill log: ${logType}. Review before saving.`);
+    setSkillVariants((prev) =>
+      prev.map((variant, index) =>
+        index === activeSkillIndex
+          ? { name: variant.name.trim() || logType, sections }
+          : variant,
+      ),
+    );
+    toast.success(`Loaded default form for "${logType}" into the active skill. Review before saving.`);
     setDefaultSelection("");
   }
 
   function handleStartBlank() {
-    setDraft([{ key: `sec-${Date.now()}`, title: "", skills: [""] }]);
-    toast.success("Started a blank skill log — add your own sections and skills.");
+    updateActiveSections(() => [
+      { key: `sec-${Date.now()}`, title: "", skills: [""] },
+    ]);
+    toast.success("Started a blank competency form for this skill.");
+  }
+
+  function handleAddSkillVariant() {
+    setSkillVariants((prev) => {
+      const next = [
+        ...prev,
+        { name: "", sections: [{ key: `sec-${Date.now()}`, title: "", skills: [""] }] },
+      ];
+      setActiveSkillIndex(next.length - 1);
+      return next;
+    });
   }
 
   async function handleAutofillFile(file: File) {
@@ -539,15 +678,21 @@ function SectionsTab({
         file_name: uploaded.original_name,
       });
       const extracted = (res.data.data?.sections ?? []) as SkillLogTemplateSection[];
-      setDraft(extracted.map((s, i) => ({
-        key: s.key || `sec-${i}`,
-        title: s.title,
-        skills: [...(s.skills ?? [])],
-      })));
+      updateActiveSections(() =>
+        extracted.map((s, i) => ({
+          key: s.key || `sec-${i}`,
+          title: s.title,
+          skills: [...(s.skills ?? [])],
+        })),
+      );
       toast.success("Sections filled in from the document — review before saving.");
     } catch (err) {
+      if (isNavigationAbortError(err)) return;
       const e = err as { response?: { data?: { error?: string } }; message?: string };
-      toast.error(e?.response?.data?.error ?? e?.message ?? "Couldn't read that document.");
+      const message = e?.response?.data?.error ?? e?.message;
+      if (message && !/aborted|cancel/i.test(message)) {
+        toast.error(message);
+      }
     } finally {
       setAutofilling(false);
     }
@@ -556,9 +701,9 @@ function SectionsTab({
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-400">
-        Build your own skill log, load a default pack, reuse another template,
-        or prefill from a document. Tier authorisation is always editable here
-        — it is what the supervisor picks when they fill the log.
+        Define one or more skills for this role (e.g. GP Breeding &amp; Farrowing,
+        Feed Nutrition). Each skill has its own competency form. Tier authorisation
+        options are shared across all skills on the fill form.
       </p>
 
       <div className="rounded-lg border border-gray-200 p-4 space-y-3">
@@ -601,91 +746,212 @@ function SectionsTab({
         )}
       </div>
 
-      {canEdit && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleStartBlank}
-            className="h-9 inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add your own skill log
-          </button>
+      <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">Skill log forms</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            This role can have several skills — each with its own competency checklist.
+            Choose which skill form to edit from the dropdown.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[260px] max-w-xl">
+            <label
+              htmlFor="skill-form-select"
+              className="block text-xs font-semibold text-gray-600 mb-1.5"
+            >
+              Skill form to edit
+            </label>
+            <select
+              id="skill-form-select"
+              value={String(activeSkillIndex)}
+              onChange={(e) => setActiveSkillIndex(Number(e.target.value))}
+              className="w-full h-10 rounded-lg border border-gray-200 px-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
+            >
+              {skillVariants.map((variant, i) => {
+                const label = skillVariantLabel(variant, i);
+                const { sectionCount, competencyCount } = skillVariantSummary(variant);
+                return (
+                  <option key={`skill-option-${i}`} value={String(i)}>
+                    {label} ({sectionCount} section{sectionCount !== 1 ? "s" : ""},{" "}
+                    {competencyCount} item{competencyCount !== 1 ? "s" : ""})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleAddSkillVariant}
+              className="h-10 inline-flex items-center gap-1.5 px-3 rounded-lg border border-dashed border-gray-300 text-xs font-medium text-red-600 hover:border-red-300 hover:bg-red-50/50 transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add skill form
+            </button>
+          )}
+        </div>
+      </div>
+
+      {otherTemplates.length > 0 && canEdit && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-900">
+            Copy entire setup from another role
+          </p>
+          <p className="text-[11px] text-amber-800/80">
+            This replaces <strong>all skill forms</strong> in this template (not just
+            the one selected above).
+          </p>
           <select
-            value={defaultSelection}
+            value={reuseSelection}
             onChange={(e) => {
-              const name = e.target.value;
-              setDefaultSelection(name);
-              if (name) handleLoadDefault(name);
+              const id = e.target.value;
+              setReuseSelection(id);
+              if (id) handleReuse(id);
             }}
-            className="h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-600 bg-white"
+            className="h-9 w-full max-w-md rounded-lg border border-amber-200 px-3 text-xs text-gray-700 bg-white"
           >
-            <option value="">Load default skill log…</option>
-            {defaultSkillLogTypeNames().map((name) => (
-              <option key={name} value={name}>
-                {name}
+            <option value="">Choose a template to copy from…</option>
+            {otherTemplates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {describeTemplate(t)}
               </option>
             ))}
           </select>
+        </div>
+      )}
 
-          {otherTemplates.length > 0 && (
-            <select
-              value={reuseSelection}
-              onChange={(e) => {
-                const id = e.target.value;
-                setReuseSelection(id);
-                if (id) handleReuse(id);
+      <div className="rounded-xl border-2 border-red-200 bg-white overflow-hidden">
+        <div className="bg-red-50 border-b border-red-100 px-4 py-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-red-600">
+              Competency form editor
+            </p>
+            <h3 className="text-base font-bold text-gray-900 mt-0.5">
+              {skillVariantLabel(activeVariant, activeSkillIndex)}
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Supervisors will see this name in the Skill dropdown when filling a log.
+            </p>
+          </div>
+          {canEdit && skillVariants.length > 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                const i = activeSkillIndex;
+                setSkillVariants((prev) => prev.filter((_, idx) => idx !== i));
+                setActiveSkillIndex((prev) => {
+                  if (i < prev) return prev - 1;
+                  if (i === prev) return Math.max(0, prev - 1);
+                  return prev;
+                });
               }}
-              className="h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-600 bg-white"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800 px-2 py-1 rounded-lg hover:bg-red-100"
             >
-              <option value="">Reuse skill log setup…</option>
-              {otherTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {describeTemplate(t)}
-                </option>
-              ))}
-            </select>
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete this skill form
+            </button>
           )}
         </div>
-      )}
 
-      {canEdit && (
-        <div className="rounded-lg border border-dashed border-gray-300 p-3">
-          <label className="flex flex-wrap items-center gap-2 cursor-pointer">
-            {autofilling ? (
-              <Loader2 className="w-4 h-4 animate-spin text-red-600" />
-            ) : (
-              <Sparkles className="w-4 h-4 text-red-600" />
-            )}
-            <span className="text-sm font-medium text-red-700">
-              {autofilling ? "Reading document…" : "Prefill with WillsFarms Intel"}
-            </span>
-            <span className="text-xs text-gray-400">
-              — upload an SOP, old skill log, or job description (Word, PDF, or image)
-            </span>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Skill name
+            </label>
             <input
-              type="file"
-              className="sr-only"
-              accept=".pdf,.doc,.docx,image/jpeg,image/png"
-              disabled={autofilling}
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (!file) return;
-                await handleAutofillFile(file);
-              }}
+              value={activeVariant?.name ?? ""}
+              disabled={!canEdit}
+              onChange={(e) => updateActiveSkillName(e.target.value)}
+              className="w-full max-w-xl border border-gray-200 p-2.5 rounded-lg text-sm text-gray-900 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
+              placeholder="e.g. GP Breeding & Farrowing"
             />
-          </label>
-        </div>
-      )}
+          </div>
 
-      {draft.map((section, si) => (
+          {canEdit && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-700">
+                Build checklist for{" "}
+                <span className="text-red-700">
+                  {skillVariantLabel(activeVariant, activeSkillIndex)}
+                </span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleStartBlank}
+                  className="h-9 inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Start blank
+                </button>
+                <select
+                  value={defaultSelection}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    setDefaultSelection(name);
+                    if (name) handleLoadDefault(name);
+                  }}
+                  className="h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-600 bg-white max-w-xs"
+                >
+                  <option value="">
+                    Load default pack into this skill…
+                  </option>
+                  {defaultSkillLogTypeNames().map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {canEdit && (
+            <div className="rounded-lg border border-dashed border-gray-300 p-3">
+              <label className="flex flex-wrap items-center gap-2 cursor-pointer">
+                {autofilling ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-red-600" />
+                )}
+                <span className="text-sm font-medium text-red-700">
+                  {autofilling ? "Reading document…" : "Prefill this skill with WillsFarms Intel"}
+                </span>
+                <span className="text-xs text-gray-400">
+                  — SOP, old skill log, or job description (Word, PDF, or image)
+                </span>
+                <input
+                  type="file"
+                  className="sr-only"
+                  accept=".pdf,.doc,.docx,image/jpeg,image/png"
+                  disabled={autofilling}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    await handleAutofillFile(file);
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
+          {draft.length === 0 && (
+            <div className="text-center py-8 text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg bg-gray-50">
+              No competency sections for this skill yet. Use{" "}
+              <strong>Start blank</strong> or <strong>Load default pack</strong> above.
+            </div>
+          )}
+
+          {draft.map((section, si) => (
         <div key={section.key} className="rounded-lg border border-gray-200 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <input
               value={section.title}
               disabled={!canEdit}
               onChange={(e) =>
-                setDraft((prev) =>
+                updateActiveSections((prev) =>
                   prev.map((s, i) => (i === si ? { ...s, title: e.target.value } : s)),
                 )
               }
@@ -695,7 +961,7 @@ function SectionsTab({
             {canEdit && (
               <button
                 type="button"
-                onClick={() => setDraft((prev) => prev.filter((_, i) => i !== si))}
+                onClick={() => updateActiveSections((prev) => prev.filter((_, i) => i !== si))}
                 className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
               >
                 <Trash2 className="w-4 h-4" />
@@ -709,7 +975,7 @@ function SectionsTab({
                   value={skill}
                   disabled={!canEdit}
                   onChange={(e) =>
-                    setDraft((prev) =>
+                    updateActiveSections((prev) =>
                       prev.map((s, i) =>
                         i === si
                           ? {
@@ -723,13 +989,13 @@ function SectionsTab({
                     )
                   }
                   className="flex-1 border border-gray-200 p-2 rounded-lg text-sm text-gray-900 disabled:opacity-60"
-                  placeholder="Skill / competency"
+                  placeholder="Competency line"
                 />
                 {canEdit && (
                   <button
                     type="button"
                     onClick={() =>
-                      setDraft((prev) =>
+                      updateActiveSections((prev) =>
                         prev.map((s, i) =>
                           i === si
                             ? { ...s, skills: s.skills.filter((_, k) => k !== ski) }
@@ -748,7 +1014,7 @@ function SectionsTab({
               <button
                 type="button"
                 onClick={() =>
-                  setDraft((prev) =>
+                  updateActiveSections((prev) =>
                     prev.map((s, i) =>
                       i === si ? { ...s, skills: [...s.skills, ""] } : s,
                     ),
@@ -756,35 +1022,37 @@ function SectionsTab({
                 }
                 className="text-xs font-medium text-red-600 hover:text-red-700"
               >
-                + Add skill
+                + Add competency line
               </button>
             )}
           </div>
         </div>
-      ))}
+          ))}
 
-      {canAdd && canEdit && (
-        <button
-          type="button"
-          onClick={addSection}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
-        >
-          <Plus className="w-3.5 h-3.5" /> Add section
-        </button>
-      )}
+          {canAdd && canEdit && (
+            <button
+              type="button"
+              onClick={addSection}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add section to this skill
+            </button>
+          )}
 
-      {canEdit && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-            className="px-4 py-2 rounded-lg text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {saveMutation.isPending ? "Saving…" : "Save template"}
-          </button>
+          {canEdit && (
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={saveMutation.isPending}
+                onClick={() => saveMutation.mutate()}
+                className="px-4 py-2 rounded-lg text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {saveMutation.isPending ? "Saving…" : "Save all skill forms"}
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

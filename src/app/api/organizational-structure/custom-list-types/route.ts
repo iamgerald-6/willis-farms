@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
+  requireOrganizationalStructureReadAccess,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import { slugifyLabel } from "@/lib/organizationalStructure";
@@ -11,8 +12,8 @@ import type {
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
 import {
-  isAgeCatalogListType,
-  normalizeAgeCatalogListType,
+  isSalaryBandTierListType,
+  normalizeOrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
 
 const VALID_FIELD_TYPES: CustomFieldType[] = ["text", "number", "boolean", "date", "select"];
@@ -61,10 +62,10 @@ function sanitizeFields(input: unknown): CustomFieldDef[] | null {
 /** GET — every custom list type, with a live item count per list for the Set up hub table. */
 export async function GET(req: NextRequest) {
   try {
-    const caller = await requireSystemDefinitionsAccess(req, "view");
+    const caller = await requireOrganizationalStructureReadAccess(req);
     if (!caller) {
       return jsonForbidden(
-        "System Definitions view access is required to view custom lists.",
+        "You do not have permission to view organizational structure lists.",
       );
     }
 
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
         const { count } = await supabase
           .from(listType.table_name)
           .select("id", { count: "exact", head: true });
-        return { ...normalizeAgeCatalogListType(listType), item_count: count ?? 0 };
+        return { ...normalizeOrgCustomListType(listType), item_count: count ?? 0 };
       }),
     );
 
@@ -114,17 +115,25 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const label = (body.label as string | undefined)?.trim();
-    const hasRegion = body.has_region === true;
-    const isNumericRange = body.is_numeric_range === true;
-    const isAgeCatalogLabel = /^ages?$/i.test(label.trim());
-    let numericRangeMode = body.numeric_range_mode === "bands" ? "bands" : "digits";
-    // Age: digits fill on Manage (33, 34, 35…). Salary: bands. No job posting columns for Age.
-    const effectiveIsNumericRange = isAgeCatalogLabel || isNumericRange;
-    if (isAgeCatalogLabel) numericRangeMode = "digits";
 
     if (!label) {
       return NextResponse.json({ error: "List name is required" }, { status: 400 });
     }
+
+    const hasRegion = body.has_region === true;
+    const isNumericRange = body.is_numeric_range === true;
+    const isAgeCatalogLabel = /^ages?$/i.test(label);
+    let numericRangeMode = body.numeric_range_mode === "bands" ? "bands" : "digits";
+    const code = slugifyLabel(label);
+    const tableNameForCheck = `custom_${code}`;
+    const isSalaryBandTier = isSalaryBandTierListType({
+      table_name: tableNameForCheck,
+      label,
+    });
+    // Age: digits fill on Manage (33, 34, 35…). Salary: High/Medium/Low tiers, not ranges.
+    const effectiveIsNumericRange =
+      isAgeCatalogLabel || (isNumericRange && !isSalaryBandTier);
+    if (isAgeCatalogLabel) numericRangeMode = "digits";
 
     const fields = sanitizeFields(body.fields);
     if (fields === null) {
@@ -166,9 +175,8 @@ export async function POST(req: NextRequest) {
     // label as-is means "Add Sites" instead of "Add Site", but it's never
     // wrong, unlike the guess. Admins can't rename it after creation (same
     // as `code` on the fixed lists).
-    const singular = label.trim();
-    const code = slugifyLabel(label);
-    const tableName = `custom_${code}`;
+    const singular = label;
+    const tableName = tableNameForCheck;
 
     // Create the physical table first — if this fails (e.g. name
     // collision), nothing is written to org_custom_list_types at all.

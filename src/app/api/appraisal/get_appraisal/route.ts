@@ -9,10 +9,16 @@ import {
   canViewAllAppraisalPeriods,
   hasFullAppraisalAccess,
 } from "@/lib/accessControl";
-import { canAppraiseOthers } from "@/lib/appraisal/sections";
+import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { isUntouchedAppraisalSeed } from "@/lib/appraisal/supervisorDisplay";
 import { enrichAppraisalsWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
+import {
+  appraisalRowVisibleToSupervisor,
+  loadDirectReports,
+  resolveAppraisalListScope,
+  staffIdsForSupervisorScope,
+} from "@/lib/appraisalAccess";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -28,6 +34,8 @@ export async function GET(req: NextRequest) {
     const caller = await requireAuth(req);
     if (!caller) return jsonUnauthorized();
 
+    const { presets } = await fetchGroupPresetsFromDb(supabaseAdmin);
+
     const { searchParams } = new URL(req.url);
     const company_id = searchParams.get("company_id");
     const cycle = searchParams.get("cycle");
@@ -37,17 +45,14 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     let archived = searchParams.get("archived");
 
-    const fullAccess =
-      hasFullAppraisalAccess(caller.role) || canAppraiseOthers(caller.role);
+    const companyWideAccess = hasFullAppraisalAccess(caller.role);
+    const listScope = resolveAppraisalListScope(caller, presets);
     const canBrowsePeriods = canViewAllAppraisalPeriods(caller.role);
 
-    // Employees (any grade) are locked to the single active period. Manager /
-    // Admin / Super Admin may request other quarters or the archived list.
     if (!canBrowsePeriods) {
       const active = getActiveAppraisalPeriod();
       review_quarter = active.quarter;
       review_year = String(active.year);
-      // Employees never browse the archived filing cabinet.
       if (archived === "true") {
         return jsonForbidden(
           "Only managers and admins can view archived appraisals.",
@@ -56,10 +61,20 @@ export async function GET(req: NextRequest) {
       if (archived !== "all") archived = "false";
     }
 
-    if (!fullAccess) {
-      if (company_id && caller.company_id && company_id !== caller.company_id) {
+    if (!companyWideAccess) {
+      if (
+        company_id &&
+        listScope === "own" &&
+        caller.company_id &&
+        company_id !== caller.company_id
+      ) {
         return jsonForbidden("You can only view your own appraisals.");
       }
+    }
+
+    let directReports: Awaited<ReturnType<typeof loadDirectReports>> = [];
+    if (listScope === "reports") {
+      directReports = await loadDirectReports(supabaseAdmin, caller.id);
     }
 
     let query = supabaseAdmin
@@ -67,35 +82,34 @@ export async function GET(req: NextRequest) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (company_id) query = query.eq("company_id", company_id);
+    if (listScope === "own") {
+      if (company_id) {
+        query = query.eq("company_id", company_id);
+      } else if (caller.company_id) {
+        query = query.eq("company_id", caller.company_id);
+      } else if (caller.id) {
+        query = query.eq("employee_user_id", caller.id);
+      } else {
+        return NextResponse.json({ data: [] });
+      }
+    } else if (listScope === "reports") {
+      const staffIds = staffIdsForSupervisorScope(caller, directReports);
+      if (staffIds.length === 0) {
+        return NextResponse.json({ data: [] });
+      }
+      query = query.in("company_id", staffIds);
+    }
+
     if (cycle) query = query.eq("cycle", cycle);
     if (grade_band) query = query.eq("grade_band", grade_band);
     if (review_year) query = query.eq("review_year", Number(review_year));
     if (review_quarter) query = query.eq("review_quarter", review_quarter);
     if (status) query = query.eq("status", status);
 
-    // Archived records are filed away — excluded unless explicitly requested.
-    // "is not true" rather than "= false" so rows predating the column show up.
     if (archived === "true") {
       query = query.eq("archived", true);
     } else if (archived !== "all") {
       query = query.not("archived", "is", true);
-    }
-
-    // Without full access you see your own record plus any record you are the
-    // named supervisor on — mirrors canAccessAppraisalRecord(). Supervisors
-    // below L5 rely on this to complete the evaluations assigned to them.
-    if (!fullAccess) {
-      const visibleTo = [
-        caller.company_id ? `company_id.eq.${caller.company_id}` : null,
-        caller.id ? `employee_user_id.eq.${caller.id}` : null,
-        caller.id ? `supervisor_id.eq.${caller.id}` : null,
-      ].filter(Boolean) as string[];
-
-      if (visibleTo.length === 0) {
-        return NextResponse.json({ data: [] });
-      }
-      query = query.or(visibleTo.join(","));
     }
 
     const { data, error } = await query;
@@ -106,9 +120,7 @@ export async function GET(req: NextRequest) {
 
     let rows = data ?? [];
 
-    // Hide cron-seeded placeholder rows from the employee themselves until they
-    // start. Supervisors still see untouched rows for their direct reports.
-    if (!fullAccess) {
+    if (!companyWideAccess) {
       rows = rows.filter((row) => {
         if (!isUntouchedAppraisalSeed(row)) return true;
         const isOwnRow =
@@ -123,8 +135,14 @@ export async function GET(req: NextRequest) {
 
     rows = await enrichAppraisalsWithSupervisor(supabaseAdmin, rows);
 
+    if (listScope === "reports") {
+      rows = rows.filter((row) =>
+        appraisalRowVisibleToSupervisor(row, caller, directReports),
+      );
+    }
+
     return NextResponse.json({ data: rows });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

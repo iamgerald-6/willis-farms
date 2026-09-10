@@ -2,12 +2,13 @@
 
 import { forwardRef, useImperativeHandle, useState } from "react";
 import { Loader2, Sparkles, Trash2 } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { uploadCareersFile } from "@/lib/careers/uploadCareersFile";
 import { ACCEPT_JD } from "@/lib/uploadConstraints";
 import { RATING_LABELS } from "@/lib/careers/interviewFormConfigs";
+import type { JobPosting } from "@/lib/careers/jobPostings";
 import {
   groupBySection,
   normalizePostingInterviewSetup,
@@ -80,6 +81,8 @@ type Props = {
   initialDurationMinutes?: number | null;
   initialInterviewSetup?: unknown;
   readOnly?: boolean;
+  /** Called after each successful save with the updated posting row from the server. */
+  onSaved?: (posting: JobPosting) => void;
   /** Called after a successful save — the caller returns to the postings table. */
   onDone: () => void;
 };
@@ -93,11 +96,13 @@ function PostingInterviewSetup(
     initialDurationMinutes,
     initialInterviewSetup,
     readOnly = false,
+    onSaved,
     onDone,
   }: Props,
   ref: React.ForwardedRef<PostingInterviewSetupHandle>,
 ) {
   const allowEdit = !readOnly;
+  const queryClient = useQueryClient();
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [description, setDescription] = useState(initialDescription ?? "");
@@ -197,7 +202,7 @@ function PostingInterviewSetup(
         );
       }
 
-      return api.patch(`/careers/postings/${postingId}`, {
+      const res = await api.patch(`/careers/postings/${postingId}`, {
         interview_description: description.trim(),
         interview_panel_members: panelMembers.trim(),
         interview_duration_minutes: durationMinutes === "" ? null : durationMinutes,
@@ -223,9 +228,12 @@ function PostingInterviewSetup(
           },
         },
       });
+      return res.data.data as JobPosting;
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
       toast.success("Interview setup saved.");
+      queryClient.invalidateQueries({ queryKey: ["job_postings"] });
+      onSaved?.(updated);
     },
     onError: (err: unknown) => {
       const message =

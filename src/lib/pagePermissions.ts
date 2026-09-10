@@ -116,6 +116,14 @@ export const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [
   "notifications",
 ];
 
+/** App-shell pages every signed-in staff member can open. Without these,
+ * roles whose group preset omits them (Human Resource, System Administrator)
+ * fail RouteAccessGuard on /dashboard and loop on redirect. */
+export const UNIVERSAL_STAFF_PAGES: PagePermissionKey[] = [
+  "dashboard",
+  "notifications",
+];
+
 export function pageKeyFromPath(pathname: string): PagePermissionKey | null {
   if (pathname === "/dashboard" || pathname === "/dashboard/") {
     return "dashboard";

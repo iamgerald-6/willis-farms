@@ -35,6 +35,7 @@ import {
   canApproveSkillLogRecord,
   canEditSkillLogDraft,
   canFillSkillLog,
+  canViewSkillLogRecord,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
 import { hasFullSkillLogAccess } from "@/lib/accessControl";
@@ -515,6 +516,17 @@ export default function SkillLogsPage() {
         )
       : false;
 
+  const canViewLog = (log: SkillLog) =>
+    accessProfile
+      ? canViewSkillLogRecord(
+          accessProfile,
+          userId,
+          logAsRecord(log),
+          groupPresets,
+          sessionRole,
+        )
+      : false;
+
   const viewerFullName = currentUser
     ? `${currentUser.first_name} ${currentUser.last_name}`
     : "You";
@@ -858,7 +870,7 @@ export default function SkillLogsPage() {
                         : undefined
                     }
                     onView={
-                      log.status === "submitted" || log.status === "signed_off"
+                      canViewLog(log)
                         ? () => setViewLogId(log.id)
                         : undefined
                     }
@@ -920,8 +932,7 @@ export default function SkillLogsPage() {
                   const canEditDraft = canEditLog(log);
                   const canDeleteDraft = canEditDraft;
                   const canSignOffThis = canApproveLog(log);
-                  const canViewLocked =
-                    log.status === "submitted" || log.status === "signed_off";
+                  const canViewThisLog = canViewLog(log);
 
                   if (confirmDeleteId === log.id) {
                     return (
@@ -997,7 +1008,7 @@ export default function SkillLogsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {canViewLocked && (
+                          {canViewThisLog && (
                             <button
                               onClick={() => setViewLogId(log.id)}
                               title="View"

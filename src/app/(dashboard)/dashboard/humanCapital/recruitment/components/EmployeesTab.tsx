@@ -16,6 +16,7 @@ import {
 } from "@/lib/careers/employeeStatus";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import EmployeeOnboardingSection from "./EmployeeOnboardingSection";
 import ProbationRefereesSection from "./ProbationRefereesSection";
 
 function formatDate(iso: string | null | undefined) {
@@ -116,7 +117,7 @@ function EmployeeDetail({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-start justify-between">
           <div>
             <h2 className="text-base font-bold text-gray-900">
@@ -195,6 +196,13 @@ function EmployeeDetail({
               )}
             </div>
           )}
+
+          <EmployeeOnboardingSection
+            userId={row.user_id}
+            applicationId={row.application_id}
+            fallbackName={`${row.first_name} ${row.last_name}`.trim()}
+            referenceNumber={row.reference_number}
+          />
 
           {onProbation && (
             <ProbationRefereesSection

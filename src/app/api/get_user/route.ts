@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { fetchUserRoleLabelMap } from "@/lib/userRoleAccessControl";
-import { overlayPlacementFromApplications } from "@/lib/careers/resolveEmployeeOrgPlacement";
+import {
+  overlayJobPositionFromCatalog,
+  overlayPlacementFromApplications,
+} from "@/lib/careers/resolveEmployeeOrgPlacement";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -64,9 +67,14 @@ export async function GET(req: NextRequest) {
       withRoleLabels,
     );
 
+    const withJobTitles = await overlayJobPositionFromCatalog(
+      supabaseAdmin,
+      withPlacement,
+    );
+
     const missingGradeIds = [
       ...new Set(
-        withPlacement
+        withJobTitles
           .filter((u) => u.grade_level_id && !u.grade_level)
           .map((u) => u.grade_level_id as string),
       ),
@@ -79,14 +87,14 @@ export async function GET(req: NextRequest) {
       const codeById = new Map(
         (grades ?? []).map((g) => [g.id as string, g.code as string | null]),
       );
-      for (const u of withPlacement) {
+      for (const u of withJobTitles) {
         if (!u.grade_level && u.grade_level_id) {
           u.grade_level = codeById.get(u.grade_level_id) ?? u.grade_level;
         }
       }
     }
 
-    return NextResponse.json(withPlacement);
+    return NextResponse.json(withJobTitles);
   } catch (err) {
     return NextResponse.json([], { status: 500 });
   }

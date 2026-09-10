@@ -23,6 +23,11 @@ import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import type { OrgCustomListItem, OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import {
+  filterAgeCatalogByRange,
+  sortAgeCatalogItems,
+  type AgeMappingRowOut,
+} from "@/lib/organizationalStructure/ageMapping";
 import type { JobPosting, JobPostingStatus } from "@/lib/careers/jobPostings";
 import {
   formatPublicJobTitle,
@@ -39,24 +44,34 @@ import PostingInterviewSetup, {
   type PostingInterviewSetupHandle,
   type PostingOverviewRow,
 } from "./PostingInterviewSetup";
-import { normalizePostingInterviewSetup } from "@/lib/careers/postingInterviewSetup";
+import {
+  normalizePostingInterviewSetup,
+  postingHasInterviewSetup,
+} from "@/lib/careers/postingInterviewSetup";
 const inputClass =
   "w-full border border-gray-200 p-2 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500";
 
-// The org structure mapping cascade (see Org structure mapping set up) —
-// Site is always first, then Business unit, Department, Section, Position
-// in that order. These five are always shown on Add posting and always
-// required; every other org-structure field is opt-in per posting.
+// Org-structure fields on Add posting — fixed display order. The first
+// five cascade via org mapping (Site → … → Position); the rest are always
+// shown and required on every posting. Any future custom list with a
+// job_posting_column appears after these automatically.
 const CHAIN_TABLE_ORDER = ["sites", "business_units", "departments", "sections", "custom_position"];
 
-// Grade level and Salary are also always required — every posting needs
-// both so Offer Terms can source them directly (see OfferTermsPanel) —
-// but they don't cascade the way the chain above does, so they're kept
-// separate rather than folded into CHAIN_TABLE_ORDER.
-const ALWAYS_REQUIRED_EXTRA_TABLES = ["grade_levels", "custom_salary"];
+const POSTING_ORG_FIELD_ORDER = [
+  ...CHAIN_TABLE_ORDER,
+  "custom_age",
+  "grade_levels",
+  "custom_salary_band",
+  "custom_salary",
+  "custom_employment_type",
+  "custom_supervisory_role",
+] as const;
 
-function isAlwaysRequiredTable(tableName: string): boolean {
-  return CHAIN_TABLE_ORDER.includes(tableName) || ALWAYS_REQUIRED_EXTRA_TABLES.includes(tableName);
+function postingOrgFieldSortIndex(tableName: string): number {
+  const idx = POSTING_ORG_FIELD_ORDER.indexOf(
+    tableName as (typeof POSTING_ORG_FIELD_ORDER)[number],
+  );
+  return idx === -1 ? POSTING_ORG_FIELD_ORDER.length : idx;
 }
 
 function formatDate(iso: string) {
@@ -158,10 +173,9 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     () =>
       listTypes.filter(
         (lt): lt is OrgCustomListType & { job_posting_column: string } =>
-          typeof lt.job_posting_column === "string" &&
-          lt.job_posting_column.length > 0 &&
           lt.is_active !== false &&
-          lt.table_name !== "custom_age",
+          typeof lt.job_posting_column === "string" &&
+          lt.job_posting_column.length > 0,
       ),
     [listTypes],
   );
@@ -225,6 +239,13 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     queryFn: async () => (await api.get("/organizational-structure/mapping-nodes")).data.data,
     enabled: !!canView,
   });
+  const { data: ageMappingRanges = [] } = useQuery<AgeMappingRowOut[]>({
+    queryKey: ["org_mapping_age_ranges"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/mapping-age-ranges")).data.data as AgeMappingRowOut[],
+    enabled: !!canView,
+  });
+
   function chainLevel(tableName: string): MappingLevel | undefined {
     return mappingLevels.find((l) => l.list_type.table_name === tableName);
   }
@@ -256,18 +277,16 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     )?.id;
   }
 
-  // Site is always first; Business unit/Department/Section/Position follow
-  // it in that order, then every other org-structure field keeps its
-  // existing relative order.
-  const orderedOrgFieldListTypes = useMemo(() => {
-    const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
-      orgFieldListTypes.find((lt) => lt.table_name === tableName),
-    ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
-    const chainTableNames = new Set(CHAIN_TABLE_ORDER);
-    const otherFields = orgFieldListTypes.filter((lt) => !chainTableNames.has(lt.table_name));
-    return [...chainFields, ...otherFields];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgFieldListTypes]);
+  const postingOrgFieldListTypes = useMemo(
+    () =>
+      [...orgFieldListTypes].sort((a, b) => {
+        const orderDiff =
+          postingOrgFieldSortIndex(a.table_name) - postingOrgFieldSortIndex(b.table_name);
+        if (orderDiff !== 0) return orderDiff;
+        return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+      }),
+    [orgFieldListTypes],
+  );
   const indexByListTypeId = useMemo(
     () => new Map(orgFieldListTypes.map((lt, i) => [lt.id, i])),
     [orgFieldListTypes],
@@ -358,14 +377,42 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
   // is_numeric_range lists (Age, Salary, ...), where a posting can pick
   // one value or a min/max range instead.
   const [orgFieldMode, setOrgFieldMode] = useState<Record<string, "single" | "range">>({});
-  // Site, Business unit, Department, Section, and Position (the mapping
-  // cascade — see Org structure mapping set up) are always on the form and
-  // always required, since the posting's title/location/interview-setup
-  // linkage all key off Position/Site. Every other org-structure list
-  // (Grade level, Employment Type, Age, Salary, future custom lists) is
-  // opt-in per posting — this tracks which of those the HR has chosen to
-  // add, by org_custom_list_types.id.
-  const [addedOrgFieldIds, setAddedOrgFieldIds] = useState<Set<string>>(new Set());
+
+  const ageListType = orgFieldListTypes.find((lt) => lt.table_name === "custom_age");
+
+  function clearAgeFieldValues(next: Record<string, string>): Record<string, string> {
+    if (!ageListType) return next;
+    delete next[ageListType.job_posting_column];
+    if (ageListType.job_posting_min_column) delete next[ageListType.job_posting_min_column];
+    if (ageListType.job_posting_max_column) delete next[ageListType.job_posting_max_column];
+    return next;
+  }
+
+  const ageMappingLevel = chainLevel("custom_age");
+  const positionNodeIdForAge = resolvedNodeIdForRequiredField("custom_position");
+  const mappedAgeRange = useMemo(() => {
+    if (!ageMappingLevel || positionNodeIdForAge === undefined) return null;
+    return (
+      ageMappingRanges.find(
+        (row) =>
+          row.level_id === ageMappingLevel.id &&
+          row.parent_node_id === (positionNodeIdForAge ?? null),
+      ) ?? null
+    );
+  }, [ageMappingLevel, ageMappingRanges, positionNodeIdForAge]);
+
+  function itemsForOrgField(tableName: string, items: OrgCustomListItem[]): OrgCustomListItem[] {
+    if (tableName === "custom_age") {
+      if (!mappedAgeRange) return [];
+      return filterAgeCatalogByRange(
+        sortAgeCatalogItems(items),
+        mappedAgeRange.age_min_id,
+        mappedAgeRange.age_max_id,
+      );
+    }
+    return itemsForChainField(tableName, items);
+  }
+
   const [uploadingJd, setUploadingJd] = useState(false);
   const [extracting, setExtracting] = useState(false);
   // After Save, the form moves from the posting-details step to an
@@ -389,18 +436,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     const options: { id: string; title: string }[] = [];
     for (const p of postings) {
       if (p.id === interviewPostingId) continue;
-      const hasOverviewContent =
-        !!p.interview_description?.trim() ||
-        !!p.interview_panel_members?.trim() ||
-        p.interview_duration_minutes != null;
-      const setup = normalizePostingInterviewSetup(p.interview_setup);
-      const hasSetupContent =
-        setup.screening.length > 0 ||
-        setup.questions.length > 0 ||
-        setup.scenarios.length > 0 ||
-        setup.disqualifiers.length > 0 ||
-        setup.extraStages.length > 0;
-      if (!hasOverviewContent && !hasSetupContent) continue;
+      if (!postingHasInterviewSetup(p)) continue;
 
       const title = formatPublicJobTitle(p.title) || p.title;
       if (!title || seenTitles.has(title)) continue;
@@ -429,7 +465,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
-    setAddedOrgFieldIds(new Set());
     setPostingStep("details");
     setInterviewPostingId(null);
   };
@@ -439,7 +474,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     setForm(emptyForm());
     setOrgFieldValues({});
     setOrgFieldMode({});
-    setAddedOrgFieldIds(new Set());
     setPostingStep("details");
     setInterviewPostingId(null);
     setShowForm(true);
@@ -465,11 +499,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     });
     const nextOrgValues: Record<string, string> = {};
     const nextOrgMode: Record<string, "single" | "range"> = {};
-    // Every optional field currently holding a value, in each list's own
-    // sort_order — only used as a fallback below, for a populated field that
-    // isn't in the posting's saved add-order (e.g. a posting saved before
-    // optional_org_field_order existed).
-    const populatedIds = new Set<string>();
     for (const lt of orgFieldListTypes) {
       const value = posting[lt.job_posting_column];
       if (typeof value === "string") nextOrgValues[lt.job_posting_column] = value;
@@ -486,35 +515,24 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
         nextOrgMode[lt.id] =
           typeof minValue === "string" || typeof maxValue === "string" ? "range" : "single";
       }
-      // Site/Business unit/Department/Section/Position/Grade level/Salary
-      // are always shown regardless of this set. Every other field that
-      // already has a saved value on this posting was clearly added
-      // before — keep it visible.
-      const hasValue =
-        typeof value === "string" || typeof minValue === "string" || typeof maxValue === "string";
-      if (hasValue && !isAlwaysRequiredTable(lt.table_name)) {
-        populatedIds.add(lt.id);
-      }
-    }
-    // Reopening for edit should show fields in the order the HR actually
-    // added them (saved on the posting), not wherever each field's own list
-    // happens to sort — otherwise a field like Salary, set up early in Org
-    // structure Set up, would always jump back to the front on every reopen
-    // regardless of when it was really added to this posting.
-    const storedOrder = Array.isArray(posting.optional_org_field_order)
-      ? (posting.optional_org_field_order as string[])
-      : [];
-    const nextAddedIds = new Set<string>();
-    for (const id of storedOrder) {
-      if (populatedIds.has(id)) nextAddedIds.add(id);
-    }
-    for (const id of populatedIds) {
-      if (!nextAddedIds.has(id)) nextAddedIds.add(id);
     }
     setOrgFieldValues(nextOrgValues);
     setOrgFieldMode(nextOrgMode);
-    setAddedOrgFieldIds(nextAddedIds);
     setShowForm(true);
+  };
+
+  /** Refetch this posting from the server before opening Interview setup — the
+   * list cache is often stale after interview saves, which made the form look
+   * empty on edit even though job_postings.interview_setup was populated. */
+  const openInterviewSetup = async () => {
+    if (!editing) return;
+    await queryClient.refetchQueries({ queryKey: ["job_postings"] });
+    const fresh =
+      queryClient.getQueryData<JobPosting[]>(["job_postings"])?.find((p) => p.id === editing.id) ??
+      editing;
+    setEditing(fresh);
+    setInterviewPostingId(fresh.id);
+    setPostingStep("interview");
   };
 
   // Title and interview guide come from the selected Position instead of
@@ -566,15 +584,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgFieldListTypes, orgFieldItemQueries, orgFieldValues]);
 
-  // Site/Business unit/Department/Section/Position/Grade level/Salary are
-  // always required. Every other org-structure field is only required
-  // once the HR has chosen to add it to this posting (see
-  // addedOrgFieldIds) — a numeric-range list (e.g. Age) counts as filled
-  // in if either its single value is set, or both its min and max are
-  // set, depending on which mode it's currently in.
-  const missingOrgFieldLabels = orgFieldListTypes
-    .filter((lt) => isAlwaysRequiredTable(lt.table_name) || addedOrgFieldIds.has(lt.id))
-    .filter((lt) => {
+  const missingOrgFieldLabels = orgFieldListTypes.filter((lt) => {
       if (!lt.is_numeric_range) {
         return !orgFieldValues[lt.job_posting_column];
       }
@@ -685,7 +695,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
         status: form.status,
         jd_file_url: form.jd_file_url,
         jd_file_public_id: form.jd_file_public_id,
-        optional_org_field_order: Array.from(addedOrgFieldIds),
         ...effectiveOrgFieldValues(),
       };
 
@@ -700,37 +709,17 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     onSuccess: (res) => {
       toast.success(editing ? "Posting updated." : "Job posting created.");
       queryClient.invalidateQueries({ queryKey: ["job_postings"] });
+      const updated = res?.data?.data as JobPosting | undefined;
+      if (updated) setEditing(updated);
       // Move on to the Interview step for this same posting instead of
       // closing the form — editing.id is already known when updating an
       // existing posting; for a brand-new one, the id only exists once
       // this response comes back.
-      setInterviewPostingId(editing?.id ?? res?.data?.data?.id ?? null);
+      setInterviewPostingId(updated?.id ?? editing?.id ?? null);
       setPostingStep("interview");
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
       toast.error(err?.response?.data?.error ?? "Could not save posting.");
-    },
-  });
-
-  // One-time (safely re-runnable) migration: copies each currently-open
-  // posting's existing shared interview guide into its own Interview setup,
-  // so nothing breaks for postings already in flight now that real
-  // interviews read from a posting's own setup instead of the shared guide.
-  // Skips any posting that already has Interview setup content, so this
-  // button is harmless to click more than once.
-  const backfillMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.post("/careers/postings/backfill-interview-setup");
-      return res.data.data as { total: number; updated: number; skipped: number };
-    },
-    onSuccess: (data) => {
-      toast.success(
-        `Backfilled ${data.updated} posting${data.updated === 1 ? "" : "s"} (${data.skipped} already had Interview setup content).`,
-      );
-      queryClient.invalidateQueries({ queryKey: ["job_postings"] });
-    },
-    onError: (err: { response?: { data?: { error?: string } } }) => {
-      toast.error(err?.response?.data?.error ?? "Backfill failed.");
     },
   });
 
@@ -777,26 +766,6 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
             belong to. Closing and republishing a posting happens back on
             the main Job posting screen.
           </p>
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Copy each open posting's current interview content into its own Interview setup? Postings that already have Interview setup content are skipped. Safe to run more than once.",
-                  )
-                ) {
-                  backfillMutation.mutate();
-                }
-              }}
-              disabled={backfillMutation.isPending}
-              className="mt-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 underline disabled:opacity-60"
-            >
-              {backfillMutation.isPending
-                ? "Backfilling…"
-                : "Backfill legacy interview setups (one-time)"}
-            </button>
-          )}
         </div>
         {canAdd && activeTab === "active" && (
           <button
@@ -866,6 +835,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
             below.
           </p>
           <PostingInterviewSetup
+            key={`${interviewPostingId}-${editing?.updated_at ?? "new"}`}
             ref={postingInterviewSetupRef}
             postingId={interviewPostingId}
             overview={interviewOverviewRows}
@@ -876,6 +846,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
             }
             initialInterviewSetup={editing?.interview_setup}
             readOnly={!canEdit}
+            onSaved={setEditing}
             onDone={resetForm}
           />
         </div>
@@ -894,62 +865,20 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                 Organizational structure
               </p>
               <p className="text-xs text-gray-500 mb-3">
-                Site, Business unit, Department, Section, Position, Grade level, and Salary are
-                always required. Add any other org-structure field this posting needs below.
+                All organizational structure fields are required for every posting.
               </p>
 
-              {(() => {
-                const optionalNotAdded = orderedOrgFieldListTypes.filter(
-                  (lt) => !isAlwaysRequiredTable(lt.table_name) && !addedOrgFieldIds.has(lt.id),
-                );
-                if (optionalNotAdded.length === 0) return null;
-                return (
-                  <label className="block max-w-xs mb-3">
-                    <span className="text-xs font-medium text-gray-600">+ Add field</span>
-                    <select
-                      className={`${inputClass} mt-1`}
-                      value=""
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        if (!id) return;
-                        setAddedOrgFieldIds((prev) => new Set(prev).add(id));
-                      }}
-                    >
-                      <option value="">Choose a field to add…</option>
-                      {optionalNotAdded.map((lt) => (
-                        <option key={lt.id} value={lt.id}>
-                          {lt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                );
-              })()}
-
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(() => {
-                  // Site/Business unit/Department/Section/Position always come
-                  // first, in that fixed order, then Grade level and Salary
-                  // (also always required, but not part of the cascade).
-                  // Anything opt-in goes after them in the order it was
-                  // added — not wherever it happens to sort on its own list
-                  // — so a newly added field always lands at the end
-                  // instead of jumping into the middle.
-                  const chainFields = CHAIN_TABLE_ORDER.map((tableName) =>
-                    orgFieldListTypes.find((lt) => lt.table_name === tableName),
-                  ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
-                  const extraRequiredFields = ALWAYS_REQUIRED_EXTRA_TABLES.map((tableName) =>
-                    orgFieldListTypes.find((lt) => lt.table_name === tableName),
-                  ).filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
-                  const addedFields = Array.from(addedOrgFieldIds)
-                    .map((id) => orgFieldListTypes.find((lt) => lt.id === id))
-                    .filter((lt): lt is (typeof orgFieldListTypes)[number] => !!lt);
-                  return [...chainFields, ...extraRequiredFields, ...addedFields];
-                })()
-                  .map((lt) => {
+                {postingOrgFieldListTypes.map((lt) => {
                   const index = indexByListTypeId.get(lt.id) ?? -1;
                   const rawItems = orgFieldItemQueries[index]?.data ?? [];
-                  const items = itemsForChainField(lt.table_name, rawItems);
+                  const items = itemsForOrgField(lt.table_name, rawItems);
+                  const ageNeedsPosition =
+                    lt.table_name === "custom_age" && positionNodeIdForAge === undefined;
+                  const ageNeedsMapping =
+                    lt.table_name === "custom_age" &&
+                    positionNodeIdForAge !== undefined &&
+                    !mappedAgeRange;
                   const loadingItems = orgFieldItemQueries[index]?.isLoading;
                   const mode = orgFieldMode[lt.id] ?? "single";
                   // Range only makes sense for digits-mode numeric lists
@@ -974,6 +903,9 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                           for (const col of downstreamChainColumnsAfter(lt.job_posting_column)) {
                             delete next[col];
                           }
+                          if (CHAIN_TABLE_ORDER.includes(lt.table_name)) {
+                            clearAgeFieldValues(next);
+                          }
                           return next;
                         });
                       }}
@@ -988,13 +920,10 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                     </select>
                   );
 
-                  const isChainField = isAlwaysRequiredTable(lt.table_name);
-
                   return (
                     <div key={lt.id} className="block">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-gray-600">{lt.label} *</span>
-                        <div className="inline-flex items-center gap-1.5">
                         {canRange && (
                           <div className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[11px]">
                             <button
@@ -1021,36 +950,20 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                             </button>
                           </div>
                         )}
-                        {!isChainField && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAddedOrgFieldIds((prev) => {
-                                const next = new Set(prev);
-                                next.delete(lt.id);
-                                return next;
-                              });
-                              setOrgFieldValues((prev) => {
-                                const next = { ...prev };
-                                delete next[lt.job_posting_column];
-                                if (lt.job_posting_min_column) delete next[lt.job_posting_min_column];
-                                if (lt.job_posting_max_column) delete next[lt.job_posting_max_column];
-                                return next;
-                              });
-                              setOrgFieldMode((prev) => {
-                                const next = { ...prev };
-                                delete next[lt.id];
-                                return next;
-                              });
-                            }}
-                            aria-label={`Remove ${lt.label}`}
-                            className="text-gray-400 hover:text-red-600"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        </div>
                       </div>
+
+                      {ageNeedsPosition && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          Select Site through Position first — age options come from org mapping
+                          for that path.
+                        </p>
+                      )}
+                      {ageNeedsMapping && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          No age range mapped for this path yet. Set min/max on Org structure
+                          mapping → Age.
+                        </p>
+                      )}
 
                       {!canRange || mode === "single" ? (
                         singleSelect
@@ -1284,10 +1197,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
             {editing && (
               <button
                 type="button"
-                onClick={() => {
-                  setInterviewPostingId(editing.id);
-                  setPostingStep("interview");
-                }}
+                onClick={() => void openInterviewSetup()}
                 className="px-5 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
               >
                 Go to interview set up

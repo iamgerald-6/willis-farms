@@ -9,7 +9,7 @@ import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists
 import {
   isAgeCatalogListType,
   listUsesNumericRangeGenerator,
-  normalizeAgeCatalogListType,
+  normalizeOrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
 
 const MAX_RANGE_SIZE = 1000;
@@ -68,7 +68,7 @@ export async function POST(
     if (listTypeError || !listType) {
       return NextResponse.json({ error: "Unknown list" }, { status: 404 });
     }
-    const config = normalizeAgeCatalogListType(listType as OrgCustomListType);
+    const config = normalizeOrgCustomListType(listType as OrgCustomListType);
 
     if (!listUsesNumericRangeGenerator(config)) {
       return NextResponse.json(

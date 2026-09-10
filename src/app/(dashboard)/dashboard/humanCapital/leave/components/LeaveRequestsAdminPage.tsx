@@ -341,7 +341,11 @@ function LeaveCard({
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function LeaveRequestsAdminPage() {
+export default function LeaveRequestsAdminPage({
+  scopedToTeam = false,
+}: {
+  scopedToTeam?: boolean;
+}) {
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(
     null,
   );
@@ -383,7 +387,9 @@ export default function LeaveRequestsAdminPage() {
         <div>
           <h2 className="text-xl font-bold text-gray-900">Leave Requests</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Review and manage employee leave
+            {scopedToTeam
+              ? "Leave requests from employees assigned to you as supervisor"
+              : "Review and manage employee leave"}
           </p>
         </div>
         {pendingCount > 0 && (
@@ -427,7 +433,9 @@ export default function LeaveRequestsAdminPage() {
           ))
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-gray-400 text-sm">
-            No {filter === "all" ? "" : filter} leave requests found.
+            {scopedToTeam
+              ? "No leave requests from your assigned team yet."
+              : `No ${filter === "all" ? "" : filter} leave requests found.`}
           </div>
         ) : (
           filtered.map((r) => (
@@ -478,7 +486,9 @@ export default function LeaveRequestsAdminPage() {
                   colSpan={9}
                   className="px-4 py-12 text-center text-gray-400"
                 >
-                  No {filter === "all" ? "" : filter} leave requests found.
+                  {scopedToTeam
+                    ? "No leave requests from your assigned team yet."
+                    : `No ${filter === "all" ? "" : filter} leave requests found.`}
                 </td>
               </tr>
             ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
@@ -11,7 +11,10 @@ import {
   pageKeyFromPath,
   resolveAccessProfile,
 } from "@/lib/pagePermissions";
-import { canAccessPage } from "@/lib/permissionActions";
+import {
+  canAccessPage,
+  resolveDefaultLandingPath,
+} from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   canManageUserAccounts,
@@ -30,6 +33,7 @@ export default function RouteAccessGuard({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const redirectGuardRef = useRef<string | null>(null);
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
@@ -105,9 +109,24 @@ export default function RouteAccessGuard({
     }
 
     const pageKey = pageKeyFromPath(pathname || "");
-    if (pageKey && !canAccessPage(accessProfile, pageKey, groupPresets, sessionRole)) {
+    if (
+      pageKey &&
+      !canAccessPage(accessProfile, pageKey, groupPresets, sessionRole)
+    ) {
+      const landingPath = resolveDefaultLandingPath(
+        accessProfile,
+        groupPresets,
+        sessionRole,
+      );
+      const currentPath = pathname || "";
+      if (currentPath === landingPath) return;
+
+      const redirectKey = `${currentPath}->${landingPath}`;
+      if (redirectGuardRef.current === redirectKey) return;
+      redirectGuardRef.current = redirectKey;
+
       toast.error("You do not have access to this page.");
-      router.replace("/dashboard");
+      router.replace(landingPath);
     }
   }, [
     loading,

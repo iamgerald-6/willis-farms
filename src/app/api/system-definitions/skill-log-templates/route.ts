@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import {
-  normalizeSkillLogTemplateSections,
+  normalizeSkillLogTemplateRow,
   normalizeSkillLogTierAuthOptions,
   type SkillLogTemplate,
 } from "@/lib/skillLog/templates";
@@ -17,11 +17,7 @@ const PLACEMENT_COLUMNS = [
 ] as const;
 
 function asTemplate(row: SkillLogTemplate): SkillLogTemplate {
-  return {
-    ...row,
-    sections: normalizeSkillLogTemplateSections(row.sections),
-    tier_auth_options: normalizeSkillLogTierAuthOptions(row.tier_auth_options),
-  };
+  return normalizeSkillLogTemplateRow(row);
 }
 
 export async function GET(req: NextRequest) {

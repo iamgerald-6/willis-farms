@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   X,
@@ -118,9 +119,22 @@ export default function SkillLogDetailModal({
     ? (getSkillLogStatusDef(log.status) ?? getSkillLogStatusDef("draft")!)
     : null;
 
-  const sections = log?.log_type
-    ? resolveSkillLogSectionsForType(log.log_type, competencyOverrides)
-    : [];
+  const sections = useMemo(() => {
+    if (!log) return [];
+    const legacy = log.log_type
+      ? resolveSkillLogSectionsForType(log.log_type, competencyOverrides)
+      : [];
+    if (legacy.length > 0) return legacy;
+    const competencies = log.skill_log_competencies ?? [];
+    if (competencies.length === 0) return [];
+    // Custom skill names from templates may not match legacy SKILL_LOG_TYPES.
+    return [
+      {
+        title: log.log_type?.trim() || "Competency Assessment",
+        skills: competencies.map((c) => c.skill).filter(Boolean),
+      },
+    ];
+  }, [log, competencyOverrides]);
 
   const competencyMap = new Map(
     (log?.skill_log_competencies ?? []).map((c) => [c.skill, c]),

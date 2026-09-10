@@ -35,7 +35,7 @@ export default function LeavePolicyEditor({ moduleId, readOnly = false }: Props)
   });
 
   const annualLeaveCapDays =
-    data?.businessLogic.annualLeaveCapDays ?? DEFAULT_ANNUAL_LEAVE_CAP_DAYS;
+    data?.businessLogic?.annualLeaveCapDays ?? DEFAULT_ANNUAL_LEAVE_CAP_DAYS;
 
   useEffect(() => {
     setDraftDays(String(annualLeaveCapDays));

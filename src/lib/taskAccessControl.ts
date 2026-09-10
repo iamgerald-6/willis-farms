@@ -1,6 +1,8 @@
 import type { DisplayStatus, LifecycleStatus } from "@/types/taskManager";
 import {
   hasBroadElevatedAccessByRoleLabel,
+  isExecutiveRoleLabel,
+  isHumanResourceRoleLabel,
   isSuperAdminRoleLabel,
 } from "@/lib/userRoleAccessControl";
 
@@ -12,27 +14,28 @@ import {
  * users.supervisor_id (see POST /api/task-manager/tasks).
  *
  * Only Senior Management can create, edit, archive, delete, or restore
- * tasks and projects. Everyone else is read-only, scoped to their own tasks
- * (see scopeTasksForViewer in the API routes).
+ * tasks and projects. Everyone else is read-only; read scope is in
+ * taskManagerScope.ts (supervisory = direct reports, others = own + created).
  */
+
 export function isSeniorManagement(role: string | null | undefined): boolean {
   return hasBroadElevatedAccessByRoleLabel(role);
 }
 
 /**
- * Governs a narrower thing than isSeniorManagement: whether someone can
- * SEE every task/project (as opposed to just their own). super_admin
- * always can, no matter what; everyone else needs the explicit per-user
- * `tm_can_view_all_tasks` grant (set on the Users page) — including
- * admin/manager, who are NOT automatically included here even though they
- * still have full create/edit/archive/delete rights via isSeniorManagement.
- * Existing admin/manager/super_admin accounts were backfilled to have the
- * grant when this was introduced, so nothing broke for anyone already
- * relying on seeing everything — it's just no longer automatic for anyone
- * newly given one of those roles.
+ * Whether someone can SEE every task/project (not just their own). Super
+ * Admin, Executive Role, and Human Resource see all by role; everyone
+ * else needs the per-user `tm_can_view_all_tasks` grant (Users page).
+ * Supervisory Role uses report-scoped visibility (see taskManagerScope.ts).
  */
-export function canViewAllTasks(role: string | null | undefined, tmCanViewAllTasks: boolean | null | undefined): boolean {
-  return isSuperAdminRoleLabel(role) || !!tmCanViewAllTasks;
+export function canViewAllTasks(
+  role: string | null | undefined,
+  tmCanViewAllTasks: boolean | null | undefined,
+): boolean {
+  if (isSuperAdminRoleLabel(role)) return true;
+  if (isExecutiveRoleLabel(role)) return true;
+  if (isHumanResourceRoleLabel(role)) return true;
+  return !!tmCanViewAllTasks;
 }
 
 /**

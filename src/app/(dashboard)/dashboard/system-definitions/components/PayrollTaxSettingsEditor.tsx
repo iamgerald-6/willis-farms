@@ -68,7 +68,7 @@ export default function PayrollTaxSettingsEditor({ moduleId, readOnly = false }:
     queryFn: () => fetchModuleConfigApi(moduleId),
   });
 
-  const savedConfig = normalizePayrollTaxConfig(data?.businessLogic.payrollTaxConfig);
+  const savedConfig = normalizePayrollTaxConfig(data?.businessLogic?.payrollTaxConfig);
 
   const [ssnitDraft, setSsnitDraft] = useState("");
   const [tier2Draft, setTier2Draft] = useState("");

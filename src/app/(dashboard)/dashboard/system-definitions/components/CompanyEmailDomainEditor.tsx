@@ -42,7 +42,7 @@ export default function CompanyEmailDomainEditor({
   });
 
   const savedDomain =
-    data?.businessLogic.companyEmailDomain ?? DEFAULT_COMPANY_EMAIL_DOMAIN;
+    data?.businessLogic?.companyEmailDomain ?? DEFAULT_COMPANY_EMAIL_DOMAIN;
 
   useEffect(() => {
     setDraftDomain(savedDomain);

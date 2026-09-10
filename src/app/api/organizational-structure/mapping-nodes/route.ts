@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
+  requireOrganizationalStructureReadAccess,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 
@@ -136,9 +137,11 @@ async function fetchAllNodes(supabase: SupabaseClient): Promise<MappingNodeOut[]
 /** GET — every mapping node across every level, translated into the shared {id, level_id, item_id, parent_node_id} shape. */
 export async function GET(req: NextRequest) {
   try {
-    const caller = await requireSystemDefinitionsAccess(req, "view");
+    const caller = await requireOrganizationalStructureReadAccess(req);
     if (!caller) {
-      return jsonForbidden("System Definitions view access is required.");
+      return jsonForbidden(
+        "You do not have permission to view organizational structure mapping.",
+      );
     }
 
     const supabase = getSupabaseAdminFromAuth();

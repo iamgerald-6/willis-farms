@@ -89,6 +89,30 @@ export function groupBySection<T extends { id: string; section?: string }>(
  * defaults) rather than the strict field-by-field validation the shared
  * config does for hand-editable/legacy data.
  */
+/** Whether a posting has any interview-step content saved (overview fields or setup JSON). */
+export function postingHasInterviewSetup(posting: {
+  interview_description?: string | null;
+  interview_panel_members?: string | null;
+  interview_duration_minutes?: number | null;
+  interview_setup?: unknown;
+}): boolean {
+  if (
+    !!posting.interview_description?.trim() ||
+    !!posting.interview_panel_members?.trim() ||
+    posting.interview_duration_minutes != null
+  ) {
+    return true;
+  }
+  const setup = normalizePostingInterviewSetup(posting.interview_setup);
+  return (
+    setup.screening.length > 0 ||
+    setup.questions.length > 0 ||
+    setup.scenarios.length > 0 ||
+    setup.disqualifiers.length > 0 ||
+    setup.extraStages.length > 0
+  );
+}
+
 export function normalizePostingInterviewSetup(raw: unknown): PostingInterviewSetupContent {
   const defaults = emptyPostingInterviewSetup();
   if (!raw || typeof raw !== "object") return defaults;

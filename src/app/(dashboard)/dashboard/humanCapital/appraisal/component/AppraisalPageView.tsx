@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { Archive, FileText, PenLine } from "lucide-react";
-import { Quarter, canAppraiseOthers } from "@/lib/appraisal/sections";
+import { Quarter } from "@/lib/appraisal/sections";
+import { viewerCanActOnTeamAppraisals } from "@/lib/appraisal/viewerAccess";
 import { isSystemAdministratorRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   getActiveAppraisalPeriod,
@@ -169,6 +170,7 @@ export default function AppraisalLandingPage({
   // Full access (Super Admin/Executive Role/Human Resource) sees everyone;
   // everyone else sees only their own appraisal data (spec Section 4).
   const viewerHasFullAccess = hasFullAppraisalAccess(viewer.role);
+  const viewerCanAppraiseOthers = viewerCanActOnTeamAppraisals(viewer);
   // Only Manager / Admin / Super Admin may browse past periods. Employees
   // (any grade) are locked to the current applicable period.
   const canBrowsePeriods = canViewAllAppraisalPeriods(viewer.role);
@@ -181,7 +183,9 @@ export default function AppraisalLandingPage({
   const viewingArchived = canBrowsePeriods && showArchived;
 
   const queryParams = new URLSearchParams();
-  if (!viewerHasFullAccess && viewer.companyId) {
+  // company_id is each employee's unique staff id — supervisors need the
+  // team-wide API scope, not their own id pinned in the query string.
+  if (!viewerHasFullAccess && !viewerCanAppraiseOthers && viewer.companyId) {
     queryParams.set("company_id", viewer.companyId);
   }
   if (!viewingAllPeriods) {
@@ -232,7 +236,6 @@ export default function AppraisalLandingPage({
     [appraisals, page],
   );
 
-  const viewerCanAppraiseOthers = canAppraiseOthers(viewer.role);
   const showSelfAppraisalButton =
     !isConsultant && !viewerCanAppraiseOthers;
   const showNewAppraisalButton = viewerCanAppraiseOthers;
@@ -254,7 +257,11 @@ export default function AppraisalLandingPage({
               : viewingAllPeriods
                 ? viewerHasFullAccess
                   ? "All periods across the organisation"
-                  : "All of your appraisal periods"
+                  : viewerCanAppraiseOthers
+                    ? "Appraisals for employees assigned to you"
+                    : "All of your appraisal periods"
+                : viewerCanAppraiseOthers && !viewerHasFullAccess
+                  ? `Team appraisals for ${activePeriodLabel(activePeriod.quarter, activePeriod.year)}`
                 : `Showing ${activePeriodLabel(activePeriod.quarter, activePeriod.year)}${
                     activePeriod.inGracePeriod
                       ? " (completion window open)"

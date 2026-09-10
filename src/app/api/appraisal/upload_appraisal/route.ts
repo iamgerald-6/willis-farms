@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
 
     const { data: employeeUser, error: userError } = await supabaseAdmin
       .from("users")
-      .select("company_id, user_id")
+      .select("company_id, user_id, supervisor_id")
       .eq("company_id", company_id)
       .single();
 
@@ -195,11 +195,13 @@ export async function POST(req: NextRequest) {
         {
           employee_user_id: employeeUser.user_id,
           company_id: employeeUser.company_id,
+          supervisor_id: employeeUser.supervisor_id,
         },
+        employeeUser,
       );
       if (!canSupervise) {
         return jsonForbidden(
-          "Only Supervisory Role, Executive Role, Human Resource, or Super Admin can complete this evaluation.",
+          "You may only complete supervisor evaluations for employees assigned to you.",
         );
       }
     }

@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canViewOthers } from "@/lib/accessControl";
+import { hasBroadElevatedAccessByRoleLabel } from "@/lib/userRoleAccessControl";
 import LeavePage from "./components/LeavePag";
 import LeaveRequestsAdminPage from "./components/LeaveRequestsAdminPage";
 
@@ -38,6 +39,7 @@ const Leave = () => {
   // Super Admin). users.supervisor_id only decides whose requests they
   // can act on, not whether the tab exists.
   const isAdminOrManager = canViewOthers(role);
+  const seesAllCompanyLeave = hasBroadElevatedAccessByRoleLabel(role);
 
   return (
     <div>
@@ -63,7 +65,7 @@ const Leave = () => {
                   : "text-gray-500 hover:bg-gray-50"
               }`}
             >
-              All Requests
+              {seesAllCompanyLeave ? "All Requests" : "Team Requests"}
             </button>
           </div>
         </div>
@@ -71,7 +73,7 @@ const Leave = () => {
 
       {/* Content */}
       {isAdminOrManager && viewMode === "admin" ? (
-        <LeaveRequestsAdminPage />
+        <LeaveRequestsAdminPage scopedToTeam={!seesAllCompanyLeave} />
       ) : (
         <LeavePage />
       )}

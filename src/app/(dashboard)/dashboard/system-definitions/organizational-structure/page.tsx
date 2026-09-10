@@ -274,7 +274,7 @@ export default function OrganizationalStructurePage() {
               className="accent-red-600 w-4 h-4"
             />
             <span className="text-sm font-medium text-gray-700">
-              This is a range of numbers (e.g. Age, Salary)
+              This is a range of numbers (e.g. Age)
             </span>
           </label>
           {newListIsNumericRange && (
@@ -305,8 +305,7 @@ export default function OrganizationalStructurePage() {
                 <span className="text-sm text-gray-700">
                   Number ranges
                   <span className="block text-xs text-gray-500">
-                    Min/max/length fills bucketed ranges, e.g. 1000-2000, 2000-3000… —
-                    good for Salary.
+                    Min/max/length fills bucketed ranges, e.g. 1000-2000, 2000-3000…
                   </span>
                 </span>
               </label>

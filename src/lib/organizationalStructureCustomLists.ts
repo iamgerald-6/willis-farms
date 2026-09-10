@@ -32,6 +32,21 @@ export type CustomFieldDef = {
  */
 export type NumericRangeMode = "digits" | "bands";
 
+/** Salary band tiers (High / Medium / Low) — not min–max numeric ranges. */
+export const SALARY_BAND_TIER_LABELS = ["High", "Medium", "Low"] as const;
+
+export function isSalaryBandTierListType(
+  listType: Pick<OrgCustomListType, "table_name" | "label">,
+): boolean {
+  const label = listType.label.trim().toLowerCase();
+  return (
+    listType.table_name === "custom_salary" ||
+    listType.table_name === "custom_salary_band" ||
+    /^salary\s*band?s?$/i.test(label) ||
+    label === "salary"
+  );
+}
+
 /** Age list — digits-mode catalog (15, 16, 17…). Eligibility min/max is on org mapping. */
 export function isAgeCatalogListType(
   listType: Pick<OrgCustomListType, "table_name" | "label">,
@@ -39,26 +54,60 @@ export function isAgeCatalogListType(
   return listType.table_name === "custom_age" || /^ages?$/i.test(listType.label.trim());
 }
 
-/** Normalize Age list metadata for API/UI (digits fill on Manage, no job posting columns). */
+/** Normalize Age list metadata for API/UI (digits catalog; posting uses single or min/max). */
 export function normalizeAgeCatalogListType<T extends OrgCustomListType>(listType: T): T {
   if (!isAgeCatalogListType(listType)) return listType;
   return {
     ...listType,
     is_numeric_range: true,
     numeric_range_mode: "digits",
-    job_posting_column: null,
+  };
+}
+
+/** Whether a list belongs on Create job posting (single FK and/or Age min/max columns). */
+export function isPostingOrgListType(
+  listType: Pick<
+    OrgCustomListType,
+    "table_name" | "is_active" | "job_posting_column" | "job_posting_min_column" | "job_posting_max_column"
+  >,
+): boolean {
+  if (listType.is_active === false) return false;
+  if (typeof listType.job_posting_column === "string" && listType.job_posting_column.length > 0) {
+    return true;
+  }
+  return (
+    isAgeCatalogListType(listType) &&
+    typeof listType.job_posting_min_column === "string" &&
+    listType.job_posting_min_column.length > 0 &&
+    typeof listType.job_posting_max_column === "string" &&
+    listType.job_posting_max_column.length > 0
+  );
+}
+
+/** Salary lists use discrete tiers (High / Medium / Low), not the range generator. */
+export function normalizeSalaryBandTierListType<T extends OrgCustomListType>(listType: T): T {
+  if (!isSalaryBandTierListType(listType)) return listType;
+  return {
+    ...listType,
+    is_numeric_range: false,
     job_posting_min_column: null,
     job_posting_max_column: null,
   };
 }
 
-/** Whether Manage shows the bulk min/max generator (Age digits, Salary bands, etc.). */
+/** Apply list-type normalizations used by API + Manage UI. */
+export function normalizeOrgCustomListType<T extends OrgCustomListType>(listType: T): T {
+  return normalizeSalaryBandTierListType(normalizeAgeCatalogListType(listType));
+}
+
+/** Whether Manage shows the bulk min/max generator (Age digits only). */
 export function listUsesNumericRangeGenerator(
   listType: Pick<
     OrgCustomListType,
     "table_name" | "label" | "is_numeric_range" | "numeric_range_mode"
   >,
 ): boolean {
+  if (isSalaryBandTierListType(listType)) return false;
   if (isAgeCatalogListType(listType)) return true;
   return listType.is_numeric_range;
 }

@@ -65,6 +65,21 @@ function accraParts(iso: string): {
   };
 }
 
+/** Normalize ISO/timestamp strings for `<input type="date">` value. */
+export function toDateInputValue(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+/** Today's date as YYYY-MM-DD — for `min` on date inputs. */
+export function todayDateInputValue(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 /** e.g. "22 Aug 2026" — identical on server and client. */
 export function formatDisplayDate(iso: string | null | undefined): string | null {
   if (!iso?.trim()) return null;

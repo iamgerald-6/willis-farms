@@ -19,7 +19,9 @@ import {
   Award,
   Lock,
   CalendarClock,
+  CalendarDays,
 } from "lucide-react";
+import { toDateInputValue, todayDateInputValue } from "@/lib/formatDisplayDate";
 import {
   Ratings,
   SectionRatings,
@@ -41,7 +43,9 @@ import {
   resolveSupervisorUser,
 } from "@/lib/appraisal/supervisorDisplay";
 import { isOwnAppraisal } from "@/lib/appraisal/roles";
-import { canBeAssignedAsSupervisorByRoleLabel } from "@/lib/userRoleAccessControl";
+import { findOwnAppraisalRow } from "@/lib/appraisalAccess";
+import { viewerCanActOnTeamAppraisals } from "@/lib/appraisal/viewerAccess";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { isSuperAdmin as checkIsSuperAdmin } from "@/lib/accessControl";
 import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
@@ -86,6 +90,7 @@ interface ExistingAppraisal {
   status?: string;
   deadline_at?: string | null;
   reopened_deadline_at?: string | null;
+  final_review_date?: string | null;
   locked_reason?: "employee_incomplete" | "supervisor_incomplete" | "reopen_incomplete" | null;
 }
 
@@ -131,6 +136,42 @@ function FieldLabel({
       {children}
       {required && <span className="text-red-500 ml-1">*</span>}
     </label>
+  );
+}
+
+function DateField({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  error,
+  min,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  min?: string;
+}) {
+  return (
+    <div>
+      <FieldLabel required={required}>{label}</FieldLabel>
+      {hint && <p className="text-xs text-gray-400 mb-2">{hint}</p>}
+      <div className="relative max-w-xs">
+        <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          min={min}
+          className={`${inputCls(!!error)} pl-10 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100`}
+        />
+      </div>
+      {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+    </div>
   );
 }
 
@@ -377,14 +418,22 @@ export default function AppraisalForm({
   // ── Which side of the form am I filling? ──
   // Everyone — supervisors included — completes their own self-assessment, so
   // this depends on WHO the appraisal is for, never on the viewer's own grade.
+  const accessProfile = useMemo(
+    () => resolveAccessProfile(currentUserProfile, undefined),
+    [currentUserProfile],
+  );
+
   const viewer = useMemo(
     () => ({
       userId,
-      role: currentUserProfile?.user_role_label ?? currentUserProfile?.role,
+      role: accessProfile?.role ?? currentUserProfile?.user_role_label ?? "Standard Role",
       gradeLevel: currentUserGrade,
       companyId: currentUserProfile?.company_id,
+      accessTier: currentUserProfile?.access_tier,
+      pagePermissionLevels: currentUserProfile?.page_permission_levels,
+      pagePermissionActions: currentUserProfile?.page_permission_actions,
     }),
-    [userId, currentUserProfile, currentUserGrade],
+    [userId, currentUserProfile, currentUserGrade, accessProfile?.role],
   );
 
   const subject = isFillingSecond
@@ -480,6 +529,7 @@ export default function AppraisalForm({
     setValue("review_year", existingAppraisal.review_year);
     setValue("reviewing_manager", existingAppraisal.reviewing_manager ?? "");
     setValue("period_covered", existingAppraisal.period_covered ?? "");
+    setReviewDate(toDateInputValue(existingAppraisal.final_review_date));
 
     if (resolved.supervisor_user_id) {
       setSelectedSupervisorId(resolved.supervisor_user_id);
@@ -528,9 +578,7 @@ export default function AppraisalForm({
     setValue,
   ]);
 
-  const canFillAsSupervisor = canBeAssignedAsSupervisorByRoleLabel(
-    currentUserProfile?.user_role_label,
-  );
+  const canFillAsSupervisor = viewerCanActOnTeamAppraisals(viewer);
 
   const filteredEmployees = useMemo(() => {
     if (isFillingSecond || fillingForSelf) return [];
@@ -677,7 +725,6 @@ export default function AppraisalForm({
       fillingForSelf && !isFillingSecond && !!currentUserProfile?.company_id,
     queryFn: async () => {
       const params = new URLSearchParams({
-        company_id: currentUserProfile!.company_id!,
         review_quarter: lockedQuarter,
         review_year: String(lockedYear),
         archived: "all",
@@ -688,9 +735,12 @@ export default function AppraisalForm({
         status?: string | null;
         submitted_by?: string | null;
         employee_user_id?: string | null;
+        company_id?: string | null;
       }>;
-      return (
-        rows.find((r) => r.employee_user_id === userId) ?? rows[0] ?? null
+      return findOwnAppraisalRow(
+        rows,
+        userId,
+        currentUserProfile?.company_id,
       );
     },
   });
@@ -1280,25 +1330,18 @@ export default function AppraisalForm({
 
         {supervisorMode && (
           <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
-            <FieldLabel required>Final Review Date</FieldLabel>
-            <p className="text-xs text-gray-400 mb-2">
-              Schedule the date for the final in-person appraisal meeting.
-            </p>
-            <input
-              type="date"
+            <DateField
+              label="Final Review Date"
+              required
+              hint="Schedule the date for the final in-person appraisal meeting."
               value={reviewDate}
-              onChange={(e) => {
-                setReviewDate(e.target.value);
+              onChange={(next) => {
+                setReviewDate(next);
                 setFormErrors((prev) => ({ ...prev, reviewDate: "" }));
               }}
-              min={new Date().toISOString().split("T")[0]}
-              className={inputCls(!!formErrors.reviewDate)}
+              min={todayDateInputValue()}
+              error={formErrors.reviewDate}
             />
-            {formErrors.reviewDate && (
-              <p className="text-red-500 text-xs mt-1">
-                {formErrors.reviewDate}
-              </p>
-            )}
           </div>
         )}
       </div>

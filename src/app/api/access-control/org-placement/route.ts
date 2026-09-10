@@ -61,6 +61,21 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    // Keep the free-text job_position snapshot aligned with Position (FK).
+    if ("position_id" in updates) {
+      const positionId = updates.position_id;
+      if (positionId) {
+        const { data: positionRow } = await supabaseAdmin
+          .from("custom_position")
+          .select("label")
+          .eq("id", positionId)
+          .maybeSingle();
+        updates.job_position = positionRow?.label?.trim() || null;
+      } else {
+        updates.job_position = null;
+      }
+    }
+
     const { data, error } = await updateUserWithColumnFallback(
       supabaseAdmin,
       target_user_id,

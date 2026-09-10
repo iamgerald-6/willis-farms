@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getSupabaseAdminFromAuth,
   jsonForbidden,
+  requireOrganizationalStructureReadAccess,
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import { createLevelTable } from "@/lib/organizationalStructure/mappingTables";
@@ -9,9 +10,11 @@ import { createLevelTable } from "@/lib/organizationalStructure/mappingTables";
 /** GET — every level currently in the mapping tree, joined with its list's own label/singular/table_name. `position` is only a display tie-breaker among siblings — the hierarchy itself lives in parent_level_id. `table_name`/`mapping_columns` describe this level's own real mapping table (see org-structure-mapping-real-tables.sql) — null for a root level, which has none. */
 export async function GET(req: NextRequest) {
   try {
-    const caller = await requireSystemDefinitionsAccess(req, "view");
+    const caller = await requireOrganizationalStructureReadAccess(req);
     if (!caller) {
-      return jsonForbidden("System Definitions view access is required.");
+      return jsonForbidden(
+        "You do not have permission to view organizational structure mapping.",
+      );
     }
 
     const supabase = getSupabaseAdminFromAuth();

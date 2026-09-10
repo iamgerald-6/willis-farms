@@ -37,8 +37,15 @@ import {
   SKILL_LOG_TIER_AUTH_LIST,
   type SystemOption,
 } from "@/lib/systemDefinitions";
-import type { SkillLogTemplateSection } from "@/lib/skillLog/templates";
-import { hasCompleteSkillLogPlacement } from "@/lib/skillLog/templates";
+import type {
+  SkillLogTemplateSection,
+  SkillLogTemplateVariant,
+} from "@/lib/skillLog/templates";
+import {
+  hasCompleteSkillLogPlacement,
+  resolveSkillLogTemplateVariants,
+  sectionsForSkillVariant,
+} from "@/lib/skillLog/templates";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
@@ -87,7 +94,7 @@ const competencySchema = z.object({
 
 const skillLogSchema = z.object({
   employee_id: z.string().min(1, "Select an employee"),
-  log_type: z.string().min(1, "A skill log template is required"),
+  log_type: z.string().min(1, "Select a skill"),
   review_period: z.string().min(1, "Date is required"),
   section: z.string().optional(),
   tier_auth: z.string().optional(),
@@ -372,6 +379,8 @@ function SkillLogFormPageContent() {
   const { data: skillLogTemplate, isLoading: loadingTemplate } = useQuery<{
     id: string | null;
     sections: SkillLogTemplateSection[];
+    skill_variants?: SkillLogTemplateVariant[];
+    skill_options?: string[];
     tier_auth_options?: string[];
     section_label: string | null;
     position_label: string | null;
@@ -386,14 +395,46 @@ function SkillLogFormPageContent() {
     enabled: !!selectedEmployee,
   });
 
-  const matchedTemplateSections = useMemo(
+  const templateSkillVariants = useMemo(
     () =>
-      skillLogTemplate?.id
-        ? skillLogTemplate.sections.filter((s) => s.skills.length > 0)
+      skillLogTemplate
+        ? resolveSkillLogTemplateVariants({
+            sections: skillLogTemplate.sections ?? [],
+            skill_variants: skillLogTemplate.skill_variants ?? [],
+          })
         : [],
     [skillLogTemplate],
   );
-  const hasMatchedTemplate = matchedTemplateSections.length > 0;
+
+  const skillOptions = useMemo(() => {
+    if (skillLogTemplate?.skill_options?.length) {
+      return skillLogTemplate.skill_options;
+    }
+    return templateSkillVariants.map((v) => v.name).filter(Boolean);
+  }, [skillLogTemplate, templateSkillVariants]);
+
+  const skillOptionMeta = useMemo(() => {
+    const map = new Map<string, { sections: number; items: number }>();
+    for (const variant of templateSkillVariants) {
+      const sections = variant.sections.filter((s) => s.skills.length > 0);
+      map.set(variant.name, {
+        sections: sections.length,
+        items: sections.reduce((total, s) => total + s.skills.length, 0),
+      });
+    }
+    return map;
+  }, [templateSkillVariants]);
+
+  const watchedLogType = watch("log_type");
+
+  const matchedTemplateSections = useMemo(() => {
+    if (!skillLogTemplate?.id || templateSkillVariants.length === 0) return [];
+    return sectionsForSkillVariant(templateSkillVariants, watchedLogType).filter(
+      (s) => s.skills.length > 0,
+    );
+  }, [skillLogTemplate?.id, templateSkillVariants, watchedLogType]);
+
+  const hasMatchedTemplate = templateSkillVariants.length > 0;
 
   const templateTierOptions = useMemo(() => {
     const fromTemplate = (skillLogTemplate?.tier_auth_options ?? [])
@@ -421,7 +462,28 @@ function SkillLogFormPageContent() {
       setValue("log_type", "");
       return;
     }
-    setValue("log_type", skillLogTemplate?.position_label || "Skill log");
+    if (!watchedLogType && skillOptions.length === 1) {
+      setValue("log_type", skillOptions[0]);
+    }
+  }, [
+    isEditMode,
+    selectedEmployee,
+    hasMatchedTemplate,
+    skillLogTemplate,
+    skillOptions,
+    watchedLogType,
+    replace,
+    setValue,
+  ]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!selectedEmployee || !watchedLogType || matchedTemplateSections.length === 0) {
+      if (!isEditMode && selectedEmployee && !watchedLogType) {
+        replace([]);
+      }
+      return;
+    }
     replace(
       matchedTemplateSections.flatMap((section) =>
         section.skills.map((skill) => ({
@@ -437,11 +499,9 @@ function SkillLogFormPageContent() {
   }, [
     isEditMode,
     selectedEmployee,
-    hasMatchedTemplate,
-    skillLogTemplate,
+    watchedLogType,
     matchedTemplateSections,
     replace,
-    setValue,
   ]);
 
   // Populate form in edit mode
@@ -634,6 +694,62 @@ function SkillLogFormPageContent() {
               )}
             />
 
+            <Controller
+              control={control}
+              name="log_type"
+              render={({ field }) => (
+                <div>
+                  <FormSelect
+                    label="Skill"
+                    error={errors.log_type?.message}
+                    disabled={
+                      isEditMode ||
+                      !watchedEmployeeId ||
+                      (loadingTemplate && skillOptions.length === 0)
+                    }
+                    {...field}
+                  >
+                    <option value="">
+                      {!watchedEmployeeId
+                        ? "Select an employee first"
+                        : skillOptions.length === 0
+                          ? "No skills configured for this role"
+                          : "— Choose which skill log to fill —"}
+                    </option>
+                    {skillOptions.map((label) => {
+                      const meta = skillOptionMeta.get(label);
+                      const suffix =
+                        meta && meta.items > 0
+                          ? ` (${meta.sections} sections, ${meta.items} items)`
+                          : "";
+                      return (
+                        <option key={label} value={label}>
+                          {label}
+                          {suffix}
+                        </option>
+                      );
+                    })}
+                    {isEditMode &&
+                      existingLog?.log_type &&
+                      !skillOptions.includes(existingLog.log_type) && (
+                        <option value={existingLog.log_type}>
+                          {existingLog.log_type}
+                        </option>
+                      )}
+                  </FormSelect>
+                  {watchedEmployeeId &&
+                    skillOptions.length > 1 &&
+                    !watchedLogType &&
+                    !isEditMode && (
+                      <p className="text-xs text-amber-700 mt-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                        This role has {skillOptions.length} skill logs — pick the
+                        one you are assessing today (e.g. breeding vs feed prep).
+                      </p>
+                    )}
+                </div>
+              )}
+            />
+
             <FormInput
               label="Section"
               readOnly
@@ -641,7 +757,6 @@ function SkillLogFormPageContent() {
               value={watch("section") || "—"}
             />
             <input type="hidden" {...register("section")} />
-            <input type="hidden" {...register("log_type")} />
 
             <Controller
               control={control}
@@ -702,8 +817,12 @@ function SkillLogFormPageContent() {
               "Select an employee above to load the skill log form"
             ) : !hasCompleteOrgPlacement ? (
               "This employee's org placement (Site/Business unit/Department/Section/Position/Grade level) isn't fully set up yet — ask HR to complete it in Manage User before a skill log can be filled."
+            ) : !hasMatchedTemplate ? (
+              "No skill log form has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under Manage skill logs."
+            ) : !watchedLogType ? (
+              "Select a skill above to load the competency checklist for this employee."
             ) : (
-              "No skill log form has been configured yet for this employee's exact Site/Business unit/Department/Section/Position/Grade level combination — ask HR to set one up under System Definitions > Skill Log > Skill log scope."
+              "This skill has no competency lines configured yet — ask HR to complete the setup under Manage skill logs."
             )}
           </div>
         )}
@@ -711,6 +830,28 @@ function SkillLogFormPageContent() {
         {/* Competency Table */}
         {logSections.length > 0 && fields.length > 0 && (
           <div className="space-y-3">
+            {watchedLogType && (
+              <div
+                className="rounded-xl border px-4 py-3 flex items-center gap-3"
+                style={{ borderColor: BRAND, background: BRAND_LIGHT }}
+              >
+                <ClipboardList className="w-5 h-5 flex-shrink-0" style={{ color: BRAND }} />
+                <div>
+                  <p
+                    className="text-[10px] font-bold uppercase tracking-wider"
+                    style={{ color: BRAND }}
+                  >
+                    Filling skill log
+                  </p>
+                  <p className="text-sm font-bold text-gray-900">{watchedLogType}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {logSections.length} section{logSections.length !== 1 ? "s" : ""} ·{" "}
+                    {fields.length} competenc{fields.length !== 1 ? "ies" : "y"}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <ClipboardList className="w-4 h-4" style={{ color: BRAND }} />
               <h2 className="text-sm font-bold text-gray-800">
