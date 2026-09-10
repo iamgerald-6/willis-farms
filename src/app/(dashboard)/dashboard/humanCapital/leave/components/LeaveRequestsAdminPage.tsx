@@ -258,7 +258,7 @@ function ReviewModal({
               ) : (
                 <CheckCircle2 className="w-4 h-4" />
               )}
-              Approve
+              {requestStage(request) === "pending_signoff" ? "Sign off" : "Approve"}
             </button>
           </div>
         </form>
