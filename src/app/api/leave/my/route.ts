@@ -69,11 +69,14 @@ export async function GET(req: NextRequest) {
         : null,
     }));
 
+    // Counts approved leave requests of any type (Annual, Sick, Casual,
+    // etc.) taken this year toward the annual cap — not just Annual leave —
+    // since all leave taken reduces the days an employee has left for the
+    // year, regardless of type.
     const usedDays =
       data
         ?.filter(
           (r) =>
-            r.leave_type === "Annual" &&
             r.status === "approved" &&
             new Date(r.start_date).getFullYear() === currentYear,
         )
