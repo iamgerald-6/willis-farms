@@ -239,6 +239,10 @@ export default function TaskRow({
 
   const isLifecycleActive = task.lifecycle_status === "active";
   const canEditProgress = isLifecycleActive && (isSeniorManagement || (!!currentUserId && task.owner_id === currentUserId));
+  // Senior Management can edit any task; everyone else can only edit a task
+  // they personally created — matches the PATCH /task-manager/tasks/[id]
+  // route's own check.
+  const canEditThisTask = isSeniorManagement || (!!currentUserId && task.created_by === currentUserId);
 
   if (editing) {
     return (
@@ -476,11 +480,13 @@ export default function TaskRow({
       <button onClick={() => onOpenAudit(task)} title="History" className="p-1.5 rounded-full border border-gray-200 text-gray-400 hover:text-gray-700 hover:border-gray-400">
         <History className="w-3.5 h-3.5" />
       </button>
-      {editMode && isLifecycleActive && (
+      {editMode && isLifecycleActive && canEditThisTask && (
+        <button onClick={() => setEditing(true)} title="Edit" className="p-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {editMode && isLifecycleActive && isSeniorManagement && (
         <>
-          <button onClick={() => setEditing(true)} title="Edit" className="p-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
           <button onClick={handleArchive} title="Archive" className="p-1.5 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50">
             <Archive className="w-3.5 h-3.5" />
           </button>
@@ -489,7 +495,7 @@ export default function TaskRow({
           </button>
         </>
       )}
-      {editMode && !isLifecycleActive && (
+      {editMode && !isLifecycleActive && isSeniorManagement && (
         <button onClick={handleRestore} className="text-xs font-semibold text-red-600 hover:text-red-700 px-2">
           Restore
         </button>
@@ -534,14 +540,21 @@ export default function TaskRow({
     </button>
   ) : null;
 
-  const completeToggle = editMode && isLifecycleActive ? (
+  // This lifecycle-level complete/reopen control is separate from the
+  // assignee's own progress-tick checkbox above (progressBlock) — it's the
+  // Senior Management override that can flip ANY task's status regardless
+  // of who owns it, so it stays interactive for Senior Management only;
+  // everyone else just sees a plain (non-clickable) indicator.
+  const completeToggle = editMode && isLifecycleActive && isSeniorManagement ? (
     <button onClick={handleToggleComplete} title="Mark complete" className="text-gray-300 hover:text-green-600">
       <Square className="w-4 h-4" />
     </button>
-  ) : task.lifecycle_status === "completed" ? (
+  ) : task.lifecycle_status === "completed" && isSeniorManagement ? (
     <button onClick={handleToggleComplete} title="Mark active again" className="text-green-600">
       <CheckSquare className="w-4 h-4" />
     </button>
+  ) : task.lifecycle_status === "completed" ? (
+    <CheckSquare className="w-4 h-4 text-green-600" />
   ) : (
     <span className="w-4 h-4 block" />
   );

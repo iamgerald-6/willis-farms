@@ -5,7 +5,16 @@ import {
   jsonForbidden,
   jsonUnauthorized,
 } from "@/lib/apiRequestAuth";
-import { canApproveLeaveRequest, getLeaveAuthContext } from "@/lib/leaveAccess";
+import {
+  canApproveLeaveSignoffStage,
+  canApproveLeaveSupervisorStage,
+  getLeaveAuthContext,
+} from "@/lib/leaveAccess";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
+import {
+  resolveSignoffRecipients,
+  sendLeaveSignoffNotification,
+} from "@/lib/leave/leaveNotifications";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,7 +49,9 @@ export async function PATCH(req: NextRequest) {
     // leave, but never their own, regardless of what the client sent.
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("leave_requests")
-      .select("user_id, users:user_id(supervisor_id)")
+      .select(
+        "user_id, stage, leave_type, start_date, end_date, total_days, reason, users:user_id(supervisor_id, user_role_id, first_name, last_name)",
+      )
       .eq("id", leave_id)
       .single();
 
@@ -62,22 +73,115 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const requesterSupervisorId = (
-      existing.users as unknown as { supervisor_id?: string | null } | null
-    )?.supervisor_id;
+    const applicant = existing.users as unknown as {
+      supervisor_id?: string | null;
+      user_role_id?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+    } | null;
+
+    const stage = (existing.stage as string | null) ?? "pending_supervisor";
+
+    if (stage === "approved" || stage === "rejected") {
+      return NextResponse.json(
+        { error: "This leave request has already been finalized." },
+        { status: 400 },
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (stage === "pending_supervisor") {
+      if (
+        !canApproveLeaveSupervisorStage(
+          caller.id,
+          existing.user_id,
+          applicant?.supervisor_id,
+          caller.role,
+        )
+      ) {
+        return jsonForbidden(
+          "Forbidden — only this employee's assigned supervisor can approve this stage.",
+        );
+      }
+
+      if (status === "rejected") {
+        const { data, error } = await supabaseAdmin
+          .from("leave_requests")
+          .update({
+            status: "rejected",
+            stage: "rejected",
+            supervisor_reviewed_by: reviewed_by,
+            supervisor_reviewed_at: nowIso,
+            supervisor_note: admin_note ?? null,
+            admin_note: admin_note ?? null,
+            reviewed_by,
+            reviewed_at: nowIso,
+          })
+          .eq("id", leave_id)
+          .select()
+          .single();
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ data });
+      }
+
+      // Approved at stage 1 — move to stage 2 and notify HR/Executive.
+      const { data, error } = await supabaseAdmin
+        .from("leave_requests")
+        .update({
+          stage: "pending_signoff",
+          supervisor_reviewed_by: reviewed_by,
+          supervisor_reviewed_at: nowIso,
+          supervisor_note: admin_note ?? null,
+        })
+        .eq("id", leave_id)
+        .select()
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      try {
+        const applicantRoleLabel = await resolveUserRoleLabelById(
+          supabaseAdmin,
+          applicant?.user_role_id,
+        );
+        const recipients = await resolveSignoffRecipients(
+          supabaseAdmin,
+          applicantRoleLabel,
+        );
+        const employeeName =
+          `${applicant?.first_name ?? ""} ${applicant?.last_name ?? ""}`.trim() ||
+          "An employee";
+        await sendLeaveSignoffNotification(recipients, {
+          employeeName,
+          leaveType: existing.leave_type,
+          startDate: existing.start_date,
+          endDate: existing.end_date,
+          totalDays: existing.total_days,
+          reason: existing.reason,
+        });
+      } catch (notifyError) {
+        console.error("[leave/review] sign-off notification failed", notifyError);
+      }
+
+      return NextResponse.json({ data });
+    }
+
+    // stage === "pending_signoff"
+    const applicantRoleLabel = await resolveUserRoleLabelById(
+      supabaseAdmin,
+      applicant?.user_role_id,
+    );
 
     if (
-      !canApproveLeaveRequest(
+      !canApproveLeaveSignoffStage(
         caller.id,
         existing.user_id,
-        requesterSupervisorId,
-        ctx.profile,
+        applicantRoleLabel,
         caller.role,
-        ctx.presets,
       )
     ) {
       return jsonForbidden(
-        "Forbidden — you may only approve leave for employees assigned to you.",
+        "Forbidden — only Human Resource or Executive Role can sign off this request.",
       );
     }
 
@@ -85,9 +189,10 @@ export async function PATCH(req: NextRequest) {
       .from("leave_requests")
       .update({
         status,
+        stage: status,
         admin_note: admin_note ?? null,
         reviewed_by,
-        reviewed_at: new Date().toISOString(),
+        reviewed_at: nowIso,
       })
       .eq("id", leave_id)
       .select()

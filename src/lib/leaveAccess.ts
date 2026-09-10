@@ -8,12 +8,33 @@ import { fetchGroupPresetsFromDb, type GroupPresetsMap } from "@/lib/groupPermis
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import {
   hasBroadElevatedAccessByRoleLabel,
+  isExecutiveRoleLabel,
+  isHumanResourceRoleLabel,
   isSuperAdminRoleLabel,
   isSupervisoryRoleLabel,
 } from "@/lib/userRoleAccessControl";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type LeaveReviewScope = "all" | "reports";
+
+/** Where a leave request's two-stage approval currently sits. See
+ * docs/leave/two-stage-approval.sql. */
+export type LeaveStage =
+  | "pending_supervisor"
+  | "pending_signoff"
+  | "approved"
+  | "rejected";
+
+/** The stage a brand-new leave request should start at: stage 1 (supervisor)
+ * when the applicant has one assigned, otherwise straight to stage 2
+ * (HR/Executive sign-off) — re-evaluated fresh on every application, not
+ * hardcoded per role, so assigning a supervisor later automatically routes
+ * that employee's next request through the normal two-stage flow. */
+export function resolveInitialLeaveStage(
+  applicantSupervisorId: string | null | undefined,
+): LeaveStage {
+  return applicantSupervisorId ? "pending_supervisor" : "pending_signoff";
+}
 
 export type LeaveAuthContext = {
   user: ApiRequestUser;
@@ -69,35 +90,52 @@ export function resolveLeaveReviewScope(
   return null;
 }
 
-/** Whether the caller may approve/reject a specific employee's leave request. */
-export function canApproveLeaveRequest(
+/** Stage 1 — the employee's assigned supervisor approves/rejects first.
+ * "Supervisor" here means whoever is actually recorded in this employee's
+ * supervisor_id — not specifically someone with the Supervisory Role label.
+ * A supervisor can also hold Executive Role, Human Resource, or Super Admin
+ * (see canBeAssignedAsSupervisorByRoleLabel), so the role check below is
+ * intentionally NOT restricted to isSupervisoryRoleLabel. Super Admin can
+ * also act here as an override even when not the assigned supervisor, same
+ * as every other approval gate in the app. */
+export function canApproveLeaveSupervisorStage(
   callerId: string,
   requesterUserId: string,
   requesterSupervisorId: string | null | undefined,
-  profile: AccessProfile,
   role: string | null | undefined,
-  presets: GroupPresetsMap,
 ): boolean {
   if (callerId === requesterUserId) return false;
+  if (isSuperAdminRoleLabel(role)) return true;
+  return !!requesterSupervisorId && requesterSupervisorId === callerId;
+}
 
-  if (isSuperAdminRoleLabel(role) || hasBroadElevatedAccessByRoleLabel(role)) {
-    return true;
-  }
-
-  const isAssignedSupervisor = requesterSupervisorId === callerId;
-
-  if (isSupervisoryRoleLabel(role) && isAssignedSupervisor) {
-    return true;
-  }
+/** Stage 2 — final sign-off, once the supervisor stage is done (or skipped,
+ * for an applicant with no supervisor assigned). Human Resource or
+ * Executive Role can sign off for most employees; if the applicant IS
+ * Human Resource or Executive Role themselves, only Executive Role can sign
+ * off (self-approval is already blocked above, so a lone Executive Role
+ * applicant simply has no one else who can sign off yet). Super Admin can
+ * also act at this stage as an override. */
+export function canApproveLeaveSignoffStage(
+  callerId: string,
+  requesterUserId: string,
+  requesterRoleLabel: string | null | undefined,
+  callerRoleLabel: string | null | undefined,
+): boolean {
+  if (callerId === requesterUserId) return false;
+  if (isSuperAdminRoleLabel(callerRoleLabel)) return true;
 
   if (
-    isAssignedSupervisor &&
-    canPerformModuleAction(profile, "hc:leave", "approve", role, presets)
+    isHumanResourceRoleLabel(requesterRoleLabel) ||
+    isExecutiveRoleLabel(requesterRoleLabel)
   ) {
-    return true;
+    return isExecutiveRoleLabel(callerRoleLabel);
   }
 
-  return false;
+  return (
+    isHumanResourceRoleLabel(callerRoleLabel) ||
+    isExecutiveRoleLabel(callerRoleLabel)
+  );
 }
 
 function getAdminClient(): SupabaseClient | null {

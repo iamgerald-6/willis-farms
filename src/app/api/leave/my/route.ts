@@ -41,10 +41,13 @@ export async function GET(req: NextRequest) {
     if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // Resolve reviewer names so employees can see who approved/rejected.
+    // Resolve reviewer names (both the stage-1 supervisor and the final
+    // stage-2 sign-off) so employees can see who acted at each step.
     const reviewerIds = [
       ...new Set(
-        (data ?? []).map((r) => r.reviewed_by).filter((id): id is string => !!id),
+        (data ?? [])
+          .flatMap((r) => [r.reviewed_by, r.supervisor_reviewed_by])
+          .filter((id): id is string => !!id),
       ),
     ];
 
@@ -66,6 +69,9 @@ export async function GET(req: NextRequest) {
       ...r,
       reviewed_by_name: r.reviewed_by
         ? reviewerNameById[r.reviewed_by] ?? "Unknown"
+        : null,
+      supervisor_reviewed_by_name: r.supervisor_reviewed_by
+        ? reviewerNameById[r.supervisor_reviewed_by] ?? "Unknown"
         : null,
     }));
 

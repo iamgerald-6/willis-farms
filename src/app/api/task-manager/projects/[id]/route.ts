@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
-// PATCH /api/task-manager/projects/[id] — Senior Management only.
-// Archives/restores a project (status), and/or renames it (name,
-// description) — either can be sent alone or together. Archiving never
-// touches the tasks inside it — they're just no longer reachable from the
-// active project list, same as the project itself. Both are fully
-// reversible; renaming just overwrites the name/description columns, the
-// project's id (and everything linked to it) is untouched.
+// PATCH /api/task-manager/projects/[id] — Senior Management can rename or
+// archive/restore any project. Everyone else can rename a project only if
+// they created it (created_by) — same rule as editing tasks — but cannot
+// archive/restore one, which stays Senior Management only (same as
+// archive/delete elsewhere in Task Manager). Archiving never touches the
+// tasks inside it — they're just no longer reachable from the active
+// project list, same as the project itself. Both are fully reversible;
+// renaming just overwrites the name/description columns, the project's id
+// (and everything linked to it) is untouched.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Fetched up front so the audit log below can record what actually
     // changed (previous vs. new name/description/status), not just what the
@@ -21,10 +24,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: existing, error: existingError } = await supabaseAdmin.from("tm_projects").select("*").eq("id", id).single();
     if (existingError || !existing) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
+    const senior = isSeniorManagement(user.role);
+    if (!senior && existing.created_by !== user.id) {
+      return NextResponse.json(
+        { error: "Forbidden — you can only edit projects you created." },
+        { status: 403 },
+      );
+    }
+
     const body = await req.json();
     const update: Record<string, unknown> = {};
 
     if ("status" in body) {
+      if (!senior) {
+        return NextResponse.json(
+          { error: "Forbidden — archiving/restoring a project is Senior Management only." },
+          { status: 403 },
+        );
+      }
       if (body.status !== "active" && body.status !== "archived") {
         return NextResponse.json({ error: "status must be 'active' or 'archived'" }, { status: 400 });
       }

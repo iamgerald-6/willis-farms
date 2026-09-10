@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { jsonForbidden } from "@/lib/apiRequestAuth";
 import {
+  canApproveLeaveSignoffStage,
+  canApproveLeaveSupervisorStage,
   getLeaveAuthContext,
   loadDirectReportUserIds,
 } from "@/lib/leaveAccess";
+import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,6 +22,7 @@ const LEAVE_SELECT = `
     first_name,
     last_name,
     role,
+    user_role_id,
     supervisor_id
   )
 `;
@@ -26,12 +30,19 @@ const LEAVE_SELECT = `
 async function enrichLeaveRows(
   data: Array<{
     reviewed_by?: string | null;
+    supervisor_reviewed_by?: string | null;
+    stage?: string | null;
+    user_id: string;
+    users?: { supervisor_id?: string | null; user_role_id?: string | null } | null;
     [key: string]: unknown;
   }> | null,
+  caller: { id: string; role: string | null },
 ) {
   const reviewerIds = [
     ...new Set(
-      (data ?? []).map((r) => r.reviewed_by).filter((id): id is string => !!id),
+      (data ?? [])
+        .flatMap((r) => [r.reviewed_by, r.supervisor_reviewed_by])
+        .filter((id): id is string => !!id),
     ),
   ];
 
@@ -49,12 +60,44 @@ async function enrichLeaveRows(
     );
   }
 
-  return (data ?? []).map((r) => ({
-    ...r,
-    reviewed_by_name: r.reviewed_by
-      ? reviewerNameById[r.reviewed_by] ?? "Unknown"
-      : null,
-  }));
+  return Promise.all(
+    (data ?? []).map(async (r) => {
+      const stage = r.stage ?? "pending_supervisor";
+      let canAct = false;
+      if (r.user_id !== caller.id) {
+        if (stage === "pending_supervisor") {
+          canAct = canApproveLeaveSupervisorStage(
+            caller.id,
+            r.user_id,
+            r.users?.supervisor_id,
+            caller.role,
+          );
+        } else if (stage === "pending_signoff") {
+          const applicantRoleLabel = await resolveUserRoleLabelById(
+            supabaseAdmin,
+            r.users?.user_role_id,
+          );
+          canAct = canApproveLeaveSignoffStage(
+            caller.id,
+            r.user_id,
+            applicantRoleLabel,
+            caller.role,
+          );
+        }
+      }
+
+      return {
+        ...r,
+        reviewed_by_name: r.reviewed_by
+          ? reviewerNameById[r.reviewed_by] ?? "Unknown"
+          : null,
+        supervisor_reviewed_by_name: r.supervisor_reviewed_by
+          ? reviewerNameById[r.supervisor_reviewed_by] ?? "Unknown"
+          : null,
+        can_act: canAct,
+      };
+    }),
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -88,7 +131,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const enriched = await enrichLeaveRows(data);
+    const enriched = await enrichLeaveRows(data, {
+      id: ctx.user.id,
+      role: ctx.user.role,
+    });
     return NextResponse.json({ data: enriched });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });

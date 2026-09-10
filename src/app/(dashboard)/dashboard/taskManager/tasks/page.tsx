@@ -170,18 +170,16 @@ function TaskManagerTasksPageContent() {
         {projects.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 text-center">
             <p className="text-sm text-gray-500">
-              {isSeniorManagement
+              {projects.length === 0
                 ? "No projects yet — create one to get started."
                 : "You don't have any tasks assigned yet."}
             </p>
-            {isSeniorManagement && (
-              <button
-                onClick={() => setShowNewProject(true)}
-                className="mt-4 bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-red-700"
-              >
-                + New Project
-              </button>
-            )}
+            <button
+              onClick={() => setShowNewProject(true)}
+              className="mt-4 bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-red-700"
+            >
+              + New Project
+            </button>
           </div>
         ) : (
           <>
@@ -201,7 +199,7 @@ function TaskManagerTasksPageContent() {
                 selectedId={selectedProjectId}
                 onSelect={setSelectedProjectId}
                 onNewProject={() => setShowNewProject(true)}
-                canCreate={isSeniorManagement}
+                canCreate
               />
               {isSeniorManagement && selectedProject && (
                 <button

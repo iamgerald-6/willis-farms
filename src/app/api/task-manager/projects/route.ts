@@ -3,21 +3,21 @@ import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/ta
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import {
   fetchDirectReportUserIds,
+  fetchProjectCreatorInfo,
+  isProjectVisibleToViewer,
   isTaskVisibleToViewer,
   resolveTaskViewScope,
 } from "@/lib/taskManagerScope";
 import { writeProjectAuditLog } from "@/lib/taskManagerData";
 
 // GET /api/task-manager/projects
-// Anyone with the tm_can_view_all_tasks grant (or who's super_admin) sees
-// every active project — see canViewAllTasks() in taskAccessControl.ts.
-// This is a separate permission from Senior Management (role-based write
-// access); by default only super_admin has it until granted to specific
-// users via the Users page. Everyone else only sees a project if they own
-// at least one non-deleted task inside it — per Sheila's instruction that
-// employees shouldn't see a tab they have no tasks under, not just a
-// grayed-out one — or if they created the project themselves (so a brand
-// new, still-empty project isn't invisible to the person who just made it).
+// Visibility is decided by who CREATED the project (see
+// isProjectVisibleToViewer in taskManagerScope.ts for the full rule):
+// Senior Management (or the tm_can_view_all_tasks grant) sees every
+// project; the creator always sees their own; anyone assigned a task
+// inside the project can see it; and if the creator can't supervise
+// others (Standard Role, Consultant, System Administrator), the
+// creator's own supervisor can see it too.
 export async function GET(req: NextRequest) {
   try {
     // Archived projects are only ever shown in the "Manage Projects" modal
@@ -79,16 +79,21 @@ export async function GET(req: NextRequest) {
 
     // Manage Projects is an administrative surface (Senior Management
     // only, enforced above) — it needs to list every project regardless of
-    // task ownership, not just the ones the caller happens to own tasks in.
-    //
-    // A project the caller just created has no tasks in it yet, so it can
-    // never appear in visibleProjectIds (that set is built from task
-    // ownership) — without created_by here, creating a project made it
-    // invisible to its own creator until they added a task or were granted
-    // tm_can_view_all_tasks. The creator should always see their own
-    // project.
+    // visibility, not just the ones the caller can otherwise see.
+    const creatorInfoMap =
+      includeArchived || canSeeAll
+        ? new Map()
+        : await fetchProjectCreatorInfo(
+            supabaseAdmin,
+            (projects ?? []).map((p) => p.created_by),
+          );
+
     const result = (projects ?? [])
-      .filter((p) => includeArchived || canSeeAll || p.created_by === user.id || visibleProjectIds.has(p.id))
+      .filter(
+        (p) =>
+          includeArchived ||
+          isProjectVisibleToViewer(p, user.id, canSeeAll, visibleProjectIds, creatorInfoMap.get(p.created_by)),
+      )
       .map((p) => ({
         ...p,
         task_count: statsByProject[p.id]?.total ?? 0,
@@ -103,11 +108,14 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/task-manager/projects — Senior Management only
+// POST /api/task-manager/projects — anyone can create a project; the
+// creator is always the caller (there's no assignee-style owner_id on
+// tm_projects — see isProjectVisibleToViewer in taskManagerScope.ts for
+// what "ownership" determines: who else can see it).
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { name, description } = await req.json();
     if (!name?.trim()) return NextResponse.json({ error: "Project name is required" }, { status: 400 });

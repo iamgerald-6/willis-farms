@@ -28,8 +28,7 @@ import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import ConfirmDeleteDialog from "./components/deletModal";
-import UploadManualModal from "./components/uploadModal";
-import EditManualModal from "./components/editModal";
+import ManualModal from "./components/manualModal";
 import PolicyHistoryDrawer from "./components/historyDrawer";
 import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
@@ -1023,24 +1022,18 @@ export default function PoliciesPage() {
         />
       )}
 
-      <UploadManualModal
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+      <ManualModal
+        open={uploadOpen || !!editingManual}
+        onClose={() => {
+          setUploadOpen(false);
+          setEditingManual(null);
+        }}
         onSuccess={() =>
           queryClient.invalidateQueries({ queryKey: ["policies"] })
         }
         uploadedById={currentUserId ?? ""}
         categories={categoryOptions}
-      />
-
-      <EditManualModal
-        open={!!editingManual}
-        onClose={() => setEditingManual(null)}
-        onSuccess={() =>
-          queryClient.invalidateQueries({ queryKey: ["policies"] })
-        }
         manual={editingManual}
-        categories={categoryOptions}
       />
 
       {historyManual && (

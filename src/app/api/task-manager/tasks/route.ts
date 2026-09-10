@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
-import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   applyTaskListVisibilityFilter,
   resolveTaskViewScope,
@@ -54,8 +53,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/task-manager/tasks — Senior Management, or (new role system) a
-// Supervisory-role caller creating a task for one of their own supervisees.
+// POST /api/task-manager/tasks — Senior Management (anyone), or anyone
+// recorded as the assignee's actual supervisor_id (self or one of their
+// direct reports) — see canCreate below. Not gated on the caller's own role
+// label: a supervisor can hold Supervisory Role, Executive Role, Human
+// Resource, or Super Admin (see canBeAssignedAsSupervisorByRoleLabel), so
+// what matters is the supervisor_id relationship itself, not the label.
 export async function POST(req: NextRequest) {
   try {
     const user = await getRequestUser(req);
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
     if (!canCreate && owner_id === user.id) {
       canCreate = true;
     }
-    if (!canCreate && isSupervisoryRoleLabel(user.role) && owner_id) {
+    if (!canCreate && owner_id) {
       const { data: owner } = await supabaseAdmin
         .from("users")
         .select("supervisor_id")
