@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { CheckCircle2, XCircle, Hourglass, Loader2, X, FileText } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+type LeaveStage = "pending_supervisor" | "pending_signoff" | "approved" | "rejected";
+
 interface LeaveRequest {
   id: string;
   user_id: string;
@@ -20,12 +22,19 @@ interface LeaveRequest {
   end_date: string;
   total_days: number;
   status: "pending" | "approved" | "rejected";
+  stage: LeaveStage;
   admin_note: string | null;
   document_url: string | null;
   created_at: string;
   reviewed_by: string | null;
   reviewed_by_name: string | null;
   reviewed_at: string | null;
+  supervisor_reviewed_by_name: string | null;
+  supervisor_reviewed_at: string | null;
+  /** Whether the current viewer can act on this request at its current
+   * stage — resolved server-side in /api/leave/all so the UI never has to
+   * duplicate the two-stage approval rules. */
+  can_act: boolean;
   users: {
     email: string;
     first_name: string | null;
@@ -34,10 +43,22 @@ interface LeaveRequest {
   };
 }
 
-const STATUS_STYLES = {
-  pending: "bg-amber-50 text-amber-700 border border-amber-200",
+function requestStage(r: LeaveRequest): LeaveStage {
+  return r.stage ?? (r.status === "pending" ? "pending_supervisor" : r.status);
+}
+
+const STAGE_STYLES: Record<LeaveStage, string> = {
+  pending_supervisor: "bg-amber-50 text-amber-700 border border-amber-200",
+  pending_signoff: "bg-amber-50 text-amber-700 border border-amber-200",
   approved: "bg-green-50 text-green-700 border border-green-200",
   rejected: "bg-red-50 text-red-700 border border-red-200",
+};
+
+const STAGE_LABELS: Record<LeaveStage, string> = {
+  pending_supervisor: "Awaiting supervisor",
+  pending_signoff: "Awaiting sign-off",
+  approved: "Approved",
+  rejected: "Rejected",
 };
 
 const reviewSchema = z.object({
@@ -68,8 +89,17 @@ function formatDate(iso: string) {
 }
 
 function reviewStampLabel(r: LeaveRequest): string | null {
-  if (r.status === "pending" || !r.reviewed_at) return null;
-  const verb = r.status === "approved" ? "Approved" : "Rejected";
+  const stage = requestStage(r);
+  if (stage === "pending_supervisor") return null;
+  if (stage === "pending_signoff") {
+    if (!r.supervisor_reviewed_at) return null;
+    const who = r.supervisor_reviewed_by_name
+      ? ` by ${r.supervisor_reviewed_by_name}`
+      : "";
+    return `Supervisor approved${who} · ${formatDate(r.supervisor_reviewed_at)}`;
+  }
+  if (!r.reviewed_at) return null;
+  const verb = stage === "approved" ? "Approved" : "Rejected";
   const who = r.reviewed_by_name ? ` by ${r.reviewed_by_name}` : "";
   return `${verb}${who} · ${formatDate(r.reviewed_at)}`;
 }
@@ -134,7 +164,9 @@ function ReviewModal({
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-base font-bold text-gray-900">
-              Review Leave Request
+              {requestStage(request) === "pending_supervisor"
+                ? "Approve as supervisor"
+                : "Sign off leave request"}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">{employeeName}</p>
           </div>
@@ -259,12 +291,15 @@ function LeaveCard({
           <p className="text-xs text-gray-400">{r.users.email}</p>
         </div>
         <span
-          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium capitalize flex-shrink-0 ${STATUS_STYLES[r.status]}`}
+          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${STAGE_STYLES[requestStage(r)]}`}
         >
-          {r.status === "pending" && <Hourglass className="w-3 h-3" />}
-          {r.status === "approved" && <CheckCircle2 className="w-3 h-3" />}
-          {r.status === "rejected" && <XCircle className="w-3 h-3" />}
-          {r.status}
+          {(requestStage(r) === "pending_supervisor" ||
+            requestStage(r) === "pending_signoff") && (
+            <Hourglass className="w-3 h-3" />
+          )}
+          {requestStage(r) === "approved" && <CheckCircle2 className="w-3 h-3" />}
+          {requestStage(r) === "rejected" && <XCircle className="w-3 h-3" />}
+          {STAGE_LABELS[requestStage(r)]}
         </span>
       </div>
 
@@ -304,7 +339,7 @@ function LeaveCard({
             </div>
           </div>
         )}
-        {r.admin_note && r.status !== "pending" && (
+        {r.admin_note && requestStage(r) !== "pending_supervisor" && requestStage(r) !== "pending_signoff" && (
           <div className="col-span-2">
             <p className="text-gray-400">Note</p>
             <p className="font-medium text-gray-700 mt-0.5">{r.admin_note}</p>
@@ -315,7 +350,7 @@ function LeaveCard({
       {reviewStampLabel(r) && (
         <p
           className={`text-xs font-medium ${
-            r.status === "approved" ? "text-green-600" : "text-red-600"
+            requestStage(r) === "approved" ? "text-green-600" : "text-red-600"
           }`}
         >
           {reviewStampLabel(r)}
@@ -323,18 +358,23 @@ function LeaveCard({
       )}
 
       {/* Action */}
-      {r.status === "pending" &&
-        (isOwnRequest ? (
-          <p className="text-xs text-gray-400 text-center py-2">
-            You can't review your own request
-          </p>
-        ) : (
+      {(requestStage(r) === "pending_supervisor" ||
+        requestStage(r) === "pending_signoff") &&
+        (r.can_act ? (
           <button
             onClick={() => onReview(r)}
             className="w-full py-2 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition"
           >
             Review
           </button>
+        ) : (
+          <p className="text-xs text-gray-400 text-center py-2">
+            {isOwnRequest
+              ? "You can't review your own request"
+              : requestStage(r) === "pending_supervisor"
+                ? "Waiting on this employee's supervisor"
+                : "Waiting on HR / Executive sign-off"}
+          </p>
         ))}
     </div>
   );
@@ -529,39 +569,45 @@ export default function LeaveRequestsAdminPage({
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[r.status]}`}
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${STAGE_STYLES[requestStage(r)]}`}
                       >
-                        {r.status === "pending" && (
+                        {(requestStage(r) === "pending_supervisor" ||
+                          requestStage(r) === "pending_signoff") && (
                           <Hourglass className="w-3 h-3" />
                         )}
-                        {r.status === "approved" && (
+                        {requestStage(r) === "approved" && (
                           <CheckCircle2 className="w-3 h-3" />
                         )}
-                        {r.status === "rejected" && (
+                        {requestStage(r) === "rejected" && (
                           <XCircle className="w-3 h-3" />
                         )}
-                        {r.status}
+                        {STAGE_LABELS[requestStage(r)]}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === "pending" ? (
-                        r.user_id === adminId ? (
-                          <span className="text-xs text-gray-400">
-                            Can't review your own request
-                          </span>
-                        ) : (
+                      {requestStage(r) === "pending_supervisor" ||
+                      requestStage(r) === "pending_signoff" ? (
+                        r.can_act ? (
                           <button
                             onClick={() => setSelectedRequest(r)}
                             className="px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition font-medium"
                           >
                             Review
                           </button>
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            {r.user_id === adminId
+                              ? "Can't review your own request"
+                              : requestStage(r) === "pending_supervisor"
+                                ? "Waiting on supervisor"
+                                : "Waiting on HR / Executive"}
+                          </span>
                         )
                       ) : (
                         <div className="flex flex-col items-end gap-0.5">
                           <span
                             className={`text-xs font-medium ${
-                              r.status === "approved"
+                              requestStage(r) === "approved"
                                 ? "text-green-600"
                                 : "text-red-600"
                             }`}
