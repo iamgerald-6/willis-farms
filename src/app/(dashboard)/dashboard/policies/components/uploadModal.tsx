@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Loader2, Upload, X, CheckCircle2 } from "lucide-react";
+import { Loader2, Upload, X, CheckCircle2, Sparkles } from "lucide-react";
 
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -43,6 +43,13 @@ export default function UploadManualModal({
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Cached Cloudinary upload for the currently-selected file, so clicking
+  // "Fill from document" and then submitting don't upload it twice. Cleared
+  // whenever a different file is picked.
+  const [uploaded, setUploaded] = useState<{ secure_url: string; public_id: string } | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+
   if (!open) return null;
 
   const validate = () => {
@@ -62,6 +69,8 @@ export default function UploadManualModal({
       return;
     }
     setFile(f);
+    setUploaded(null);
+    setExtractError(null);
     setErrors((prev) => ({ ...prev, file: "" }));
   };
 
@@ -73,8 +82,45 @@ export default function UploadManualModal({
     setVersionLabel("");
     setVersionNotes("");
     setFile(null);
+    setUploaded(null);
+    setExtracting(false);
+    setExtractError(null);
     setErrors({});
     onClose();
+  };
+
+  // Uploads the currently-selected file to Cloudinary if it hasn't been
+  // already (e.g. via a prior "Fill from document" click), caching the
+  // result so it's never uploaded twice.
+  const ensureUploaded = async (): Promise<{ secure_url: string; public_id: string }> => {
+    if (uploaded) return uploaded;
+    const result = await uploadToCloudinary(file!);
+    setUploaded(result);
+    return result;
+  };
+
+  const handleExtract = async () => {
+    if (!file) return;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const { secure_url } = await ensureUploaded();
+      const res = await api.post("/policies/extract", {
+        file_url: secure_url,
+        file_name: file.name,
+      });
+      const extracted = res.data?.data as { title?: string; description?: string };
+      if (extracted?.title) setTitle(extracted.title);
+      if (extracted?.description) {
+        setDescription(extracted.description.slice(0, POLICY_DESCRIPTION_MAX_CHARS));
+      }
+    } catch (err: any) {
+      setExtractError(
+        err?.response?.data?.error ?? err?.message ?? "Extraction failed. Please try again.",
+      );
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -82,7 +128,7 @@ export default function UploadManualModal({
     if (Object.keys(e).length > 0) return setErrors(e);
     setIsUploading(true);
     try {
-      const { secure_url, public_id } = await uploadToCloudinary(file!);
+      const { secure_url, public_id } = await ensureUploaded();
       await api.post("/policies/create_policies", {
         title,
         category,
@@ -152,6 +198,101 @@ export default function UploadManualModal({
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Drop Zone — first, so it can be used to fill in Title/Description below */}
+          <div>
+            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
+              PDF File <span className="text-red-500">*</span>
+            </label>
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const dropped = e.dataTransfer.files[0];
+                if (dropped) handleFile(dropped);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer ${
+                dragOver
+                  ? "border-red-400 bg-red-50"
+                  : file
+                    ? "border-green-400 bg-green-50"
+                    : "border-gray-200 hover:border-red-300 hover:bg-red-50/40"
+              }`}
+              onClick={() =>
+                document.getElementById("manual-pdf-upload")?.click()
+              }
+            >
+              <input
+                id="manual-pdf-upload"
+                type="file"
+                accept={ACCEPT_PDF_OR_WORD}
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                }}
+              />
+              {file ? (
+                <div className="flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  <span className="text-sm font-medium text-green-700">
+                    {file.name}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFile(null);
+                      setUploaded(null);
+                      setExtractError(null);
+                    }}
+                    className="ml-1 text-gray-400 hover:text-red-500"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">
+                    Drag & drop your PDF or{" "}
+                    <span className="text-red-600 font-medium">browse</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">PDF files only</p>
+                </>
+              )}
+            </div>
+            {errors.file && (
+              <p className="text-red-500 text-xs mt-1">{errors.file}</p>
+            )}
+            {file && (
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleExtract();
+                  }}
+                  disabled={extracting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition disabled:opacity-60"
+                >
+                  {extracting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  {extracting ? "Reading document…" : "Fill title & description from document"}
+                </button>
+              </div>
+            )}
+            {extractError && (
+              <p className="text-red-500 text-xs mt-1">{extractError}</p>
+            )}
+          </div>
+
           {/* Title */}
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
@@ -240,76 +381,6 @@ export default function UploadManualModal({
               rows={2}
               className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
             />
-          </div>
-
-          {/* Drop Zone */}
-          <div>
-            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
-              PDF File <span className="text-red-500">*</span>
-            </label>
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const dropped = e.dataTransfer.files[0];
-                if (dropped) handleFile(dropped);
-              }}
-              className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer ${
-                dragOver
-                  ? "border-red-400 bg-red-50"
-                  : file
-                    ? "border-green-400 bg-green-50"
-                    : "border-gray-200 hover:border-red-300 hover:bg-red-50/40"
-              }`}
-              onClick={() =>
-                document.getElementById("manual-pdf-upload")?.click()
-              }
-            >
-              <input
-                id="manual-pdf-upload"
-                type="file"
-                accept={ACCEPT_PDF_OR_WORD}
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFile(f);
-                }}
-              />
-              {file ? (
-                <div className="flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  <span className="text-sm font-medium text-green-700">
-                    {file.name}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFile(null);
-                    }}
-                    className="ml-1 text-gray-400 hover:text-red-500"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">
-                    Drag & drop your PDF or{" "}
-                    <span className="text-red-600 font-medium">browse</span>
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">PDF files only</p>
-                </>
-              )}
-            </div>
-            {errors.file && (
-              <p className="text-red-500 text-xs mt-1">{errors.file}</p>
-            )}
           </div>
 
           <div className="flex gap-3 pt-2">

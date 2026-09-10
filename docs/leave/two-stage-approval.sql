@@ -31,9 +31,17 @@ alter table leave_requests
   add column if not exists supervisor_reviewed_at timestamptz,
   add column if not exists supervisor_note text;
 
-alter table leave_requests
-  add constraint if not exists leave_requests_stage_check
-  check (stage in ('pending_supervisor', 'pending_signoff', 'approved', 'rejected'));
+-- Postgres has no "ADD CONSTRAINT IF NOT EXISTS" — check pg_constraint first.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'leave_requests_stage_check'
+  ) then
+    alter table leave_requests
+      add constraint leave_requests_stage_check
+      check (stage in ('pending_supervisor', 'pending_signoff', 'approved', 'rejected'));
+  end if;
+end $$;
 
 -- One-time backfill for rows that already exist: finished requests keep
 -- their finished stage; anything still "pending" is placed at the stage the

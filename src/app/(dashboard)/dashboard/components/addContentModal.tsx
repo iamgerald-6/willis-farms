@@ -14,6 +14,7 @@ import {
   Loader2,
   CheckCircle2,
   Pencil,
+  Sparkles,
 } from "lucide-react";
 import { Content } from "@/types";
 import { useMutation } from "@tanstack/react-query";
@@ -233,6 +234,13 @@ export default function AddContentModal({
     doc?: string;
   }>({});
 
+  // Cached Cloudinary URL for the currently-selected doc file, so clicking
+  // "Fill from document" and then submitting the form don't upload the same
+  // file twice. Cleared whenever a different file is picked.
+  const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -268,6 +276,9 @@ export default function AddContentModal({
     }
     setCoverFile(null);
     setDocFile(null);
+    setDocUrl(null);
+    setExtracting(false);
+    setExtractError(null);
     setFileErrors({});
     setServerError(null);
     setSuccessMsg(null);
@@ -320,6 +331,48 @@ export default function AddContentModal({
     },
   });
 
+  // Uploads the currently-selected doc file to Cloudinary if it hasn't been
+  // already (e.g. via a prior "Fill from document" click), caching the
+  // result in docUrl either way so it's never uploaded twice.
+  const ensureDocUploaded = async (): Promise<string | null> => {
+    if (!docFile) return editingContent?.document_url ?? null;
+    if (docUrl) return docUrl;
+    const uploaded = await uploadToCloudinary(docFile, "WillDocs");
+    setDocUrl(uploaded);
+    return uploaded;
+  };
+
+  const handleExtract = async () => {
+    if (!docFile) return;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const uploaded = await ensureDocUploaded();
+      if (!uploaded) throw new Error("Upload the document first.");
+      const res = await api.post("/sop/extract", {
+        file_url: uploaded,
+        file_name: docFile.name,
+      });
+      const extracted = res.data?.data as { title?: string; description?: string };
+      if (extracted?.title) {
+        setValue("title", extracted.title, { shouldValidate: true });
+      }
+      if (extracted?.description) {
+        setValue(
+          "description",
+          extracted.description.slice(0, SOP_DESCRIPTION_MAX_CHARS),
+          { shouldValidate: true },
+        );
+      }
+    } catch (err: any) {
+      setExtractError(
+        err?.response?.data?.error ?? err.message ?? "Extraction failed. Please try again.",
+      );
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   const onSubmit = async (data: ContentFormValues) => {
     if (!validateFiles()) return;
 
@@ -327,13 +380,11 @@ export default function AddContentModal({
     setSuccessMsg(null);
 
     try {
-      const [coverUrl, docUrl] = await Promise.all([
+      const [coverUrl, docFileUrl] = await Promise.all([
         coverFile
           ? uploadToCloudinary(coverFile, "WillImage")
           : Promise.resolve(editingContent?.cover_image_url ?? null),
-        docFile
-          ? uploadToCloudinary(docFile, "WillDocs")
-          : Promise.resolve(editingContent?.document_url ?? null),
+        ensureDocUploaded(),
       ]);
 
       mutate({
@@ -343,7 +394,7 @@ export default function AddContentModal({
         sub_category: data.sub_category,
         description: data.description,
         cover_image_url: coverUrl,
-        document_url: docUrl,
+        document_url: docFileUrl,
         document_read_minutes: data.document_read_minutes,
         video_url: editingContent?.video_url ?? null,
         video_duration_minutes: editingContent?.video_duration_minutes ?? null,
@@ -413,6 +464,61 @@ export default function AddContentModal({
                 {successMsg}
               </div>
             )}
+
+            {/* Document — first, so it can be used to fill in Title/Description below */}
+            <Field
+              label="Document (PDF / Word)"
+              required={!isEditing}
+              icon={<FileText className="w-4 h-4" />}
+              error={fileErrors.doc}
+            >
+              <FileDropZone
+                accept={ACCEPT_PDF_OR_WORD}
+                file={docFile}
+                onChange={(f) => {
+                  setDocUrl(null);
+                  setExtractError(null);
+                  if (!f) {
+                    setDocFile(null);
+                    return;
+                  }
+                  const validationError = validatePdfOrWordFile(f);
+                  if (validationError) {
+                    setFileErrors((prev) => ({ ...prev, doc: validationError }));
+                    setDocFile(null);
+                    return;
+                  }
+                  setDocFile(f);
+                  setFileErrors((prev) => ({ ...prev, doc: undefined }));
+                }}
+                placeholder={
+                  isEditing && editingContent?.document_url
+                    ? "Existing document on file — click to replace"
+                    : "Click to upload a document"
+                }
+                hasError={!!fileErrors.doc}
+              />
+              {docFile && (
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleExtract}
+                    disabled={extracting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition disabled:opacity-60"
+                  >
+                    {extracting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    {extracting ? "Reading document…" : "Fill title & description from document"}
+                  </button>
+                </div>
+              )}
+              {extractError && (
+                <p className="text-xs text-red-500 mt-1">{extractError}</p>
+              )}
+            </Field>
 
             {/* Title */}
             <Field label="Title" required error={errors.title?.message}>
@@ -557,39 +663,7 @@ export default function AddContentModal({
                 )}
               </Field>
 
-              <div className="grid grid-cols-2 gap-4 mt-4 items-start">
-                <Field
-                  label="Document (PDF / Word)"
-                  required={!isEditing}
-                  icon={<FileText className="w-4 h-4" />}
-                  error={fileErrors.doc}
-                >
-                  <FileDropZone
-                    accept={ACCEPT_PDF_OR_WORD}
-                    file={docFile}
-                    onChange={(f) => {
-                      if (!f) {
-                        setDocFile(null);
-                        return;
-                      }
-                      const validationError = validatePdfOrWordFile(f);
-                      if (validationError) {
-                        setFileErrors((prev) => ({ ...prev, doc: validationError }));
-                        setDocFile(null);
-                        return;
-                      }
-                      setDocFile(f);
-                      setFileErrors((prev) => ({ ...prev, doc: undefined }));
-                    }}
-                    placeholder={
-                      isEditing && editingContent?.document_url
-                        ? "Existing document on file — click to replace"
-                        : "Click to upload a document"
-                    }
-                    hasError={!!fileErrors.doc}
-                  />
-                </Field>
-
+              <div className="mt-4">
                 <Field
                   label="Estimated Read Time (min)"
                   required
