@@ -511,7 +511,7 @@ export default function AddContentModal({
                     ) : (
                       <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    {extracting ? "Reading document…" : "Fill title & description from document"}
+                    {extracting ? "Reading document…" : "Autofill with WillsFarms Intel"}
                   </button>
                 </div>
               )}
