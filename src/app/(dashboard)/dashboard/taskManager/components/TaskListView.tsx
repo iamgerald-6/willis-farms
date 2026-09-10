@@ -133,19 +133,21 @@ export default function TaskListView({
           </div>
         </div>
 
-        {/* "Edit List" + "Add Task" are available to everyone now, not just
-            Senior Management (per Sheila) — what the toggle actually reveals
-            for a given viewer still differs: Senior Management gets the full
-            toolkit (add, edit any task, archive, delete), everyone else only
-            gets a pencil-edit icon on tasks they personally created (see
-            TaskRow's per-row gating) plus this shared "Add Task" entry
-            point. "From Document" (bulk AI extraction) stays Senior
-            Management only — it's a heavier admin import tool, not asked
-            for here. */}
+        {/* "Edit List" + "Add Task" + "From Document" are available to
+            everyone now, not just Senior Management (per Sheila) — what the
+            toggle actually reveals for a given viewer still differs: Senior
+            Management gets the full toolkit (add, edit any task, archive,
+            delete), everyone else only gets a pencil-edit icon on tasks
+            they personally created (see TaskRow's per-row gating) plus
+            these shared "Add Task"/"From Document" entry points. Both
+            follow the same ownership rule as manual task creation: an
+            AI-extracted proposal can only be saved assigned to yourself or
+            a direct report unless you're Senior Management — see
+            assignableUsers below and POST /task-manager/extract/[jobId]/save. */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           {editMode && lifecycleView === "all" && (
             <>
-              {variant === "register" && isSeniorManagement && (
+              {variant === "register" && (
                 <button
                   onClick={() => setExtractOpen(true)}
                   className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
@@ -256,7 +258,7 @@ export default function TaskListView({
       {extractOpen && (
         <DocumentExtractionModal
           project={project}
-          users={users}
+          users={assignableUsers}
           onClose={() => setExtractOpen(false)}
           onSaved={() => {
             setExtractOpen(false);
