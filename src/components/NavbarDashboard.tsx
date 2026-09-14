@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, LogOut, User, Menu, Settings2, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, User, Menu, Settings2, ShieldCheck, BookOpen } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { User as UserType } from "@/types";
@@ -125,6 +125,11 @@ const PAGE_TITLE_ENTRIES: { path: string; title: string; subtitle: string }[] = 
     path: "/dashboard/system-definitions",
     title: "System Definitions",
     subtitle: "Module registry — taxonomy, forms, and business rules",
+  },
+  {
+    path: "/dashboard/user-manual",
+    title: "User Manual",
+    subtitle: "How to use the Wills Farms platform",
   },
 ].sort((a, b) => b.path.length - a.path.length);
 
@@ -289,6 +294,16 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                 >
                   <User className="w-4 h-4 text-gray-400" />
                   Account Settings
+                </button>
+                <button
+                  className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition"
+                  onClick={() => {
+                    setOpen(false);
+                    router.push("/dashboard/user-manual");
+                  }}
+                >
+                  <BookOpen className="w-4 h-4 text-gray-400" />
+                  User Manual
                 </button>
                 {showUserManagement && (
                   <button
