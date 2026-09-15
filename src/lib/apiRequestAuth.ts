@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import { hasFullAppraisalAccess, isSupervisor } from "@/lib/accessControl";
 import { isSeniorManagement, canViewAllTasks } from "@/lib/taskAccessControl";
 import {
   canAddUser,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/permissionLevels";
 import {
   resolveAccessProfile,
+  isFullRoleAccess,
   type AccessProfile,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
@@ -20,6 +21,7 @@ import {
   hasBroadElevatedAccessByRoleLabel,
   resolveEffectiveUserRoleLabel,
   resolveUserRoleLabelById,
+  isSupervisoryRoleLabel,
 } from "@/lib/userRoleAccessControl";
 
 /** HC modules that read org-structure dropdowns without opening System Definitions. */
@@ -336,6 +338,33 @@ export async function requireUserManualUploadAccess(
   );
   if (!ok) return null;
   return user;
+}
+
+/** SOP Management (upload/edit/archive/delete/restore SOPs) — mirrors the
+ * canManage check in dashboard/sop/page.tsx: Executive Role/HR/Super Admin
+ * via isSupervisor()/isFullRoleAccess(), or an individual delegated
+ * "sop:add" override. Supervisory Role is deliberately excluded even though
+ * isSupervisor() would otherwise include it — Sheila's explicit call that
+ * Supervisory shouldn't have SOP Management access at all. Used to actually
+ * enforce this server-side, since these routes previously had no role check
+ * beyond "is this a logged-in user". */
+export async function requireSopManageAccess(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  if (isFullRoleAccess(user.role)) return user;
+  if (isSupervisor(user.role) && !isSupervisoryRoleLabel(user.role)) return user;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const ok = canPerformModuleAction(profile, "sop:add", "add", user.role, presets);
+  return ok ? user : null;
 }
 
 export async function requireFullAppraisalAccess(

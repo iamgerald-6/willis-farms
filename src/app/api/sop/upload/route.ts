@@ -2,12 +2,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { writeSopAuditLog } from "@/lib/sopAuditLog";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { getApiRequestUser, requireSopManageAccess } from "@/lib/apiRequestAuth";
 
 const DEFAULT_COVER = "/images/breedfeed.webp";
 
 export async function POST(req: NextRequest) {
   try {
+    const authedUser = await requireSopManageAccess(req);
+    if (!authedUser) {
+      return NextResponse.json({ error: "Forbidden — you don't have access to SOP Management." }, { status: 403 });
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

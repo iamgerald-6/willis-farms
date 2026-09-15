@@ -12,6 +12,7 @@ import {
 import { canAccessPage } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import { isSupervisor } from "@/lib/accessControl";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import SOPBrowsePage from "./components/SOPBrowsePage";
 import SOPManagementPage from "./components/SOPManagementPage";
 
@@ -46,11 +47,14 @@ export default function SOPHubPage() {
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
-  // Manage side: role (Supervisory / Executive / HR / Super Admin via
-  // isSupervisor / isFullRoleAccess) or anyone delegated "sop:add".
+  // Manage side: role (Executive / HR / Super Admin via isSupervisor /
+  // isFullRoleAccess) or anyone delegated "sop:add". Supervisory Role is
+  // deliberately excluded even though isSupervisor() would otherwise
+  // include it — Sheila's explicit call that Supervisory shouldn't see SOP
+  // Management at all.
   const canManage =
     isFullRoleAccess(role) ||
-    isSupervisor(role) ||
+    (isSupervisor(role) && !isSupervisoryRoleLabel(role)) ||
     (accessProfile
       ? canAccessPage(accessProfile, "sop:add", groupPresets, sessionRole)
       : false);
