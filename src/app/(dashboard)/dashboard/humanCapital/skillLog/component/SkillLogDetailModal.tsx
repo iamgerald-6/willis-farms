@@ -289,11 +289,11 @@ export default function SkillLogDetailModal({
                           >
                             {sec.title}
                           </div>
-                          {sec.skills.map((skill) => {
+                          {sec.skills.map((skill, ski) => {
                             const c = competencyMap.get(skill);
                             return (
                               <div
-                                key={skill}
+                                key={`${si}-${ski}-${skill}`}
                                 className="grid items-center px-4 py-2.5 border-b border-gray-100 last:border-0 gap-2 text-sm"
                                 style={{
                                   gridTemplateColumns:
