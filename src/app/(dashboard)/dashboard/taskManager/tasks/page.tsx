@@ -26,6 +26,7 @@ function TaskManagerTasksPageContent() {
   const {
     isLoading: userLoading,
     isSeniorManagement,
+    isStandardRole,
     allUsers,
     userId,
   } = useCurrentUser();
@@ -274,6 +275,7 @@ function TaskManagerTasksPageContent() {
                     projects={projects}
                     users={allUsers}
                     isSeniorManagement={isSeniorManagement}
+                    isStandardRole={isStandardRole}
                     currentUserId={userId ?? null}
                     variant="register"
                     initialFilter={navFilter?.variant === "register" ? navFilter.filter : undefined}
@@ -286,6 +288,7 @@ function TaskManagerTasksPageContent() {
                     projects={projects}
                     users={allUsers}
                     isSeniorManagement={isSeniorManagement}
+                    isStandardRole={isStandardRole}
                     currentUserId={userId ?? null}
                     variant="monitoring"
                     initialFilter={navFilter?.variant === "monitoring" ? navFilter.filter : undefined}

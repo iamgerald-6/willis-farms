@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { isStandardRoleLabel } from "@/lib/userRoleAccessControl";
 import { updateTaskProgress, fetchUserNames, collectSubtaskOwnerIds, attachSubtaskOwnerNames } from "@/lib/taskManagerData";
 import { buildSubtaskTree, computeTaskRollup, attachSubtaskStatuses, isDateWithin, MAX_SUBTASK_DEPTH, sumWeights, scaleWeightsToTotal } from "@/lib/subtaskProgress";
 
@@ -65,7 +67,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-// PUT /api/task-manager/tasks/[id]/subtasks — Senior Management only.
+// PUT /api/task-manager/tasks/[id]/subtasks — Senior Management, or the
+// task's own creator (created_by) managing subtasks on a task they made
+// themselves. Not available to someone merely assigned/owning the task —
+// only whoever actually created it, same rule TaskRow.tsx already uses for
+// canEditThisTask.
 // Replaces one whole sibling group at once: { parent_id, items: [{ id?, title,
 // weight_percent, owner_id?, start_date?, due_date? }] }. parent_id: null for
 // the task's top-level subtasks, or an existing subtask's id to replace ITS
@@ -91,16 +97,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { data: task, error: taskError } = await supabaseAdmin.from("tm_tasks").select("*").eq("id", id).single();
+    if (taskError || !task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+    const canManageSubtasks = isSeniorManagement(user.role) || task.created_by === user.id;
+    if (!canManageSubtasks) {
+      return NextResponse.json(
+        { error: "Forbidden — only Senior Management or this task's creator can manage subtasks." },
+        { status: 403 },
+      );
+    }
+    // A Standard Role creator can add/edit their own task's subtasks, but
+    // never delete existing rows — same restriction as whole-task deletion,
+    // which is Senior-Management-only with no creator exception. Checked
+    // again below, once we know which incoming rows would actually be removed.
+    const canDeleteSubtasks = isSeniorManagement(user.role) || !isStandardRoleLabel(user.role);
 
     const body = await req.json();
     const parentId: string | null = body.parent_id ?? null;
     const items: { id?: string; title: string; weight_percent: number; owner_id?: string | null; start_date?: string | null; due_date?: string | null }[] =
       Array.isArray(body.items) ? body.items : [];
-
-    const { data: task, error: taskError } = await supabaseAdmin.from("tm_tasks").select("*").eq("id", id).single();
-    if (taskError || !task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
     // Figure out this group's depth from its parent (1 = top-level), the
     // date bounds every item in this group must fall within — the task's own
@@ -167,6 +186,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const incomingIds = new Set(items.filter((i) => i.id).map((i) => i.id));
     const idsToDelete = (existingSiblings ?? []).map((r) => r.id).filter((existingId) => !incomingIds.has(existingId));
     if (idsToDelete.length > 0) {
+      if (!canDeleteSubtasks) {
+        return NextResponse.json(
+          { error: "Forbidden — Standard Role can't delete subtasks, even on a task they created." },
+          { status: 403 },
+        );
+      }
       const { error: deleteError } = await supabaseAdmin.from("tm_subtasks").delete().in("id", idsToDelete);
       if (deleteError) throw deleteError;
     }

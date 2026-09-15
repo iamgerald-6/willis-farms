@@ -52,6 +52,7 @@ export default function TaskListView({
   projects,
   users,
   isSeniorManagement,
+  isStandardRole,
   currentUserId,
   variant = "register",
   initialFilter,
@@ -62,6 +63,11 @@ export default function TaskListView({
   projects?: TMProject[];
   users: User[];
   isSeniorManagement: boolean;
+  // Whether the viewer's own role is Standard Role — narrows subtask
+  // deletion even when they created the task (see TaskRow's
+  // canDeleteSubtasks). Optional/defaults to false so any caller that
+  // hasn't been updated yet keeps today's behavior.
+  isStandardRole?: boolean;
   currentUserId: string | null;
   variant?: Variant;
   // Which filter tab to open on, e.g. when arriving here from a Summary
@@ -239,6 +245,7 @@ export default function TaskListView({
                 projects={projects}
                 currentUserId={currentUserId}
                 isSeniorManagement={isSeniorManagement}
+                isStandardRole={isStandardRole}
                 variant={variant}
                 onChanged={refresh}
                 onOpenAudit={setAuditTask}

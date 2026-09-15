@@ -23,6 +23,7 @@ export default function TaskRow({
   projects,
   currentUserId,
   isSeniorManagement,
+  isStandardRole = false,
   variant = "register",
   onChanged,
   onOpenAudit,
@@ -36,6 +37,11 @@ export default function TaskRow({
   projects?: TMProject[];
   currentUserId: string | null;
   isSeniorManagement: boolean;
+  // Whether the viewer's own role is Standard Role — narrows subtask
+  // deletion even on a task they created themselves (see canDeleteSubtasks
+  // below). Defaults to false so any caller that hasn't been updated yet
+  // keeps today's behavior.
+  isStandardRole?: boolean;
   variant?: "register" | "monitoring";
   onChanged: () => void;
   onOpenAudit: (task: TMTask) => void;
@@ -243,6 +249,14 @@ export default function TaskRow({
   // they personally created — matches the PATCH /task-manager/tasks/[id]
   // route's own check.
   const canEditThisTask = isSeniorManagement || (!!currentUserId && task.created_by === currentUserId);
+  // Subtasks — same rule as canEditThisTask: Senior Management, or whoever
+  // created the task themselves (not just its owner/assignee). Matches the
+  // PUT /task-manager/tasks/[id]/subtasks route's own check.
+  const canManageSubtasks = isSeniorManagement || (!!currentUserId && task.created_by === currentUserId);
+  // Narrower than canManageSubtasks: a Standard Role creator can add/edit
+  // subtasks on their own task, but can never delete them — same rule the
+  // PUT /task-manager/tasks/[id]/subtasks route enforces server-side.
+  const canDeleteSubtasks = isSeniorManagement || (canManageSubtasks && !isStandardRole);
 
   if (editing) {
     return (
@@ -528,9 +542,10 @@ export default function TaskRow({
   ) : null;
 
   // Shown for any task that already has subtasks (so anyone with progress
-  // access can open and tick them), or for Senior Management on any active
-  // task without them yet (so they have a way to start breaking one down).
-  const subtasksToggle = isLifecycleActive && (task.has_subtasks || isSeniorManagement) ? (
+  // access can open and tick them), or for whoever can manage subtasks on
+  // this task (Senior Management, or its creator) on an active task without
+  // them yet, so they have a way to start breaking one down.
+  const subtasksToggle = isLifecycleActive && (task.has_subtasks || canManageSubtasks) ? (
     <button
       onClick={() => setSubtasksOpen((v) => !v)}
       className="flex items-center gap-1.5 mt-1.5 text-xs font-bold text-red-600 hover:text-red-700"
@@ -591,7 +606,7 @@ export default function TaskRow({
             </div>
             {subtasksOpen && (
               <div className="mt-2">
-                <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+                <SubtaskPanel task={task} users={users} canManage={canManageSubtasks} canDelete={canDeleteSubtasks} canToggle={canEditProgress} onChanged={onChanged} />
               </div>
             )}
             <div className="flex items-center gap-1.5 mt-3">{actionButtons}</div>
@@ -627,7 +642,7 @@ export default function TaskRow({
         </div>
         {subtasksOpen && (
           <div className="px-3 pb-2.5 pl-[calc(2.5rem+0.75rem)]">
-            <SubtaskPanel task={task} users={users} canManage={isSeniorManagement} canToggle={canEditProgress} onChanged={onChanged} />
+            <SubtaskPanel task={task} users={users} canManage={canManageSubtasks} canDelete={canDeleteSubtasks} canToggle={canEditProgress} onChanged={onChanged} />
           </div>
         )}
       </div>
