@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
+import { requireAppraisalGradeTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import type { AppraisalGradeTemplate } from "@/lib/appraisal/gradeTemplates";
 
 const PATCHABLE_FIELDS = ["quarterly_sections", "annual_sections", "extra_rules"] as const;
@@ -9,9 +9,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "view");
+  const caller = await requireAppraisalGradeTemplateAccess(req, "view");
   if (!caller) {
-    return jsonForbidden("System Definitions view access is required.");
+    return jsonForbidden("Recruitment view access is required.");
   }
   const { id } = await params;
 
@@ -40,9 +40,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "edit");
+  const caller = await requireAppraisalGradeTemplateAccess(req, "edit");
   if (!caller) {
-    return jsonForbidden("System Definitions edit access is required.");
+    return jsonForbidden("Recruitment edit access is required.");
   }
   const { id } = await params;
 
@@ -81,9 +81,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "edit");
+  const caller = await requireAppraisalGradeTemplateAccess(req, "edit");
   if (!caller) {
-    return jsonForbidden("System Definitions edit access is required.");
+    return jsonForbidden("Recruitment edit access is required.");
   }
   const { id } = await params;
 

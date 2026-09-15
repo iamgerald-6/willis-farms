@@ -313,6 +313,45 @@ export async function requireSystemDefinitionsAccess(
   return user;
 }
 
+/** Appraisal grade templates (the "Manage appraisals" question-set builder,
+ * matched per Site/Business unit/Department/Section/Position/Grade level) —
+ * permission matrix ("hc:recruitment"), not System Definitions. This moved
+ * out from under sys:definitions on Sheila's explicit call: it's a
+ * Recruitment/org-placement concern, not a System Definitions one, and
+ * gating it on sys:definitions was silently locking Human Resource out
+ * (excluded from sys:definitions by default — see
+ * HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS) even though HR already sees the
+ * "Manage appraisals" tab via hasFullAppraisalAccess. HR/Executive/Super
+ * Admin already have hc:recruitment by default (or bypass entirely via
+ * isFullRoleAccess), so this fixes HR without changing anyone else's
+ * access. Pass one action or any-of. */
+export async function requireAppraisalGradeTemplateAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "view",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(
+      profile,
+      "hc:recruitment",
+      action,
+      user.role,
+      presets,
+    ),
+  );
+  if (!ok) return null;
+  return user;
+}
+
 /** User Manual upload — permission matrix ("user-manual", "add"). System
  * Administrator/Super Admin get it via their built-in role preset, Executive
  * Role via the unconditional isFullRoleAccess bypass; anyone else needs an

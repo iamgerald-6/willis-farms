@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
+import { requireAppraisalGradeTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import type { AppraisalGradeTemplate } from "@/lib/appraisal/gradeTemplates";
 
 const PLACEMENT_COLUMNS = [
@@ -14,9 +14,9 @@ const PLACEMENT_COLUMNS = [
 
 /** GET — every template, for the list view in Appraisal scope. */
 export async function GET(req: NextRequest) {
-  const caller = await requireSystemDefinitionsAccess(req, "view");
+  const caller = await requireAppraisalGradeTemplateAccess(req, "view");
   if (!caller) {
-    return jsonForbidden("System Definitions view access is required.");
+    return jsonForbidden("Recruitment view access is required.");
   }
 
   const supabaseAdmin = getSupabaseAdmin();
@@ -43,9 +43,9 @@ export async function GET(req: NextRequest) {
  * extra rules) to build from.
  */
 export async function POST(req: NextRequest) {
-  const caller = await requireSystemDefinitionsAccess(req, "add");
+  const caller = await requireAppraisalGradeTemplateAccess(req, "add");
   if (!caller) {
-    return jsonForbidden("System Definitions add access is required.");
+    return jsonForbidden("Recruitment add access is required.");
   }
 
   const supabaseAdmin = getSupabaseAdmin();
