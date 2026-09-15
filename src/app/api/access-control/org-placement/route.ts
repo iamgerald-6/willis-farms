@@ -8,6 +8,7 @@ import {
   isMissingColumnError,
   updateUserWithColumnFallback,
 } from "@/lib/supabaseUserUpdate";
+import { writeOrgPlacementAuditLog, ORG_PLACEMENT_AUDIT_FIELDS } from "@/lib/orgPlacementAuditLog";
 
 const ORG_PLACEMENT_MIGRATION_HINT =
   " Run docs/access-control/users-org-placement.sql (and, for User role, docs/access-control/users-org-placement-user-role.sql) in Supabase, then: NOTIFY pgrst, 'reload schema';";
@@ -76,6 +77,29 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // Snapshot the BEFORE values for whichever org-placement fields are
+    // actually being changed, so writeOrgPlacementAuditLog below can log
+    // exactly what moved (e.g. site_id: "3" -> "5") — see
+    // docs/access-control/org-placement-audit-log.sql. Best-effort: a
+    // failure here shouldn't block the actual org-placement update, so the
+    // "before" snapshot degrades to empty (no audit row written for this
+    // save) rather than failing the request.
+    const auditFields = ORG_PLACEMENT_AUDIT_FIELDS.filter((f) => f in updates);
+    let before: Partial<Record<(typeof ORG_PLACEMENT_AUDIT_FIELDS)[number], string | null>> = {};
+    if (auditFields.length > 0) {
+      const { data: beforeRow } = await supabaseAdmin
+        .from("users")
+        .select(auditFields.join(","))
+        .eq("user_id", target_user_id)
+        .maybeSingle();
+      if (beforeRow) {
+        const beforeRecord = beforeRow as unknown as Record<string, unknown>;
+        before = Object.fromEntries(
+          auditFields.map((f) => [f, beforeRecord[f] == null ? null : String(beforeRecord[f])]),
+        );
+      }
+    }
+
     const { data, error } = await updateUserWithColumnFallback(
       supabaseAdmin,
       target_user_id,
@@ -90,6 +114,18 @@ export async function PATCH(req: NextRequest) {
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (auditFields.length > 0) {
+      const after = Object.fromEntries(auditFields.map((f) => [f, updates[f] ?? null]));
+      // Fire-and-forget — never block the response on audit logging.
+      void writeOrgPlacementAuditLog({
+        target_user_id,
+        before,
+        after,
+        performed_by: caller.id,
+        performed_by_name: caller.name,
+      });
     }
 
     return NextResponse.json({ data });
