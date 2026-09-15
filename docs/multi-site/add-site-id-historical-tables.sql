@@ -77,17 +77,21 @@ begin
   raise notice 'skill_logs: % row(s) left with no site_id (no matching user, or user has no site set)', unmatched_count;
 
   ---------------------------------------------------------------------------
-  -- promotions — REVIEW REQUIRED, documented conflict, not silently
-  -- resolved: this table has NO direct FK to the employee being promoted.
-  -- submitted_by_user_id is the SUBMITTER (the supervisor who filed the
-  -- promotion), not the employee — using it would attribute the record to
-  -- the supervisor's site, not the promoted employee's, which is wrong.
-  -- The only employee-identifying column is employee_company_id (text).
-  -- This attempts a best-effort match against users.company_id (if that
-  -- column exists and is populated) and reports how many rows matched vs.
-  -- didn't, rather than guessing via submitted_by_user_id or silently
-  -- leaving every row null without explanation.
+  -- promotions — this table had NO direct FK to the employee being
+  -- promoted (submitted_by_user_id is the SUBMITTER/supervisor who filed
+  -- the request, never the employee). Closing that gap properly rather
+  -- than working around it: add a real employee_user_id FK, resolved via
+  -- employee_company_id -> users.company_id (the only employee-identifying
+  -- data this table has), and a supervisor_id FK snapshotting that
+  -- employee's actual supervisor at backfill time — so it's visible
+  -- whether the promoted employee currently has a supervisor at all, and
+  -- whether that matches who actually submitted the promotion (it may
+  -- legitimately not — HR/Executive can submit on anyone's behalf, or the
+  -- supervisor may have changed since). site_id is then backfilled off the
+  -- new employee_user_id FK, not the fragile company_id text match.
   ---------------------------------------------------------------------------
+  alter table promotions add column if not exists employee_user_id uuid references users(user_id);
+  alter table promotions add column if not exists supervisor_id uuid references users(user_id);
   alter table promotions add column if not exists site_id integer references sites(id);
 
   if exists (
@@ -95,16 +99,31 @@ begin
     where table_schema = 'public' and table_name = 'users' and column_name = 'company_id'
   ) then
     update promotions p
-    set site_id = u.site_id
+    set employee_user_id = u.user_id,
+        supervisor_id = u.supervisor_id
     from users u
     where u.company_id = p.employee_company_id
-      and p.site_id is null;
+      and p.employee_user_id is null;
   else
     raise notice 'promotions: users.company_id does not exist — could not attempt employee_company_id match at all';
   end if;
 
-  select count(*) into unmatched_count from promotions where site_id is null;
-  raise notice 'promotions: % row(s) left with no site_id — employee_company_id could not be matched to a users.company_id (or matched user has no site set). REVIEW REQUIRED: consider whether promotions needs a real employee_user_id FK going forward instead of relying on employee_company_id text matching.', unmatched_count;
+  update promotions p
+  set site_id = u.site_id
+  from users u
+  where u.user_id = p.employee_user_id
+    and p.site_id is null;
+
+  select count(*) into unmatched_count from promotions where employee_user_id is null;
+  raise notice 'promotions: % row(s) could not be matched to a real employee account via employee_company_id — no employee_user_id, supervisor_id, or site_id could be resolved for these.', unmatched_count;
+
+  select count(*) into unmatched_count from promotions where employee_user_id is not null and supervisor_id is null;
+  raise notice 'promotions: % row(s) matched to a real employee account that currently has NO supervisor_id set at all — worth reviewing.', unmatched_count;
+
+  select count(*) into unmatched_count
+  from promotions
+  where employee_user_id is not null and supervisor_id is not null and supervisor_id is distinct from submitted_by_user_id;
+  raise notice 'promotions: % row(s) where the employee''s current supervisor differs from who actually submitted the promotion (can be normal — HR/Executive submitting on behalf, or a supervisor change since submission — but worth a quick look).', unmatched_count;
 end $$;
 
 notify pgrst, 'reload schema';
@@ -126,5 +145,13 @@ notify pgrst, 'reload schema';
 --   from skill_logs where site_id is null;
 --
 --   select id, employee_company_id, employee_name, created_at
---   from promotions where site_id is null;
+--   from promotions where employee_user_id is null;
+--
+--   select id, employee_company_id, employee_name, submitted_by_user_id, supervisor_id
+--   from promotions where employee_user_id is not null and supervisor_id is null;
+--
+--   select id, employee_company_id, employee_name, submitted_by_user_id, supervisor_id
+--   from promotions
+--   where employee_user_id is not null and supervisor_id is not null
+--     and supervisor_id is distinct from submitted_by_user_id;
 -- ============================================================================

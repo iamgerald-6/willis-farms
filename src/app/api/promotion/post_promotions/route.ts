@@ -75,6 +75,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Resolve the promoted employee's real account once, up front — used
+    // both for the existing supervisor-authorization check below and to
+    // snapshot employee_user_id/supervisor_id/site_id onto the record
+    // itself (see docs/multi-site/add-site-id-historical-tables.sql —
+    // promotions previously had no real FK to the employee being
+    // promoted at all, only this same company_id text match, done inline
+    // and thrown away). A promotion for an employee with no platform
+    // account (employeeRow null) still succeeds — those three fields just
+    // stay null, same as before.
+    const { data: employeeRow } = await supabase
+      .from("users")
+      .select("user_id, supervisor_id, site_id")
+      .eq("company_id", company_id)
+      .maybeSingle();
+
     // Role opens the ability to submit. Supervisory Role can only submit
     // for people assigned to them (users.supervisor_id). Executive / HR /
     // Super Admin can submit for anyone except themselves.
@@ -101,11 +116,6 @@ export async function POST(req: NextRequest) {
       submitted_by_user_id &&
       !hasBroadElevatedAccessByRoleLabel(submitterRoleLabel)
     ) {
-      const { data: employeeRow } = await supabase
-        .from("users")
-        .select("supervisor_id")
-        .eq("company_id", company_id)
-        .maybeSingle();
       if (employeeRow?.supervisor_id !== submitted_by_user_id) {
         return NextResponse.json(
           {
@@ -120,6 +130,9 @@ export async function POST(req: NextRequest) {
     const insertPayload: Record<string, unknown> = {
       appraisal_id,
       employee_company_id: company_id,
+      employee_user_id: employeeRow?.user_id ?? null,
+      supervisor_id: employeeRow?.supervisor_id ?? null,
+      site_id: employeeRow?.site_id ?? null,
       employee_name,
       current_grade,
       current_job_title: current_job_title ?? null,
