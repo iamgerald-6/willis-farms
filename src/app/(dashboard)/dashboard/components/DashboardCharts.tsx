@@ -360,10 +360,10 @@ export function ScoreHistoryChart({
 
   return (
     <div className="flex items-end gap-3 h-36 px-1">
-      {items.map((item) => {
+      {items.map((item, idx) => {
         const hPct = item.score != null ? (item.score / max) * 100 : 0;
         return (
-          <div key={item.label} className="flex-1 flex flex-col items-center gap-2 min-w-0">
+          <div key={`${idx}-${item.label}`} className="flex-1 flex flex-col items-center gap-2 min-w-0">
             <span className="text-xs font-semibold text-gray-700 tabular-nums">
               {item.score ?? "—"}
             </span>
