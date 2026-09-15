@@ -34,6 +34,10 @@ import {
   normalizePayrollTaxConfig,
   type PayrollTaxConfig,
 } from "./payrollTaxConfig";
+import {
+  normalizeCompanyBrandingConfig,
+  type CompanyBrandingConfig,
+} from "./companyBrandingConfig";
 
 export interface ModuleBusinessLogic {
   /** Skill log — competency section titles/skills per log type. */
@@ -57,6 +61,10 @@ export interface ModuleBusinessLogic {
   /** Recruitment — SSNIT rate + PAYE bands used to auto-calculate Offer
    * Terms' Social security contribution / Income tax / Net payable. */
   payrollTaxConfig?: PayrollTaxConfig;
+  /** Offer letter — logo (also reused as the page watermark) and postal/
+   * location address, editable by HR from System Definitions instead of
+   * being baked into a static letterhead image. */
+  companyBranding?: CompanyBrandingConfig;
 }
 
 export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
@@ -93,5 +101,6 @@ export function parseModuleBusinessLogic(raw: unknown): ModuleBusinessLogic {
       obj.interviewBenchmarksConfig,
     ),
     payrollTaxConfig: normalizePayrollTaxConfig(obj.payrollTaxConfig),
+    companyBranding: normalizeCompanyBrandingConfig(obj.companyBranding),
   };
 }
