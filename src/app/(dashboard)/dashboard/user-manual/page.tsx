@@ -6,7 +6,9 @@ import { Download, FileText, Loader2, Upload, Clock } from "lucide-react";
 import api from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { User } from "@/types";
-import { hasSystemAccessByRoleLabel } from "@/lib/userRoleAccessControl";
+import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { canPerformModuleAction } from "@/lib/permissionActions";
+import { useGroupPresets } from "@/hooks/useGroupPresets";
 import UploadManualVersionModal from "./components/UploadManualVersionModal";
 
 interface ManualVersionSummary {
@@ -52,11 +54,27 @@ export default function UserManualPage() {
 
   const currentUserId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === currentUserId);
-  // Only System Administrator (or Super Admin, via hasSystemAccessByRoleLabel)
-  // sees the upload control — the actual enforcement is server-side on
-  // POST /api/user-manual, this is just what decides whether the button
-  // renders at all.
-  const canUpload = hasSystemAccessByRoleLabel(profile?.user_role_label);
+  const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const accessProfile = resolveAccessProfile(profile, sessionRole);
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+
+  // Driven by the "user-manual" / "add" entry in the permission matrix (see
+  // Access Control → Manage User) instead of a hardcoded role check. System
+  // Administrator/Super Admin get it by default, Executive Role gets it
+  // unconditionally too, and any other role can be granted it individually
+  // from User Management. The actual enforcement is server-side on
+  // POST /api/user-manual — this only decides whether the button renders.
+  const canUpload = Boolean(
+    accessProfile &&
+      canPerformModuleAction(
+        accessProfile,
+        "user-manual",
+        "add",
+        sessionRole,
+        groupPresets,
+      ),
+  );
 
   const { data, isLoading, refetch } = useQuery<{
     current: ManualVersionSummary | null;

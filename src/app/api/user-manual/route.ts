@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
-import { hasSystemAccessByRoleLabel } from "@/lib/userRoleAccessControl";
+import { getApiRequestUser, requireUserManualUploadAccess } from "@/lib/apiRequestAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,18 +56,24 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/user-manual — System Administrator or Super Admin only. Records
-// a new version after the client has already uploaded the file to
-// Cloudinary (same client-upload-then-record-metadata flow as Policies),
-// but unlike Policies' create route, this one actually checks the caller's
-// role server-side rather than trusting the button was hidden client-side.
+// POST /api/user-manual — gated by the "user-manual" / "add" permission
+// matrix entry (Access Control). Records a new version after the client has
+// already uploaded the file to Cloudinary (same client-upload-then-record-
+// metadata flow as Policies), and — like the matrix everywhere else —
+// checks the caller's effective permissions server-side rather than
+// trusting the button was hidden client-side.
 export async function POST(req: NextRequest) {
   try {
-    const user = await getApiRequestUser(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!hasSystemAccessByRoleLabel(user.role)) {
+    const authed = await getApiRequestUser(req);
+    if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const user = await requireUserManualUploadAccess(req);
+    if (!user) {
       return NextResponse.json(
-        { error: "Forbidden — only System Administrator can update the User Manual." },
+        {
+          error:
+            "Forbidden — you don't have permission to upload a new User Manual version. Ask a System Administrator, Super Admin, or Executive to grant it from User Management.",
+        },
         { status: 403 },
       );
     }

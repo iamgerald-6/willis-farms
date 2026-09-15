@@ -116,4 +116,21 @@ export const NAV_BUILTIN_MODULES: ModuleRecord[] = [
     showInSidebar: false,
     supportedActions: ["view", "add", "edit"],
   }),
+  navModule({
+    id: "mod:user-manual",
+    legacyKey: "user-manual",
+    label: "User Manual",
+    groupId: "grp:general",
+    route: "/dashboard/user-manual",
+    sortOrder: 96,
+    icon: "book-open",
+    showInSidebar: false,
+    // "view" is intentionally not enforced anywhere — GET /api/user-manual
+    // is open to every authenticated user regardless of this matrix. "add"
+    // is the one action that matters: it's what the "Upload New Version"
+    // button and POST /api/user-manual check, via the Manage User
+    // permission matrix (Access Control) instead of the old hardcoded
+    // System Administrator/Super Admin-only check.
+    supportedActions: ["view", "add"],
+  }),
 ];

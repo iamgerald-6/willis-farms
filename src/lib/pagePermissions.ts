@@ -25,6 +25,7 @@ export const PAGE_PERMISSION_KEYS = [
   "sop:add",
   "notifications",
   "sys:definitions",
+  "user-manual",
 ] as const;
 
 export type PagePermissionKey = (typeof PAGE_PERMISSION_KEYS)[number];
@@ -71,6 +72,7 @@ export const PAGE_PERMISSION_LABELS: Record<
   "sop:view": { label: "SOP (view)", group: "Operations" },
   "sop:add": { label: "Add SOP", group: "Operations" },
   "sys:definitions": { label: "System Definitions", group: "General" },
+  "user-manual": { label: "User Manual", group: "General" },
 };
 
 /**

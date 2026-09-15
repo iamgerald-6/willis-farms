@@ -71,6 +71,13 @@ export function withUniversalStaffPageAccess(
 
 export const HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS: PagePermissionKey[] = [
   "sys:definitions",
+  // User Manual upload was deliberately scoped to System Administrator /
+  // Super Admin only (Executive Role gets it too, via the unconditional
+  // isFullRoleAccess bypass in getEffectivePermissionActions) — Human
+  // Resource does not get it by default, though it can still be granted to
+  // an individual HR account via a delegated override on the Manage User
+  // permission matrix.
+  "user-manual",
 ];
 
 /** Standard Role and Consultant — identical access. */
@@ -117,7 +124,7 @@ export function humanResourceRolePermissionActions(): PagePermissionActions {
 }
 
 export function systemAdministratorRolePermissionActions(): PagePermissionActions {
-  return defaultFullAccessActionsFor(["sys:definitions", "users"]);
+  return defaultFullAccessActionsFor(["sys:definitions", "users", "user-manual"]);
 }
 
 /** Canonical built-in matrix for each User role (standard-tier accounts). */

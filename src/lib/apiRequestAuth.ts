@@ -311,6 +311,33 @@ export async function requireSystemDefinitionsAccess(
   return user;
 }
 
+/** User Manual upload — permission matrix ("user-manual", "add"). System
+ * Administrator/Super Admin get it via their built-in role preset, Executive
+ * Role via the unconditional isFullRoleAccess bypass; anyone else needs an
+ * individual delegated override granted from Manage User (Access Control). */
+export async function requireUserManualUploadAccess(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const ok = canPerformModuleAction(
+    profile,
+    "user-manual",
+    "add",
+    user.role,
+    presets,
+  );
+  if (!ok) return null;
+  return user;
+}
+
 export async function requireFullAppraisalAccess(
   req: NextRequest,
 ): Promise<ApiRequestUser | null> {
