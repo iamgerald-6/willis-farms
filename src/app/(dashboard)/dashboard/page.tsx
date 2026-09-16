@@ -9,7 +9,10 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import { TMProject } from "@/types/taskManager";
 import { isFullRoleAccess, resolveAccessProfile } from "@/lib/pagePermissions";
-import { isStandardRoleLabel } from "@/lib/userRoleAccessControl";
+import {
+  isHumanResourceRoleLabel,
+  isStandardRoleLabel,
+} from "@/lib/userRoleAccessControl";
 import { getActiveAppraisalPeriod } from "@/lib/appraisal/deadlines";
 import { getStatusSummary } from "./humanCapital/appraisal/component/appraisalTypes";
 import type { JobApplication } from "@/lib/careers/types";
@@ -105,6 +108,11 @@ type AppraisalRecord = {
   supervisor_weighted_score: number | null;
   promotion_readiness: string;
   reviewing_manager: string | null;
+  // The employee's actual assigned supervisor (required on every appraisal
+  // submission) — distinct from reviewing_manager, which is a free-text
+  // field only collected on Q4/Annual appraisals and is legitimately blank
+  // the rest of the year. Use this one for "who is my supervisor" display.
+  immediate_supervisor?: string | null;
   created_at: string;
 };
 
@@ -558,11 +566,17 @@ export default function DashboardPage() {
   // instead of the pre-migration one.
   const accessProfile = resolveAccessProfile(profile, metaRole);
   const role = accessProfile?.role ?? metaRole;
-  const isAdmin = isFullRoleAccess(role);
+  // Human Resource gets the same site-wide Overview as Executive/Super
+  // Admin (the underlying APIs — /leave/all, appraisal, skill log, SOP —
+  // already resolve HR to an "all"/site-wide scope with server-side site
+  // filtering baked in; this page's admin-vs-personal branch just needs to
+  // route HR into it too).
+  const isAdmin = isFullRoleAccess(role) || isHumanResourceRoleLabel(role);
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
   const isConsultant = isConsultantEmployee(
     profile?.grade_level,
     gradeLevelsConfig,
+    profile?.user_role_label,
   );
 
   const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
@@ -1346,7 +1360,10 @@ export default function DashboardPage() {
                         {latestAppraisal.review_quarter} {latestAppraisal.review_year}
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
-                        Supervisor: {latestAppraisal.reviewing_manager ?? "Not assigned"}
+                        Supervisor:{" "}
+                        {latestAppraisal.immediate_supervisor ||
+                          latestAppraisal.reviewing_manager ||
+                          "Not assigned"}
                       </p>
                       <span
                         className={`inline-flex mt-3 px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -1359,7 +1376,7 @@ export default function DashboardPage() {
                       </span>
                       {latestAppraisal.supervisor_weighted_score != null && (
                         <p className="text-xs text-gray-400 mt-2">
-                          Supervisor score: {latestAppraisal.supervisor_weighted_score}/4
+                          Supervisor score: {latestAppraisal.supervisor_weighted_score.toFixed(1)}%
                         </p>
                       )}
                     </div>
@@ -1424,15 +1441,19 @@ export default function DashboardPage() {
                 <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
                   <p className="text-xs text-gray-400 uppercase tracking-wide">Your score</p>
                   <p className="text-2xl font-bold text-[#C62828] mt-1">
-                    {latestAppraisal.employee_weighted_score ?? "—"}
-                    <span className="text-sm text-gray-400 font-normal"> / 4</span>
+                    {latestAppraisal.employee_weighted_score != null
+                      ? latestAppraisal.employee_weighted_score.toFixed(1)
+                      : "—"}
+                    <span className="text-sm text-gray-400 font-normal">%</span>
                   </p>
                 </div>
                 <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
                   <p className="text-xs text-gray-400 uppercase tracking-wide">Supervisor</p>
                   <p className="text-2xl font-bold text-gray-700 mt-1">
-                    {latestAppraisal.supervisor_weighted_score ?? "—"}
-                    <span className="text-sm text-gray-400 font-normal"> / 4</span>
+                    {latestAppraisal.supervisor_weighted_score != null
+                      ? latestAppraisal.supervisor_weighted_score.toFixed(1)
+                      : "—"}
+                    <span className="text-sm text-gray-400 font-normal">%</span>
                   </p>
                 </div>
                 <div className="col-span-2 rounded-xl bg-gray-50 p-4 border border-gray-100">

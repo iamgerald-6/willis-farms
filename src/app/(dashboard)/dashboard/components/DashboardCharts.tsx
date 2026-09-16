@@ -306,12 +306,17 @@ export function SegmentedBar({ segments }: { segments: Segment[] }) {
 // ── Score ring ────────────────────────────────────────────────────────────────
 export function ScoreRing({
   score,
-  max = 4,
+  max = 100,
   size = 140,
+  unit = "%",
 }: {
   score: number | null;
   max?: number;
   size?: number;
+  /** Text shown under the score — "%" for the 0–100 weighted appraisal
+   * scores this is normally used for. Pass `` `/ ${max}` `` for a literal
+   * fraction if a caller ever needs a different scale. */
+  unit?: string;
 }) {
   const r = 42;
   const c = 2 * Math.PI * r;
@@ -336,8 +341,10 @@ export function ScoreRing({
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-3xl font-bold text-gray-900">{score ?? "—"}</p>
-        <p className="text-xs text-gray-400">/ {max}</p>
+        <p className="text-3xl font-bold text-gray-900">
+          {score != null ? score.toFixed(1) : "—"}
+        </p>
+        <p className="text-xs text-gray-400">{unit}</p>
       </div>
     </div>
   );

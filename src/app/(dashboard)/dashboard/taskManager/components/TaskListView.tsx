@@ -109,16 +109,48 @@ export default function TaskListView({
     .filter((t) => (variant === "monitoring" ? t.task_type === "monitoring" : t.task_type !== "monitoring"))
     .filter((t) => !activeView.statusFilter || (t.display_status ?? "Not Started") === activeView.statusFilter);
 
+  // Headquarters callers may assign tasks across any site; everyone else
+  // is locked to their own site (see assertOwnerSiteAssignable in
+  // src/lib/taskManagerScope.ts, enforced server-side on both POST
+  // /task-manager/tasks and PATCH /task-manager/tasks/[id]) — cached under
+  // the same "me" query key SiteTagPicker already uses.
+  const { data: me } = useQuery<{ site_id?: string | number | null; is_headquarters_site?: boolean }>({
+    queryKey: ["me"],
+    queryFn: async () => (await api.get("/me")).data,
+  });
+
+  // Whether this viewer can even reach "Edit List" for THIS project. Senior
+  // Management and the project's own creator always can. Everyone else —
+  // in particular someone who can only see this project because they were
+  // made the owner of a task inside it (see isProjectSiteVisible's
+  // hasOwnTaskInProject exception in taskManagerScope.ts) — needs to
+  // additionally supervise whoever created it (creator.supervisor_id ===
+  // viewer.id), or the button doesn't render at all. This is stricter than
+  // the general "everyone gets Edit List" rule that used to apply here.
+  const isProjectCreator = project.created_by === currentUserId;
+  const projectCreator = users.find((u) => u.user_id === project.created_by);
+  const supervisesProjectCreator = !!projectCreator && projectCreator.supervisor_id === currentUserId;
+  const canEditList = isSeniorManagement || isProjectCreator || supervisesProjectCreator;
+
   // Who a given viewer can actually assign a task to — mirrors the POST
   // /task-manager/tasks check: Senior Management can assign anyone; anyone
   // else can only assign themselves or someone who has them recorded as
   // supervisor_id (not gated on a "Supervisory Role" label — see
-  // src/app/api/task-manager/tasks/route.ts). Used for both creating a new
-  // task and reassigning an existing one's owner while editing.
+  // src/app/api/task-manager/tasks/route.ts). Then narrowed by site — a
+  // non-headquarters caller only ever sees people at their own site (or
+  // themselves) as options, even if the role-based set above would
+  // otherwise include someone elsewhere. Used for both creating a new task
+  // and reassigning an existing one's owner while editing.
   const assignableUsers = useMemo(() => {
-    if (isSeniorManagement) return users;
-    return users.filter((u) => u.user_id === currentUserId || u.supervisor_id === currentUserId);
-  }, [users, isSeniorManagement, currentUserId]);
+    const roleScoped = isSeniorManagement
+      ? users
+      : users.filter((u) => u.user_id === currentUserId || u.supervisor_id === currentUserId);
+    if (me?.is_headquarters_site) return roleScoped;
+    const ownSiteId = me?.site_id != null ? String(me.site_id) : null;
+    return roleScoped.filter(
+      (u) => u.user_id === currentUserId || (ownSiteId != null && String(u.site_id ?? "") === ownSiteId),
+    );
+  }, [users, isSeniorManagement, currentUserId, me]);
 
   return (
     <div>
@@ -139,56 +171,58 @@ export default function TaskListView({
           </div>
         </div>
 
-        {/* "Edit List" + "Add Task" + "From Document" are available to
-            everyone now, not just Senior Management (per Sheila) — what the
-            toggle actually reveals for a given viewer still differs: Senior
-            Management gets the full toolkit (add, edit any task, archive,
-            delete), everyone else only gets a pencil-edit icon on tasks
-            they personally created (see TaskRow's per-row gating) plus
-            these shared "Add Task"/"From Document" entry points. Both
-            follow the same ownership rule as manual task creation: an
+        {/* "Edit List" (and what it reveals — "Add Task", "From Document",
+            per-row edit/archive/delete/complete via TaskRow's editMode
+            prop) is gated by canEditList above: Senior Management, the
+            project's creator, or someone who supervises the creator. Not
+            shown at all otherwise — in particular, being merely the owner
+            of a task inside a project you didn't create isn't enough on
+            its own. Both "Add Task" and "From Document" still follow the
+            same ownership rule as manual task creation on top of that: an
             AI-extracted proposal can only be saved assigned to yourself or
             a direct report unless you're Senior Management — see
             assignableUsers below and POST /task-manager/extract/[jobId]/save. */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {editMode && lifecycleView === "all" && (
-            <>
-              {variant === "register" && (
+        {canEditList && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {editMode && lifecycleView === "all" && (
+              <>
+                {variant === "register" && (
+                  <button
+                    onClick={() => setExtractOpen(true)}
+                    className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
+                  >
+                    <FileUp className="w-3.5 h-3.5" /> From Document
+                  </button>
+                )}
                 <button
-                  onClick={() => setExtractOpen(true)}
+                  onClick={() => setAddingTask(true)}
                   className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
                 >
-                  <FileUp className="w-3.5 h-3.5" /> From Document
+                  <Plus className="w-3.5 h-3.5" /> Add Task
                 </button>
-              )}
-              <button
-                onClick={() => setAddingTask(true)}
-                className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg hover:bg-gray-50"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Task
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => {
-              setEditMode((v) => !v);
-              setAddingTask(false);
-            }}
-            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition ${
-              editMode ? "bg-red-600 text-white hover:bg-red-700" : "border-2 border-red-600 text-red-600 hover:bg-red-50"
-            }`}
-          >
-            {editMode ? (
-              <>
-                <Check className="w-3.5 h-3.5" /> Done Editing
-              </>
-            ) : (
-              <>
-                <Pencil className="w-3.5 h-3.5" /> Edit List
               </>
             )}
-          </button>
-        </div>
+            <button
+              onClick={() => {
+                setEditMode((v) => !v);
+                setAddingTask(false);
+              }}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition ${
+                editMode ? "bg-red-600 text-white hover:bg-red-700" : "border-2 border-red-600 text-red-600 hover:bg-red-50"
+              }`}
+            >
+              {editMode ? (
+                <>
+                  <Check className="w-3.5 h-3.5" /> Done Editing
+                </>
+              ) : (
+                <>
+                  <Pencil className="w-3.5 h-3.5" /> Edit List
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -217,6 +251,7 @@ export default function TaskListView({
               <NewTaskRow
                 projectId={project.id}
                 users={assignableUsers}
+                currentUserId={currentUserId}
                 variant={variant}
                 onCancel={() => setAddingTask(false)}
                 onCreated={() => {
@@ -266,6 +301,7 @@ export default function TaskListView({
         <DocumentExtractionModal
           project={project}
           users={assignableUsers}
+          currentUserId={currentUserId}
           onClose={() => setExtractOpen(false)}
           onSaved={() => {
             setExtractOpen(false);

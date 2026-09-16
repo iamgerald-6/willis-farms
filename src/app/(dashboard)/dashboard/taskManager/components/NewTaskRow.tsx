@@ -14,18 +14,23 @@ import { TASK_TABLE_GRID_COLS } from "@/lib/taskManagerConstants";
 export default function NewTaskRow({
   projectId,
   users,
+  currentUserId,
   variant = "register",
   onCreated,
   onCancel,
 }: {
   projectId: string;
   users: User[];
+  // Defaults the owner picker to whoever's creating the task, rather than
+  // leaving it unset — they can still change it to someone else before
+  // saving.
+  currentUserId: string | null;
   variant?: "register" | "monitoring";
   onCreated: () => void;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState("");
-  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(currentUserId);
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [indicator, setIndicator] = useState("");
@@ -80,7 +85,7 @@ export default function NewTaskRow({
       });
       toast.success("Task added");
       setTitle("");
-      setOwnerId(null);
+      setOwnerId(currentUserId);
       setStartDate("");
       setDueDate("");
       setIndicator("");

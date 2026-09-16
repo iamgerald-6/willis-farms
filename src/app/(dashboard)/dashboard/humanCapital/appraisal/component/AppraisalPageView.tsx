@@ -159,7 +159,7 @@ export default function AppraisalLandingPage({
   // Default to the single applicable period so the list matches the form.
   const activePeriod = getActiveAppraisalPeriod();
   const { config: gradeLevelsConfig } = useGradeLevelsConfig();
-  const isConsultant = isConsultantEmployee(viewer.gradeLevel, gradeLevelsConfig);
+  const isConsultant = isConsultantEmployee(viewer.gradeLevel, gradeLevelsConfig, viewer.role);
   const [quarterFilter, setQuarterFilter] = useState<"" | Quarter>(
     activePeriod.quarter,
   );

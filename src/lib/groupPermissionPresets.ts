@@ -106,7 +106,9 @@ export function supervisoryRolePermissionActions(): PagePermissionActions {
   };
 }
 
-/** Human Resource — all modules except System Definitions; no skill-log sign-off. */
+/** Human Resource — all modules except System Definitions. Can sign off
+ * skill logs, same as Executive Role — see canSignOffSkillLogEffective in
+ * skillLogAccess.ts. */
 export function humanResourceRolePermissionActions(): PagePermissionActions {
   const excluded = new Set<string>(HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS);
   const out: PagePermissionActions = {};
@@ -119,6 +121,7 @@ export function humanResourceRolePermissionActions(): PagePermissionActions {
     add: true,
     edit: true,
     review: true,
+    approve: true,
   };
   return out;
 }

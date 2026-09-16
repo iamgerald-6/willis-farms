@@ -53,9 +53,19 @@ export async function GET(req: NextRequest) {
     if (countsError) throw countsError;
 
     const visibleProjectIds = new Set<string>();
+    // Separate from role-scope visibility above — this is specifically
+    // "does the caller own/create a task in this project", the same
+    // narrower exception isTaskSiteVisible grants at the task level (see
+    // isProjectSiteVisible in taskManagerScope.ts for why it has to be
+    // this specific, not just any role-visible task).
+    const ownTaskProjectIds = new Set<string>();
     const statsByProject: Record<string, { total: number; open: number; overdue: number }> = {};
 
     for (const t of taskCounts ?? []) {
+      if (t.owner_id === user.id || t.created_by === user.id) {
+        ownTaskProjectIds.add(t.project_id);
+      }
+
       if (
         !isTaskVisibleToViewer(t, user.id, scope, directReportIds)
       ) {
@@ -92,7 +102,7 @@ export async function GET(req: NextRequest) {
     const result = (projects ?? [])
       .filter(
         (p) =>
-          isProjectSiteVisible(user, p) &&
+          isProjectSiteVisible(user, p, ownTaskProjectIds.has(p.id)) &&
           (includeArchived ||
             isProjectVisibleToViewer(p, user.id, canSeeAll, visibleProjectIds, creatorInfoMap.get(p.created_by))),
       )

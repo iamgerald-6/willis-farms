@@ -7,6 +7,7 @@ import { isAssignedSupervisorOf } from "@/lib/supervisorAssignment";
 import {
   canBeAssignedAsSupervisorByRoleLabel,
   isExecutiveRoleLabel,
+  isHumanResourceRoleLabel,
   isSuperAdminRoleLabel,
 } from "@/lib/userRoleAccessControl";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -143,10 +144,15 @@ export function canViewSkillLogRecord(
   return false;
 }
 
-/** Sign-off is Executive Role (or Super Admin). The person who filled the
- * log cannot also sign it off — even if they are an Executive. */
+/** Sign-off is Executive Role, Human Resource, or Super Admin. The person
+ * who filled the log cannot also sign it off — even if they hold one of
+ * these roles. */
 function canSignOffSkillLogEffective(profile: AccessProfile): boolean {
-  return isSuperAdminRoleLabel(profile.role) || isExecutiveRoleLabel(profile.role);
+  return (
+    isSuperAdminRoleLabel(profile.role) ||
+    isExecutiveRoleLabel(profile.role) ||
+    isHumanResourceRoleLabel(profile.role)
+  );
 }
 
 export function canApproveSkillLogRecord(

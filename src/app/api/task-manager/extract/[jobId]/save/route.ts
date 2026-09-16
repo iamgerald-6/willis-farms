@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { writeAuditLog, enrichTasks, fetchUserNames } from "@/lib/taskManagerData";
+import { assertOwnerSiteAssignable } from "@/lib/taskManagerScope";
 import type { ExtractedTaskProposal } from "@/types/taskManager";
 
 // POST /api/task-manager/extract/[jobId]/save — any authenticated user, but
@@ -46,6 +47,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ job
             { status: 403 },
           );
         }
+      }
+    }
+
+    // Only headquarters callers may assign a task across sites — same rule
+    // as manual task creation (POST /task-manager/tasks).
+    const ownerIdsToCheck = Array.from(
+      new Set(tasks.map((t) => t.owner_id).filter((id): id is string => !!id)),
+    );
+    for (const ownerId of ownerIdsToCheck) {
+      if (!(await assertOwnerSiteAssignable(supabaseAdmin, user, ownerId))) {
+        return NextResponse.json(
+          { error: "Forbidden — you can only assign tasks to people at your own site." },
+          { status: 403 },
+        );
       }
     }
 

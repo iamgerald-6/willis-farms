@@ -412,7 +412,11 @@ export default function AppraisalForm({
   );
   const currentUserGrade =
     currentUserProfile?.grade_level ?? viewerGradeLevel ?? null;
-  const isConsultantViewer = isConsultantEmployee(currentUserGrade, gradeConfig);
+  const isConsultantViewer = isConsultantEmployee(
+    currentUserGrade,
+    gradeConfig,
+    currentUserProfile?.user_role_label,
+  );
   const isSuperAdmin = checkIsSuperAdmin(currentUserProfile?.user_role_label);
 
   // ── Which side of the form am I filling? ──

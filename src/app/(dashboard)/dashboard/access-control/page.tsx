@@ -30,6 +30,7 @@ import {
   USER_ROLE_GROUP_KEYS,
   userRoleGroupKeyLabel,
 } from "@/lib/userRoleAccessControl";
+import type { OrgCustomListType, OrgCustomListItem } from "@/lib/organizationalStructureCustomLists";
 
 const ROLE_COLORS: Record<string, string> = {
   super_admin: "bg-red-50 text-red-700 border border-red-200",
@@ -98,6 +99,29 @@ export default function UserManagementPage() {
   const canOpen = canOpenUserManagement(actorProfile, sessionRole);
   const canAdd = canAddUser(actorProfile, sessionRole);
   const canManageAccounts = canManageUserAccounts(actorProfile, sessionRole);
+
+  // This whole page is headquarters-only (see RouteAccessGuard's
+  // HEADQUARTERS_ONLY_ROUTE_PREFIXES) — every viewer who can reach it is
+  // already a headquarters caller, so the Site column below is shown
+  // unconditionally rather than gated again here.
+  const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
+  });
+  const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
+  const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
+    queryKey: ["org_custom_list_items", sitesListType?.id],
+    queryFn: async () =>
+      (await api.get(`/organizational-structure/custom-list-types/${sitesListType!.id}/items`)).data.data,
+    enabled: !!sitesListType,
+  });
+  const siteLabelById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of sites) map[String(s.id)] = s.label;
+    return map;
+  }, [sites]);
+  const siteLabelForUser = (u: User) =>
+    u.site_id != null ? siteLabelById[String(u.site_id)] ?? "Unknown site" : "—";
 
   const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
   const activeGroupKey = groupPresetKeyFromListGroup(listGroup);
@@ -271,6 +295,7 @@ export default function UserManagementPage() {
                       {u.job_position ?? "—"}
                       {u.grade_level ? ` · ${u.grade_level}` : ""}
                       {u.company_id ? ` · ${u.company_id}` : ""}
+                      {` · ${siteLabelForUser(u)}`}
                     </p>
                     {hasIndividualPermissionOverride(u) && (
                       <p className="text-[10px] text-amber-600 mt-1 font-medium">
@@ -325,11 +350,12 @@ export default function UserManagementPage() {
         <table className="w-full text-left text-sm table-fixed">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 font-semibold text-gray-600 w-[34%]">User</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 w-[28%]">User</th>
               <th className="px-4 py-3 font-semibold text-gray-600 w-[12%]">Role</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 w-[12%]">Site</th>
               <th className="px-4 py-3 font-semibold text-gray-600 w-[10%]">Status</th>
-              <th className="px-4 py-3 font-semibold text-gray-600 w-[22%]">Added</th>
-              <th className="px-4 py-3 font-semibold text-gray-600 w-[22%] text-right">
+              <th className="px-4 py-3 font-semibold text-gray-600 w-[18%]">Added</th>
+              <th className="px-4 py-3 font-semibold text-gray-600 w-[20%] text-right">
                 Action
               </th>
             </tr>
@@ -386,6 +412,9 @@ export default function UserManagementPage() {
                       >
                         {resolvedRole(u)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 align-top text-gray-600 truncate">
+                      {siteLabelForUser(u)}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <StatusBadge user={u} />

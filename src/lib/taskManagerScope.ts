@@ -23,8 +23,17 @@ import type { ApiRequestUser } from "@/lib/apiRequestAuth";
 export function isProjectSiteVisible(
   user: ApiRequestUser,
   project: { site_id?: number | null; created_by?: string | null },
+  hasOwnTaskInProject = false,
 ): boolean {
   if (project.created_by === user.id) return true;
+  // A caller who owns/created at least one task inside this project always
+  // sees the project itself, regardless of site — otherwise a headquarters
+  // caller assigning a task to someone at a different site would create a
+  // task that person owns (and isTaskSiteVisible would show them) but can
+  // never reach, because the project it lives under gets filtered out
+  // first. Same "own records" exception used at the task level, applied
+  // one level up so it can't be short-circuited by the project list.
+  if (hasOwnTaskInProject) return true;
   if (project.site_id == null) return true;
   return assertSiteAccess(user, project.site_id);
 }
@@ -64,6 +73,29 @@ export async function assertTaskSiteAccess(
     .eq("id", task.project_id)
     .maybeSingle();
   return isTaskSiteVisible(user, task, project?.site_id ?? null);
+}
+
+/**
+ * Whether `user` (the caller creating/editing a task) may assign it to
+ * `ownerId`. Headquarters callers (ALL_SITES) may assign to anyone,
+ * anywhere — everyone else may only assign tasks to someone at their own
+ * site, including themselves. Mirrors assertSiteAccess's null-handling: an
+ * owner with no site of their own can't be assigned to by a non-
+ * headquarters caller (a missing site isn't "safe to assume is mine",
+ * same rule used everywhere else this session).
+ */
+export async function assertOwnerSiteAssignable(
+  supabase: SupabaseClient,
+  user: ApiRequestUser,
+  ownerId: string | null | undefined,
+): Promise<boolean> {
+  if (!ownerId || ownerId === user.id) return true;
+  const { data: owner } = await supabase
+    .from("users")
+    .select("site_id")
+    .eq("user_id", ownerId)
+    .maybeSingle();
+  return assertSiteAccess(user, owner?.site_id ?? null);
 }
 
 /** Who can see which tasks in Task Manager list/project views. */

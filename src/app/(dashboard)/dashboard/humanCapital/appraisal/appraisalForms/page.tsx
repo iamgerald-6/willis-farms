@@ -64,6 +64,7 @@ function AppraisalFormPageContent() {
   const isConsultant = isConsultantEmployee(
     profile?.grade_level,
     gradeLevelsConfig,
+    profile?.user_role_label,
   );
 
   const existingAppraisalId = searchParams?.get("id");
