@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { fetchPostingInterviewContext } from "@/lib/careers/fetchPostingInterviewContext";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteIdFromJoin } from "@/lib/siteAccess";
 import {
   sendAllPanelInvites,
   sendInterviewInvitationEmail,
@@ -65,6 +67,14 @@ const DECISION_ACTIONS = new Set<InterviewAction>([
 ]);
 
 export async function GET(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -84,7 +94,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await supabaseAdmin
       .from("job_applications")
-      .select("*")
+      .select("*, job_postings(site_id)")
       .eq("id", applicationId)
       .single();
 
@@ -92,19 +102,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const applicationSiteId = siteIdFromJoin(data.job_postings);
+    if (!assertSiteAccess(authedUser, applicationSiteId)) {
+      return NextResponse.json(
+        { error: "Forbidden — this application isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
+
+    const { job_postings: _jobPostings, ...applicationData } = data;
+
     const { guide, evaluationLabels } = await fetchPostingInterviewContext(
       supabaseAdmin,
-      data.job_posting_id,
+      applicationData.job_posting_id,
     );
 
     const interview_form_data = normalizeInterviewFormData(
-      data.interview_form_data,
+      applicationData.interview_form_data,
     );
 
     return NextResponse.json({
       success: true,
       data: {
-        application: { ...data, interview_form_data },
+        application: { ...applicationData, interview_form_data },
         guide,
         evaluationLabels,
       },
@@ -116,6 +136,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -180,6 +208,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "This application isn't linked to a job posting." },
         { status: 400 },
+      );
+    }
+
+    const { data: postingRowForAuth } = await supabaseAdmin
+      .from("job_postings")
+      .select("site_id")
+      .eq("id", application.job_posting_id)
+      .maybeSingle();
+    if (!assertSiteAccess(authedUser, postingRowForAuth?.site_id ?? null)) {
+      return NextResponse.json(
+        { error: "Forbidden — this application isn't at a site you have access to." },
+        { status: 403 },
       );
     }
 

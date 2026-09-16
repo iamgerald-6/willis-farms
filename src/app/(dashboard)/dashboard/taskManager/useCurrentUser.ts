@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { User } from "@/types";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
+import { isStandardRoleLabel } from "@/lib/userRoleAccessControl";
 
 export function useCurrentUser() {
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -37,6 +38,11 @@ export function useCurrentUser() {
     role,
     name: profile ? `${profile.first_name} ${profile.last_name}`.trim() : "",
     isSeniorManagement: isSeniorManagement(role),
+    // A Standard Role creator can add/edit their own task's subtasks but
+    // can never delete them (see TaskRow's canDeleteSubtasks / the PUT
+    // /subtasks route's own matching check) — surfaced here so callers
+    // don't each need their own isStandardRoleLabel import.
+    isStandardRole: isStandardRoleLabel(role),
     allUsers: users ?? [],
   };
 }

@@ -1,14 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Send, Loader2, FileBarChart, History } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { User } from "@/types";
+import type { OrgCustomListType, OrgCustomListItem } from "@/lib/organizationalStructureCustomLists";
 import SentReportsDrawer from "./SentReportsDrawer";
 import StaffMultiSelect from "./StaffMultiSelect";
+
+type MeSiteScope = {
+  site_id?: number | string | null;
+  is_headquarters_site?: boolean;
+};
+
+// Mirrors AutomationSettingsModal's own local convention — the <select>
+// can't hold a real null, so the company-wide option is this sentinel
+// string and gets translated to site_id: null at the API boundary.
+const COMPANY_WIDE = "company";
 
 function monthBounds(monthValue: string): { start: string; end: string } {
   const [year, month] = monthValue.split("-").map(Number);
@@ -36,7 +47,28 @@ export default function MonthlyReportModal({
   const [recipients, setRecipients] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedSiteKey, setSelectedSiteKey] = useState<string>(COMPANY_WIDE);
   const queryClient = useQueryClient();
+
+  const { data: me } = useQuery<MeSiteScope>({
+    queryKey: ["me"],
+    queryFn: async () => (await api.get("/me")).data,
+  });
+  const isAllSitesCaller = me?.is_headquarters_site === true;
+
+  // Only fetched for a headquarters caller — a site-scoped caller can only
+  // ever send their own site's report anyway (enforced server-side too).
+  const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
+    enabled: isAllSitesCaller,
+  });
+  const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
+  const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
+    queryKey: ["org_custom_list_items", sitesListType?.id],
+    queryFn: async () => (await api.get(`/organizational-structure/custom-list-types/${sitesListType!.id}/items`)).data.data,
+    enabled: isAllSitesCaller && !!sitesListType,
+  });
 
   const handleSend = async () => {
     if (recipients.length === 0) {
@@ -46,7 +78,12 @@ export default function MonthlyReportModal({
     const { start, end } = monthBounds(month);
     setSending(true);
     try {
-      const res = await api.post("/task-manager/reports/send", { period_start: start, period_end: end, recipients });
+      const res = await api.post("/task-manager/reports/send", {
+        period_start: start,
+        period_end: end,
+        recipients,
+        site_id: selectedSiteKey === COMPANY_WIDE ? null : Number(selectedSiteKey),
+      });
       toast.success(res.data.sent ? "Report emailed as a PDF attachment." : "Report generated and logged (email sending isn't configured yet — see setup docs).");
       queryClient.invalidateQueries({ queryKey: ["tm-reports"] });
       setRecipients([]);
@@ -83,6 +120,24 @@ export default function MonthlyReportModal({
           <p className="text-sm text-gray-500">
             Generates a PDF covering overall + project-by-project status for the selected month, and emails it to whoever you list below with a link back to this dashboard.
           </p>
+
+          {isAllSitesCaller && (
+            <div>
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Report for</label>
+              <select
+                value={selectedSiteKey}
+                onChange={(e) => setSelectedSiteKey(e.target.value)}
+                className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value={COMPANY_WIDE}>Company-wide (every project)</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={String(site.id)}>
+                    {site.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Month</label>

@@ -226,6 +226,19 @@ export default function OrgStructureMappingSetupPage() {
           `/organizational-structure/custom-list-types/${lvl.list_type_id}/items`,
         );
         return (res.data.data as Item[])
+          // Every item id is normalized to a string here, once, so every
+          // comparison downstream (checkbox state, dropdown selection,
+          // sibling counts) works the same regardless of the backing
+          // table's real id type. Most lists are uuid-keyed custom_<slug>
+          // tables, but `sites` is a real integer-PK table (see
+          // docs/current_database_schema.sql) — its ids come back as JSON
+          // numbers, while org_mapping_nodes.item_id is always a string
+          // (text column, see docs/organizational-structure/
+          // fix-site-mapping-integer-id.sql). Without this, `107 === "107"`
+          // is false, so a saved Site mapping silently renders as
+          // unchecked — it never stopped being saved, it just stopped
+          // being recognized.
+          .map((i) => ({ ...i, id: String(i.id) }))
           .filter((i) => i.is_active !== false)
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       },

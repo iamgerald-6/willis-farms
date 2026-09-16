@@ -14,6 +14,7 @@ import {
 import { enrichAppraisalWithSupervisor } from "@/lib/appraisal/enrichAppraisalSupervisor";
 import { fetchEmployeeSupervisorId } from "@/lib/appraisalAccess";
 import { fetchGroupPresetsFromDb } from "@/lib/groupPermissionPresets";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function GET(
   req: NextRequest,
@@ -58,6 +59,10 @@ export async function GET(
 
   if (!canAccessAppraisalRecord(caller, data, employeeSupervisorId, presets)) {
     return jsonForbidden("You do not have access to this appraisal.");
+  }
+
+  if (!assertSiteAccess(caller, data.site_id ?? null)) {
+    return jsonForbidden("Forbidden — this appraisal isn't at a site you have access to.");
   }
 
   // Employees may only open the current applicable period (or a record that
@@ -114,7 +119,7 @@ export async function PATCH(
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("appraisals")
       .select(
-        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score, company_id, current_grade, employee_name, immediate_supervisor, supervisor_email, deadline_at, archived",
+        "id, submitted_by, status, review_quarter, review_year, employee_user_id, supervisor_id, employee_weighted_score, supervisor_weighted_score, company_id, current_grade, employee_name, immediate_supervisor, supervisor_email, deadline_at, archived, site_id",
       )
       .eq("id", appraisalId)
       .single();
@@ -136,6 +141,10 @@ export async function PATCH(
 
     if (!canAccessAppraisalRecord(caller, existing, employeeSupervisorId, presets)) {
       return jsonForbidden("You do not have access to this appraisal.");
+    }
+
+    if (!assertSiteAccess(caller, existing.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this appraisal isn't at a site you have access to.");
     }
 
     const isOwnRecord = Boolean(

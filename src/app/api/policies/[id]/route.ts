@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { v2 as cloudinary } from "cloudinary";
 import { CLOUDINARY_CLOUD_NAME } from "@/lib/cloudinary";
 import { writePolicyAuditLog } from "@/lib/policyAuditLog";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { getApiRequestUser, requirePolicyManageAccess } from "@/lib/apiRequestAuth";
+import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +16,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const authedUser = await requirePolicyManageAccess(req);
+    if (!authedUser) {
+      return NextResponse.json(
+        { error: "Forbidden — you don't have access to manage Policies." },
+        { status: 403 },
+      );
+    }
+
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
@@ -24,10 +33,13 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { title, category, description } = body as {
+    const { title, category, description, site_ids } = body as {
       title?: string;
       category?: string;
       description?: string | null;
+      // Present (even as []) => replace this manual's site tags. Absent =>
+      // leave the current tagging untouched. [] / all cleared => "all sites".
+      site_ids?: number[];
     };
 
     if (!title?.trim() || !category?.trim()) {
@@ -35,6 +47,27 @@ export async function PATCH(
         { error: "Title and category are required" },
         { status: 400 },
       );
+    }
+
+    // A SITE-scoped caller can only edit a manual that's untagged (visible
+    // to everyone) or already tagged to their own site — same rule as SOP
+    // content.
+    const authorization = getAuthorizedSiteIds(authedUser);
+    if (authorization.scope !== "ALL_SITES") {
+      const { data: existingTags } = await supabase
+        .from("manual_sites")
+        .select("site_id")
+        .eq("manual_id", id);
+      const tags = (existingTags ?? []).map((r) => r.site_id);
+      const allowed =
+        tags.length === 0 ||
+        (authorization.siteId != null && tags.includes(authorization.siteId));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Forbidden — this manual isn't tagged to a site you have access to." },
+          { status: 403 },
+        );
+      }
     }
 
     const { data, error } = await supabase
@@ -58,6 +91,34 @@ export async function PATCH(
 
     if (!data) {
       return NextResponse.json({ error: "Manual not found" }, { status: 404 });
+    }
+
+    // Replace-all semantics: only touch manual_sites when the caller
+    // actually sent site_ids (an empty array is a deliberate "set to all
+    // sites", not "no change" — see
+    // docs/multi-site/add-site-tagging-policies-sop.sql).
+    if (Array.isArray(site_ids)) {
+      // Same override as create_policies — a SITE-scoped caller can only
+      // re-tag a manual to their own site, never "All Sites" or another site.
+      const resolvedSiteIds =
+        authorization.scope === "ALL_SITES"
+          ? site_ids
+          : authorization.siteId != null
+            ? [authorization.siteId]
+            : [];
+
+      const { error: clearError } = await supabase
+        .from("manual_sites")
+        .delete()
+        .eq("manual_id", id);
+      if (clearError) throw clearError;
+
+      if (resolvedSiteIds.length > 0) {
+        const { error: sitesError } = await supabase
+          .from("manual_sites")
+          .insert(resolvedSiteIds.map((siteId) => ({ manual_id: id, site_id: siteId })));
+        if (sitesError) throw sitesError;
+      }
     }
 
     const apiUser = await getApiRequestUser(req);
@@ -95,6 +156,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const authedUser = await requirePolicyManageAccess(req);
+    if (!authedUser) {
+      return NextResponse.json(
+        { error: "Forbidden — you don't have access to manage Policies." },
+        { status: 403 },
+      );
+    }
+
     const { id } = await params;
 
     if (!id) {
@@ -114,6 +183,27 @@ export async function DELETE(
     if (manualError) throw manualError;
     if (!manual) {
       return NextResponse.json({ error: "Manual not found" }, { status: 404 });
+    }
+
+    // Same site rule as PATCH — a SITE-scoped caller can only delete a
+    // manual that's untagged (visible to everyone) or already tagged to
+    // their own site.
+    const authorization = getAuthorizedSiteIds(authedUser);
+    if (authorization.scope !== "ALL_SITES") {
+      const { data: existingTags } = await supabase
+        .from("manual_sites")
+        .select("site_id")
+        .eq("manual_id", id);
+      const tags = (existingTags ?? []).map((r) => r.site_id);
+      const allowed =
+        tags.length === 0 ||
+        (authorization.siteId != null && tags.includes(authorization.siteId));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Forbidden — this manual isn't tagged to a site you have access to." },
+          { status: 403 },
+        );
+      }
     }
 
     // ── Collect all Cloudinary public_ids before deleting ──

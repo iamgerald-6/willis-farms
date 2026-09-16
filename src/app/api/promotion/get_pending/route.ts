@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { requirePromotionAccess } from "@/lib/apiRequestAuth";
+import { siteFilterValue } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
+  const authedUser = await requirePromotionAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Promotion view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -46,7 +56,7 @@ export async function GET(req: NextRequest) {
         immediate_supervisor, section_authorisations_held,
         promotion_readiness, submitted_by, status, final_quarter_score,
         employee_weighted_score, supervisor_weighted_score,
-        employee_ratings, supervisor_ratings, created_at
+        employee_ratings, supervisor_ratings, created_at, site_id
       `,
       )
       .eq("review_quarter", "Q4")
@@ -56,6 +66,11 @@ export async function GET(req: NextRequest) {
 
     if (assessedIds.length > 0) {
       query = query.not("id", "in", `(${assessedIds.join(",")})`);
+    }
+
+    const siteId = siteFilterValue(authedUser);
+    if (siteId != null) {
+      query = query.eq("site_id", siteId);
     }
 
     const { data, error } = await query;

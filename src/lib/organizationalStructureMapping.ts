@@ -110,6 +110,29 @@ export function ensureCatalogItem<T extends { id: string }>(
   return current ? [current, ...items] : items;
 }
 
+/**
+ * Stringifies just the named org-placement FK columns on a row (site_id,
+ * business_unit_id, ...), leaving every other field (json/array sections,
+ * labels, timestamps) untouched. Used for rows — like appraisal grade
+ * templates and skill log templates — that carry the same 6-column org
+ * placement as a real part of their own schema, not a separate join table.
+ * site_id is the one column here that's ever actually numeric (see the
+ * comment on normalizeListItemRow in organizationalStructureCustomLists.ts
+ * for why); the rest are already uuid strings, so stringifying them too is
+ * just harmless future-proofing rather than a no-op you have to reason
+ * about column-by-column.
+ */
+export function stringifyPlacementColumns<T extends Record<string, unknown>>(
+  row: T,
+  columns: readonly string[] = ["site_id", "business_unit_id", "department_id", "section_id", "position_id", "grade_level_id"],
+): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const col of columns) {
+    if (out[col] != null) out[col] = String(out[col]);
+  }
+  return out as T;
+}
+
 export function itemsForOrgMapField<T extends { id: string }>(
   tableName: string,
   catalog: T[],
@@ -133,9 +156,21 @@ export function itemsForOrgMapField<T extends { id: string }>(
   const itemCol = ITEM_COLUMN[key];
   const ids = new Set(
     (maps[key] ?? [])
-      .filter((row) => filters.every((col) => row[col] === filterValues[col]))
+      // String(...) on both sides — every real per-level mapping table
+      // (org_map_business_units, org_map_departments, ...) has a uuid
+      // site_id column EXCEPT the site_id column itself, which is a real
+      // integer (sites.id — see docs/multi-site/add-site-id-tm-projects.sql
+      // and create_org_mapping_table in
+      // docs/organizational-structure/fix-site-mapping-integer-id.sql).
+      // Postgres returns that column as a JSON number, while every
+      // selection value here comes from an HTML <select>'s string value —
+      // without normalizing, `107 === "107"` is false and every dropdown
+      // chained under Site silently comes back empty ("not set"), even
+      // though the mapping was saved correctly.
+      .filter((row) => filters.every((col) => String(row[col]) === String(filterValues[col])))
       .map((row) => row[itemCol])
-      .filter((id): id is string => !!id),
+      .filter((id): id is string => !!id)
+      .map((id) => String(id)),
   );
   return catalog.filter((item) => ids.has(item.id));
 }

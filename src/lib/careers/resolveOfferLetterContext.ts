@@ -10,6 +10,7 @@ import {
   resolveUserRoleLabelById,
 } from "@/lib/userRoleAccessControl";
 import { formatNoticePeriodForOfferLetter } from "@/lib/careers/noticePeriod";
+import { fetchCompanyBranding } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 export type OfferLetterContext = {
   candidateName: string;
@@ -53,6 +54,12 @@ export type OfferLetterContext = {
   signatureType?: "typed" | "drawn";
   signatureText?: string;
   signatureImageUrl?: string;
+  /** Company letterhead — HR-uploaded logo (also used as the page
+   * watermark) and address lines, from System Definitions → Offer letter →
+   * Company branding. Falls back to the original hardcoded artwork when HR
+   * hasn't configured this yet — see companyBrandingConfig.ts. */
+  companyLogoUrl?: string;
+  companyAddressLines: string[];
 };
 
 function formatDisplayDate(raw: string | null | undefined): string | undefined {
@@ -116,6 +123,7 @@ export async function resolveOfferLetterContext(
 
   const medicalReports = await fetchRequiredMedicalReports(supabase);
   const reportingToRole = await resolveReportingToRole(supabase, hr);
+  const branding = await fetchCompanyBranding(supabase);
 
   const salaryGhs = hr.salary_ghs?.trim() || undefined;
   const payFrequency = hr.pay_frequency?.trim() || undefined;
@@ -170,5 +178,7 @@ export async function resolveOfferLetterContext(
     signatureType: hr.signature_type,
     signatureText: hr.signature_text?.trim() || undefined,
     signatureImageUrl: hr.signature_image?.secure_url || undefined,
+    companyLogoUrl: branding.logoUrl,
+    companyAddressLines: branding.addressLines,
   };
 }

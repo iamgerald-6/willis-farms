@@ -5,6 +5,7 @@ import {
   requireSystemDefinitionsAccess,
 } from "@/lib/apiRequestAuth";
 import type { CustomFieldDef, OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import { normalizeListItemRow } from "@/lib/organizationalStructureCustomLists";
 
 function extraColumnValues(
   input: unknown,
@@ -102,7 +103,7 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: normalizeListItemRow(data) });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

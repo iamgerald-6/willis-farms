@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
-import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import {
   applyTaskListVisibilityFilter,
+  isProjectSiteVisible,
+  isTaskSiteVisible,
   resolveTaskViewScope,
 } from "@/lib/taskManagerScope";
+import { siteIdFromJoin } from "@/lib/siteAccess";
 
 // GET /api/task-manager/tasks?project_id=xxx&include=active,completed,archived,deleted
 // project_id is optional — omit it to get tasks across every active project
@@ -23,7 +25,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from("tm_tasks")
-      .select("*")
+      .select("*, tm_projects(site_id)")
       .in("lifecycle_status", include)
       .order("due_date", { ascending: true, nullsFirst: false });
 
@@ -37,25 +39,36 @@ export async function GET(req: NextRequest) {
       scope,
     );
 
-    const { data: tasks, error } = await query;
+    const { data: rawTasks, error } = await query;
     if (error) throw error;
 
-    const userNames = await fetchUserNames((tasks ?? []).map((t) => t.owner_id));
+    // Being able to see a task by ownership/reports scope doesn't mean any
+    // site — same rule as everywhere else. Applied on top of the existing
+    // scope filter above, not instead of it.
+    const tasks = (rawTasks ?? [])
+      .filter((t) => isTaskSiteVisible(user, t, siteIdFromJoin(t.tm_projects)))
+      .map(({ tm_projects, ...rest }) => rest);
+
+    const userNames = await fetchUserNames(tasks.map((t) => t.owner_id));
 
     // Only look up project names when spanning multiple projects — a
     // single-project request already knows which project it's looking at.
-    const projectNames = projectId ? undefined : await fetchProjectNames((tasks ?? []).map((t) => t.project_id));
-    const subtaskTrees = await fetchSubtaskTreesByTaskId((tasks ?? []).map((t) => t.id));
+    const projectNames = projectId ? undefined : await fetchProjectNames(tasks.map((t) => t.project_id));
+    const subtaskTrees = await fetchSubtaskTreesByTaskId(tasks.map((t) => t.id));
 
-    return NextResponse.json({ tasks: enrichTasks(tasks ?? [], userNames, projectNames, subtaskTrees) });
+    return NextResponse.json({ tasks: enrichTasks(tasks, userNames, projectNames, subtaskTrees) });
   } catch (err: any) {
     console.error("[GET /api/task-manager/tasks]", err);
     return NextResponse.json({ error: err.message ?? "Server error" }, { status: 500 });
   }
 }
 
-// POST /api/task-manager/tasks — Senior Management, or (new role system) a
-// Supervisory-role caller creating a task for one of their own supervisees.
+// POST /api/task-manager/tasks — Senior Management (anyone), or anyone
+// recorded as the assignee's actual supervisor_id (self or one of their
+// direct reports) — see canCreate below. Not gated on the caller's own role
+// label: a supervisor can hold Supervisory Role, Executive Role, Human
+// Resource, or Super Admin (see canBeAssignedAsSupervisorByRoleLabel), so
+// what matters is the supervisor_id relationship itself, not the label.
 export async function POST(req: NextRequest) {
   try {
     const user = await getRequestUser(req);
@@ -68,11 +81,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "project_id and title are required" }, { status: 400 });
     }
 
+    // Being able to create a task doesn't mean any site — same rule as
+    // everywhere else. A caller not at headquarters can only add tasks to a
+    // project that's untagged, their own, or at their own site.
+    const { data: targetProject } = await supabaseAdmin
+      .from("tm_projects")
+      .select("site_id, created_by")
+      .eq("id", project_id)
+      .maybeSingle();
+    if (targetProject && !isProjectSiteVisible(user, targetProject)) {
+      return NextResponse.json(
+        { error: "Forbidden — this project isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
+
     let canCreate = (await requireSeniorManagement(req)) !== null;
     if (!canCreate && owner_id === user.id) {
       canCreate = true;
     }
-    if (!canCreate && isSupervisoryRoleLabel(user.role) && owner_id) {
+    if (!canCreate && owner_id) {
       const { data: owner } = await supabaseAdmin
         .from("users")
         .select("supervisor_id")

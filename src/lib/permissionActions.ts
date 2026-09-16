@@ -99,6 +99,10 @@ export const ACTION_HELP: Partial<
     add: "Add dropdown options and new business-logic rules.",
     edit: "Edit or remove existing options, save leave policy, weights, and rating sections.",
   },
+  "user-manual": {
+    view: "Open the User Manual page (already available to every signed-in user).",
+    add: "Upload a new version of the User Manual.",
+  },
 };
 
 export type MatrixModuleRow = {
@@ -428,6 +432,7 @@ const PAGE_LANDING_PATHS: Partial<Record<PagePermissionKey, string>> = {
   "sop:add": "/dashboard/addSop",
   notifications: "/dashboard/notifications",
   "sys:definitions": "/dashboard/system-definitions",
+  "user-manual": "/dashboard/user-manual",
 };
 
 /** First page this user can open — used when denying access so we never

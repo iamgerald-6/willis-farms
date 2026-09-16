@@ -19,6 +19,7 @@ import {
   jsonUnauthorized,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 const QUARTERS: Quarter[] = ["Q1", "Q2", "Q3", "Q4"];
 
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
 
     const { data: employeeUser, error: userError } = await supabaseAdmin
       .from("users")
-      .select("company_id, user_id, supervisor_id")
+      .select("company_id, user_id, supervisor_id, site_id")
       .eq("company_id", company_id)
       .single();
 
@@ -171,6 +172,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Employee not found with that company ID" },
         { status: 404 },
+      );
+    }
+
+    // Site rule applies independently of role — a supervisor submitting an
+    // evaluation for someone else must be authorized for that employee's
+    // site (an employee filing their own self-assessment is always their
+    // own site, so this only meaningfully gates the supervisor path).
+    if (!assertSiteAccess(caller, employeeUser.site_id ?? null)) {
+      return jsonForbidden(
+        "Forbidden — this employee isn't at a site you have access to.",
       );
     }
 
@@ -342,6 +353,11 @@ export async function POST(req: NextRequest) {
       deadline_at: deadlineAt,
       employee_user_id: employee_user_id ?? existingOpen?.employee_user_id ?? null,
       supervisor_id: resolvedSupervisorId ?? existingOpen?.supervisor_id ?? null,
+      // site_id is a creation-time snapshot (see
+      // docs/multi-site/add-site-id-historical-tables.sql) — taken from the
+      // employee's current site, not the caller's. Only set on first
+      // creation; an existing seeded/open row keeps whatever it already has.
+      ...(!existingOpen ? { site_id: employeeUser.site_id ?? null } : {}),
       status: nextSubmittedBy === "both" ? "submitted" : "open",
       ...(!existingOpen
         ? { employee_penalty_points: 0, appeal_exhausted: false }

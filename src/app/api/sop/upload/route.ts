@@ -2,12 +2,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { writeSopAuditLog } from "@/lib/sopAuditLog";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { getApiRequestUser, requireSopManageAccess } from "@/lib/apiRequestAuth";
+import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 const DEFAULT_COVER = "/images/breedfeed.webp";
 
 export async function POST(req: NextRequest) {
   try {
+    const authedUser = await requireSopManageAccess(req);
+    if (!authedUser) {
+      return NextResponse.json({ error: "Forbidden — you don't have access to SOP Management." }, { status: 403 });
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -35,6 +41,9 @@ export async function POST(req: NextRequest) {
       video_duration_minutes,
       created_by,
       performed_by_name,
+      // Which site(s) this SOP applies to — omitted/empty means "all sites"
+      // (see docs/multi-site/add-site-tagging-policies-sop.sql).
+      site_ids,
     } = body;
 
     if (!title || !category || !description) {
@@ -85,6 +94,29 @@ export async function POST(req: NextRequest) {
         { error: "Content insertion returned no data" },
         { status: 500 }
       );
+    }
+
+    // A SITE-scoped caller can only tag content to their own site — "All
+    // Sites" (empty array) and tagging other sites is an ALL_SITES/
+    // headquarters-only ability. Whatever the client sent is overridden
+    // here rather than trusted, same as every other write this session.
+    const authorization = getAuthorizedSiteIds(authedUser);
+    const resolvedSiteIds =
+      authorization.scope === "ALL_SITES"
+        ? Array.isArray(site_ids)
+          ? site_ids
+          : []
+        : authorization.siteId != null
+          ? [authorization.siteId]
+          : [];
+
+    if (resolvedSiteIds.length > 0) {
+      const { error: sitesError } = await supabase
+        .from("content_sites")
+        .insert(resolvedSiteIds.map((siteId: number) => ({ content_id: data[0].id, site_id: siteId })));
+      if (sitesError) {
+        console.error("Supabase content_sites insert error:", sitesError);
+      }
     }
 
     await writeSopAuditLog({

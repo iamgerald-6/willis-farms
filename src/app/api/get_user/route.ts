@@ -5,8 +5,22 @@ import {
   overlayJobPositionFromCatalog,
   overlayPlacementFromApplications,
 } from "@/lib/careers/resolveEmployeeOrgPlacement";
+import { requireAuth, jsonUnauthorized } from "@/lib/apiRequestAuth";
 
 export async function GET(req: NextRequest) {
+  // This is the shared employee-directory call — ~34 pages across the app
+  // (Promotion, Appraisal, Recruitment, Skill Log, Leave, Org Structure,
+  // Access Control, SOP, Policies, Task Manager) all get their user list
+  // from here. It previously had no auth check at all — any request, logged
+  // in or not, got the full staff list back. This closes that specific
+  // gap only: any authenticated caller can still see every user across
+  // every site. Site-scoping which of those 34 consumers should — vs.
+  // legitimately needs cross-site visibility for admin work like assigning
+  // a supervisor at another site — is deliberately left for a separate,
+  // dedicated pass rather than done blanket here.
+  const caller = await requireAuth(req);
+  if (!caller) return jsonUnauthorized();
+
   const supabaseAdmin = getSupabaseAdmin();
 
   if (!supabaseAdmin) {
@@ -56,6 +70,14 @@ export async function GET(req: NextRequest) {
       };
       return {
         ...rest,
+        // site_id is a real integer column (sites.id — the one non-uuid
+        // list in the org-structure system; see normalizeListItemRow in
+        // organizationalStructureCustomLists.ts for the full story).
+        // Every frontend consumer of a user's site_id treats ids as
+        // strings, so this is stringified here at the shared source
+        // rather than relying on ~34 individual consumers to each
+        // remember to coerce it themselves.
+        site_id: rest.site_id != null ? String(rest.site_id) : null,
         grade_level: grade_levels?.code ?? null,
         section_label: sections?.label ?? null,
         user_role_label: rest.user_role_id ? roleLabels.get(rest.user_role_id) ?? null : null,

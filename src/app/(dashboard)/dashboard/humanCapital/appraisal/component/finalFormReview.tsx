@@ -243,7 +243,11 @@ export default function FinalReviewForm({
     // No real weights survive for a record with no resolvable template, so
     // split evenly across whatever sections were actually saved — keeps the
     // live score a meaningful percentage rather than always reading 0.
-    const equalWeight = savedKeys.size > 0 ? 100 / savedKeys.size : 0;
+    // Stored as a FRACTION (0–1), same convention as a real grade template's
+    // weights (see AppraisalGradeTemplatesManager's pct / 100) — the "Weight:
+    // X%" badge below always does section.weight * 100, so a whole-number
+    // percentage here would double-scale (25 -> 2500%).
+    const equalWeight = savedKeys.size > 0 ? 1 / savedKeys.size : 0;
     return Array.from(savedKeys).map((key) => ({
       key,
       title: key,

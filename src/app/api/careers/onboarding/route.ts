@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { validateGrossSalaryAgainstBand } from "@/lib/systemDefinitions/salaryRanges";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteIdFromJoin } from "@/lib/siteAccess";
 
 const ONBOARDING_LIST_STATUSES = ["onboarding"] as const;
 
@@ -9,7 +11,15 @@ function isOnboardingHrComplete(hr: OnboardingHrData | null | undefined): boolea
   return Boolean(hr?.platform_invited_at?.trim() || hr?.hr_finished_at?.trim());
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -21,7 +31,7 @@ export async function GET() {
   const { data: onboardingApps, error: appsError } = await supabaseAdmin
     .from("job_applications")
     .select(
-      "id, reference_number, full_name, email, phone, role_title, status, location, interview_form_data, application_form_data",
+      "id, reference_number, full_name, email, phone, role_title, status, location, interview_form_data, application_form_data, job_postings(site_id)",
     )
     .in("status", [...ONBOARDING_LIST_STATUSES])
     .order("updated_at", { ascending: false })
@@ -30,6 +40,14 @@ export async function GET() {
   if (appsError) {
     return NextResponse.json({ error: appsError.message }, { status: 500 });
   }
+
+  // Site-scope the visible applications up front — everything downstream
+  // (missing-onboarding-row creation, the final filtered list) only ever
+  // operates on this already-scoped set, so a SITE-scoped caller never
+  // even triggers onboarding_submissions upserts for someone else's site.
+  const siteScopedApps = (onboardingApps ?? []).filter((a) =>
+    assertSiteAccess(authedUser, siteIdFromJoin(a.job_postings)),
+  );
 
   const { data: existingRows, error: rowsError } = await supabaseAdmin
     .from("onboarding_submissions")
@@ -43,7 +61,7 @@ export async function GET() {
   const existingIds = new Set(
     (existingRows ?? []).map((r) => r.application_id),
   );
-  const missingApps = (onboardingApps ?? []).filter(
+  const missingApps = siteScopedApps.filter(
     (a) => !existingIds.has(a.id),
   );
 
@@ -101,7 +119,7 @@ export async function GET() {
     return NextResponse.json({ error: platformUsersError.message }, { status: 500 });
   }
 
-  const visibleAppIds = new Set((onboardingApps ?? []).map((a) => a.id));
+  const visibleAppIds = new Set(siteScopedApps.map((a) => a.id));
   const filtered = (data ?? []).filter((row) => {
     if (!visibleAppIds.has(row.application_id)) return false;
     const hr = (row.hr_data ?? {}) as OnboardingHrData;
@@ -114,6 +132,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -137,12 +163,20 @@ export async function PATCH(req: NextRequest) {
 
   const { data: application, error: appError } = await supabaseAdmin
     .from("job_applications")
-    .select("id, status")
+    .select("id, status, job_postings(site_id)")
     .eq("id", application_id)
     .single();
 
   if (appError || !application) {
     return NextResponse.json({ error: "Application not found." }, { status: 404 });
+  }
+
+  const applicationSiteId = siteIdFromJoin(application.job_postings);
+  if (!assertSiteAccess(authedUser, applicationSiteId)) {
+    return NextResponse.json(
+      { error: "Forbidden — this application isn't at a site you have access to." },
+      { status: 403 },
+    );
   }
 
   if (application.status !== "offer" && application.status !== "onboarding") {

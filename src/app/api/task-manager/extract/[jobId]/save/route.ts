@@ -1,21 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { getRequestUser, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { writeAuditLog, enrichTasks, fetchUserNames } from "@/lib/taskManagerData";
 import type { ExtractedTaskProposal } from "@/types/taskManager";
 
-// POST /api/task-manager/extract/[jobId]/save — Senior Management only.
-// Saves the (possibly edited, possibly trimmed) list of reviewed proposals
-// as real tasks, tagged source = 'ai_extracted' and linked back to the
-// source document.
+// POST /api/task-manager/extract/[jobId]/save — any authenticated user, but
+// same ownership rule as manual task creation (POST /task-manager/tasks):
+// Senior Management can save proposals assigned to anyone (or left
+// unassigned); everyone else can only save proposals assigned to
+// themselves or to one of their direct reports (owner.supervisor_id ===
+// caller) — an unassigned owner_id is not allowed for non-Senior-Management
+// callers, same as the manual-creation route.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   try {
     const { jobId } = await params;
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { tasks }: { tasks: ExtractedTaskProposal[] } = await req.json();
     if (!Array.isArray(tasks) || tasks.length === 0) {
       return NextResponse.json({ error: "No tasks to save" }, { status: 400 });
+    }
+
+    if (!isSeniorManagement(user.role)) {
+      if (tasks.some((t) => !t.owner_id)) {
+        return NextResponse.json(
+          { error: "Forbidden — every task must be assigned to yourself or a direct report." },
+          { status: 403 },
+        );
+      }
+      const ownerIds = Array.from(new Set(tasks.map((t) => t.owner_id as string)));
+      const otherOwnerIds = ownerIds.filter((id) => id !== user.id);
+      if (otherOwnerIds.length > 0) {
+        const { data: owners } = await supabaseAdmin
+          .from("users")
+          .select("user_id, supervisor_id")
+          .in("user_id", otherOwnerIds);
+        const supervisorByOwner = new Map(
+          (owners ?? []).map((o) => [o.user_id as string, (o.supervisor_id as string | null) ?? null]),
+        );
+        const disallowed = otherOwnerIds.some((id) => supervisorByOwner.get(id) !== user.id);
+        if (disallowed) {
+          return NextResponse.json(
+            { error: "Forbidden — you can only save tasks assigned to yourself or your direct reports." },
+            { status: 403 },
+          );
+        }
+      }
     }
 
     const { data: job, error: jobError } = await supabaseAdmin

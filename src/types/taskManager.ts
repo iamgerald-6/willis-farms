@@ -246,6 +246,11 @@ export interface TMReportSchedule {
   recipients: string[];
   last_sent_period: string | null;
   updated_at: string;
+  // null = the company-wide schedule (every project, unfiltered). A number
+  // scopes this schedule's report to just that site's projects (plus any
+  // untagged/company-wide project) — see docs/multi-site/
+  // add-site-id-tm-report-schedule.sql.
+  site_id: number | null;
 }
 
 /** Deadline reminder config — singleton row, read/written via /api/task-manager/reminders/settings. */

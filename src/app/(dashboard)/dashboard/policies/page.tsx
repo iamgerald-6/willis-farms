@@ -27,9 +27,9 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import ConfirmDeleteDialog from "./components/deletModal";
-import UploadManualModal from "./components/uploadModal";
-import EditManualModal from "./components/editModal";
+import ManualModal from "./components/manualModal";
 import PolicyHistoryDrawer from "./components/historyDrawer";
 import { CardGridSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
@@ -727,7 +727,10 @@ export default function PoliciesPage() {
   const groupPresets = groupPresetData?.presets;
 
   // Manage rights (upload/edit/delete) — same real permission system as
-  // everywhere else, instead of a hardcoded pre-migration role list.
+  // everywhere else, instead of a hardcoded pre-migration role list. Also
+  // headquarters-only on top of that — see isHeadquartersCaller in
+  // apiRequestAuth.ts, which the server enforces regardless of this flag.
+  const { isHeadquarters } = useIsHeadquarters();
   const isAdmin = Boolean(
     accessProfile &&
       canPerformModuleAction(
@@ -736,7 +739,8 @@ export default function PoliciesPage() {
         "add",
         sessionRole,
         groupPresets,
-      ),
+      ) &&
+      isHeadquarters,
   );
 
   const queryClient = useQueryClient();
@@ -1023,24 +1027,18 @@ export default function PoliciesPage() {
         />
       )}
 
-      <UploadManualModal
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+      <ManualModal
+        open={uploadOpen || !!editingManual}
+        onClose={() => {
+          setUploadOpen(false);
+          setEditingManual(null);
+        }}
         onSuccess={() =>
           queryClient.invalidateQueries({ queryKey: ["policies"] })
         }
         uploadedById={currentUserId ?? ""}
         categories={categoryOptions}
-      />
-
-      <EditManualModal
-        open={!!editingManual}
-        onClose={() => setEditingManual(null)}
-        onSuccess={() =>
-          queryClient.invalidateQueries({ queryKey: ["policies"] })
-        }
         manual={editingManual}
-        categories={categoryOptions}
       />
 
       {historyManual && (

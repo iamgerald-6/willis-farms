@@ -21,6 +21,8 @@ import {
   generateUniquePostingSlug,
   resolveTitleFromPosition,
 } from "@/lib/careers/jobPostingOrgFields";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteFilterValue } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -29,6 +31,48 @@ export async function GET(req: NextRequest) {
   }
 
   const scope = req.nextUrl.searchParams.get("scope");
+
+  // scope=public is the public careers site's own listing — intentionally
+  // open, no login involved. Anything else is the internal HR/Recruitment
+  // dashboard view and needs real authorization (this route previously had
+  // none at all — see Phase 3 Recruitment audit).
+  if (scope !== "public") {
+    const authedUser = await requireRecruitmentAccess(req);
+    if (!authedUser) {
+      return NextResponse.json(
+        { error: "Forbidden — Recruitment view access is required." },
+        { status: 403 },
+      );
+    }
+
+    try {
+      await syncExpiredPostings(supabaseAdmin).catch(() => undefined);
+
+      let query = supabaseAdmin
+        .from("job_postings")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      const siteId = siteFilterValue(authedUser);
+      if (siteId != null) {
+        query = query.eq("site_id", siteId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        if (error.code === "42P01" || error.message?.includes("does not exist")) {
+          return NextResponse.json({ success: true, data: [] });
+        }
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, data: data ?? [] });
+    } catch (err) {
+      console.error("[GET /api/careers/postings]", err);
+      return NextResponse.json({ error: "Server error" }, { status: 500 });
+    }
+  }
 
   try {
     await syncExpiredPostings(supabaseAdmin).catch(() => undefined);
@@ -46,10 +90,7 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = data ?? [];
-    const filtered =
-      scope === "public"
-        ? rows.filter((row) => isPostingPublic(row))
-        : rows;
+    const filtered = rows.filter((row) => isPostingPublic(row));
 
     return NextResponse.json({ success: true, data: filtered });
   } catch (err) {
@@ -59,6 +100,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "add");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment add access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -85,6 +134,16 @@ export async function POST(req: NextRequest) {
       body as unknown as Record<string, unknown>,
       orgFieldOptions,
     );
+
+    // A SITE-scoped caller can only ever open a posting for their own
+    // site — otherwise they could create postings that show up for a
+    // site they have no other access to at all.
+    if (!assertSiteAccess(authedUser, (orgFieldUpdates as { site_id?: number }).site_id ?? null)) {
+      return NextResponse.json(
+        { error: "Forbidden — you can only create postings for your own site." },
+        { status: 403 },
+      );
+    }
 
     // Every active org-structure list is required on a genuinely new
     // posting created from Create job posting. Recruitment's Republish

@@ -2,10 +2,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { writeSopAuditLog } from "@/lib/sopAuditLog";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { getApiRequestUser, requireSopManageAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 export async function POST(req: NextRequest) {
   try {
+    const authedUser = await requireSopManageAccess(req);
+    if (!authedUser) {
+      return NextResponse.json({ error: "Forbidden — you don't have access to SOP Management." }, { status: 403 });
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -26,6 +32,23 @@ export async function POST(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    // A SITE-scoped caller can only restore content that's untagged
+    // (visible to everyone) or already tagged to their own site.
+    if (getAuthorizedSiteIds(authedUser).scope !== "ALL_SITES") {
+      const { data: existingTags } = await supabase
+        .from("content_sites")
+        .select("site_id")
+        .eq("content_id", id);
+      const tags = (existingTags ?? []).map((r) => r.site_id);
+      const allowed = tags.length === 0 || tags.some((t) => assertSiteAccess(authedUser, t));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Forbidden — this content isn't tagged to a site you have access to." },
+          { status: 403 },
+        );
+      }
     }
 
     const { data, error } = await supabase

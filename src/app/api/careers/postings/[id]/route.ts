@@ -18,16 +18,38 @@ import {
   findMissingOrgFields,
   resolveTitleFromPosition,
 } from "@/lib/careers/jobPostingOrgFields";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, context: RouteContext) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
   const { id } = await context.params;
+
+  const { data: existingPosting } = await supabaseAdmin
+    .from("job_postings")
+    .select("site_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existingPosting || !assertSiteAccess(authedUser, existingPosting.site_id)) {
+    return NextResponse.json(
+      { error: "Forbidden — this posting isn't at a site you have access to." },
+      { status: 403 },
+    );
+  }
 
   try {
     const body = await req.json();
@@ -211,13 +233,33 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_req: NextRequest, context: RouteContext) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
   const { id } = await context.params;
+
+  const { data: existingPosting } = await supabaseAdmin
+    .from("job_postings")
+    .select("site_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existingPosting || !assertSiteAccess(authedUser, existingPosting.site_id)) {
+    return NextResponse.json(
+      { error: "Forbidden — this posting isn't at a site you have access to." },
+      { status: 403 },
+    );
+  }
 
   try {
     const { error } = await updateJobPostingWithColumnFallback(supabaseAdmin, id, {

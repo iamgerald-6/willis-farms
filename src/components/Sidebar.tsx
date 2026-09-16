@@ -17,6 +17,17 @@ import {
 } from "@/lib/pagePermissions";
 import { canAccessPage } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
+
+// Whole modules that are headquarters-only regardless of role — mirrors
+// HEADQUARTERS_ONLY_ROUTE_PREFIXES in RouteAccessGuard.tsx (which does the
+// actual enforcement); this just keeps the nav item from being shown at all
+// to someone who'd be bounced straight back out.
+const HEADQUARTERS_ONLY_PAGE_KEYS: PagePermissionKey[] = [
+  "users",
+  "sys:definitions",
+  "hc:recruitment",
+];
 
 type SidebarProps = {
   mobileOpen: boolean;
@@ -53,8 +64,13 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
+  const { isHeadquarters } = useIsHeadquarters();
 
   const canSee = (key: PagePermissionKey) => {
+    // Headquarters-only modules stay hidden even for an otherwise-
+    // unrestricted role (Super Admin/Executive) — WHERE someone is placed
+    // decides this, not their role. See HEADQUARTERS_ONLY_PAGE_KEYS above.
+    if (HEADQUARTERS_ONLY_PAGE_KEYS.includes(key) && !isHeadquarters) return false;
     if (unrestricted) return true;
     return accessProfile
       ? canAccessPage(accessProfile, key, groupPresets, sessionRole)

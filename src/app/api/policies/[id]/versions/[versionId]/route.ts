@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { v2 as cloudinary } from "cloudinary";
 import { CLOUDINARY_CLOUD_NAME } from "@/lib/cloudinary";
 import { writePolicyAuditLog } from "@/lib/policyAuditLog";
-import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { requirePolicyManageAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,12 +28,37 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; versionId: string }> },
 ) {
   try {
+    const apiUser = await requirePolicyManageAccess(req);
+    if (!apiUser) {
+      return NextResponse.json(
+        { error: "Forbidden — you don't have access to manage Policies." },
+        { status: 403 },
+      );
+    }
+
     const { id, versionId } = await params;
     if (!id || !versionId) {
       return NextResponse.json(
         { error: "Manual ID and version ID are required" },
         { status: 400 },
       );
+    }
+
+    // A SITE-scoped caller can only edit a version of a manual that's
+    // untagged (visible to everyone) or already tagged to their own site.
+    if (getAuthorizedSiteIds(apiUser).scope !== "ALL_SITES") {
+      const { data: existingTags } = await supabase
+        .from("manual_sites")
+        .select("site_id")
+        .eq("manual_id", id);
+      const tags = (existingTags ?? []).map((r) => r.site_id);
+      const allowed = tags.length === 0 || tags.some((t) => assertSiteAccess(apiUser, t));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "Forbidden — this manual isn't tagged to a site you have access to." },
+          { status: 403 },
+        );
+      }
     }
 
     const body = await req.json();
@@ -134,7 +160,6 @@ export async function PATCH(
       .eq("id", id)
       .maybeSingle();
 
-    const apiUser = await getApiRequestUser(req);
     await writePolicyAuditLog({
       manual_id: id,
       manual_title: manual?.title ?? "Untitled manual",

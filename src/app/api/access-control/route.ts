@@ -25,6 +25,7 @@ import {
   updateUserWithColumnFallback,
 } from "@/lib/supabaseUserUpdate";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function PATCH(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -79,7 +80,7 @@ export async function PATCH(req: NextRequest) {
       .from("users")
       // grade_level is no longer a stored column — derived live via the
       // grade_level_id FK join to the Grade levels catalog.
-      .select("user_id, role, email, grade_level_id, grade_levels(code)")
+      .select("user_id, role, email, grade_level_id, grade_levels(code), site_id")
       .eq("user_id", target_user_id)
       .single();
 
@@ -91,6 +92,13 @@ export async function PATCH(req: NextRequest) {
       grade_levels?: { code: string | null } | null;
     };
     const targetGradeLevel = grade_levels?.code ?? null;
+
+    // Being able to edit User Management doesn't mean any site — same rule
+    // as everywhere else. A caller not at headquarters can only manage
+    // (change permissions/disable) employees placed at their own site.
+    if (!assertSiteAccess(caller, target.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this employee isn't at a site you have access to.");
+    }
 
     if (target_user_id === caller.id && is_disabled === true) {
       return jsonForbidden("You cannot disable your own account.");

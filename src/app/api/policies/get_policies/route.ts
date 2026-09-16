@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuth, jsonUnauthorized } from "@/lib/apiRequestAuth";
+import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +10,11 @@ const supabase = createClient(
 
 export async function GET(req: NextRequest) {
   try {
+    // Policies/manuals have no separate "view" gate — any authenticated
+    // employee can read the list. This previously had no auth check at all.
+    const caller = await requireAuth(req);
+    if (!caller) return jsonUnauthorized();
+
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
     const includeArchived = searchParams.get("include_archived") === "true";
@@ -28,6 +35,17 @@ export async function GET(req: NextRequest) {
     }
 
     const manualIds = manuals.map((m) => m.id);
+
+    // ── Fetch site tags for these manuals (empty for a manual = all sites) ──
+    const { data: siteTagRows } = await supabase
+      .from("manual_sites")
+      .select("manual_id, site_id")
+      .in("manual_id", manualIds);
+
+    const siteIdsByManual: Record<string, number[]> = {};
+    for (const row of siteTagRows ?? []) {
+      (siteIdsByManual[row.manual_id] ??= []).push(row.site_id);
+    }
 
     // ── Fetch all versions for these manuals in one query ──
     const { data: allVersions, error: versionsError } = await supabase
@@ -85,11 +103,28 @@ export async function GET(req: NextRequest) {
         description: m.description,
         created_at: m.created_at,
         archived_at: m.archived_at ?? null,
+        // [] means "all sites" — see docs/multi-site/add-site-tagging-policies-sop.sql.
+        site_ids: siteIdsByManual[m.id] ?? [],
         versions, // sorted newest → oldest
       };
     });
 
-    return NextResponse.json({ manuals: result });
+    // The site tag on each manual was previously computed but never
+    // enforced — every caller got every manual back regardless of tag. An
+    // untagged manual ([]) is visible to everyone; a tagged one is only
+    // visible to headquarters or to a caller placed at one of its tagged
+    // sites.
+    const authorization = getAuthorizedSiteIds(caller);
+    const visible =
+      authorization.scope === "ALL_SITES"
+        ? result
+        : result.filter(
+            (m) =>
+              m.site_ids.length === 0 ||
+              (authorization.siteId != null && m.site_ids.includes(authorization.siteId)),
+          );
+
+    return NextResponse.json({ manuals: visible });
   } catch (err: any) {
     console.error("[GET /api/manuals]", err);
     return NextResponse.json(

@@ -63,6 +63,7 @@ function GroupEditor({
   boundEnd,
   targetTotal,
   saving,
+  canDelete,
   onCancel,
   onSave,
 }: {
@@ -72,6 +73,11 @@ function GroupEditor({
   boundEnd: string | null;
   targetTotal: number;
   saving: boolean;
+  // Standard Role creators can add/reweight/edit their own task's subtasks
+  // but can't remove existing rows (same restriction as whole-task delete —
+  // see the PUT route's canDeleteSubtasks check). A brand new, not-yet-saved
+  // row (no `id` yet) isn't a real delete, so it stays removable either way.
+  canDelete: boolean;
   onCancel: () => void;
   onSave: (items: DraftItem[]) => void;
 }) {
@@ -128,9 +134,11 @@ function GroupEditor({
               className="w-14 shrink-0 border border-gray-200 rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:border-red-400"
             />
             <span className="text-[10px] text-gray-400 shrink-0">%</span>
-            <button onClick={() => removeRow(i)} className="text-gray-300 hover:text-red-600 px-0.5 shrink-0">
-              <X className="w-3 h-3" />
-            </button>
+            {(canDelete || !row.id) && (
+              <button onClick={() => removeRow(i)} className="text-gray-300 hover:text-red-600 px-0.5 shrink-0">
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <select
@@ -200,6 +208,7 @@ function SubtaskNode({
   depth,
   users,
   canManage,
+  canDelete,
   canToggle,
   editingParentId,
   setEditingParentId,
@@ -212,6 +221,7 @@ function SubtaskNode({
   depth: number;
   users: User[];
   canManage: boolean;
+  canDelete: boolean;
   canToggle: boolean;
   editingParentId: string | null | undefined;
   setEditingParentId: (id: string | null | undefined) => void;
@@ -371,6 +381,7 @@ function SubtaskNode({
             boundEnd={node.due_date ?? null}
             targetTotal={node.weight_percent}
             saving={savingGroup}
+            canDelete={canDelete}
             onCancel={() => setEditingParentId(undefined)}
             onSave={(items) => onSaveGroup(node.id, items)}
           />
@@ -392,6 +403,7 @@ function SubtaskNode({
               depth={depth + 1}
               users={users}
               canManage={canManage}
+              canDelete={canDelete}
               canToggle={canToggle}
               editingParentId={editingParentId}
               setEditingParentId={setEditingParentId}
@@ -425,15 +437,23 @@ export default function SubtaskPanel({
   task,
   users,
   canManage,
+  canDelete,
   canToggle,
   onChanged,
 }: {
   task: TMTask;
   users: User[];
   canManage: boolean;
+  // Whether existing subtask rows can be removed (individually, or via
+  // "Remove all") — narrower than canManage: a Standard Role creator can
+  // manage (add/edit/reweight) their own task's subtasks but never delete
+  // them. Defaults to canManage for any caller that hasn't been updated to
+  // pass it explicitly, so nothing silently loses delete access.
+  canDelete?: boolean;
   canToggle: boolean;
   onChanged: () => void;
 }) {
+  const canDeleteSubtasks = canDelete ?? canManage;
   const queryClient = useQueryClient();
   const queryKey = ["tm-subtasks", task.id];
   const { data, isLoading } = useQuery<{ subtasks: TMSubtask[] }>({
@@ -559,9 +579,11 @@ export default function SubtaskPanel({
             <button onClick={() => setEditingParentId(null)} className="text-[11px] font-semibold text-red-600 hover:text-red-700 flex items-center gap-1">
               <Pencil className="w-3 h-3" /> Edit
             </button>
-            <button onClick={() => setShowRemoveAllConfirm(true)} className="text-[11px] text-gray-400 hover:text-red-600 flex items-center gap-1">
-              <Trash2 className="w-3 h-3" /> Remove all
-            </button>
+            {canDeleteSubtasks && (
+              <button onClick={() => setShowRemoveAllConfirm(true)} className="text-[11px] text-gray-400 hover:text-red-600 flex items-center gap-1">
+                <Trash2 className="w-3 h-3" /> Remove all
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -581,6 +603,7 @@ export default function SubtaskPanel({
           boundEnd={task.due_date ?? null}
           targetTotal={100}
           saving={savingGroup}
+          canDelete={canDeleteSubtasks}
           onCancel={() => setEditingParentId(undefined)}
           onSave={(items) => saveGroup(null, items)}
         />
@@ -616,6 +639,7 @@ export default function SubtaskPanel({
               depth={1}
               users={users}
               canManage={canManage}
+              canDelete={canDeleteSubtasks}
               canToggle={canToggle}
               editingParentId={editingParentId}
               setEditingParentId={setEditingParentId}

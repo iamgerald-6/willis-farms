@@ -12,8 +12,10 @@ import {
 import { canAccessPage } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import { isSupervisor } from "@/lib/accessControl";
+import { isSupervisoryRoleLabel } from "@/lib/userRoleAccessControl";
 import SOPBrowsePage from "./components/SOPBrowsePage";
 import SOPManagementPage from "./components/SOPManagementPage";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 
 // Single SOP route that toggles between the public browse grid and the
 // management table, instead of "SOP" and "SOP Management" being two
@@ -46,14 +48,21 @@ export default function SOPHubPage() {
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
-  // Manage side: role (Supervisory / Executive / HR / Super Admin via
-  // isSupervisor / isFullRoleAccess) or anyone delegated "sop:add".
+  // Manage side: role (Executive / HR / Super Admin via isSupervisor /
+  // isFullRoleAccess) or anyone delegated "sop:add". Supervisory Role is
+  // deliberately excluded even though isSupervisor() would otherwise
+  // include it — Sheila's explicit call that Supervisory shouldn't see SOP
+  // Management at all. Also headquarters-only on top of that — see
+  // isHeadquartersCaller in apiRequestAuth.ts, which the server enforces
+  // regardless of what this toggle shows.
+  const { isHeadquarters } = useIsHeadquarters();
   const canManage =
-    isFullRoleAccess(role) ||
-    isSupervisor(role) ||
-    (accessProfile
-      ? canAccessPage(accessProfile, "sop:add", groupPresets, sessionRole)
-      : false);
+    (isFullRoleAccess(role) ||
+      (isSupervisor(role) && !isSupervisoryRoleLabel(role)) ||
+      (accessProfile
+        ? canAccessPage(accessProfile, "sop:add", groupPresets, sessionRole)
+        : false)) &&
+    isHeadquarters;
 
   // Same queryKey as SOPManagementPage's own fetch — React Query dedupes
   // this into a single request, we just read the count here for the header.

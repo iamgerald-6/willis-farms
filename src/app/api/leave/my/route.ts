@@ -7,6 +7,7 @@ import {
 } from "@/lib/apiRequestAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { fetchLeaveAnnualCapDays } from "@/lib/leave/leavePolicy";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,6 +31,22 @@ export async function GET(req: NextRequest) {
       return jsonForbidden("You can only view your own leave requests.");
     }
 
+    // Senior Management can view an employee's leave here, but only for
+    // employees at a site they're authorized for — same site rule as
+    // everywhere else; being Senior Management no longer means "any site."
+    if (user_id !== caller.id) {
+      const { data: targetUser } = await supabaseAdmin
+        .from("users")
+        .select("site_id")
+        .eq("user_id", user_id)
+        .maybeSingle();
+      if (!assertSiteAccess(caller, targetUser?.site_id ?? null)) {
+        return jsonForbidden(
+          "Forbidden — this employee isn't at a site you have access to.",
+        );
+      }
+    }
+
     const currentYear = new Date().getFullYear();
 
     const { data, error } = await supabaseAdmin
@@ -41,10 +58,13 @@ export async function GET(req: NextRequest) {
     if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // Resolve reviewer names so employees can see who approved/rejected.
+    // Resolve reviewer names (both the stage-1 supervisor and the final
+    // stage-2 sign-off) so employees can see who acted at each step.
     const reviewerIds = [
       ...new Set(
-        (data ?? []).map((r) => r.reviewed_by).filter((id): id is string => !!id),
+        (data ?? [])
+          .flatMap((r) => [r.reviewed_by, r.supervisor_reviewed_by])
+          .filter((id): id is string => !!id),
       ),
     ];
 
@@ -66,6 +86,9 @@ export async function GET(req: NextRequest) {
       ...r,
       reviewed_by_name: r.reviewed_by
         ? reviewerNameById[r.reviewed_by] ?? "Unknown"
+        : null,
+      supervisor_reviewed_by_name: r.supervisor_reviewed_by
+        ? reviewerNameById[r.supervisor_reviewed_by] ?? "Unknown"
         : null,
     }));
 

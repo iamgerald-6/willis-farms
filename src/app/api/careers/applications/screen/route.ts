@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { screenApplication } from "@/lib/careers/screenApplication";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteIdFromJoin } from "@/lib/siteAccess";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -19,7 +29,7 @@ export async function POST(req: NextRequest) {
     const { data: application, error: fetchError } = await supabaseAdmin
       .from("job_applications")
       .select(
-        "id, status, submission_status, ai_screening, role_title, role_slug, job_posting_id, cv_url, application_form_data, application_form_fields_snapshot",
+        "id, status, submission_status, ai_screening, role_title, role_slug, job_posting_id, cv_url, application_form_data, application_form_fields_snapshot, job_postings(site_id)",
       )
       .eq("id", application_id)
       .single();
@@ -28,6 +38,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: fetchError?.message ?? "Application not found." },
         { status: 404 },
+      );
+    }
+
+    const applicationSiteId = siteIdFromJoin(application.job_postings);
+    if (!assertSiteAccess(authedUser, applicationSiteId)) {
+      return NextResponse.json(
+        { error: "Forbidden — this application isn't at a site you have access to." },
+        { status: 403 },
       );
     }
 

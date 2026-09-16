@@ -6,6 +6,7 @@ import {
 } from "@/lib/apiRequestAuth";
 import { slugifyLabel } from "@/lib/organizationalStructure";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import { normalizeListItemRows } from "@/lib/organizationalStructureCustomLists";
 import {
   isAgeCatalogListType,
   listUsesNumericRangeGenerator,
@@ -136,7 +137,8 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data, added: data?.length ?? 0 }, { status: 201 });
+    const normalized = normalizeListItemRows((data ?? []) as { id: unknown }[]);
+    return NextResponse.json({ data: normalized, added: normalized.length }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

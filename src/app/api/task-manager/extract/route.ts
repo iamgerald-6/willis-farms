@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
-import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { getRequestUser, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { extractPdfPages, MAX_EXTRACTION_FILES as MAX_FILES } from "@/lib/pdfPages";
 import { FREQUENCY_OPTIONS, TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import type { ExtractedTaskProposal, ExtractionJobFile } from "@/types/taskManager";
@@ -132,7 +132,7 @@ const EXTRACTION_TOOL = {
   },
 };
 
-// POST /api/task-manager/extract — Senior Management only.
+// POST /api/task-manager/extract — any authenticated user.
 // Sends one or more already-uploaded documents (Cloudinary URLs) directly
 // to Claude in a single message — no separate PDF-parsing or OCR library
 // needed, the Messages API reads PDFs and images (including scanned/
@@ -144,8 +144,8 @@ const EXTRACTION_TOOL = {
 export async function POST(req: NextRequest) {
   let jobId: string | null = null;
   try {
-    const user = await requireSeniorManagement(req);
-    if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: "ANTHROPIC_API_KEY is not configured on the server" }, { status: 500 });

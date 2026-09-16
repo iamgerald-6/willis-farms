@@ -41,6 +41,7 @@ import {
 import { hasFullSkillLogAccess } from "@/lib/accessControl";
 import SkillLogDetailModal from "./component/SkillLogDetailModal";
 import SkillLogTemplatesManager from "./component/SkillLogTemplatesManager";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 
 const BRAND = "#C62828";
 const BRAND_LIGHT = "#FFEBEE";
@@ -491,8 +492,11 @@ export default function SkillLogsPage() {
   // Configuring skill log templates (scope + competency sections) is a
   // separate, broader concern from filling/reviewing/approving a specific
   // employee's log — same tier as Manage appraisals: Super Admin, Executive,
-  // or HR only.
-  const canManageTemplates = hasFullSkillLogAccess(accessProfile?.role);
+  // or HR only. Also headquarters-only on top of that role check — see
+  // isHeadquartersCaller in apiRequestAuth.ts, which the server enforces
+  // regardless of what this toggle shows.
+  const { isHeadquarters } = useIsHeadquarters();
+  const canManageTemplates = hasFullSkillLogAccess(accessProfile?.role) && isHeadquarters;
 
   const canApproveLog = (log: SkillLog) =>
     accessProfile

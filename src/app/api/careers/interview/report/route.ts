@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { normalizeInterviewFormData, type InterviewReport } from "@/lib/careers/types";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteIdFromJoin } from "@/lib/siteAccess";
 
 // HR's edits to the AI-generated interview report always save to a
 // separate copy (summary.interview_report_edit) — the original AI report
@@ -8,6 +10,14 @@ import { normalizeInterviewFormData, type InterviewReport } from "@/lib/careers/
 // entry to summary.interview_report_edit_log so there's a record of when
 // (and by whom) the report was changed.
 export async function PATCH(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -29,7 +39,7 @@ export async function PATCH(req: NextRequest) {
 
     const { data: application, error: fetchError } = await supabaseAdmin
       .from("job_applications")
-      .select("interview_form_data")
+      .select("interview_form_data, job_postings(site_id)")
       .eq("id", application_id)
       .single();
 
@@ -37,6 +47,14 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json(
         { error: fetchError?.message ?? "Application not found." },
         { status: 404 },
+      );
+    }
+
+    const applicationSiteId = siteIdFromJoin(application.job_postings);
+    if (!assertSiteAccess(authedUser, applicationSiteId)) {
+      return NextResponse.json(
+        { error: "Forbidden — this application isn't at a site you have access to." },
+        { status: 403 },
       );
     }
 

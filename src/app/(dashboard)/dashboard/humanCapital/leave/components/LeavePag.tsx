@@ -32,6 +32,8 @@ import {
 } from "@/lib/uploadConstraints";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+type LeaveStage = "pending_supervisor" | "pending_signoff" | "approved" | "rejected";
+
 interface LeaveRequest {
   id: string;
   user_id: string;
@@ -41,10 +43,13 @@ interface LeaveRequest {
   end_date: string;
   total_days: number;
   status: "pending" | "approved" | "rejected";
+  stage: LeaveStage;
   admin_note: string | null;
   created_at: string;
   reviewed_by_name: string | null;
   reviewed_at: string | null;
+  supervisor_reviewed_by_name: string | null;
+  supervisor_reviewed_at: string | null;
 }
 
 interface LeaveBalance {
@@ -57,11 +62,19 @@ interface LeaveBalance {
 const LEAVE_MODULE_ID = "mod:leave";
 const LEAVE_TYPES_LIST = "leave.types";
 
-const STATUS_STYLES = {
-  pending: {
+const STAGE_STYLES: Record<
+  LeaveStage,
+  { bg: string; icon: JSX.Element; label: string }
+> = {
+  pending_supervisor: {
     bg: "bg-amber-50 text-amber-700 border border-amber-200",
     icon: <Hourglass className="w-3.5 h-3.5" />,
-    label: "Pending",
+    label: "Awaiting supervisor",
+  },
+  pending_signoff: {
+    bg: "bg-amber-50 text-amber-700 border border-amber-200",
+    icon: <Hourglass className="w-3.5 h-3.5" />,
+    label: "Awaiting sign-off",
   },
   approved: {
     bg: "bg-green-50 text-green-700 border border-green-200",
@@ -74,6 +87,10 @@ const STATUS_STYLES = {
     label: "Rejected",
   },
 };
+
+function requestStage(r: LeaveRequest): LeaveStage {
+  return r.stage ?? (r.status === "pending" ? "pending_supervisor" : r.status);
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 const leaveFormSchema = z
@@ -149,8 +166,18 @@ function formatDate(iso: string) {
 }
 
 function reviewStampLabel(r: LeaveRequest): string {
-  if (r.status === "pending" || !r.reviewed_at) return "—";
-  const verb = r.status === "approved" ? "Approved" : "Rejected";
+  const stage = requestStage(r);
+  if (stage === "pending_supervisor") return "—";
+  if (stage === "pending_signoff") {
+    const who = r.supervisor_reviewed_by_name
+      ? ` by ${r.supervisor_reviewed_by_name}`
+      : "";
+    return r.supervisor_reviewed_at
+      ? `Supervisor approved${who} · ${formatDate(r.supervisor_reviewed_at)}`
+      : "—";
+  }
+  if (!r.reviewed_at) return "—";
+  const verb = stage === "approved" ? "Approved" : "Rejected";
   const who = r.reviewed_by_name ? ` by ${r.reviewed_by_name}` : "";
   return `${verb}${who} · ${formatDate(r.reviewed_at)}`;
 }
@@ -626,7 +653,7 @@ export default function LeavePage() {
               </tr>
             ) : (
               requests.map((r) => {
-                const s = STATUS_STYLES[r.status];
+                const s = STAGE_STYLES[requestStage(r)];
                 return (
                   <tr
                     key={r.id}
@@ -656,9 +683,9 @@ export default function LeavePage() {
                     </td>
                     <td
                       className={`px-4 py-3 text-xs font-medium whitespace-nowrap ${
-                        r.status === "approved"
+                        requestStage(r) === "approved"
                           ? "text-green-600"
-                          : r.status === "rejected"
+                          : requestStage(r) === "rejected"
                             ? "text-red-600"
                             : "text-gray-400"
                       }`}

@@ -87,6 +87,8 @@ export interface Content {
   /** Set when archived (hidden from the main list, restorable). Requires
    * docs/sop/sop-audit-log.sql to have been run. */
   archived_at?: string | null;
+  /** [] means "all sites" — see docs/multi-site/add-site-tagging-policies-sop.sql. */
+  site_ids?: number[];
 }
 
 export interface SopAuditLogEntry {

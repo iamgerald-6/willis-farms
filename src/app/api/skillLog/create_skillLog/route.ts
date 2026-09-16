@@ -12,6 +12,7 @@ import {
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function POST(req: NextRequest) {
   const ctx = await requireSkillLogAccess(req, "add");
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     // grade_level_id FK join to the Grade levels catalog.
     const { data: employeeProfileRow } = await supabaseAdmin
       .from("users")
-      .select("user_id, grade_level_id, grade_levels(code), supervisor_id")
+      .select("user_id, grade_level_id, grade_levels(code), supervisor_id, site_id")
       .eq("user_id", employee_id)
       .maybeSingle();
 
@@ -75,6 +76,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { success: false, message: "Employee not found" },
         { status: 404 },
+      );
+    }
+
+    // Site rule applies independently of role — Executive/HR/Super Admin
+    // with fill permission can still only log skills for an employee at a
+    // site they're authorized for, unless they're at headquarters.
+    if (!assertSiteAccess(ctx.user, employeeProfileRow.site_id ?? null)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Forbidden — this employee isn't at a site you have access to.",
+        },
+        { status: 403 },
       );
     }
 
@@ -137,6 +151,10 @@ export async function POST(req: NextRequest) {
         development_gaps: development_gaps ?? null,
         status,
         overall_rating,
+        // Creation-time snapshot, taken from the employee's current site
+        // (see docs/multi-site/add-site-id-historical-tables.sql) — not
+        // live-inherited, so a later transfer never rewrites this record.
+        site_id: employeeProfileRow.site_id ?? null,
       })
       .select()
       .single();
