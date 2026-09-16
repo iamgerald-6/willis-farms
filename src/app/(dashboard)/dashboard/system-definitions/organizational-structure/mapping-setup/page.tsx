@@ -281,12 +281,17 @@ export default function OrgStructureMappingSetupPage() {
 
   function childOptions(level: MappingLevel, parentNodeId: string | null): Item[] {
     const allItems = itemsByLevelId.get(level.id) ?? [];
+    // String(...) — the Sites level's mapping nodes store the real sites.id
+    // (a Postgres integer, returned as a JSON number) as item_id, while
+    // catalog items (allItems) always have a normalized string id. Without
+    // this, ids.has(i.id) never matches for Sites and this always returns
+    // empty for the root level, even when sites are actually mapped.
     const ids = new Set(
       nodesForLevel(level.id)
         .filter((n) => n.parent_node_id === parentNodeId)
-        .map((n) => n.item_id),
+        .map((n) => String(n.item_id)),
     );
-    return allItems.filter((i) => ids.has(i.id));
+    return allItems.filter((i) => ids.has(String(i.id)));
   }
 
   function resolveAncestorChainNodeId(
@@ -301,7 +306,7 @@ export default function OrgStructureMappingSetupPage() {
       const itemId = selections[level.id];
       if (!itemId) return undefined;
       const node = nodesForLevel(level.id).find(
-        (n) => n.item_id === itemId && n.parent_node_id === parentNodeId,
+        (n) => String(n.item_id) === String(itemId) && n.parent_node_id === parentNodeId,
       );
       if (!node) return undefined;
       parentNodeId = node.id;
@@ -558,7 +563,7 @@ export default function OrgStructureMappingSetupPage() {
     const parentItems = childOptions(directParentLevel, parentOfParentNodeId);
     return parentItems.map((item) => {
       const parentNode = nodesForLevel(directParentLevel.id).find(
-        (n) => n.item_id === item.id && n.parent_node_id === parentOfParentNodeId,
+        (n) => String(n.item_id) === String(item.id) && n.parent_node_id === parentOfParentNodeId,
       );
       const count = parentNode
         ? nodesForLevel(activeLevel.id).filter((n) => n.parent_node_id === parentNode.id).length
@@ -1058,7 +1063,7 @@ export default function OrgStructureMappingSetupPage() {
                         {activeItems.map((item) => {
                           const existing = activeLevelNodes.find(
                             (n) =>
-                              n.item_id === item.id &&
+                              String(n.item_id) === String(item.id) &&
                               n.parent_node_id === (activeParentNodeId ?? null),
                           );
                           const pending = !!existing && isOptimisticId(existing.id);

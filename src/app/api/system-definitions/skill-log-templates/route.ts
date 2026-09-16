@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
+import { requireSkillLogTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import {
   normalizeSkillLogTemplateRow,
   normalizeSkillLogTierAuthOptions,
@@ -21,9 +21,9 @@ function asTemplate(row: SkillLogTemplate): SkillLogTemplate {
 }
 
 export async function GET(req: NextRequest) {
-  const caller = await requireSystemDefinitionsAccess(req, "view");
+  const caller = await requireSkillLogTemplateAccess(req);
   if (!caller) {
-    return jsonForbidden("System Definitions view access is required.");
+    return jsonForbidden("Skill Log template access is required.");
   }
 
   const supabaseAdmin = getSupabaseAdmin();
@@ -46,9 +46,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const caller = await requireSystemDefinitionsAccess(req, "add");
+  const caller = await requireSkillLogTemplateAccess(req);
   if (!caller) {
-    return jsonForbidden("System Definitions add access is required.");
+    return jsonForbidden("Skill Log template access is required.");
   }
 
   const supabaseAdmin = getSupabaseAdmin();

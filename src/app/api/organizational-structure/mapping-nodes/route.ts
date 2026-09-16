@@ -80,6 +80,24 @@ async function fetchAllNodes(supabase: SupabaseClient): Promise<MappingNodeOut[]
   // by that level's children to find which of its rows they belong under.
   const rowIndexByLevel = new Map<string, Map<string, string>>();
 
+  // Every id compared or used as a match-key below is normalized through
+  // String(...) first. Reason: sites.id is a real Postgres integer — the
+  // one non-uuid id anywhere in the org-structure system (see
+  // docs/current_database_schema.sql) — while every other list's id is a
+  // uuid. PostgREST serializes that integer as a JSON number, not a string.
+  // Root-level nodes (org_mapping_nodes.item_id, for Site) and every
+  // non-root level's ancestor "site_id" column (e.g.
+  // org_map_business_units.site_id) both ultimately carry that same value,
+  // but one path was going through JS string coercion implicitly and the
+  // other wasn't — so the JSON.stringify match-keys below silently
+  // disagreed for anything chained under Site: `[3]` (a root item_id built
+  // from a string) vs `[3]` (an ancestor value built from a raw JSON
+  // number) look identical to a human but are different array contents to
+  // JSON.stringify. Explicit String(...) here makes both sides agree
+  // regardless of what Postgres/PostgREST hands back, so parent_node_id
+  // linking (and therefore every dropdown cascading under Site) resolves
+  // correctly without relying on every consumer of this endpoint to
+  // separately remember to normalize it themselves.
   for (const level of ordered) {
     if (!level.parent_level_id) {
       const { data, error } = await supabase
@@ -89,7 +107,7 @@ async function fetchAllNodes(supabase: SupabaseClient): Promise<MappingNodeOut[]
       if (error) throw new Error(error.message);
       const idx = new Map<string, string>();
       for (const row of data ?? []) {
-        const itemId = row.item_id as string;
+        const itemId = String(row.item_id);
         nodes.push({ id: nodeId(level.id, itemId), level_id: level.id, item_id: itemId, parent_node_id: null });
         idx.set(JSON.stringify([itemId]), itemId);
       }
@@ -111,11 +129,31 @@ async function fetchAllNodes(supabase: SupabaseClient): Promise<MappingNodeOut[]
 
     const idx = new Map<string, string>();
     const parentIdx = rowIndexByLevel.get(level.parent_level_id) ?? new Map<string, string>();
+    // Duplicate rows: the real per-level table has no working uniqueness
+    // guarantee in practice (seen in production data — the same
+    // site/business-unit/... combination saved more than once, each with
+    // its own row id). Keeping every duplicate as a separate node is what
+    // broke Job Posting: a child level (e.g. Departments) links to whatever
+    // ONE row happened to be last when this same loop built THIS level's
+    // own idx a level up, while a consumer picking a node by "find the
+    // first match" (e.g. resolvedNodeIdForRequiredField in
+    // CreateJobPostingPanel.tsx) can land on a DIFFERENT duplicate row —
+    // two different opaque ids for what should be one logical position, so
+    // the child lookup comes back empty even though the mapping is real.
+    // First-wins here, consistently, for both the exposed node list and
+    // the parent index this level's own children will resolve against —
+    // every consumer now converges on the same single row for a given
+    // combination, regardless of how many duplicate rows exist underneath.
+    const seenOwnKeys = new Set<string>();
 
     for (const rowUnknown of data ?? []) {
       const row = rowUnknown as Record<string, string>;
-      const itemId = row[ownColumn];
-      const ancestorValues = ancestorColumns.map((c) => row[c]);
+      const itemId = String(row[ownColumn]);
+      const ancestorValues = ancestorColumns.map((c) => String(row[c]));
+      const ownKey = JSON.stringify([...ancestorValues, itemId]);
+      if (seenOwnKeys.has(ownKey)) continue;
+      seenOwnKeys.add(ownKey);
+
       const parentMatchKey = JSON.stringify(ancestorValues);
       const parentRawId = parentIdx.get(parentMatchKey);
       const parentNodeId = parentRawId != null ? nodeId(level.parent_level_id, parentRawId) : null;
@@ -126,7 +164,7 @@ async function fetchAllNodes(supabase: SupabaseClient): Promise<MappingNodeOut[]
         item_id: itemId,
         parent_node_id: parentNodeId,
       });
-      idx.set(JSON.stringify([...ancestorValues, itemId]), row.id);
+      idx.set(ownKey, row.id);
     }
     rowIndexByLevel.set(level.id, idx);
   }

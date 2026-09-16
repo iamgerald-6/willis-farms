@@ -272,8 +272,19 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
     }
     if (parentNodeId === undefined) return undefined;
 
+    // String(...) on item_id — the root level (Sites) stores the real
+    // sites.id (a Postgres integer, returned as a JSON number) as its node's
+    // item_id, while every value here comes from an HTML <select>'s string
+    // value. Without normalizing, `3 === "3"` is false, resolving the Site
+    // node to undefined and cascading into every downstream dropdown
+    // (Business unit, Department, ...) silently coming back empty — same
+    // failure this file's sibling helper (itemsForOrgMapField in
+    // organizationalStructureMapping.ts) already normalizes against.
     return mappingNodes.find(
-      (n) => n.level_id === level.id && n.item_id === itemId && n.parent_node_id === parentNodeId,
+      (n) =>
+        n.level_id === level.id &&
+        String(n.item_id) === String(itemId) &&
+        n.parent_node_id === parentNodeId,
     )?.id;
   }
 

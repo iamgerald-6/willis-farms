@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { requireSystemDefinitionsAccess, jsonForbidden } from "@/lib/apiRequestAuth";
+import { requireSkillLogTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import {
   normalizeSkillLogTemplateRow,
   normalizeSkillLogTemplateSections,
@@ -22,9 +22,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "view");
+  const caller = await requireSkillLogTemplateAccess(req);
   if (!caller) {
-    return jsonForbidden("System Definitions view access is required.");
+    return jsonForbidden("Skill Log template access is required.");
   }
   const { id } = await params;
 
@@ -53,9 +53,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "edit");
+  const caller = await requireSkillLogTemplateAccess(req);
   if (!caller) {
-    return jsonForbidden("System Definitions edit access is required.");
+    return jsonForbidden("Skill Log template access is required.");
   }
   const { id } = await params;
 
@@ -122,9 +122,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const caller = await requireSystemDefinitionsAccess(req, "edit");
+  const caller = await requireSkillLogTemplateAccess(req);
   if (!caller) {
-    return jsonForbidden("System Definitions edit access is required.");
+    return jsonForbidden("Skill Log template access is required.");
   }
   const { id } = await params;
 

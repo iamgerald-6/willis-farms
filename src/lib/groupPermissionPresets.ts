@@ -103,6 +103,12 @@ export function supervisoryRolePermissionActions(): PagePermissionActions {
     "hc:leave": { view: true, add: true, approve: true },
     "hc:appraisal": { view: true, add: true, edit: true },
     "hc:skillLog": { view: true, add: true, edit: true },
+    // View-only — same site-scoped visibility as everyone else (see
+    // siteFilterValue in siteAccess.ts: a non-headquarters caller of any
+    // role only ever sees their own site's promotions). Deciding a
+    // promotion stays reserved (no `review`), matching the existing
+    // gate in requirePromotionAccess.
+    "hc:promotion": { view: true },
   };
 }
 

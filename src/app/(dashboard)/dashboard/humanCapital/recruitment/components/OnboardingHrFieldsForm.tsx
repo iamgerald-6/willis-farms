@@ -27,7 +27,7 @@ import {
   joinCompanyEmail,
   splitCompanyEmail,
 } from "@/lib/systemDefinitions/companyEmailDomain";
-import { canBeAssignedAsSupervisorAtOnboardingByRoleLabel } from "@/lib/userRoleAccessControl";
+import { eligibleSupervisorsForEmployee } from "@/lib/supervisorAssignment";
 import type { SystemOption } from "@/lib/systemDefinitions";
 import type { User } from "@/types";
 
@@ -182,18 +182,68 @@ export default function OnboardingHrFieldsForm({
     },
   });
 
-  // Offer / onboarding line managers: staff with Supervisory Role, Executive
-  // Role, or Human Resource. Not filtered by who currently has reports — the
-  // applicant is not a user yet.
+  // Site lookups for the "Reports to" site rule below — same "sites"
+  // custom-list lookup used by SiteTagPicker.tsx and the access-control
+  // supervisor picker (org-placement's own /options endpoint only returns
+  // id+label, not is_headquarters, and we also need the label here to map
+  // the applicant's chosen "Work location" string back to a site id).
+  const { data: listTypes = [] } = useQuery<{ id: string; table_name: string }[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/custom-list-types")).data.data,
+  });
+  const sitesListTypeId = listTypes.find((lt) => lt.table_name === "sites")?.id;
+  const { data: siteItems = [] } = useQuery<
+    { id: string; label: string; is_headquarters?: boolean | null }[]
+  >({
+    queryKey: ["org_custom_list_items", sitesListTypeId],
+    queryFn: async () =>
+      (
+        await api.get(
+          `/organizational-structure/custom-list-types/${sitesListTypeId}/items`,
+        )
+      ).data.data,
+    enabled: !!sitesListTypeId,
+  });
+  const headquartersSiteIds = useMemo(
+    () =>
+      new Set(siteItems.filter((s) => s.is_headquarters).map((s) => String(s.id))),
+    [siteItems],
+  );
+  // "Work location" doesn't always store the bare site label — it can also
+  // come from a job posting's free-text location ("Prampram, Greater Accra
+  // Region") or the candidate's own application answer, either of which
+  // may just CONTAIN the site's catalog label rather than equal it. Match
+  // exactly first; fall back to "work location contains this site's label"
+  // and prefer the longest matching label, so a short label (e.g. "HQ")
+  // can't falsely match a location that happens to contain that substring.
+  const applicantSiteId = useMemo(() => {
+    const location = hrData.work_location?.trim().toLowerCase() ?? "";
+    if (!location) return null;
+    const exact = siteItems.find((s) => s.label.trim().toLowerCase() === location);
+    if (exact) return String(exact.id);
+    const contains = siteItems
+      .filter((s) => location.includes(s.label.trim().toLowerCase()))
+      .sort((a, b) => b.label.length - a.label.length)[0];
+    return contains ? String(contains.id) : null;
+  }, [hrData.work_location, siteItems]);
+
+  // Offer / onboarding line managers: Supervisory Role staff at the
+  // applicant's own site, or Executive Role / Human Resource staff at the
+  // applicant's own site OR headquarters — same site rule already applied
+  // to the Manage User supervisor picker (isSupervisorSiteEligible in
+  // supervisorAssignment.ts). Not filtered by who currently has reports —
+  // the applicant is not a user yet, so a synthetic "employee" carries
+  // just the site id that rule actually reads.
   const lineManagers = useMemo(() => {
-    return allUsers
-      .filter(
-        (u) =>
-          !u.is_disabled &&
-          canBeAssignedAsSupervisorAtOnboardingByRoleLabel(u.user_role_label),
-      )
-      .sort((a, b) => lineManagerLabel(a).localeCompare(lineManagerLabel(b)));
-  }, [allUsers]);
+    if (!applicantSiteId) return [];
+    return eligibleSupervisorsForEmployee(
+      { user_id: "__applicant__", user_role_label: null, site_id: applicantSiteId },
+      allUsers.filter((u) => !u.is_disabled),
+      "onboarding",
+      headquartersSiteIds,
+    );
+  }, [allUsers, applicantSiteId, headquartersSiteIds]);
 
   const selectedLineManagerId = useMemo(() => {
     if (hrData.supervisor_id && lineManagers.some((u) => u.user_id === hrData.supervisor_id)) {
@@ -272,9 +322,10 @@ export default function OnboardingHrFieldsForm({
       field.fieldKey === "supervisor_id" ||
       (field.fieldKey === "supervisor_name" && field.fieldType === "text")
     ) {
-      const emptyLabel =
-        lineManagers.length === 0
-          ? "No Supervisory, Executive, or HR staff found"
+      const emptyLabel = !applicantSiteId
+        ? "Select a Work location first"
+        : lineManagers.length === 0
+          ? "No Supervisory, Executive, or HR staff found at this site or headquarters"
           : "Select supervisor…";
       return (
         <label key={field.id} className={`block ${spanClass}`}>
@@ -428,9 +479,11 @@ export default function OnboardingHrFieldsForm({
             onChange={(e) => pickLineManager(e.target.value)}
           >
             <option value="">
-              {lineManagers.length === 0
-                ? "No Supervisory, Executive, or HR staff found"
-                : "Select who this hire reports to…"}
+              {!applicantSiteId
+                ? "Select a Work location first"
+                : lineManagers.length === 0
+                  ? "No Supervisory, Executive, or HR staff found at this site or headquarters"
+                  : "Select who this hire reports to…"}
             </option>
             {lineManagers.map((sup) => (
               <option key={sup.user_id} value={sup.user_id}>
