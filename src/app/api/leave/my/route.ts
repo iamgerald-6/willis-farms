@@ -7,6 +7,7 @@ import {
 } from "@/lib/apiRequestAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { fetchLeaveAnnualCapDays } from "@/lib/leave/leavePolicy";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,22 @@ export async function GET(req: NextRequest) {
 
     if (user_id !== caller.id && !isSeniorManagement(caller.role)) {
       return jsonForbidden("You can only view your own leave requests.");
+    }
+
+    // Senior Management can view an employee's leave here, but only for
+    // employees at a site they're authorized for — same site rule as
+    // everywhere else; being Senior Management no longer means "any site."
+    if (user_id !== caller.id) {
+      const { data: targetUser } = await supabaseAdmin
+        .from("users")
+        .select("site_id")
+        .eq("user_id", user_id)
+        .maybeSingle();
+      if (!assertSiteAccess(caller, targetUser?.site_id ?? null)) {
+        return jsonForbidden(
+          "Forbidden — this employee isn't at a site you have access to.",
+        );
+      }
     }
 
     const currentYear = new Date().getFullYear();

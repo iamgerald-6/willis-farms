@@ -4,6 +4,7 @@ import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import {
   fetchDirectReportUserIds,
   fetchProjectCreatorInfo,
+  isProjectSiteVisible,
   isProjectVisibleToViewer,
   isTaskVisibleToViewer,
   resolveTaskViewScope,
@@ -91,8 +92,9 @@ export async function GET(req: NextRequest) {
     const result = (projects ?? [])
       .filter(
         (p) =>
-          includeArchived ||
-          isProjectVisibleToViewer(p, user.id, canSeeAll, visibleProjectIds, creatorInfoMap.get(p.created_by)),
+          isProjectSiteVisible(user, p) &&
+          (includeArchived ||
+            isProjectVisibleToViewer(p, user.id, canSeeAll, visibleProjectIds, creatorInfoMap.get(p.created_by))),
       )
       .map((p) => ({
         ...p,
@@ -137,7 +139,17 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from("tm_projects")
-      .insert([{ name: trimmedName, description: description ?? null, created_by: user.id }])
+      .insert([
+        {
+          name: trimmedName,
+          description: description ?? null,
+          created_by: user.id,
+          // Creation-time snapshot, taken from the creator's current site
+          // (see docs/multi-site/add-site-id-tm-projects.sql) — not
+          // live-inherited, so a later transfer never rewrites this record.
+          site_id: user.site_id ?? null,
+        },
+      ])
       .select()
       .single();
     if (error) throw error;

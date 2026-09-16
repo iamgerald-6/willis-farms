@@ -32,6 +32,7 @@ import {
   validateImageFile,
   validatePdfOrWordFile,
 } from "@/lib/uploadConstraints";
+import SiteTagPicker from "@/components/SiteTagPicker";
 
 const SOP_CATEGORY_VALUES = getSopCategoryLegacyValues() as unknown as [
   string,
@@ -213,6 +214,8 @@ interface UploadPayload {
   created_by?: string;
   performed_by?: string;
   performed_by_name?: string;
+  /** [] means "all sites" — see docs/multi-site/add-site-tagging-policies-sop.sql. */
+  site_ids?: number[];
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
@@ -240,6 +243,7 @@ export default function AddContentModal({
   const [docUrl, setDocUrl] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [siteIds, setSiteIds] = useState<number[]>([]);
 
   const {
     register,
@@ -265,6 +269,7 @@ export default function AddContentModal({
         document_read_minutes:
           editingContent.document_read_minutes ?? undefined,
       });
+      setSiteIds(editingContent.site_ids ?? []);
     } else {
       reset({
         title: "",
@@ -273,6 +278,7 @@ export default function AddContentModal({
         description: "",
         document_read_minutes: undefined,
       });
+      setSiteIds([]);
     }
     setCoverFile(null);
     setDocFile(null);
@@ -401,6 +407,7 @@ export default function AddContentModal({
         ...(isEditing ? {} : { created_by: performedBy?.id }),
         performed_by: performedBy?.id,
         performed_by_name: performedBy?.name,
+        site_ids: siteIds,
       });
     } catch (err: any) {
       setServerError(err.message ?? "File upload failed. Please try again.");
@@ -610,6 +617,8 @@ export default function AddContentModal({
                 {descriptionCharCount}/{SOP_DESCRIPTION_MAX_CHARS} characters
               </p>
             </Field>
+
+            <SiteTagPicker selectedSiteIds={siteIds} onChange={setSiteIds} />
 
             {/* ── Media section ── */}
             <div className="border-t border-dashed border-gray-200 pt-5">

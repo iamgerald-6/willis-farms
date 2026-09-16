@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { requirePromotionAccess } from "@/lib/apiRequestAuth";
+import { siteFilterValue } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
+  const authedUser = await requirePromotionAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Promotion view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -11,7 +21,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    // site_id is a direct column on promotions (a creation-time snapshot,
+    // not live-inherited — see docs/multi-site/add-site-id-historical-tables.sql)
+    // so it can be filtered on directly, no join needed.
+    let query = supabaseAdmin
       .from("promotions")
       .select(
         `
@@ -44,6 +57,13 @@ export async function GET(req: NextRequest) {
       `,
       )
       .order("created_at", { ascending: false });
+
+    const siteId = siteFilterValue(authedUser);
+    if (siteId != null) {
+      query = query.eq("site_id", siteId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

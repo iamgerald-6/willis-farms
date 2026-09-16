@@ -6,6 +6,7 @@ import { hasFullAppraisalAccess } from "@/lib/accessControl";
 import AppraisalLandingPage from "./component/AppraisalPageView";
 import AppraisalGradeTemplatesManager from "./component/AppraisalGradeTemplatesManager";
 import { useAppraisalViewer } from "./component/useAppraisalViewer";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 
 // Same toggle shape as SOPHubPage: one route, "Appraisals" vs "Manage
 // appraisals" — instead of the appraisal question-set builder living under
@@ -16,8 +17,13 @@ const AppraisalsHomePage = () => {
   const router = useRouter();
   const { viewer } = useAppraisalViewer();
   const [viewMode, setViewMode] = useState<"appraisals" | "manage">("appraisals");
+  const { isHeadquarters } = useIsHeadquarters();
 
-  const canManage = hasFullAppraisalAccess(viewer.role);
+  // Manage appraisals (the grade-template question-set builder) is
+  // headquarters-only, on top of the existing role check — see
+  // isHeadquartersCaller in apiRequestAuth.ts, which the server enforces
+  // regardless of what this toggle shows.
+  const canManage = hasFullAppraisalAccess(viewer.role) && isHeadquarters;
 
   return (
     <div>

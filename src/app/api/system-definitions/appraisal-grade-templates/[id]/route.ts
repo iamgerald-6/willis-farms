@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireAppraisalGradeTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import type { AppraisalGradeTemplate } from "@/lib/appraisal/gradeTemplates";
+import { stringifyPlacementColumns } from "@/lib/organizationalStructureMapping";
 
 const PATCHABLE_FIELDS = ["quarterly_sections", "annual_sections", "extra_rules"] as const;
 
@@ -33,7 +34,7 @@ export async function GET(
     return NextResponse.json({ error: "Template not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ data: data as AppraisalGradeTemplate });
+  return NextResponse.json({ data: stringifyPlacementColumns(data as Record<string, unknown>) });
 }
 
 export async function PATCH(
@@ -74,7 +75,7 @@ export async function PATCH(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: data as AppraisalGradeTemplate });
+  return NextResponse.json({ data: stringifyPlacementColumns(data as Record<string, unknown>) });
 }
 
 export async function DELETE(

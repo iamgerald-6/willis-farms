@@ -134,6 +134,20 @@ export default function ManageUserAccessPage() {
   const actorProfile = resolveAccessProfile(actor, sessionRole);
   const canManage = canManageUserAccounts(actorProfile, sessionRole);
 
+  // Whether the acting caller (not the target being edited) can place
+  // anyone at any site is headquarters-only — same rule the backend now
+  // enforces on /access-control/org-placement (see
+  // docs/SITE_ACCESS_ARCHITECTURE.md §6.3 item 7: "only offer a site
+  // picker where ALL_SITES actually permits one").
+  const { data: me } = useQuery<{
+    is_headquarters_site?: boolean;
+  }>({
+    queryKey: ["me"],
+    queryFn: async () => (await api.get("/me")).data,
+    enabled: !!session,
+  });
+  const callerIsAllSites = me?.is_headquarters_site === true;
+
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
 
@@ -510,6 +524,30 @@ export default function ManageUserAccessPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {ORG_PLACEMENT_FIELDS.map((field) => {
                 const list = orgPlacementLists.find((l) => l.field === field);
+                // Site is a special case: a caller not at headquarters can
+                // only ever place someone at their own site (the backend
+                // rejects anything else), so there's nothing for a picker
+                // to offer them — show a fixed, non-interactive value
+                // instead of a dropdown of every site in the company.
+                if (field === "site_id" && me && !callerIsAllSites) {
+                  const currentLabel =
+                    (list ? itemsForList(list) : []).find(
+                      (item) => item.id === orgPlacement.site_id,
+                    )?.label ?? "Not set";
+                  return (
+                    <div key={field}>
+                      <label className="text-xs font-medium text-gray-600 block mb-1">
+                        {list?.label ?? "Site"}
+                      </label>
+                      <div className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+                        {currentLabel}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Placing an employee at a different site requires headquarters access.
+                      </p>
+                    </div>
+                  );
+                }
                 return (
                   <div key={field}>
                     <label

@@ -6,8 +6,22 @@ import {
   resolveEffectiveUserRoleLabel,
   resolveUserRoleLabelById,
 } from "@/lib/userRoleAccessControl";
+import { getApiRequestUser } from "@/lib/apiRequestAuth";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function POST(req: NextRequest) {
+  // Real caller identity, verified server-side — previously this route
+  // trusted whatever `submitted_by_user_id` the client put in the request
+  // body with no check that the caller actually WAS that person (anyone
+  // logged in at all could submit a promotion "as" someone else). The
+  // authenticated caller's own id is now the only source of truth for who
+  // is submitting; the request body no longer supplies it.
+  const authedUser = await getApiRequestUser(req);
+  if (!authedUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const submitted_by_user_id = authedUser.id;
+
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return NextResponse.json(
@@ -40,8 +54,8 @@ export async function POST(req: NextRequest) {
       final_decision,
       decision_comments,
       conditions,
-      submitted_by_user_id,
       submitted_by_grade,
+      user_id,
     } = body;
 
     if (
@@ -60,35 +74,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (submitted_by_user_id) {
-      const { data: submitter } = await supabase
-        .from("users")
-        .select("company_id")
-        .eq("user_id", submitted_by_user_id)
-        .maybeSingle();
+    const { data: submitter } = await supabase
+      .from("users")
+      .select("company_id")
+      .eq("user_id", submitted_by_user_id)
+      .maybeSingle();
 
-      if (submitter && submitter.company_id === company_id) {
-        return NextResponse.json(
-          { error: "You cannot submit a promotion assessment for yourself." },
-          { status: 403 },
-        );
-      }
+    if (submitter && submitter.company_id === company_id) {
+      return NextResponse.json(
+        { error: "You cannot submit a promotion assessment for yourself." },
+        { status: 403 },
+      );
     }
 
     // Resolve the promoted employee's real account once, up front — used
     // both for the existing supervisor-authorization check below and to
-    // snapshot employee_user_id/supervisor_id/site_id onto the record
-    // itself (see docs/multi-site/add-site-id-historical-tables.sql —
-    // promotions previously had no real FK to the employee being
-    // promoted at all, only this same company_id text match, done inline
-    // and thrown away). A promotion for an employee with no platform
-    // account (employeeRow null) still succeeds — those three fields just
-    // stay null, same as before.
-    const { data: employeeRow } = await supabase
-      .from("users")
-      .select("user_id, supervisor_id, site_id")
-      .eq("company_id", company_id)
-      .maybeSingle();
+    // snapshot user_id/supervisor_id/site_id onto the record itself (see
+    // docs/multi-site/add-site-id-historical-tables.sql — promotions
+    // previously had no real FK to the employee being promoted at all,
+    // only a company_id text match, done inline and thrown away).
+    //
+    // The frontend now resolves and sends the employee's real user_id
+    // directly (a true FK, not a derived text match) — prefer that. The
+    // company_id lookup is kept only as a fallback for callers that don't
+    // supply user_id (e.g. an employee with no platform account yet, or
+    // an older client). A promotion for an employee with no platform
+    // account at all (employeeRow null either way) still succeeds — those
+    // three fields just stay null, same as before.
+    const { data: employeeRow } = user_id
+      ? await supabase
+          .from("users")
+          .select("user_id, supervisor_id, site_id")
+          .eq("user_id", user_id)
+          .maybeSingle()
+      : await supabase
+          .from("users")
+          .select("user_id, supervisor_id, site_id")
+          .eq("company_id", company_id)
+          .maybeSingle();
+
+    // Site rule applies independently of role — a SITE-scoped caller
+    // (i.e. not at headquarters) can only submit a promotion for someone
+    // at their own site, even if their role would otherwise let them
+    // submit for anyone (see src/lib/siteAccess.ts). An employee with no
+    // resolvable account (employeeRow null) has no site to check — that
+    // case is left to the existing "no platform account" allowance below,
+    // not blocked here.
+    if (employeeRow && !assertSiteAccess(authedUser, employeeRow.site_id)) {
+      return NextResponse.json(
+        { error: "Forbidden — this employee isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     // Role opens the ability to submit. Supervisory Role can only submit
     // for people assigned to them (users.supervisor_id). Executive / HR /
@@ -130,7 +167,7 @@ export async function POST(req: NextRequest) {
     const insertPayload: Record<string, unknown> = {
       appraisal_id,
       employee_company_id: company_id,
-      employee_user_id: employeeRow?.user_id ?? null,
+      user_id: employeeRow?.user_id ?? null,
       supervisor_id: employeeRow?.supervisor_id ?? null,
       site_id: employeeRow?.site_id ?? null,
       employee_name,

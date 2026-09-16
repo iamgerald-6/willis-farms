@@ -203,17 +203,33 @@ export interface SendMonthlyReportParams {
   // Null for an automatic/scheduled send — nothing to attribute it to.
   generatedByUserId: string | null;
   generatedByName: string;
+  // undefined/omitted or null = company-wide report, every active project,
+  // unfiltered (the original, pre-site-scoping behavior). A number scopes
+  // the report to that site's projects, PLUS any project with a null
+  // site_id — same "untagged = visible everywhere" convention used
+  // elsewhere for Task Manager (see isProjectSiteVisible in
+  // taskManagerScope.ts) — so a project nobody's tagged to a site yet
+  // doesn't silently disappear from every site's report.
+  siteId?: number | null;
+  // Only used for the email subject/PDF filename/log row when siteId is
+  // set — a human label ("Accra Farm") rather than a raw id.
+  siteLabel?: string | null;
 }
 
 export async function sendMonthlyReport(params: SendMonthlyReportParams) {
-  const { period_start, period_end, recipients, generatedByUserId, generatedByName } = params;
+  const { period_start, period_end, recipients, generatedByUserId, generatedByName, siteId = null, siteLabel = null } = params;
 
-  const { data: projects, error: projError } = await supabaseAdmin
+  const { data: allActiveProjects, error: projError } = await supabaseAdmin
     .from("tm_projects")
     .select("*")
     .eq("status", "active")
     .order("created_at", { ascending: true });
   if (projError) throw projError;
+
+  // Company-wide (siteId null/omitted): every active project, exactly as
+  // before this feature existed. Site-scoped: that site's projects plus any
+  // project nobody's tagged to a site.
+  const projects = siteId == null ? allActiveProjects : (allActiveProjects ?? []).filter((p) => p.site_id === siteId || p.site_id == null);
 
   const { data: allTasks, error: tasksError } = await supabaseAdmin
     .from("tm_tasks")
@@ -373,7 +389,8 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
   upcoming.sort((a, b) => a.due_date.localeCompare(b.due_date));
 
   const dashboardUrl = `${getAppBaseUrl()}/dashboard/taskManager`;
-  const periodLabel = `${new Date(period_start).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} – ${new Date(period_end).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
+  const dateRangeLabel = `${new Date(period_start).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} – ${new Date(period_end).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
+  const periodLabel = siteLabel ? `${dateRangeLabel} — ${siteLabel}` : dateRangeLabel;
 
   // The full picture, not just a top-3 — next month's comparison needs
   // every project/owner that had any overdue tasks, not only the worst of
@@ -397,15 +414,17 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
   // Most recent prior report that actually has a snapshot to compare
   // against — older reports sent before this feature existed won't have
   // one, and generateExecutiveSummary is told explicitly when there's
-  // nothing to compare against rather than being left to guess.
-  const { data: previousReport } = await supabaseAdmin
+  // nothing to compare against rather than being left to guess. Matched on
+  // the same site_id (including null = company-wide) so a site-scoped
+  // report never compares itself against a different site's — or the
+  // company-wide — numbers.
+  let previousReportQuery = supabaseAdmin
     .from("tm_monthly_reports")
     .select("stats_snapshot")
     .lt("period_end", period_start)
-    .not("stats_snapshot", "is", null)
-    .order("period_end", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .not("stats_snapshot", "is", null);
+  previousReportQuery = siteId == null ? previousReportQuery.is("site_id", null) : previousReportQuery.eq("site_id", siteId);
+  const { data: previousReport } = await previousReportQuery.order("period_end", { ascending: false }).limit(1).maybeSingle();
   const previousSnapshot: ReportStatsSnapshot | null = (previousReport?.stats_snapshot as ReportStatsSnapshot | undefined) ?? null;
 
   // Reliable regardless of whether a stored snapshot exists — reconstructed
@@ -466,7 +485,7 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
       `,
       attachments: [
         {
-          filename: `task-manager-report-${period_start}.pdf`,
+          filename: siteId != null ? `task-manager-report-${period_start}-site-${siteId}.pdf` : `task-manager-report-${period_start}.pdf`,
           content: pdfBuffer.toString("base64"),
         },
       ],
@@ -484,6 +503,7 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
         sent_to: recipients,
         generated_by: generatedByUserId,
         stats_snapshot: currentSnapshot,
+        site_id: siteId,
       },
     ])
     .select()

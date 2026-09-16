@@ -122,16 +122,20 @@ many-to-many mapping design explicitly supports). The existing
 `src/lib/organizationalStructureMapping.ts`) is the right mechanism for cascading-dropdown
 validity — it just needs to keep working as-is. No change proposed here.
 
-### 3.2 Known gap: `job_applications.job_posting_id` is nullable
+### 3.2 Resolved: `job_applications.job_posting_id` is now required going forward
 
 The Phase 1 audit flagged this: if an application can exist in application code without a
-resolved `job_posting_id` (e.g. mid-draft), it has no resolvable site. Recommendation:
-treat these as **not visible to `SITE`-scoped users** by default (per `assertSiteAccess`'s
-null-handling above) rather than either (a) silently showing them to everyone, or (b)
-guessing a site. This needs one confirmation from you before Phase 3: **should
-`job_posting_id` become `not null` going forward** (blocking the gap at the source), or is
-there a legitimate reason applications can exist without a posting that we need to keep
-supporting? Flagging per §32 rather than deciding unilaterally.
+resolved `job_posting_id` (e.g. mid-draft), it has no resolvable site. **Decision (confirmed
+during Phase 3): block the gap at the source going forward.** Existing null rows are
+accepted as old/legacy data and deliberately left untouched (no backfill) —
+`docs/multi-site/require-job-posting-id-going-forward.sql` adds a `CHECK (job_posting_id is
+not null) NOT VALID` constraint, which Postgres enforces on every new insert/update without
+validating (or breaking on) rows that already exist. Confirmed via code read that the
+current application-save flow (`src/app/api/careers/applications/save/route.ts`) already
+always sets `job_posting_id` at creation — this constraint is a database-level backstop for
+that, not a fix to a currently-broken path. Any surviving legacy null rows still need the
+`SITE`-scoped-users-can't-see-them handling from `assertSiteAccess`'s null-handling
+(§2 above) once that's built — they just can't be created anymore.
 
 ### 3.3 Judgment call: `tm_projects` — recommending Global, want your confirmation
 

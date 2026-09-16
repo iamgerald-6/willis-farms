@@ -25,6 +25,21 @@ import { RouteGuardSkeleton } from "@/components/skeletons/PageSkeletons";
 import { isEmailVerified } from "@/lib/userAccountStatus";
 import { staffAuthBlockMessage } from "@/lib/staffAccount";
 import { performLogout } from "@/lib/auth/performLogout";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
+
+// Whole modules that are headquarters-only regardless of role — see
+// isHeadquartersCaller in apiRequestAuth.ts, the server-side rule this
+// mirrors. User Management (access-control), System Definitions, and
+// Recruitment are entire modules, not single buttons on an otherwise-shared
+// page, so they're blocked here centrally rather than page-by-page like the
+// narrower "manage" actions (Policies upload, SOP Management, User Manual
+// upload, Appraisal/Skill Log template admin) gated individually where they
+// live.
+const HEADQUARTERS_ONLY_ROUTE_PREFIXES = [
+  "/dashboard/access-control",
+  "/dashboard/system-definitions",
+  "/dashboard/humanCapital/recruitment",
+];
 
 export default function RouteAccessGuard({
   children,
@@ -58,16 +73,33 @@ export default function RouteAccessGuard({
   const unrestricted = hasUnrestrictedAccess(accessProfile, sessionRole);
   const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
-  const loading = sessionLoading || usersLoading || presetsLoading;
+  const { isHeadquarters, isLoading: hqLoading } = useIsHeadquarters();
+  const loading = sessionLoading || usersLoading || presetsLoading || hqLoading;
 
   const isAccessControlRoute = pathname?.startsWith(
     "/dashboard/access-control",
   );
   const isManageUserRoute =
     isAccessControlRoute && pathname !== "/dashboard/access-control";
+  const isHeadquartersOnlyRoute = HEADQUARTERS_ONLY_ROUTE_PREFIXES.some((prefix) =>
+    pathname?.startsWith(prefix),
+  );
 
   useEffect(() => {
     if (loading) return;
+
+    // Headquarters-only modules are checked before the `unrestricted`
+    // bypass below — WHERE someone is placed, not their role, decides this
+    // one, same as every other site-access rule this session (see
+    // isHeadquartersCaller in apiRequestAuth.ts). A Super Admin/Executive
+    // account that would otherwise skip every other check here still can't
+    // open these modules unless placed at headquarters.
+    if (isHeadquartersOnlyRoute && !isHeadquarters) {
+      toast.error("This section is available only to headquarters staff.");
+      router.replace("/dashboard");
+      return;
+    }
+
     if (unrestricted) return;
 
     if (!accessProfile && !profile) return;
@@ -136,12 +168,18 @@ export default function RouteAccessGuard({
     pathname,
     router,
     isAccessControlRoute,
+    isHeadquartersOnlyRoute,
+    isHeadquarters,
     groupPresets,
     sessionRole,
   ]);
 
-  if (loading && !unrestricted) {
+  if (loading) {
     return <RouteGuardSkeleton />;
+  }
+
+  if (isHeadquartersOnlyRoute && !isHeadquarters) {
+    return null;
   }
 
   if (unrestricted) {

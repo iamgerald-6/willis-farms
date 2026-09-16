@@ -12,6 +12,7 @@ import {
 } from "@/lib/leave/leavePolicy";
 import { resolveInitialLeaveStage } from "@/lib/leaveAccess";
 import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
+import { assertSiteAccess } from "@/lib/siteAccess";
 import {
   resolveSignoffRecipients,
   sendLeaveSignoffNotification,
@@ -123,12 +124,22 @@ export async function POST(req: NextRequest) {
     // through the normal two-stage flow.
     const { data: applicant } = await supabaseAdmin
       .from("users")
-      .select("supervisor_id, user_role_id, first_name, last_name")
+      .select("supervisor_id, user_role_id, first_name, last_name, site_id")
       .eq("user_id", user_id)
       .maybeSingle();
 
+    // Senior Management submitting on someone else's behalf can only do so
+    // for an employee at a site they're authorized for.
+    if (user_id !== caller.id && !assertSiteAccess(caller, applicant?.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this employee isn't at a site you have access to.");
+    }
+
     const stage = resolveInitialLeaveStage(applicant?.supervisor_id ?? null);
 
+    // site_id is a creation-time snapshot (see
+    // docs/multi-site/add-site-id-historical-tables.sql) — taken from the
+    // applicant's current site, not the caller's, so it stays correct even
+    // when Senior Management submits on someone else's behalf.
     const insertRow: Record<string, unknown> = {
       user_id,
       leave_type,
@@ -137,6 +148,7 @@ export async function POST(req: NextRequest) {
       end_date,
       total_days,
       stage,
+      site_id: applicant?.site_id ?? null,
     };
     if (document_url) {
       insertRow.document_url = document_url;

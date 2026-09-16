@@ -8,9 +8,20 @@ import api from "@/lib/api";
 import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMReportSchedule, TMReminderSettings } from "@/types/taskManager";
 import { User } from "@/types";
+import type { OrgCustomListType, OrgCustomListItem } from "@/lib/organizationalStructureCustomLists";
 import StaffMultiSelect from "./StaffMultiSelect";
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
+
+type MeSiteScope = {
+  site_id?: number | string | null;
+  is_headquarters_site?: boolean;
+};
+
+// null represents the company-wide schedule row in this picker's own local
+// state — kept as the string "company" for the <select> element (which
+// can't hold a real null value) and translated back at the API boundary.
+const COMPANY_WIDE = "company";
 
 function ordinal(n: number) {
   const s = ["th", "st", "nd", "rd"];
@@ -21,14 +32,61 @@ function ordinal(n: number) {
 export default function AutomationSettingsModal({ users, onClose }: { users: User[]; onClose: () => void }) {
   const queryClient = useQueryClient();
 
-  const { data: scheduleData, isLoading: scheduleLoading } = useQuery<{ schedule: TMReportSchedule }>({
+  const { data: me } = useQuery<MeSiteScope>({
+    queryKey: ["me"],
+    queryFn: async () => (await api.get("/me")).data,
+  });
+  const isAllSitesCaller = me?.is_headquarters_site === true;
+
+  // Only fetched for a headquarters caller — a site-scoped caller can only
+  // ever manage their own site's row anyway, so there's nothing to pick.
+  const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
+    enabled: isAllSitesCaller,
+  });
+  const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
+  const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
+    queryKey: ["org_custom_list_items", sitesListType?.id],
+    queryFn: async () => (await api.get(`/organizational-structure/custom-list-types/${sitesListType!.id}/items`)).data.data,
+    enabled: isAllSitesCaller && !!sitesListType,
+  });
+
+  // tm_report_schedule now holds one row per site plus at most one
+  // company-wide row (site_id null) — see docs/multi-site/
+  // add-site-id-tm-report-schedule.sql. The GET route already scopes this
+  // list to whatever the caller is allowed to see: everything for
+  // headquarters, or just their own site's single row otherwise.
+  const { data: scheduleData, isLoading: scheduleLoading } = useQuery<{ schedules: TMReportSchedule[] }>({
     queryKey: ["tm-report-schedule"],
     queryFn: async () => (await api.get("/task-manager/reports/schedule")).data,
   });
+  const schedules = scheduleData?.schedules ?? [];
+
   const { data: reminderData, isLoading: reminderLoading } = useQuery<{ settings: TMReminderSettings }>({
     queryKey: ["tm-reminder-settings"],
     queryFn: async () => (await api.get("/task-manager/reminders/settings")).data,
   });
+
+  // Which row the form below is currently editing. A site-scoped caller
+  // only ever has one row to pick from, so this just tracks it; a
+  // headquarters caller gets a real <select> to switch between sites (and
+  // the company-wide report).
+  const [selectedSiteKey, setSelectedSiteKey] = useState<string>(COMPANY_WIDE);
+  useEffect(() => {
+    if (schedules.length === 0) return;
+    const stillExists = schedules.some((s) => (s.site_id == null ? COMPANY_WIDE : String(s.site_id)) === selectedSiteKey);
+    if (!stillExists) {
+      const first = schedules[0];
+      setSelectedSiteKey(first.site_id == null ? COMPANY_WIDE : String(first.site_id));
+    }
+    // Only re-run when the set of available rows changes, not on every
+    // keystroke in the form below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules.map((s) => s.id).join(",")]);
+
+  const selectedSchedule = schedules.find((s) => (s.site_id == null ? COMPANY_WIDE : String(s.site_id)) === selectedSiteKey);
+
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [dayOfMonth, setDayOfMonth] = useState(1);
   // Recipients are picked from real staff accounts (see StaffMultiSelect)
@@ -44,12 +102,16 @@ export default function AutomationSettingsModal({ users, onClose }: { users: Use
   const [testingReminders, setTestingReminders] = useState(false);
 
   useEffect(() => {
-    if (scheduleData?.schedule) {
-      setScheduleEnabled(scheduleData.schedule.enabled);
-      setDayOfMonth(scheduleData.schedule.day_of_month);
-      setScheduleRecipients(scheduleData.schedule.recipients ?? []);
+    if (selectedSchedule) {
+      setScheduleEnabled(selectedSchedule.enabled);
+      setDayOfMonth(selectedSchedule.day_of_month);
+      setScheduleRecipients(selectedSchedule.recipients ?? []);
+    } else {
+      setScheduleEnabled(false);
+      setDayOfMonth(1);
+      setScheduleRecipients([]);
     }
-  }, [scheduleData]);
+  }, [selectedSchedule]);
 
   useEffect(() => {
     if (reminderData?.settings) {
@@ -66,7 +128,12 @@ export default function AutomationSettingsModal({ users, onClose }: { users: Use
     }
     setSavingSchedule(true);
     try {
-      await api.put("/task-manager/reports/schedule", { enabled: scheduleEnabled, day_of_month: dayOfMonth, recipients: scheduleRecipients });
+      await api.put("/task-manager/reports/schedule", {
+        enabled: scheduleEnabled,
+        day_of_month: dayOfMonth,
+        recipients: scheduleRecipients,
+        site_id: selectedSiteKey === COMPANY_WIDE ? null : Number(selectedSiteKey),
+      });
       toast.success("Report schedule saved");
       queryClient.invalidateQueries({ queryKey: ["tm-report-schedule"] });
     } catch (err: any) {
@@ -139,6 +206,27 @@ export default function AutomationSettingsModal({ users, onClose }: { users: Use
             <p className="text-xs text-gray-500">
               When on, the previous month's report is generated and emailed automatically at 9am on the day below — no need to send it by hand.
             </p>
+
+            {isAllSitesCaller && schedules.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Report for</label>
+                <select
+                  value={selectedSiteKey}
+                  onChange={(e) => setSelectedSiteKey(e.target.value)}
+                  className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <option value={COMPANY_WIDE}>Company-wide (every project)</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={String(site.id)}>
+                      {site.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Each site can have its own schedule and recipients — the company-wide report covers every project, unfiltered.
+                </p>
+              </div>
+            )}
 
             {scheduleLoading ? (
               <ModalListSkeleton rows={3} />

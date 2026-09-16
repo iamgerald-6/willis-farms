@@ -15,6 +15,7 @@ import {
   resolveSignoffRecipients,
   sendLeaveSignoffNotification,
 } from "@/lib/leave/leaveNotifications";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,7 +51,7 @@ export async function PATCH(req: NextRequest) {
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("leave_requests")
       .select(
-        "user_id, stage, leave_type, start_date, end_date, total_days, reason, users:user_id(supervisor_id, user_role_id, first_name, last_name)",
+        "user_id, stage, leave_type, start_date, end_date, total_days, reason, site_id, users:user_id(supervisor_id, user_role_id, first_name, last_name)",
       )
       .eq("id", leave_id)
       .single();
@@ -64,6 +65,10 @@ export async function PATCH(req: NextRequest) {
 
     if (existing.user_id === caller.id) {
       return jsonForbidden("You cannot approve or reject your own leave request.");
+    }
+
+    if (!assertSiteAccess(caller, existing.site_id)) {
+      return jsonForbidden("Forbidden — this leave request isn't at a site you have access to.");
     }
 
     const ctx = await getLeaveAuthContext(req);

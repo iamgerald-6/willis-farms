@@ -13,6 +13,7 @@ import {
   isMissingColumnError,
   updateUserWithColumnFallback,
 } from "@/lib/supabaseUserUpdate";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 const SUPERVISOR_MIGRATION_HINT =
   " Run docs/access-control/users-supervisor.sql in Supabase, then: NOTIFY pgrst, 'reload schema';";
@@ -55,7 +56,7 @@ export async function PATCH(req: NextRequest) {
 
     const { data: target, error: targetError } = await supabaseAdmin
       .from("users")
-      .select("user_id, user_role_id")
+      .select("user_id, user_role_id, site_id")
       .eq("user_id", target_user_id)
       .maybeSingle();
 
@@ -71,6 +72,13 @@ export async function PATCH(req: NextRequest) {
 
     if (!target) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Being able to edit User Management doesn't mean any site — same rule
+    // as everywhere else. A caller not at headquarters can only reassign
+    // the supervisor of an employee placed at their own site.
+    if (!assertSiteAccess(caller, target.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this employee isn't at a site you have access to.");
     }
 
     const targetRoleLabel = await resolveUserRoleLabelById(
@@ -95,7 +103,7 @@ export async function PATCH(req: NextRequest) {
     if (supervisor_id) {
       const { data: supervisor, error: supervisorError } = await supabaseAdmin
         .from("users")
-        .select("user_id, user_role_id")
+        .select("user_id, user_role_id, site_id")
         .eq("user_id", supervisor_id)
         .maybeSingle();
 
@@ -103,6 +111,12 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json(
           { error: "Supervisor not found" },
           { status: 404 },
+        );
+      }
+
+      if (!assertSiteAccess(caller, supervisor.site_id ?? null)) {
+        return jsonForbidden(
+          "Forbidden — the proposed supervisor isn't at a site you have access to.",
         );
       }
 

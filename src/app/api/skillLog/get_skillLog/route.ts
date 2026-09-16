@@ -11,6 +11,7 @@ import {
   flattenSkillLogGradeLevels,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
+import { siteFilterValue } from "@/lib/siteAccess";
 
 const FULL_SELECT = `
   id,
@@ -28,6 +29,7 @@ const FULL_SELECT = `
   signed_off_at,
   employee_id,
   supervisor_id,
+  site_id,
   employee:users!skill_logs_employee_id_fkey (
     user_id,
     first_name,
@@ -79,6 +81,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // skill_logs.site_id is a creation-time snapshot (see
+    // docs/multi-site/add-site-id-historical-tables.sql). An employee always
+    // sees their own skill log entries regardless of site — same "own
+    // records" exception used across leave/appraisals; anyone viewing
+    // someone else's record is still site-locked unless at headquarters.
+    const siteId = siteFilterValue(ctx.user);
     const visible = (data ?? [])
       .filter((log) =>
         canViewSkillLogRecord(
@@ -89,6 +97,12 @@ export async function GET(req: NextRequest) {
           ctx.user.role,
         ),
       )
+      .filter((log) => {
+        const rec = log as unknown as { employee_id?: string | null; site_id?: number | null };
+        if (rec.employee_id === ctx.user.id) return true;
+        if (siteId == null) return true;
+        return rec.site_id === siteId;
+      })
       .map((log) => flattenSkillLogGradeLevels(log as SkillLogRecord));
 
     return NextResponse.json({ success: true, data: visible });

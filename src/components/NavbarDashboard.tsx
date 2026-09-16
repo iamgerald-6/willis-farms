@@ -11,6 +11,7 @@ import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canOpenUserManagement } from "@/lib/permissionLevels";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import { performLogout } from "@/lib/auth/performLogout";
 import { useAppraisalFormProgressOptional } from "@/lib/appraisal/appraisalFormProgress";
 
@@ -193,7 +194,12 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
-  const showUserManagement = canOpenUserManagement(accessProfile, sessionRole);
+  const { isHeadquarters } = useIsHeadquarters();
+  // Both are headquarters-only modules regardless of role — WHERE someone
+  // is placed decides this, not their role (mirrors
+  // HEADQUARTERS_ONLY_ROUTE_PREFIXES in RouteAccessGuard.tsx, which does
+  // the actual enforcement).
+  const showUserManagement = canOpenUserManagement(accessProfile, sessionRole) && isHeadquarters;
   const showSystemDefinitions =
     accessProfile &&
     canPerformModuleAction(
@@ -202,7 +208,8 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
       "view",
       sessionRole,
       groupPresets,
-    );
+    ) &&
+    isHeadquarters;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

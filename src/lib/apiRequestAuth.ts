@@ -62,6 +62,12 @@ export interface ApiRequestUser {
   page_permissions?: string[] | null;
   page_permission_levels?: AccessProfile["page_permission_levels"];
   page_permission_actions?: AccessProfile["page_permission_actions"];
+  /** Employee's own site (users.site_id) — null if unplaced or auth-only. */
+  site_id: number | null;
+  /** True when site_id's site is marked headquarters (sites.is_headquarters)
+   * — the one case where a person sees every site's data regardless of
+   * role. See src/lib/siteAccess.ts, the shared consumer of this flag. */
+  is_headquarters_site: boolean;
 }
 
 let _admin: SupabaseClient | null = null;
@@ -130,24 +136,42 @@ export async function getApiRequestUser(
     page_permissions?: string[] | null;
     page_permission_levels?: AccessProfile["page_permission_levels"];
     page_permission_actions?: AccessProfile["page_permission_actions"];
+    site_id?: number | null;
+    is_headquarters_site?: boolean;
   } | null = null;
   try {
     // grade_level is no longer a stored column — derived live via the
     // grade_level_id FK join to the Organizational Structure "Grade levels"
     // catalog, so it can never drift out of sync with the catalog. See
     // docs/organizational-structure/drop-users-grade-level-column.sql.
+    // site_id's headquarters status is resolved the same way, via a join to
+    // sites(is_headquarters) rather than a separately-maintained flag on
+    // the user — see docs/multi-site/add-headquarters-and-site-access-foundation.sql.
     const { data } = await supabaseAdmin
       .from("users")
       .select(
-        "user_id, role, user_role_id, grade_level_id, grade_levels(code), first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions",
+        "user_id, role, user_role_id, grade_level_id, grade_levels(code), first_name, last_name, email, company_id, tm_can_view_all_tasks, access_tier, page_permissions, page_permission_levels, page_permission_actions, site_id, sites(is_headquarters)",
       )
       .eq("user_id", authUser.id)
       .maybeSingle();
     if (data) {
-      const { grade_levels, ...rest } = data as typeof data & {
+      const { grade_levels, sites, ...rest } = data as typeof data & {
         grade_levels?: { code: string | null } | null;
+        sites?: { is_headquarters: boolean | null } | null;
       };
-      profile = { ...rest, grade_level: grade_levels?.code ?? null };
+      // Supabase's untyped client sometimes infers a to-one join like this
+      // as an array rather than a single object (no generated types in
+      // this project to tell it otherwise) — the exact same quirk
+      // siteIdFromJoin() normalizes for site_id joins elsewhere. Reading
+      // `sites?.is_headquarters` directly on an array silently evaluates
+      // to undefined, which made every headquarters-placed caller resolve
+      // as a non-headquarters SITE-scoped caller instead of ALL_SITES.
+      const siteRow = Array.isArray(sites) ? sites[0] : sites;
+      profile = {
+        ...rest,
+        grade_level: grade_levels?.code ?? null,
+        is_headquarters_site: siteRow?.is_headquarters ?? false,
+      };
     }
   } catch (err) {
     console.error("[getApiRequestUser] users lookup failed", err);
@@ -185,7 +209,27 @@ export async function getApiRequestUser(
     page_permissions: profile?.page_permissions ?? null,
     page_permission_levels: profile?.page_permission_levels ?? null,
     page_permission_actions: profile?.page_permission_actions ?? null,
+    site_id: profile?.site_id ?? null,
+    is_headquarters_site: profile?.is_headquarters_site ?? false,
   };
+}
+
+/**
+ * Some actions are restricted to headquarters PLACEMENT specifically, not
+ * just "has the right role/permission" — Sheila's explicit call: User
+ * Management, System Definitions, Recruitment (including the Appraisal
+ * grade-template and Skill Log template admin screens, both routed through
+ * System Definitions/Recruitment's own checks), uploading Policies/SOPs,
+ * and uploading a new User Manual version should only be usable by someone
+ * placed at the headquarters site — same "WHERE you're placed, not your
+ * role" rule as everywhere else in the multi-site work (see
+ * src/lib/siteAccess.ts), just applied to specific management ACTIONS
+ * rather than to which records a query returns. An Executive Role/Super
+ * Admin/HR user at a non-headquarters site fails this the same as anyone
+ * else — there is no role that bypasses it.
+ */
+function isHeadquartersCaller(user: ApiRequestUser): boolean {
+  return user.is_headquarters_site === true;
 }
 
 function callerAccessProfile(user: ApiRequestUser): AccessProfile {
@@ -224,8 +268,15 @@ export async function requireUserManagementAccess(
       : minimum === "add"
         ? canAddUser(profile, user.role)
         : canManageUserAccounts(profile, user.role);
+  if (!ok) return null;
 
-  return ok ? user : null;
+  // User Management is headquarters-only in full — see isHeadquartersCaller.
+  // A site's own Senior Management/Super Admin can no longer manage users
+  // at their own site either; only headquarters can touch any user
+  // anywhere now.
+  if (!isHeadquartersCaller(user)) return null;
+
+  return user;
 }
 
 export async function requireAuth(req: NextRequest): Promise<ApiRequestUser | null> {
@@ -310,6 +361,12 @@ export async function requireSystemDefinitionsAccess(
     ),
   );
   if (!ok) return null;
+
+  // System Definitions (including the Skill Log template admin screens,
+  // which route through this same check) is headquarters-only — see
+  // isHeadquartersCaller.
+  if (!isHeadquartersCaller(user)) return null;
+
   return user;
 }
 
@@ -325,7 +382,17 @@ export async function requireSystemDefinitionsAccess(
  * Admin already have hc:recruitment by default (or bypass entirely via
  * isFullRoleAccess), so this fixes HR without changing anyone else's
  * access. Pass one action or any-of. */
-export async function requireAppraisalGradeTemplateAccess(
+/**
+ * General-purpose "does this caller have Recruitment access" check — the
+ * one every Recruitment API route (postings, applications, interviews,
+ * onboarding, employees) should call. Added as part of Phase 3's
+ * Recruitment pass: the audit found NONE of these routes had any server-
+ * side authorization at all — only a frontend page-level check
+ * (hc:recruitment) that a direct API call bypasses entirely. This closes
+ * that gap; site filtering (src/lib/siteAccess.ts) is applied separately,
+ * after this auth check passes.
+ */
+export async function requireRecruitmentAccess(
   req: NextRequest,
   minimum: PermissionAction | PermissionAction[] = "view",
 ): Promise<ApiRequestUser | null> {
@@ -349,7 +416,95 @@ export async function requireAppraisalGradeTemplateAccess(
     ),
   );
   if (!ok) return null;
+
+  // Recruitment overall is headquarters-only (including the Appraisal
+  // grade-template admin screens, which route through
+  // requireAppraisalGradeTemplateAccess -> this same check) — see
+  // isHeadquartersCaller. Site-level staff lose Recruitment access
+  // entirely, not just job-posting creation.
+  if (!isHeadquartersCaller(user)) return null;
+
   return user;
+}
+
+/**
+ * General-purpose "does this caller have Promotion access" check — mirrors
+ * requireRecruitmentAccess but against the "hc:promotion" permission key.
+ * Added as part of Phase 3's promotions pass: post_promotions previously
+ * trusted a client-supplied `submitted_by_user_id` with no verification the
+ * caller actually WAS that person, and get_pending/get_promotions had no
+ * auth check at all.
+ */
+export async function requirePromotionAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "view",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(profile, "hc:promotion", action, user.role, presets),
+  );
+  if (!ok) return null;
+  return user;
+}
+
+/**
+ * General-purpose "does this caller have Policies management access"
+ * check — mirrors requireRecruitmentAccess/requirePromotionAccess against
+ * the "policies" permission key (the same key the Policies page's frontend
+ * already checks via canPerformModuleAction for its own "isAdmin"/manage
+ * gate). Added because PATCH/DELETE /api/policies/[id] previously had no
+ * auth check at all — anyone could edit or permanently delete any manual.
+ * Default minimum matches the frontend's own gate exactly: the Policies
+ * page bundles upload/edit/delete into a single "add" action check rather
+ * than separate view/edit/delete grants, so this does the same instead of
+ * introducing a distinction the rest of the app doesn't have.
+ */
+export async function requirePolicyManageAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "add",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(profile, "policies", action, user.role, presets),
+  );
+  if (!ok) return null;
+
+  // Uploading/editing/deleting Policies manuals is headquarters-only — see
+  // isHeadquartersCaller. Reading Policies stays available to everyone
+  // (subject to the site tag check in get_policies), only managing them
+  // is restricted here.
+  if (!isHeadquartersCaller(user)) return null;
+
+  return user;
+}
+
+/** Grade templates' own access check is identical to Recruitment's — kept
+ * as a distinctly-named wrapper only because it's called from appraisal
+ * grade template routes and the name documents *why* those routes check
+ * hc:recruitment (see the comment above this wrapper for the history). */
+export async function requireAppraisalGradeTemplateAccess(
+  req: NextRequest,
+  minimum: PermissionAction | PermissionAction[] = "view",
+): Promise<ApiRequestUser | null> {
+  return requireRecruitmentAccess(req, minimum);
 }
 
 /** User Manual upload — permission matrix ("user-manual", "add"). System
@@ -376,6 +531,11 @@ export async function requireUserManualUploadAccess(
     presets,
   );
   if (!ok) return null;
+
+  // Uploading a new User Manual version is headquarters-only — see
+  // isHeadquartersCaller.
+  if (!isHeadquartersCaller(user)) return null;
+
   return user;
 }
 
@@ -393,17 +553,23 @@ export async function requireSopManageAccess(
   const user = await getApiRequestUser(req);
   if (!user) return null;
 
-  if (isFullRoleAccess(user.role)) return user;
-  if (isSupervisor(user.role) && !isSupervisoryRoleLabel(user.role)) return user;
+  let ok = isFullRoleAccess(user.role) || (isSupervisor(user.role) && !isSupervisoryRoleLabel(user.role));
+  if (!ok) {
+    const supabaseAdmin = getAdminClient();
+    const { presets } = supabaseAdmin
+      ? await fetchGroupPresetsFromDb(supabaseAdmin)
+      : { presets: {} };
+    const profile = callerAccessProfile(user);
+    ok = canPerformModuleAction(profile, "sop:add", "add", user.role, presets);
+  }
+  if (!ok) return null;
 
-  const supabaseAdmin = getAdminClient();
-  const { presets } = supabaseAdmin
-    ? await fetchGroupPresetsFromDb(supabaseAdmin)
-    : { presets: {} };
+  // SOP Management (upload/edit/archive/delete/restore) is
+  // headquarters-only — see isHeadquartersCaller. Reading SOPs stays
+  // available to everyone, only managing them is restricted here.
+  if (!isHeadquartersCaller(user)) return null;
 
-  const profile = callerAccessProfile(user);
-  const ok = canPerformModuleAction(profile, "sop:add", "add", user.role, presets);
-  return ok ? user : null;
+  return user;
 }
 
 export async function requireFullAppraisalAccess(

@@ -165,6 +165,15 @@ export function normalizeSkillLogTemplateRow(
   );
   return {
     ...row,
+    // site_id is a real integer column (FK to sites(id) — the one
+    // non-uuid list in the org-structure system, see
+    // normalizeListItemRow in organizationalStructureCustomLists.ts).
+    // Postgres/PostgREST hands it back as a JSON number; every consumer
+    // of this row (labelForItem lookups against the Site catalog, the
+    // scope wizard's own state) treats every id as a string, so an
+    // unnormalized number here silently fails those comparisons — the
+    // template still exists, it just stops being recognized.
+    site_id: row.site_id != null ? String(row.site_id) : row.site_id,
     sections:
       skill_variants[0]?.sections.length > 0
         ? skill_variants[0].sections

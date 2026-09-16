@@ -19,6 +19,7 @@ import {
   resolveAppraisalListScope,
   staffIdsForSupervisorScope,
 } from "@/lib/appraisalAccess";
+import { siteFilterValue } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -98,6 +99,19 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ data: [] });
       }
       query = query.in("company_id", staffIds);
+    }
+
+    // appraisals.site_id is a creation-time snapshot (see
+    // docs/multi-site/add-site-id-historical-tables.sql). Only applied
+    // outside "own" scope — an employee always sees their own appraisal
+    // history regardless of site, matching the leave/apply "own records"
+    // exception; a company-wide or reports-scoped caller is still
+    // site-locked unless they're at headquarters.
+    if (listScope !== "own") {
+      const siteId = siteFilterValue(caller);
+      if (siteId != null) {
+        query = query.eq("site_id", siteId);
+      }
     }
 
     if (cycle) query = query.eq("cycle", cycle);

@@ -7,6 +7,7 @@ import {
   requireFullAppraisalAccess,
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 /**
  * Reviewer decision on a justification (Section 8). Any Manager, L5+
@@ -74,9 +75,13 @@ export async function PATCH(
 
     const { data: appraisal } = await supabaseAdmin
       .from("appraisals")
-      .select("id, employee_name, employee_email, supervisor_email, immediate_supervisor, review_quarter, review_year, appeal_exhausted")
+      .select("id, employee_name, employee_email, supervisor_email, immediate_supervisor, review_quarter, review_year, appeal_exhausted, site_id")
       .eq("id", justification.appraisal_id)
       .single();
+
+    if (appraisal && !assertSiteAccess(reviewer, appraisal.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this appraisal isn't at a site you have access to.");
+    }
 
     if (appraisal?.appeal_exhausted) {
       return NextResponse.json(

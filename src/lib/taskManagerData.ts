@@ -2,6 +2,7 @@ import { supabaseAdmin, type RequestUser } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import { computeNextDueDate, addDaysUTC, daysBetweenUTC } from "@/lib/taskRecurrence";
 import { buildSubtaskTree, computeSubtaskGroupStatus } from "@/lib/subtaskProgress";
+import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
 import type { TMTask, TMSubtask, AuditAction, ProjectAuditAction } from "@/types/taskManager";
 
 /** Looks up display names for a set of user ids from the `users` table. */
@@ -322,6 +323,13 @@ export async function applyLifecycleChange(
     .single();
   if (fetchError || !existing) return { error: "Task not found", status: 404 as const };
 
+  // Being Senior Management (or the task's creator) doesn't mean any
+  // site — same rule as everywhere else. Covers archive/complete/delete/
+  // restore in one place since they all call this function.
+  if (!(await assertTaskSiteAccess(supabaseAdmin, performedBy, existing))) {
+    return { error: "Forbidden — this task isn't at a site you have access to.", status: 403 as const };
+  }
+
   let updates: Record<string, unknown>;
   let recurred = false;
   let nextDueDate: string | null = null;
@@ -398,6 +406,13 @@ export async function updateTaskProgress(taskId: string, rawProgress: number, pe
     .eq("id", taskId)
     .single();
   if (fetchError || !existing) return { error: "Task not found", status: 404 as const };
+
+  // Being Senior Management (or the task's owner) doesn't mean any site —
+  // same rule as everywhere else.
+  if (!(await assertTaskSiteAccess(supabaseAdmin, performedBy, existing))) {
+    return { error: "Forbidden — this task isn't at a site you have access to.", status: 403 as const };
+  }
+
   const canReopen = options?.allowReopen && existing.lifecycle_status === "completed" && progress < 100;
   if (existing.lifecycle_status !== "active" && !canReopen) {
     return { error: "Only active tasks can have their progress updated", status: 400 as const };

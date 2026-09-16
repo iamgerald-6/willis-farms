@@ -9,6 +9,7 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import UploadManualVersionModal from "./components/UploadManualVersionModal";
 
 interface ManualVersionSummary {
@@ -63,8 +64,11 @@ export default function UserManualPage() {
   // Access Control → Manage User) instead of a hardcoded role check. System
   // Administrator/Super Admin get it by default, Executive Role gets it
   // unconditionally too, and any other role can be granted it individually
-  // from User Management. The actual enforcement is server-side on
-  // POST /api/user-manual — this only decides whether the button renders.
+  // from User Management. Also headquarters-only on top of that — see
+  // isHeadquartersCaller in apiRequestAuth.ts. The actual enforcement is
+  // server-side on POST /api/user-manual — this only decides whether the
+  // button renders.
+  const { isHeadquarters } = useIsHeadquarters();
   const canUpload = Boolean(
     accessProfile &&
       canPerformModuleAction(
@@ -73,7 +77,8 @@ export default function UserManualPage() {
         "add",
         sessionRole,
         groupPresets,
-      ),
+      ) &&
+      isHeadquarters,
   );
 
   const { data, isLoading, refetch } = useQuery<{

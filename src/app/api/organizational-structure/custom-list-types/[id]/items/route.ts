@@ -11,6 +11,7 @@ import type {
   OrgCustomListItem,
   OrgCustomListType,
 } from "@/lib/organizationalStructureCustomLists";
+import { normalizeListItemRow, normalizeListItemRows } from "@/lib/organizationalStructureCustomLists";
 
 /** Build the extra-column values to insert/update, one per defined field. */
 function extraColumnValues(
@@ -80,7 +81,7 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data: (data ?? []) as OrgCustomListItem[] });
+    return NextResponse.json({ data: normalizeListItemRows((data ?? []) as OrgCustomListItem[]) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Server error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -169,7 +170,7 @@ export async function POST(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data }, { status: 201 });
+    return NextResponse.json({ data: normalizeListItemRow(data) }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

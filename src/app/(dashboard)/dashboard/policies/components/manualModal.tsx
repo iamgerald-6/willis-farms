@@ -11,6 +11,7 @@ import {
 } from "@/lib/moduleRegistry";
 import { CLOUDINARY_UPLOAD_PRESET, cloudinaryUploadUrl } from "@/lib/cloudinary";
 import { ACCEPT_PDF_OR_WORD, validatePdfOrWordFile } from "@/lib/uploadConstraints";
+import SiteTagPicker from "@/components/SiteTagPicker";
 
 const DEFAULT_CATEGORY = getDefaultPolicyCategoryLegacyValue();
 
@@ -31,6 +32,8 @@ interface Manual {
   title: string;
   category: string;
   description: string | null;
+  /** [] means "all sites" — see docs/multi-site/add-site-tagging-policies-sop.sql. */
+  site_ids?: number[];
   versions: ManualVersion[];
 }
 
@@ -159,6 +162,7 @@ export default function ManualModal({
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>(categories[0] ?? DEFAULT_CATEGORY);
   const [description, setDescription] = useState("");
+  const [siteIds, setSiteIds] = useState<number[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [versionNotes, setVersionNotes] = useState("");
@@ -185,6 +189,7 @@ export default function ManualModal({
       setTitle(manual.title);
       setCategory(manual.category);
       setDescription(manual.description ?? "");
+      setSiteIds(manual.site_ids ?? []);
       const first = manual.versions[0] ?? null;
       setSelectedVersionId(first?.version_id ?? "");
       setVersionLabel(first?.version_label ?? "");
@@ -193,6 +198,7 @@ export default function ManualModal({
       setTitle("");
       setCategory(categories[0] ?? DEFAULT_CATEGORY);
       setDescription("");
+      setSiteIds([]);
       setSelectedVersionId("");
       setVersionLabel("");
       setVersionNotes("");
@@ -307,6 +313,7 @@ export default function ManualModal({
         file_name: file!.name,
         file_size_bytes: file!.size,
         uploaded_by: uploadedById,
+        site_ids: siteIds,
       });
       toast.success(`"${title}" uploaded successfully.`);
       onSuccess();
@@ -334,6 +341,7 @@ export default function ManualModal({
         title,
         category,
         description: description || null,
+        site_ids: siteIds,
       });
       toast.success("Manual details updated.");
       onSuccess();
@@ -536,6 +544,8 @@ export default function ManualModal({
                 {description.length}/{POLICY_DESCRIPTION_MAX_CHARS} characters
               </p>
             </div>
+
+            <SiteTagPicker selectedSiteIds={siteIds} onChange={setSiteIds} />
 
             {isEditing && (
               <button

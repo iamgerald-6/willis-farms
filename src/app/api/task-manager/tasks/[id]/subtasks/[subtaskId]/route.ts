@@ -3,6 +3,7 @@ import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { updateTaskProgress, fetchUserNames, collectSubtaskOwnerIds, attachSubtaskOwnerNames } from "@/lib/taskManagerData";
 import { buildSubtaskTree, computeTaskRollup, attachSubtaskStatuses } from "@/lib/subtaskProgress";
+import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
 
 // PATCH /api/task-manager/tasks/[id]/subtasks/[subtaskId] — ticks/unticks a
 // single LEAF subtask. Same permission as the plain progress slider it
@@ -15,8 +16,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const user = await getRequestUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { data: task, error: taskError } = await supabaseAdmin.from("tm_tasks").select("owner_id").eq("id", id).single();
+    const { data: task, error: taskError } = await supabaseAdmin.from("tm_tasks").select("project_id, owner_id, created_by").eq("id", id).single();
     if (taskError || !task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+    // Being Senior Management (or the task's owner) doesn't mean any
+    // site — same rule as everywhere else. Checked explicitly here, not
+    // just relied on via the updateTaskProgress call below, since that
+    // call is skipped entirely when there's no computable rollup yet.
+    if (!(await assertTaskSiteAccess(supabaseAdmin, user, task))) {
+      return NextResponse.json(
+        { error: "Forbidden — this task isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     const isOwner = task.owner_id && task.owner_id === user.id;
     if (!isOwner && !isSeniorManagement(user.role)) {

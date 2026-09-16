@@ -7,6 +7,7 @@ import {
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { isSuperAdmin } from "@/lib/accessControl";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function PATCH(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -60,12 +61,19 @@ export async function PATCH(req: NextRequest) {
 
     const { data: target, error: targetError } = await supabaseAdmin
       .from("users")
-      .select("user_id, role")
+      .select("user_id, role, site_id")
       .eq("user_id", target_user_id)
       .single();
 
     if (targetError || !target) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
+    }
+
+    // Being able to edit User Management doesn't mean any site — same rule
+    // as everywhere else. A caller not at headquarters can only manage
+    // employees placed at their own site.
+    if (!assertSiteAccess(caller, target.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this employee isn't at a site you have access to.");
     }
 
     if (isSuperAdmin(target.role)) {

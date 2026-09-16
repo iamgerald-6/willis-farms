@@ -10,6 +10,8 @@ import {
 } from "@/lib/careers/employeeStatus";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { updateUserWithColumnFallback } from "@/lib/supabaseUserUpdate";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteFilterValue } from "@/lib/siteAccess";
 
 export type { RecruitmentEmployeeRow };
 
@@ -87,10 +89,11 @@ async function fetchEmployeeUser(
   email: string;
   company_id: string;
   is_disabled?: boolean | null;
+  site_id?: number | null;
 } | null> {
   const selectAttempts = [
-    "user_id, role, application_id, email, company_id, is_disabled",
-    "user_id, role, email, company_id, is_disabled",
+    "user_id, role, application_id, email, company_id, is_disabled, site_id",
+    "user_id, role, email, company_id, is_disabled, site_id",
     "user_id, role, email, company_id",
   ];
 
@@ -109,6 +112,7 @@ async function fetchEmployeeUser(
         email: string;
         company_id: string;
         is_disabled?: boolean | null;
+        site_id?: number | null;
       };
     }
 
@@ -126,7 +130,15 @@ async function fetchEmployeeUser(
   return null;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -139,8 +151,16 @@ export async function GET() {
   // grade_level_id FK join to the Organizational Structure "Grade levels"
   // catalog, so it can never drift out of sync with the catalog. See
   // docs/organizational-structure/drop-users-grade-level-column.sql.
+  //
+  // site_id lives directly on users (Class A, already existed before this
+  // Phase 3 pass) — no join through onboarding/applications needed to
+  // scope this list by site, unlike the onboarding-enrichment matching
+  // below (which stays purely for backfilling reference_number etc., not
+  // for site resolution).
   const userSelect =
-    "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, application_id, employment_status, platform_invited_at, is_disabled";
+    "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, application_id, employment_status, platform_invited_at, is_disabled, site_id";
+
+  const siteId = siteFilterValue(authedUser);
 
   let usersResult = await supabaseAdmin
     .from("users")
@@ -158,7 +178,7 @@ export async function GET() {
       usersResult = (await supabaseAdmin
         .from("users")
         .select(
-          "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, is_disabled",
+          "user_id, first_name, last_name, email, company_id, job_position, grade_level_id, grade_levels(code), role, created_at, is_disabled, site_id",
         )
         .eq("role", "employee")
         .order("created_at", { ascending: false })) as typeof usersResult;
@@ -167,6 +187,13 @@ export async function GET() {
 
   if (usersResult.error) {
     return NextResponse.json({ error: usersResult.error.message }, { status: 500 });
+  }
+
+  if (siteId != null) {
+    usersResult = {
+      ...usersResult,
+      data: (usersResult.data ?? []).filter((u) => (u as { site_id?: number | null }).site_id === siteId),
+    } as typeof usersResult;
   }
 
   const { data: onboardingRows, error: onboardingError } = await supabaseAdmin
@@ -267,6 +294,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -307,6 +342,13 @@ export async function PATCH(req: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+  }
+
+  if (!assertSiteAccess(authedUser, user.site_id ?? null)) {
+    return NextResponse.json(
+      { error: "Forbidden — this employee isn't at a site you have access to." },
+      { status: 403 },
+    );
   }
 
   if (user.role !== "employee") {

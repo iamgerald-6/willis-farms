@@ -12,6 +12,20 @@ import {
   flattenSkillLogGradeLevels,
   type SkillLogRecord,
 } from "@/lib/skillLogAccess";
+import { assertSiteAccess } from "@/lib/siteAccess";
+
+// skill_logs.site_id is a creation-time snapshot (see
+// docs/multi-site/add-site-id-historical-tables.sql). An employee always
+// sees/can act on their own record regardless of site — same "own records"
+// exception used across leave/appraisals; anyone else is still site-locked
+// unless at headquarters.
+function siteAllowed(
+  caller: Parameters<typeof assertSiteAccess>[0] & { id: string },
+  record: { employee_id?: string | null; site_id?: number | null },
+) {
+  if (record.employee_id === caller.id) return true;
+  return assertSiteAccess(caller, record.site_id ?? null);
+}
 
 // grade_level is no longer a stored column — derived live via the
 // grade_level_id FK join to the Grade levels catalog (see
@@ -68,6 +82,10 @@ export async function GET(
     return jsonForbidden();
   }
 
+  if (!siteAllowed(ctx.user, data as SkillLogRecord)) {
+    return jsonForbidden("Forbidden — this skill log isn't at a site you have access to.");
+  }
+
   return NextResponse.json({
     success: true,
     data: flattenSkillLogGradeLevels(data as SkillLogRecord),
@@ -104,6 +122,11 @@ export async function PATCH(
   }
 
   const record = existing as SkillLogRecord;
+
+  if (!siteAllowed(ctx.user, record)) {
+    return jsonForbidden("Forbidden — this skill log isn't at a site you have access to.");
+  }
+
   const body = await req.json();
   const {
     log_type,
@@ -306,6 +329,10 @@ export async function DELETE(
     )
   ) {
     return forbiddenOrUnauthorized(ctx);
+  }
+
+  if (!siteAllowed(ctx.user, existing as SkillLogRecord)) {
+    return jsonForbidden("Forbidden — this skill log isn't at a site you have access to.");
   }
 
   await supabaseAdmin

@@ -6,8 +6,18 @@ import {
   type RoleInterviewReportRow,
 } from "@/lib/careers/types";
 import { findRoleReportRow } from "@/lib/careers/roleReportLookup";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -18,6 +28,18 @@ export async function GET(req: NextRequest) {
   const jobPostingId = req.nextUrl.searchParams.get("job_posting_id");
   if (!jobPostingId) {
     return NextResponse.json({ error: "job_posting_id is required." }, { status: 400 });
+  }
+
+  const { data: postingRow } = await supabaseAdmin
+    .from("job_postings")
+    .select("site_id")
+    .eq("id", jobPostingId)
+    .maybeSingle();
+  if (!postingRow || !assertSiteAccess(authedUser, postingRow.site_id)) {
+    return NextResponse.json(
+      { error: "Forbidden — this posting isn't at a site you have access to." },
+      { status: 403 },
+    );
   }
 
   try {
@@ -49,6 +71,14 @@ export async function GET(req: NextRequest) {
 // original AI-generated `report`), and appends one entry per save to
 // report_edit_log. Mirrors the per-applicant interview report PATCH route.
 export async function PATCH(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
@@ -69,6 +99,18 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json(
         { error: "job_posting_id and report are required." },
         { status: 400 },
+      );
+    }
+
+    const { data: postingRow } = await supabaseAdmin
+      .from("job_postings")
+      .select("site_id")
+      .eq("id", job_posting_id)
+      .maybeSingle();
+    if (!postingRow || !assertSiteAccess(authedUser, postingRow.site_id)) {
+      return NextResponse.json(
+        { error: "Forbidden — this posting isn't at a site you have access to." },
+        { status: 403 },
       );
     }
 

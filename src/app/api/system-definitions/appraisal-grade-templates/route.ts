@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { requireAppraisalGradeTemplateAccess, jsonForbidden } from "@/lib/apiRequestAuth";
 import type { AppraisalGradeTemplate } from "@/lib/appraisal/gradeTemplates";
+import { stringifyPlacementColumns } from "@/lib/organizationalStructureMapping";
 
 const PLACEMENT_COLUMNS = [
   "site_id",
@@ -33,7 +34,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: (data ?? []) as AppraisalGradeTemplate[] });
+  return NextResponse.json({
+    data: ((data ?? []) as AppraisalGradeTemplate[]).map((row) =>
+      stringifyPlacementColumns(row as unknown as Record<string, unknown>),
+    ),
+  });
 }
 
 /**
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (existing) {
-    return NextResponse.json({ data: existing as AppraisalGradeTemplate });
+    return NextResponse.json({ data: stringifyPlacementColumns(existing as Record<string, unknown>) });
   }
 
   const { data, error } = await supabaseAdmin
@@ -93,5 +98,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: data as AppraisalGradeTemplate }, { status: 201 });
+  return NextResponse.json({ data: stringifyPlacementColumns(data as Record<string, unknown>) }, { status: 201 });
 }

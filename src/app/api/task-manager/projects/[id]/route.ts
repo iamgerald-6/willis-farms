@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { writeProjectAuditLog } from "@/lib/taskManagerData";
+import { isProjectSiteVisible } from "@/lib/taskManagerScope";
 
 // PATCH /api/task-manager/projects/[id] — Senior Management can rename or
 // archive/restore any project. Everyone else can rename a project only if
@@ -23,6 +24,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // client asked to update.
     const { data: existing, error: existingError } = await supabaseAdmin.from("tm_projects").select("*").eq("id", id).single();
     if (existingError || !existing) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+    // Being Senior Management doesn't mean any site — same rule as
+    // everywhere else. A caller not at headquarters can only edit a
+    // project that's untagged, their own, or at their own site.
+    if (!isProjectSiteVisible(user, existing)) {
+      return NextResponse.json(
+        { error: "Forbidden — this project isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     const senior = isSeniorManagement(user.role);
     if (!senior && existing.created_by !== user.id) {
@@ -126,8 +137,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const { confirm_name } = await req.json();
 
-    const { data: project, error: fetchError } = await supabaseAdmin.from("tm_projects").select("id, name").eq("id", id).single();
+    const { data: project, error: fetchError } = await supabaseAdmin.from("tm_projects").select("id, name, site_id, created_by").eq("id", id).single();
     if (fetchError || !project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+    if (!isProjectSiteVisible(user, project)) {
+      return NextResponse.json(
+        { error: "Forbidden — this project isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     if (typeof confirm_name !== "string" || confirm_name.trim() !== project.name) {
       return NextResponse.json({ error: "Confirmation text didn't match the project name — nothing was deleted." }, { status: 400 });
@@ -144,6 +162,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         deleted_by: user.id,
         deleted_by_name: user.name,
         deleted_at: new Date().toISOString(),
+        site_id: project.site_id ?? null,
       },
     ]);
     if (tombstoneError) throw tombstoneError;

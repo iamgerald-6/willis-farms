@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { NextRequest } from "next/server";
-import { requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { sendMonthlyReport } from "@/lib/reports/sendMonthlyReport";
+import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 // This lives in the Pages Router (src/pages/api/...) rather than the App
 // Router (src/app/api/...) that every other Task Manager route uses. That's
@@ -42,9 +43,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const user = await requireSeniorManagement(toNextRequest(req));
     if (!user) return res.status(403).json({ error: "Forbidden — Senior Management only" });
 
-    const { period_start, period_end, recipients } = req.body ?? {};
+    const { period_start, period_end, recipients, site_id } = req.body ?? {};
     if (!period_start || !period_end || !Array.isArray(recipients) || recipients.length === 0) {
       return res.status(400).json({ error: "period_start, period_end and at least one recipient are required" });
+    }
+
+    // A site-scoped caller can only ever manually send their own site's
+    // report, regardless of what site_id the client sent — same override
+    // pattern used for the schedule route. Only a headquarters caller may
+    // target a specific site or the company-wide (null/omitted) report.
+    const authorization = getAuthorizedSiteIds(user);
+    let siteId: number | null;
+    if (authorization.scope === "ALL_SITES") {
+      siteId = site_id == null ? null : Number(site_id);
+    } else {
+      if (authorization.siteId == null) {
+        return res.status(403).json({ error: "Forbidden — you're not placed at a site." });
+      }
+      siteId = authorization.siteId;
+    }
+
+    let siteLabel: string | null = null;
+    if (siteId != null) {
+      const { data: site } = await supabaseAdmin.from("sites").select("name").eq("id", siteId).maybeSingle();
+      siteLabel = (site?.name as string | undefined) ?? null;
     }
 
     const result = await sendMonthlyReport({
@@ -53,6 +75,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       recipients,
       generatedByUserId: user.id,
       generatedByName: user.name,
+      siteId,
+      siteLabel,
     });
 
     return res.status(200).json(result);

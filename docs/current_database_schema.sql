@@ -185,7 +185,7 @@ create table if not exists org_custom_list_types (
 -- access-control and org-placement columns.
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),      -- REVIEW REQUIRED: relationship between `id` and `user_id` (below) is not documented anywhere found
-  user_id uuid not null unique,                         -- REVIEW REQUIRED: appears to be the Supabase auth.users.id this row corresponds to; compared to auth.uid() in RLS policies
+  user_id character varying not null unique,            -- CONFIRMED against the live database (2026-09) via a failed FK creation: this is varchar, not uuid, despite storing uuid-shaped Supabase auth.users.id values as text. Every FK that targets users(user_id) elsewhere in this file must be declared varchar/text to match, not uuid — several migrations this session hit "operator does not exist: ... = uuid" / "incompatible types: uuid and character varying" before this was known.
   email text,
   phone text,
   role text,                                            -- legacy: 'employee' | 'manager' | 'admin' | 'super_admin' — superseded in practice by user_role_id below, per migration comment; REVIEW REQUIRED whether still written to
@@ -401,6 +401,7 @@ create table if not exists tm_projects (
   description text,
   status text not null default 'active' check (status in ('active', 'archived')),
   created_by uuid not null,
+  site_id integer references sites(id),  -- see docs/multi-site/add-site-id-tm-projects.sql; null = visible to everyone (untagged), snapshotted from creator's site at creation
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -475,6 +476,7 @@ create table if not exists tm_project_deletions (
   project_id uuid not null,
   project_name text,
   deleted_by uuid,
+  site_id integer references sites(id),  -- see docs/multi-site/add-site-id-tm-projects.sql; captured at deletion time, no FK to tm_projects to look it up from
   created_at timestamptz not null default now()
 );
 
@@ -494,6 +496,7 @@ create table if not exists tm_monthly_reports (
   project_id uuid references tm_projects(id) on delete set null,
   stats_snapshot jsonb,
   generated_by uuid,                    -- nullable, since cron-generated reports have no human author
+  site_id integer references sites(id), -- which site this run was scoped to; null = company-wide (every project)
   created_at timestamptz not null default now()
 );
 
@@ -504,11 +507,15 @@ create table if not exists tm_task_completions (
   completed_at timestamptz not null default now()
 );
 
--- REVIEW REQUIRED: enforced as a singleton by application logic, not a DB
--- unique constraint — a real schema could theoretically hold >1 row.
+-- One row per site (site_id = that site), plus at most one company-wide row
+-- (site_id null, unfiltered — every project). Uniqueness on site_id
+-- (nulls collapsed to one sentinel) is enforced by
+-- tm_report_schedule_site_id_uidx — see
+-- docs/multi-site/add-site-id-tm-report-schedule.sql.
 create table if not exists tm_report_schedule (
   id uuid primary key default gen_random_uuid(),
   enabled boolean not null default false,
+  site_id integer references sites(id),
   updated_at timestamptz not null default now()
 );
 

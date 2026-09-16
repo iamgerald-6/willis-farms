@@ -6,6 +6,7 @@ import {
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { canArchiveAppraisal } from "@/lib/accessControl";
+import { assertSiteAccess } from "@/lib/siteAccess";
 
 /**
  * Archive / restore an appraisal.
@@ -55,7 +56,7 @@ export async function POST(
 
     const { data: existing, error: fetchError } = await supabaseAdmin
       .from("appraisals")
-      .select("id, archived")
+      .select("id, archived, site_id")
       .eq("id", id)
       .single();
 
@@ -64,6 +65,10 @@ export async function POST(
         { error: "Appraisal not found" },
         { status: 404 },
       );
+    }
+
+    if (!assertSiteAccess(caller, existing.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this appraisal isn't at a site you have access to.");
     }
 
     const { data, error } = await supabaseAdmin

@@ -5,6 +5,66 @@ import {
   fetchUserRoleLabelMap,
   isSupervisoryRoleLabel,
 } from "@/lib/userRoleAccessControl";
+import { assertSiteAccess } from "@/lib/siteAccess";
+import type { ApiRequestUser } from "@/lib/apiRequestAuth";
+
+/**
+ * Site rule for Task Manager, layered ON TOP of the existing creator/
+ * owner/reports-based visibility above, not instead of it (see
+ * docs/SITE_ACCESS_ARCHITECTURE.md §6.3 item 7 follow-up — Task Manager was
+ * originally left global/unscoped, later confirmed to need site-locking
+ * too). A project untagged (site_id null — e.g. every project that existed
+ * before this column did) stays visible to everyone, same "untagged = all
+ * sites" convention used for Policies/SOPs. A caller always sees a project
+ * they created themselves regardless of its site — same "own records"
+ * exception used everywhere else this session — so a later site transfer
+ * never hides someone's own past work from them.
+ */
+export function isProjectSiteVisible(
+  user: ApiRequestUser,
+  project: { site_id?: number | null; created_by?: string | null },
+): boolean {
+  if (project.created_by === user.id) return true;
+  if (project.site_id == null) return true;
+  return assertSiteAccess(user, project.site_id);
+}
+
+/**
+ * Same site rule as isProjectSiteVisible, applied to a task via its parent
+ * project's site_id (tasks don't carry their own site_id — see
+ * docs/multi-site/add-site-id-tm-projects.sql). A caller assigned to or who
+ * created the task itself always sees it regardless of site, same "own
+ * records" exception.
+ */
+export function isTaskSiteVisible(
+  user: ApiRequestUser,
+  task: { owner_id?: string | null; created_by?: string | null },
+  projectSiteId: number | null,
+): boolean {
+  if (task.owner_id === user.id || task.created_by === user.id) return true;
+  if (projectSiteId == null) return true;
+  return assertSiteAccess(user, projectSiteId);
+}
+
+/**
+ * Convenience for the single-task action routes (archive/complete/delete/
+ * restore/progress/audit/subtasks) — looks up the task's parent project's
+ * site_id and applies isTaskSiteVisible in one call, so each route doesn't
+ * repeat the join.
+ */
+export async function assertTaskSiteAccess(
+  supabase: SupabaseClient,
+  user: ApiRequestUser,
+  task: { project_id: string; owner_id?: string | null; created_by?: string | null },
+): Promise<boolean> {
+  if (task.owner_id === user.id || task.created_by === user.id) return true;
+  const { data: project } = await supabase
+    .from("tm_projects")
+    .select("site_id")
+    .eq("id", task.project_id)
+    .maybeSingle();
+  return isTaskSiteVisible(user, task, project?.site_id ?? null);
+}
 
 /** Who can see which tasks in Task Manager list/project views. */
 export type TaskViewScope = "all" | "reports" | "own";

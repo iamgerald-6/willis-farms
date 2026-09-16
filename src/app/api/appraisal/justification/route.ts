@@ -6,6 +6,7 @@ import {
   jsonForbidden,
 } from "@/lib/apiRequestAuth";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
+import { assertSiteAccess, siteIdFromJoin } from "@/lib/siteAccess";
 
 /**
  * Justification Form (Section 8) — its own dedicated resource, not a field
@@ -41,12 +42,16 @@ export async function POST(req: NextRequest) {
 
     const { data: appraisal, error: appraisalError } = await supabaseAdmin
       .from("appraisals")
-      .select("id, status, locked_reason, supervisor_id, employee_name, review_quarter, review_year, appeal_exhausted")
+      .select("id, status, locked_reason, supervisor_id, employee_name, review_quarter, review_year, appeal_exhausted, site_id")
       .eq("id", appraisal_id)
       .single();
 
     if (appraisalError || !appraisal) {
       return NextResponse.json({ error: "Appraisal not found" }, { status: 404 });
+    }
+
+    if (!assertSiteAccess(caller, appraisal.site_id ?? null)) {
+      return jsonForbidden("Forbidden — this appraisal isn't at a site you have access to.");
     }
 
     if (appraisal.appeal_exhausted) {
@@ -131,7 +136,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from("appraisal_justifications")
-      .select("*, appraisals(employee_name, review_quarter, review_year, job_title)")
+      .select("*, appraisals(employee_name, review_quarter, review_year, job_title, site_id)")
       .order("created_at", { ascending: false });
 
     if (status) query = query.eq("status", status);
@@ -148,7 +153,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ data });
+    // Own-submitted justifications (supervisor_id === caller) are always
+    // visible regardless of site — same "own records" exception as
+    // elsewhere. A broad viewer looking at someone else's justifications is
+    // still site-locked unless they're at headquarters.
+    const rows = (data ?? []).filter((row) => {
+      if (row.supervisor_id === caller.id) return true;
+      return assertSiteAccess(caller, siteIdFromJoin(row.appraisals));
+    });
+
+    return NextResponse.json({ data: rows });
   } catch (err) {
     console.error("[GET /api/appraisal/justification]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

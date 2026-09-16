@@ -8,6 +8,7 @@ import {
   loadDirectReportUserIds,
 } from "@/lib/leaveAccess";
 import { resolveUserRoleLabelById } from "@/lib/userRoleAccessControl";
+import { siteFilterValue } from "@/lib/siteAccess";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -113,6 +114,15 @@ export async function GET(req: NextRequest) {
       .from("leave_requests")
       .select(LEAVE_SELECT)
       .order("created_at", { ascending: false });
+
+    // leave_requests.site_id is a creation-time snapshot (see
+    // docs/multi-site/add-site-id-historical-tables.sql) — filter directly,
+    // no join needed. A SITE-scoped caller sees only their own site's
+    // requests; headquarters sees everything, same as before.
+    const siteId = siteFilterValue(ctx.user);
+    if (siteId != null) {
+      query = query.eq("site_id", siteId);
+    }
 
     if (ctx.scope === "reports") {
       const reportIds = await loadDirectReportUserIds(

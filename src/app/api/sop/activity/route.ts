@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireSeniorManagement } from "@/lib/apiRequestAuth";
+import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 export async function GET(req: NextRequest) {
   const user = await requireSeniorManagement(req);
@@ -31,15 +32,45 @@ export async function GET(req: NextRequest) {
   }
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Being Senior Management doesn't mean "any site" — same rule as
+  // everywhere else. Pull extra rows before the site filter so a Site-
+  // scoped caller still gets up to 30 entries that are actually theirs,
+  // rather than 30 unfiltered rows immediately cut down to a handful.
   const { data, error } = await supabase
     .from("sop_audit_log")
     .select("*")
     .order("performed_at", { ascending: false })
-    .limit(30);
+    .limit(200);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ entries: data ?? [] });
+  const authorization = getAuthorizedSiteIds(user);
+  let entries = data ?? [];
+
+  if (authorization.scope !== "ALL_SITES") {
+    const contentIds = [
+      ...new Set(entries.map((e) => e.content_id).filter(Boolean)),
+    ];
+    const siteIdsByContent: Record<string, number[]> = {};
+    if (contentIds.length > 0) {
+      const { data: siteTagRows } = await supabase
+        .from("content_sites")
+        .select("content_id, site_id")
+        .in("content_id", contentIds);
+      for (const row of siteTagRows ?? []) {
+        (siteIdsByContent[row.content_id] ??= []).push(row.site_id);
+      }
+    }
+    entries = entries.filter((e) => {
+      const tags = siteIdsByContent[e.content_id] ?? [];
+      return (
+        tags.length === 0 ||
+        (authorization.siteId != null && tags.includes(authorization.siteId))
+      );
+    });
+  }
+
+  return NextResponse.json({ entries: entries.slice(0, 30) });
 }

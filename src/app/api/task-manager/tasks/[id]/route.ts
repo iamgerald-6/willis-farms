@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
 import { isSeniorManagement, EDITABLE_TASK_FIELDS, type EditableTaskField } from "@/lib/taskAccessControl";
 import { enrichSingleTask, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
+import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
 
 // PATCH /api/task-manager/tasks/[id] — Senior Management can edit any task;
 // anyone else can only edit a task they personally created (created_by).
@@ -20,6 +21,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .eq("id", id)
       .single();
     if (fetchError || !existing) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+    // Being Senior Management (or the task's creator) doesn't mean any
+    // site — same rule as everywhere else.
+    if (!(await assertTaskSiteAccess(supabaseAdmin, user, existing))) {
+      return NextResponse.json(
+        { error: "Forbidden — this task isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     if (!isSeniorManagement(user.role) && existing.created_by !== user.id) {
       return NextResponse.json(

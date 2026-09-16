@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
+import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
 
 // GET /api/task-manager/tasks/[id]/audit — who changed what, and when.
 // Senior Management only (an employee doesn't need to see who edited a
@@ -10,6 +11,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const user = await getRequestUser(req);
   if (!user || !isSeniorManagement(user.role)) {
     return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+  }
+
+  // Being Senior Management doesn't mean any site — same rule as
+  // everywhere else.
+  const { data: task } = await supabaseAdmin
+    .from("tm_tasks")
+    .select("project_id, owner_id, created_by")
+    .eq("id", id)
+    .maybeSingle();
+  if (task && !(await assertTaskSiteAccess(supabaseAdmin, user, task))) {
+    return NextResponse.json(
+      { error: "Forbidden — this task isn't at a site you have access to." },
+      { status: 403 },
+    );
   }
 
   const { data, error } = await supabaseAdmin

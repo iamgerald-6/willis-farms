@@ -3,8 +3,18 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { APPLICATION_STATUSES } from "@/lib/careers/types";
 import { validateHrStatusChange } from "@/lib/careers/applicationStatusRules";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
+import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
+import { assertSiteAccess, siteFilterValue, siteIdFromJoin } from "@/lib/siteAccess";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req);
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment view access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -14,9 +24,12 @@ export async function GET() {
   }
 
   try {
+    // job_posting_id → job_postings.site_id is one hop away — pull it
+    // alongside each application so site filtering can be applied in JS
+    // below without a second round-trip per row.
     const { data, error } = await supabaseAdmin
       .from("job_applications")
-      .select("*")
+      .select("*, job_postings(site_id)")
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -26,9 +39,18 @@ export async function GET() {
 
     // Exclude in-progress drafts once submission_status column exists (post-migration).
     // Before migration the field is absent — all existing rows are treated as submitted.
-    const visible = (data ?? []).filter(
-      (row) => row.submission_status !== "draft",
-    );
+    const siteId = siteFilterValue(authedUser);
+    const visible = (data ?? [])
+      .filter((row) => row.submission_status !== "draft")
+      .filter((row) => {
+        if (siteId == null) return true; // ALL_SITES caller
+        const postingSiteId = siteIdFromJoin(row.job_postings);
+        // A null job_posting_id (legacy row, or the rare unlinked draft)
+        // has no resolvable site — not visible to a SITE-scoped viewer,
+        // per SITE_ACCESS_ARCHITECTURE.md §3.2's null-handling decision.
+        return postingSiteId != null && postingSiteId === siteId;
+      })
+      .map(({ job_postings, ...row }) => row);
 
     return NextResponse.json({ success: true, data: visible });
   } catch (err) {
@@ -38,6 +60,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const authedUser = await requireRecruitmentAccess(req, "edit");
+  if (!authedUser) {
+    return NextResponse.json(
+      { error: "Forbidden — Recruitment edit access is required." },
+      { status: 403 },
+    );
+  }
+
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
     return NextResponse.json(
@@ -51,6 +81,19 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: "Application id is required." }, { status: 400 });
+    }
+
+    const { data: existingApplication } = await supabaseAdmin
+      .from("job_applications")
+      .select("job_postings(site_id)")
+      .eq("id", id)
+      .maybeSingle();
+    const existingSiteId = siteIdFromJoin(existingApplication?.job_postings);
+    if (!assertSiteAccess(authedUser, existingSiteId)) {
+      return NextResponse.json(
+        { error: "Forbidden — this application isn't at a site you have access to." },
+        { status: 403 },
+      );
     }
 
     const updates: Record<string, unknown> = {};

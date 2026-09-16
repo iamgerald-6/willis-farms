@@ -3,6 +3,7 @@ import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
 import { isSeniorManagement } from "@/lib/taskAccessControl";
 import { isStandardRoleLabel } from "@/lib/userRoleAccessControl";
 import { updateTaskProgress, fetchUserNames, collectSubtaskOwnerIds, attachSubtaskOwnerNames } from "@/lib/taskManagerData";
+import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
 import { buildSubtaskTree, computeTaskRollup, attachSubtaskStatuses, isDateWithin, MAX_SUBTASK_DEPTH, sumWeights, scaleWeightsToTotal } from "@/lib/subtaskProgress";
 
 // When an existing subtask's own weight_percent changes (e.g. a new sibling
@@ -51,6 +52,24 @@ async function cascadeRescaleDescendants(
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+
+    // This previously had no auth check at all. Same site rule as
+    // everywhere else applies once a caller is required.
+    const user = await getRequestUser(req);
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { data: task } = await supabaseAdmin
+      .from("tm_tasks")
+      .select("project_id, owner_id, created_by")
+      .eq("id", id)
+      .maybeSingle();
+    if (task && !(await assertTaskSiteAccess(supabaseAdmin, user, task))) {
+      return NextResponse.json(
+        { error: "Forbidden — this task isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
+
     const { data: rows, error } = await supabaseAdmin
       .from("tm_subtasks")
       .select("*")
@@ -102,6 +121,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { data: task, error: taskError } = await supabaseAdmin.from("tm_tasks").select("*").eq("id", id).single();
     if (taskError || !task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+    // Being Senior Management (or this task's creator) doesn't mean any
+    // site — same rule as everywhere else.
+    if (!(await assertTaskSiteAccess(supabaseAdmin, user, task))) {
+      return NextResponse.json(
+        { error: "Forbidden — this task isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
 
     const canManageSubtasks = isSeniorManagement(user.role) || task.created_by === user.id;
     if (!canManageSubtasks) {

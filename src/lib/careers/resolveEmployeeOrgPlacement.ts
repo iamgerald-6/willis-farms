@@ -134,7 +134,14 @@ function rowToPlacement(
 ): EmployeeOrgPlacement {
   if (!data) return EMPTY_PLACEMENT;
   return {
-    site_id: (data.site_id as string | null) ?? null,
+    // job_postings.site_id is a real integer column (FK to sites(id) — the
+    // one non-uuid list in the org-structure system; see
+    // normalizeListItemRow in organizationalStructureCustomLists.ts).
+    // String(...), not a type cast, since `data.site_id as string` lies
+    // about the runtime type without converting it — every downstream
+    // consumer of an onboarding hire's placement compares this against
+    // string ids.
+    site_id: data.site_id != null ? String(data.site_id) : null,
     business_unit_id: (data.business_unit_id as string | null) ?? null,
     department_id: (data.department_id as string | null) ?? null,
     section_id: (data.section_id as string | null) ?? null,

@@ -166,3 +166,32 @@ export type OrgCustomListItem = {
   created_at: string;
   updated_at: string;
 } & Record<string, unknown>;
+
+/**
+ * Every custom list's own table has a uuid `id` EXCEPT `sites`, which is a
+ * real, hand-built table with an `integer` primary key (see
+ * docs/current_database_schema.sql — it predates the dynamic custom-list
+ * system and was never converted). Supabase/PostgREST serializes that
+ * column as a JSON number, not a string, even though this type — and every
+ * consumer of it — declares `id: string`.
+ *
+ * This single normalization point is the fix for a whole class of bugs
+ * found the hard way: a raw integer id compared with `===`/`Set.has()`
+ * against a string id (from a `<select>` value, another table's uuid
+ * column, or JSON.stringify'd state) silently fails — `107 === "107"` is
+ * false — which looked like "my saved mapping disappeared" in two separate
+ * places (org structure mapping checkboxes, and the org-placement/
+ * Appraisal/Skill Log cascading dropdowns) before either bug was actually
+ * a lost-data problem. Call this on every row returned by ANY of the three
+ * custom-list-types/[id]/items routes (GET list, POST create, PATCH
+ * update) so nothing downstream — today's consumers or a future one nobody
+ * remembers to special-case — has to know or care that `sites` is the one
+ * table with a different id type.
+ */
+export function normalizeListItemRow<T extends { id: unknown }>(row: T): T & { id: string } {
+  return { ...row, id: String(row.id) };
+}
+
+export function normalizeListItemRows<T extends { id: unknown }>(rows: T[]): (T & { id: string })[] {
+  return rows.map(normalizeListItemRow);
+}

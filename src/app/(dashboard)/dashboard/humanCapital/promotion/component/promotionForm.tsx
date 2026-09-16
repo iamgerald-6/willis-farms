@@ -461,6 +461,14 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
   }) => {
     if (!validateForm() || !selectedAppraisal || !formConfig) return;
 
+    // Resolve the employee's real user_id the same way eligibleAppraisals
+    // already does (allUsers lookup by company_id) — sent as a real FK so
+    // the server no longer has to re-derive it from company_id itself.
+    // Stays null if the employee has no platform account, same as before.
+    const employee = allUsers.find(
+      (u) => u.company_id === selectedAppraisal.company_id,
+    );
+
     const promotionStep = getPromotionStep(selectedAppraisal.current_grade)!;
     const form_data = {
       disqualifying_factors: disqualifying,
@@ -475,6 +483,7 @@ export default function PromotionFormPage({ onBack }: { onBack?: () => void }) {
     mutate({
       appraisal_id: selectedAppraisal.id,
       company_id: selectedAppraisal.company_id,
+      user_id: employee?.user_id ?? null,
       employee_name: selectedAppraisal.employee_name,
       current_grade: selectedAppraisal.current_grade,
       current_job_title: selectedAppraisal.job_title,
