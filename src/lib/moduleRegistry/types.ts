@@ -44,7 +44,8 @@ export type NavIconKey =
   | "check-circle"
   | "clock"
   | "alert-circle"
-  | "x-circle";
+  | "x-circle"
+  | "building-2";
 
 /** How a group renders in the sidebar */
 export type SidebarGroupMode = "collapsible" | "flat";

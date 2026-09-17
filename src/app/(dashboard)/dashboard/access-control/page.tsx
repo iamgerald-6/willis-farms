@@ -12,8 +12,9 @@ import {
   canManageUserAccounts,
   canOpenUserManagement,
 } from "@/lib/permissionLevels";
-import { Loader2, Mail, Plus, Search, Users } from "lucide-react";
+import { Loader2, Mail, Plus, Users } from "lucide-react";
 import { AccessControlTableSkeleton } from "@/components/skeletons/PageSkeletons";
+import { MultiSelectFilter, FilterChip } from "@/components/filters/MultiSelectFilter";
 import CreateUserModal from "@/app/(dashboard)/dashboard/components/createModal";
 import { toast } from "sonner";
 import { getAccountStatus } from "@/lib/userAccountStatus";
@@ -72,9 +73,16 @@ function StatusBadge({ user }: { user: User }) {
 }
 
 export default function UserManagementPage() {
-  const [search, setSearch] = useState("");
   const [listGroup, setListGroup] = useState<UserListGroup>("all");
   const [modalOpen, setModalOpen] = useState(false);
+  // Same multi-select cross-filtering pattern as the Recruitment
+  // "Applications" tab (src/components/filters/MultiSelectFilter.tsx):
+  // each field's option list is scoped by the OTHER active filters, never
+  // by itself, and values from different fields combine with AND.
+  const [nameFilters, setNameFilters] = useState<string[]>([]);
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [siteFilters, setSiteFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const queryClient = useQueryClient();
 
   const { data: session } = useQuery({
@@ -158,26 +166,95 @@ export default function UserManagementPage() {
   // user_role_label, never the stale raw `role` column.
   const resolvedRole = (u: User) => resolveAccessProfile(u, undefined)?.role ?? "Standard Role";
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const userDisplayName = (u: User) =>
+    `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || u.email;
+
+  // Coarser role-group tab (e.g. "Human Capital roles") applied first — the
+  // granular Name/Role/Site/Status filters below all scope off of this, same
+  // as before this feature existed, so the GroupPermissionPanel above stays
+  // in sync with what the table shows.
+  const groupFiltered = useMemo(() => {
     return users.filter((u) => {
       const role = resolvedRole(u);
       if (isSuperAdminRoleLabel(role)) return false;
-
-      if (listGroup !== "all" && roleGroup(role) !== listGroup) {
-        return false;
-      }
-
-      if (!q) return true;
-      return (
-        u.email.toLowerCase().includes(q) ||
-        u.first_name?.toLowerCase().includes(q) ||
-        u.last_name?.toLowerCase().includes(q) ||
-        u.company_id?.toLowerCase().includes(q) ||
-        u.job_position?.toLowerCase().includes(q)
-      );
+      if (listGroup !== "all" && roleGroup(role) !== listGroup) return false;
+      return true;
     });
-  }, [users, search, listGroup]);
+  }, [users, listGroup]);
+
+  // Same cross-filtering pattern as the Applications tab: each field's
+  // option list is scoped by the OTHER active filters (never by itself).
+  const applyFilters = (
+    list: User[],
+    active: { name?: string[]; role?: string[]; site?: string[]; status?: string[] },
+  ) =>
+    list.filter((u) => {
+      if (active.name?.length && !active.name.includes(userDisplayName(u))) return false;
+      if (active.role?.length && !active.role.includes(resolvedRole(u))) return false;
+      if (active.site?.length && !active.site.includes(siteLabelForUser(u))) return false;
+      if (active.status?.length && !active.status.includes(getAccountStatus(u).label)) return false;
+      return true;
+    });
+
+  const nameOptions = useMemo(() => {
+    const scoped = applyFilters(groupFiltered, {
+      role: roleFilters,
+      site: siteFilters,
+      status: statusFilters,
+    });
+    const names = Array.from(new Set(scoped.map(userDisplayName))).sort();
+    return names.map((n) => ({ value: n, label: n }));
+  }, [groupFiltered, roleFilters, siteFilters, statusFilters]);
+
+  const roleOptions = useMemo(() => {
+    const scoped = applyFilters(groupFiltered, {
+      name: nameFilters,
+      site: siteFilters,
+      status: statusFilters,
+    });
+    const roles = Array.from(new Set(scoped.map(resolvedRole))).sort();
+    return roles.map((r) => ({ value: r, label: r }));
+  }, [groupFiltered, nameFilters, siteFilters, statusFilters]);
+
+  const siteOptions = useMemo(() => {
+    const scoped = applyFilters(groupFiltered, {
+      name: nameFilters,
+      role: roleFilters,
+      status: statusFilters,
+    });
+    const siteLabels = Array.from(new Set(scoped.map(siteLabelForUser))).sort();
+    return siteLabels.map((s) => ({ value: s, label: s }));
+  }, [groupFiltered, nameFilters, roleFilters, statusFilters]);
+
+  const statusOptions = useMemo(() => {
+    const scoped = applyFilters(groupFiltered, {
+      name: nameFilters,
+      role: roleFilters,
+      site: siteFilters,
+    });
+    const statuses = Array.from(new Set(scoped.map((u) => getAccountStatus(u).label))).sort();
+    return statuses.map((s) => ({ value: s, label: s }));
+  }, [groupFiltered, nameFilters, roleFilters, siteFilters]);
+
+  const filtered = useMemo(
+    () =>
+      applyFilters(groupFiltered, {
+        name: nameFilters,
+        role: roleFilters,
+        site: siteFilters,
+        status: statusFilters,
+      }),
+    [groupFiltered, nameFilters, roleFilters, siteFilters, statusFilters],
+  );
+
+  const hasActiveFilters =
+    nameFilters.length + roleFilters.length + siteFilters.length + statusFilters.length > 0;
+  const clearAllFilters = () => {
+    setNameFilters([]);
+    setRoleFilters([]);
+    setSiteFilters([]);
+    setStatusFilters([]);
+  };
 
   const groupTabs: { id: UserListGroup; label: string }[] = useMemo(
     () => [
@@ -219,15 +296,6 @@ export default function UserManagementPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative flex-1 sm:flex-none">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search users…"
-              className="w-full sm:w-56 pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-red-400"
-            />
-          </div>
           {canAdd && (
             <button
               onClick={() => setModalOpen(true)}
@@ -254,6 +322,73 @@ export default function UserManagementPage() {
           ))}
         </select>
       </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <MultiSelectFilter
+          label="Name"
+          options={nameOptions}
+          selected={nameFilters}
+          onChange={setNameFilters}
+        />
+        <MultiSelectFilter
+          label="Role"
+          options={roleOptions}
+          selected={roleFilters}
+          onChange={setRoleFilters}
+        />
+        <MultiSelectFilter
+          label="Site"
+          options={siteOptions}
+          selected={siteFilters}
+          onChange={setSiteFilters}
+        />
+        <MultiSelectFilter
+          label="Status"
+          options={statusOptions}
+          selected={statusFilters}
+          onChange={setStatusFilters}
+        />
+      </div>
+
+      {hasActiveFilters && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          {nameFilters.map((n) => (
+            <FilterChip
+              key={`name-${n}`}
+              label={n}
+              onRemove={() => setNameFilters(nameFilters.filter((v) => v !== n))}
+            />
+          ))}
+          {roleFilters.map((r) => (
+            <FilterChip
+              key={`role-${r}`}
+              label={r}
+              onRemove={() => setRoleFilters(roleFilters.filter((v) => v !== r))}
+            />
+          ))}
+          {siteFilters.map((s) => (
+            <FilterChip
+              key={`site-${s}`}
+              label={s}
+              onRemove={() => setSiteFilters(siteFilters.filter((v) => v !== s))}
+            />
+          ))}
+          {statusFilters.map((s) => (
+            <FilterChip
+              key={`status-${s}`}
+              label={s}
+              onRemove={() => setStatusFilters(statusFilters.filter((v) => v !== s))}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="text-xs font-semibold text-gray-400 hover:text-red-600 ml-1"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {activeGroupKey && activeGroupActions && (
         <GroupPermissionPanel

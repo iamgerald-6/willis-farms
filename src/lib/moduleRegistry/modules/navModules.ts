@@ -53,6 +53,21 @@ export const NAV_BUILTIN_MODULES: ModuleRecord[] = [
     showInSidebar: false,
     supportedActions: ["view", "add", "edit"],
   }),
+  navModule({
+    id: "mod:company-branding",
+    // Falsy on purpose — this tab has no separate permission of its own;
+    // the module-picker filter (getModuleSections's !m.legacyKey check)
+    // treats a falsy legacyKey as "always visible to anyone who can see
+    // System Definitions at all", same gate as sys:definitions itself.
+    legacyKey: "",
+    label: "Company Branding",
+    groupId: "grp:general",
+    route: "/dashboard/system-definitions",
+    sortOrder: 3,
+    icon: "building-2",
+    showInSidebar: false,
+    supportedActions: ["view", "edit"],
+  }),
   modLeave,
   modAppraisal,
   modJustifications,

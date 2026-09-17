@@ -55,6 +55,7 @@ import PayrollTaxSettingsEditor from "./components/PayrollTaxSettingsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
 import { ONBOARDING_MEDICAL_REPORTS_LIST } from "@/lib/systemDefinitions/onboardingDefaults";
+import { RECRUITMENT_MODULE_ID } from "@/lib/systemDefinitions/recruitmentDefaults";
 import {
   OFFER_TERMS_FIELDS_LIST,
   ONBOARDING_EMPLOYMENT_TYPES_LIST,
@@ -381,6 +382,28 @@ function getModuleSections(
     });
   }
 
+  if (m.id === "mod:company-branding") {
+    sections.push({
+      key: "company-branding",
+      label: "Company branding",
+      icon: Building2,
+      render: () => (
+        <SectionCard
+          icon={Building2}
+          title="Company branding"
+          description="The logo, address, and accent color used across the company — the offer letter, and every generated report (Task Manager Monthly Report, Interview Report, Role Hiring Summary, Employee Profile)."
+        >
+          {/* Saved on the Recruitment module's config row regardless of
+             where this editor is mounted — fetchCompanyBranding() (used by
+             every PDF generator) always reads RECRUITMENT_MODULE_ID, so this
+             must stay pointed at that same id even though the tab itself now
+             lives under General rather than Recruitment. */}
+          <CompanyBrandingEditor moduleId={RECRUITMENT_MODULE_ID} readOnly={!canEdit} />
+        </SectionCard>
+      ),
+    });
+  }
+
   if (isEditableLeavePolicyModule(m.id)) {
     sections.push({
       key: "leave-policy",
@@ -490,10 +513,6 @@ function getModuleSections(
           title="Offer letter"
           description="Fields on the live Offer Terms modal, shown to HR before an offer letter is generated. Independent from HR onboarding — Section O: adding or editing a field here only changes the Offer Terms modal. Already-saved offer values still show read-only on the onboarding tab."
         >
-          <div className="mb-5 pb-5 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-800 mb-2">Company branding</p>
-            <CompanyBrandingEditor moduleId={m.id} readOnly={!canEdit} />
-          </div>
           <div className="mb-5 pb-5 border-b border-gray-100">
             <p className="text-xs font-semibold text-gray-800 mb-2">Payroll tax settings</p>
             <PayrollTaxSettingsEditor moduleId={m.id} readOnly={!canEdit} />
