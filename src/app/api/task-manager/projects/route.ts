@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/taskManagerAuth";
+import { supabaseAdmin, getRequestUser, requireSeniorManagementAtHeadquarters } from "@/lib/taskManagerAuth";
 import { computeDisplayStatus } from "@/lib/taskAccessControl";
 import {
   fetchDirectReportUserIds,
   fetchProjectCreatorInfo,
   isProjectSiteVisible,
   isProjectVisibleToViewer,
+  isTaskSiteVisible,
   isTaskVisibleToViewer,
   resolveTaskViewScope,
 } from "@/lib/taskManagerScope";
@@ -26,10 +27,12 @@ export async function GET(req: NextRequest) {
     // the report/calendar pickers) only wants active ones, and that default
     // keeps the existing broader read access unchanged for every caller
     // that doesn't ask for archived projects.
+    // Manage Projects is Senior Management AND headquarters-only — see
+    // requireSeniorManagementAtHeadquarters in apiRequestAuth.ts.
     const includeArchived = req.nextUrl.searchParams.get("include") === "all";
-    const user = includeArchived ? await requireSeniorManagement(req) : await getRequestUser(req);
+    const user = includeArchived ? await requireSeniorManagementAtHeadquarters(req) : await getRequestUser(req);
     if (!user) {
-      return NextResponse.json({ error: includeArchived ? "Forbidden — Senior Management only" : "Unauthorized" }, { status: includeArchived ? 403 : 401 });
+      return NextResponse.json({ error: includeArchived ? "Forbidden — Senior Management at headquarters only" : "Unauthorized" }, { status: includeArchived ? 403 : 401 });
     }
 
     let projectsQuery = supabaseAdmin.from("tm_projects").select("*").order("created_at", { ascending: true });
@@ -60,6 +63,15 @@ export async function GET(req: NextRequest) {
     // this specific, not just any role-visible task).
     const ownTaskProjectIds = new Set<string>();
     const statsByProject: Record<string, { total: number; open: number; overdue: number }> = {};
+    // Site of each project, for the isTaskSiteVisible check below — same
+    // "layered on top of role scope" site rule used everywhere else in Task
+    // Manager (see isProjectSiteVisible's doc comment). Without this, the
+    // Overview "Overdue tasks" total for an "all"-scope caller (Executive/
+    // HR/Super Admin) who isn't at headquarters would sum every site's
+    // overdue tasks instead of just their own site's.
+    const projectSiteById = new Map(
+      (projects ?? []).map((p) => [p.id as string, (p.site_id as number | null) ?? null]),
+    );
 
     for (const t of taskCounts ?? []) {
       if (t.owner_id === user.id || t.created_by === user.id) {
@@ -67,7 +79,8 @@ export async function GET(req: NextRequest) {
       }
 
       if (
-        !isTaskVisibleToViewer(t, user.id, scope, directReportIds)
+        !isTaskVisibleToViewer(t, user.id, scope, directReportIds) ||
+        !isTaskSiteVisible(user, t, projectSiteById.get(t.project_id) ?? null)
       ) {
         continue;
       }

@@ -11,6 +11,8 @@ import type { FormDefinition } from "@/lib/moduleRegistry/types";
 import type { ModuleBusinessLogic } from "@/lib/systemDefinitions";
 import {
   DEFAULT_COMPANY_ADDRESS_LINES,
+  DEFAULT_COMPANY_PRIMARY_COLOR,
+  isValidHexColor,
   resolveCompanyBranding,
 } from "@/lib/systemDefinitions/companyBrandingConfig";
 
@@ -53,6 +55,7 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
   const queryKey = ["system_module_config", moduleId];
   const [uploading, setUploading] = useState(false);
   const [draftAddress, setDraftAddress] = useState("");
+  const [draftColor, setDraftColor] = useState(DEFAULT_COMPANY_PRIMARY_COLOR);
 
   const { data, isLoading } = useQuery({
     queryKey,
@@ -66,8 +69,15 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
     setDraftAddress(savedAddressText);
   }, [savedAddressText]);
 
+  useEffect(() => {
+    setDraftColor(saved.primaryColor);
+    // Only re-sync when the saved value itself changes, not on every
+    // keystroke in the color input below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved.primaryColor]);
+
   const saveMutation = useMutation({
-    mutationFn: async (patch: { logoUrl?: string; logoPublicId?: string; addressLines?: string[] }) => {
+    mutationFn: async (patch: { logoUrl?: string; logoPublicId?: string; addressLines?: string[]; primaryColor?: string }) => {
       const current = data?.businessLogic ?? {};
       const currentBranding = current.companyBranding ?? {};
       return api.patch(
@@ -117,6 +127,9 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
     addressLines.length > 0 &&
     JSON.stringify(addressLines) !== JSON.stringify(saved.addressLines);
 
+  const isColorValid = isValidHexColor(draftColor);
+  const isColorDirty = isColorValid && draftColor !== saved.primaryColor;
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
@@ -131,6 +144,9 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
         The logo below appears in the offer letter header and, at low opacity, as the
         page watermark — upload a new one any time the company logo changes and both
         update together. The address lines appear next to the logo in the letterhead.
+        The accent color is used across every generated PDF (offer letter, employee
+        profile, interview reports, hiring summaries, and the Task Manager monthly
+        report) — section titles, dividers, and highlight bars all pick it up.
       </p>
 
       <div>
@@ -176,6 +192,41 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
             <p className="text-[11px] text-gray-400 mt-1">JPEG or PNG, up to 5MB.</p>
           </div>
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
+          Accent color
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={isColorValid ? draftColor : DEFAULT_COMPANY_PRIMARY_COLOR}
+            onChange={(e) => setDraftColor(e.target.value)}
+            disabled={readOnly}
+            className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer disabled:cursor-not-allowed"
+          />
+          <input
+            type="text"
+            value={draftColor}
+            onChange={(e) => setDraftColor(e.target.value)}
+            disabled={readOnly}
+            placeholder={DEFAULT_COMPANY_PRIMARY_COLOR}
+            className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-50 disabled:text-gray-500"
+          />
+          <button
+            type="button"
+            onClick={() => saveMutation.mutate({ primaryColor: draftColor.trim() })}
+            disabled={readOnly || saveMutation.isPending || !isColorDirty}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60 transition"
+          >
+            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            Save color
+          </button>
+        </div>
+        {!isColorValid && (
+          <p className="text-[11px] text-red-500 mt-1">Enter a valid hex color, e.g. #991B1B.</p>
+        )}
       </div>
 
       <div>

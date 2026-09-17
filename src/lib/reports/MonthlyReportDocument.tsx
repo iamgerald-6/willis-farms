@@ -1,5 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { DisplayStatus } from "@/types/taskManager";
+import { ReportCoverPage } from "@/lib/reports/ReportCoverPage";
+import { DEFAULT_COMPANY_PRIMARY_COLOR } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -194,7 +196,7 @@ function UpcomingList({ items, showProject }: { items: (UpcomingItem | ReportTas
 // forcing a whole project's task list to stay together broke pages that
 // had more tasks than would fit in the remaining space, producing
 // overlapping/garbled output instead of a clean page break.
-function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
+function GanttSection({ projects, primaryColor }: { projects: ReportProjectGantt[]; primaryColor: string }) {
   if (projects.length === 0) {
     return <Text style={styles.emptyNote}>Nothing to show for this period.</Text>;
   }
@@ -202,7 +204,7 @@ function GanttSection({ projects }: { projects: ReportProjectGantt[] }) {
     <>
       {projects.map((project) => (
         <View key={project.name}>
-          <View style={styles.ganttProjectHeaderBox} wrap={false}>
+          <View style={[styles.ganttProjectHeaderBox, { borderLeft: `3pt solid ${primaryColor}` }]} wrap={false}>
             <Text style={styles.ganttProjectHeaderText}>{project.name}</Text>
           </View>
           {project.tasks.length === 0 ? (
@@ -274,6 +276,24 @@ export interface UpcomingItem {
 
 export interface MonthlyReportData {
   periodLabel: string;
+  /** Plain date range, without the " — <site>" suffix periodLabel gets
+   * when site-scoped — used as the cover page subtitle, which shows the
+   * site as its own badge instead (see ReportCoverPage). */
+  dateRangeLabel: string;
+  /** Null/omitted = company-wide report. Set = this report is scoped to
+   * one site — shown prominently on the cover page per Sheila's explicit
+   * call: "for reports that are not company wide, the site should be
+   * indicated on the first page in the title." */
+  siteLabel?: string | null;
+  /** HR's uploaded logo (System Definitions → Offer letter → Company
+   * branding) — same source the offer letter uses, so every generated PDF
+   * shows the same logo. */
+  companyLogoUrl?: string | null;
+  /** HR's saved accent color (same source) — used on the cover page and
+   * for the Gantt section's project-header accent bar. Deliberately NOT
+   * applied to the Overdue status color, which stays a fixed red
+   * regardless of brand color (it's semantic, not decorative). */
+  companyPrimaryColor?: string;
   generatedAt: string;
   generatedByName: string;
   dashboardUrl: string;
@@ -296,8 +316,20 @@ export interface MonthlyReportData {
 }
 
 export default function MonthlyReportDocument({ data }: { data: MonthlyReportData }) {
+  const primaryColor = data.companyPrimaryColor ?? DEFAULT_COMPANY_PRIMARY_COLOR;
   return (
     <Document>
+      {/* Cover page — logo, title, and (if this report is scoped to one
+         site rather than company-wide) that site shown right in the title,
+         per Sheila's explicit call. */}
+      <ReportCoverPage
+        logoUrl={data.companyLogoUrl}
+        title={data.siteLabel ? `Task Manager Monthly Report — ${data.siteLabel}` : "Task Manager Monthly Report"}
+        subtitle={data.dateRangeLabel}
+        metaLine={`Generated ${new Date(data.generatedAt).toLocaleString("en-GB")} by ${data.generatedByName}`}
+        primaryColor={primaryColor}
+      />
+
       {/* Page 1 — board-facing executive summary, plain prose, no tables */}
       <Page size="A4" style={styles.page}>
         <ReportHeader data={data} pageLabel="Page 1" pageTitle="Executive Summary" pageSubtitle="Task outlook for the board." />
@@ -360,14 +392,14 @@ export default function MonthlyReportDocument({ data }: { data: MonthlyReportDat
       {/* Page 4 — Gantt of uncompleted (active) tasks, per project */}
       <Page size="A4" style={styles.page}>
         <ReportHeader data={data} pageLabel="Page 4" pageTitle="Outstanding Work" pageSubtitle="Uncompleted tasks, by project — bar shows % complete." />
-        <GanttSection projects={data.activeGanttByProject} />
+        <GanttSection projects={data.activeGanttByProject} primaryColor={primaryColor} />
         <Footer data={data} />
       </Page>
 
       {/* Page 5 — Gantt of completed tasks, per project */}
       <Page size="A4" style={styles.page}>
         <ReportHeader data={data} pageLabel="Page 5" pageTitle="Completed This Period" pageSubtitle="Tasks finished during the reporting period, by project." />
-        <GanttSection projects={data.completedGanttByProject} />
+        <GanttSection projects={data.completedGanttByProject} primaryColor={primaryColor} />
         <Footer data={data} />
       </Page>
 

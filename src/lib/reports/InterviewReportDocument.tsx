@@ -1,5 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Link } from "@react-pdf/renderer";
 import type { InterviewLocationType, InterviewReport } from "@/lib/careers/types";
+import { ReportCoverPage } from "@/lib/reports/ReportCoverPage";
+import { DEFAULT_COMPANY_PRIMARY_COLOR } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -118,12 +120,28 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-export default function InterviewReportDocument({ report }: { report: InterviewReport }) {
+export default function InterviewReportDocument({
+  report,
+  companyLogoUrl,
+  companyPrimaryColor = DEFAULT_COMPANY_PRIMARY_COLOR,
+}: {
+  report: InterviewReport;
+  companyLogoUrl?: string | null;
+  companyPrimaryColor?: string;
+}) {
   const d = report.applicant_details;
   const decisionColor = DECISION_COLOR[report.final_recommendation.decision];
 
   return (
     <Document>
+      <ReportCoverPage
+        logoUrl={companyLogoUrl}
+        title="Interview Report"
+        subtitle={`${d.name} — ${d.role}`}
+        metaLine={`Ref ${d.reference_number} · Generated ${fmtDate(report.generated_at)}`}
+        primaryColor={companyPrimaryColor}
+      />
+
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
@@ -201,7 +219,7 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <View key={i} style={styles.competencyRow} wrap={false}>
               <View style={styles.competencyHeader}>
                 <Text style={styles.competencyArea}>{c.area}</Text>
-                <Text style={styles.competencyScore}>{c.score != null ? `${c.score.toFixed(2)} / 5` : "—"}</Text>
+                <Text style={[styles.competencyScore, { color: companyPrimaryColor }]}>{c.score != null ? `${c.score.toFixed(2)} / 5` : "—"}</Text>
               </View>
               <Text style={styles.competencyText}>{c.assessment}</Text>
             </View>
@@ -253,7 +271,7 @@ export default function InterviewReportDocument({ report }: { report: InterviewR
             <Text style={styles.linkName}>{d.name}</Text>
             <Text style={styles.linkRef}>{d.reference_number}</Text>
             <Link src={report.panel_forms_url}>
-              <Text style={styles.linkText}>Panel forms / responses</Text>
+              <Text style={[styles.linkText, { color: companyPrimaryColor }]}>Panel forms / responses</Text>
             </Link>
           </View>
           <Text style={styles.footer} fixed>

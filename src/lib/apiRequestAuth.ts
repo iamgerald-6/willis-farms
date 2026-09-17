@@ -292,6 +292,28 @@ export async function requireSeniorManagement(
 }
 
 /**
+ * Senior Management (Super Admin / Executive Role / Human Resource) PLUS
+ * headquarters placement — Sheila's explicit call for the three admin-
+ * level Task Manager surfaces (Monthly Report, Automation, Manage
+ * Projects): a Senior Management account at a non-headquarters site should
+ * not see or use these at all, not just be scoped to their own site's data.
+ * Deliberately a separate helper from requireSeniorManagement rather than
+ * adding the headquarters check there directly — plenty of other Task
+ * Manager actions (archiving/restoring/deleting an individual task or
+ * project, the documents extraction flow, notify-assignees, the per-user tm
+ * permissions matrix) still use the site-scoped requireSeniorManagement and
+ * were not part of this request.
+ */
+export async function requireSeniorManagementAtHeadquarters(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user || !isSeniorManagement(user.role)) return null;
+  if (!isHeadquartersCaller(user)) return null;
+  return user;
+}
+
+/**
  * Read org-structure catalogs (custom lists, mapping levels/nodes) for Human
  * Capital workflows. Does not grant System Definitions edit access or the
  * sys:definitions page — only GET data needed by recruitment, appraisal, etc.

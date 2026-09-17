@@ -7,6 +7,7 @@ import { fetchUserNames } from "@/lib/taskManagerData";
 import { TASK_MANAGER_FROM_EMAIL } from "@/lib/taskManagerEmail";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 import { getAppBaseUrl } from "@/lib/appUrl";
+import { fetchCompanyBranding } from "@/lib/systemDefinitions/companyBrandingConfig";
 import MonthlyReportDocument, {
   MonthlyReportData,
   OwnerStat,
@@ -445,8 +446,14 @@ export async function sendMonthlyReport(params: SendMonthlyReportParams) {
 
   const executiveSummary = await generateExecutiveSummary(currentSnapshot, previousSnapshot, previousCompletions);
 
+  const branding = await fetchCompanyBranding(supabaseAdmin);
+
   const reportData: MonthlyReportData = {
     periodLabel,
+    dateRangeLabel,
+    siteLabel,
+    companyLogoUrl: branding.logoUrl ?? null,
+    companyPrimaryColor: branding.primaryColor,
     generatedAt: new Date().toISOString(),
     generatedByName,
     dashboardUrl,

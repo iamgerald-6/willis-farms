@@ -23,6 +23,7 @@ import { User } from "@/types";
 import { resolveAccessProfile } from "@/lib/pagePermissions";
 import type { PagePermissionKey } from "@/lib/pagePermissions";
 import { canPerformModuleAction } from "@/lib/permissionActions";
+import { hasSystemAccessByRoleLabel } from "@/lib/userRoleAccessControl";
 import { useGroupPresets } from "@/hooks/useGroupPresets";
 import {
   MODULE_GROUPS,
@@ -743,9 +744,20 @@ export default function SystemDefinitionsPage() {
           .filter((m) => {
             // A module's own config section shouldn't appear here unless the
             // viewer actually has view access to that module elsewhere in
-            // the app (mirrors how the main Sidebar hides items via legacyKey).
+            // the app (mirrors how the main Sidebar hides items via legacyKey)
+            // — UNLESS the viewer has unconditional System Definitions
+            // access (System Administrator / Super Admin). Those two roles'
+            // whole purpose is administering every module's settings, not
+            // just the ones they personally have day-to-day access to — a
+            // System Administrator with no Recruitment/Promotion/SOP access
+            // still needs to configure those modules' System Definitions
+            // sections. See hasSystemAccessByRoleLabel in
+            // userRoleAccessControl.ts.
             if (!m.legacyKey) return true;
             if (!accessProfile) return false;
+            if (hasSystemAccessByRoleLabel(accessProfile.role ?? sessionRole)) {
+              return true;
+            }
             return canPerformModuleAction(
               accessProfile,
               m.legacyKey as PagePermissionKey,

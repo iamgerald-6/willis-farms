@@ -1,5 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Link } from "@react-pdf/renderer";
 import type { RoleInterviewReport } from "@/lib/careers/types";
+import { ReportCoverPage } from "@/lib/reports/ReportCoverPage";
+import { DEFAULT_COMPANY_PRIMARY_COLOR } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 const RED = "#C62828";
 const DARK = "#111827";
@@ -102,11 +104,27 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-export default function RoleInterviewReportDocument({ report }: { report: RoleInterviewReport }) {
+export default function RoleInterviewReportDocument({
+  report,
+  companyLogoUrl,
+  companyPrimaryColor = DEFAULT_COMPANY_PRIMARY_COLOR,
+}: {
+  report: RoleInterviewReport;
+  companyLogoUrl?: string | null;
+  companyPrimaryColor?: string;
+}) {
   const f = report.funnel;
 
   return (
     <Document>
+      <ReportCoverPage
+        logoUrl={companyLogoUrl}
+        title="Role Hiring Summary"
+        subtitle={report.role_title}
+        metaLine={`Generated ${fmtDate(report.generated_at)}`}
+        primaryColor={companyPrimaryColor}
+      />
+
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
@@ -164,7 +182,7 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
           ) : (
             report.candidate_rankings.map((c) => (
               <View key={c.application_id} style={styles.rankRow} wrap={false}>
-                <Text style={styles.rankNum}>{c.rank}</Text>
+                <Text style={[styles.rankNum, { color: companyPrimaryColor }]}>{c.rank}</Text>
                 <Text style={styles.rankName}>{c.name}</Text>
                 <Text style={styles.rankRef}>{c.reference_number}</Text>
                 <Text style={styles.rankScore}>{c.combined_score != null ? `${c.combined_score.toFixed(2)} / 5` : "—"}</Text>
@@ -277,7 +295,7 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
                   c.competencies.map((comp, i) => (
                     <View key={i} style={styles.competencyRow}>
                       <Text style={styles.competencyArea}>{comp.area}</Text>
-                      <Text style={styles.competencyScore}>{comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}</Text>
+                      <Text style={[styles.competencyScore, { color: companyPrimaryColor }]}>{comp.score != null ? `${comp.score.toFixed(2)} / 5` : "—"}</Text>
                       <Text style={styles.competencyText}>{comp.assessment || "—"}</Text>
                     </View>
                   ))
@@ -371,11 +389,11 @@ export default function RoleInterviewReportDocument({ report }: { report: RoleIn
               <Text style={styles.linkName}>{c.name}</Text>
               <Text style={styles.linkRef}>{c.reference_number}</Text>
               <Link src={c.panel_forms_url}>
-                <Text style={styles.linkText}>Panel forms / responses</Text>
+                <Text style={[styles.linkText, { color: companyPrimaryColor }]}>Panel forms / responses</Text>
               </Link>
               {c.individual_report_url ? (
                 <Link src={c.individual_report_url}>
-                  <Text style={styles.linkText}>Individual comprehensive report (PDF)</Text>
+                  <Text style={[styles.linkText, { color: companyPrimaryColor }]}>Individual comprehensive report (PDF)</Text>
                 </Link>
               ) : (
                 <Text style={styles.emptyNote}>No individual comprehensive report was generated.</Text>

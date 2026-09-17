@@ -60,6 +60,9 @@ export type OfferLetterContext = {
    * hasn't configured this yet — see companyBrandingConfig.ts. */
   companyLogoUrl?: string;
   companyAddressLines: string[];
+  /** Brand accent color, editable from System Definitions → Offer letter →
+   * Company branding. Falls back to the default brand red when unset. */
+  companyPrimaryColor?: string;
 };
 
 function formatDisplayDate(raw: string | null | undefined): string | undefined {
@@ -180,5 +183,6 @@ export async function resolveOfferLetterContext(
     signatureImageUrl: hr.signature_image?.secure_url || undefined,
     companyLogoUrl: branding.logoUrl,
     companyAddressLines: branding.addressLines,
+    companyPrimaryColor: branding.primaryColor,
   };
 }

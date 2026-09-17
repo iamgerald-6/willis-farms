@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { User } from "@/types";
 import type { OrgCustomListType, OrgCustomListItem } from "@/lib/organizationalStructureCustomLists";
+import { isHumanResourceRoleLabel, isExecutiveRoleLabel } from "@/lib/userRoleAccessControl";
 import SentReportsDrawer from "./SentReportsDrawer";
 import StaffMultiSelect from "./StaffMultiSelect";
 
@@ -56,19 +57,33 @@ export default function MonthlyReportModal({
   });
   const isAllSitesCaller = me?.is_headquarters_site === true;
 
-  // Only fetched for a headquarters caller — a site-scoped caller can only
-  // ever send their own site's report anyway (enforced server-side too).
+  // Fetched regardless of caller type now — the "Send to" recipient picker
+  // needs site labels for every candidate, not just for the (HQ-only)
+  // "Report for" site switcher below.
   const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
     queryKey: ["organizational_structure_custom_list_types"],
     queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
-    enabled: isAllSitesCaller,
   });
   const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
   const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
     queryKey: ["org_custom_list_items", sitesListType?.id],
     queryFn: async () => (await api.get(`/organizational-structure/custom-list-types/${sitesListType!.id}/items`)).data.data,
-    enabled: isAllSitesCaller && !!sitesListType,
+    enabled: !!sitesListType,
   });
+  const siteLabelById = new Map(sites.map((s) => [String(s.id), s.label]));
+  const siteLabelByUserId: Record<string, string> = {};
+  for (const u of users) {
+    if (u.site_id != null) {
+      const label = siteLabelById.get(String(u.site_id));
+      if (label) siteLabelByUserId[u.user_id] = label;
+    }
+  }
+
+  // Monthly report recipients: only Human Resource and Executive Role
+  // staff — same rule as AutomationSettingsModal's "Send to" list.
+  const reportRecipientCandidates = users.filter(
+    (u) => isHumanResourceRoleLabel(u.user_role_label) || isExecutiveRoleLabel(u.user_role_label),
+  );
 
   const handleSend = async () => {
     if (recipients.length === 0) {
@@ -152,11 +167,15 @@ export default function MonthlyReportModal({
           <div>
             <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to</label>
             <StaffMultiSelect
-              users={users}
+              users={reportRecipientCandidates}
               selectedEmails={recipients}
               onChange={setRecipients}
-              placeholder="Select staff to receive the report…"
+              placeholder="Select Human Resource or Executive staff…"
+              siteLabelByUserId={siteLabelByUserId}
             />
+            <p className="text-xs text-gray-400 mt-1">
+              Only Human Resource and Executive Role staff are eligible — each shown with their site.
+            </p>
           </div>
 
           <button

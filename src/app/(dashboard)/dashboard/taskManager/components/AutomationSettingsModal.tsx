@@ -9,6 +9,7 @@ import { ModalListSkeleton } from "@/components/skeletons/PageSkeletons";
 import { TMReportSchedule, TMReminderSettings } from "@/types/taskManager";
 import { User } from "@/types";
 import type { OrgCustomListType, OrgCustomListItem } from "@/lib/organizationalStructureCustomLists";
+import { isHumanResourceRoleLabel, isExecutiveRoleLabel } from "@/lib/userRoleAccessControl";
 import StaffMultiSelect from "./StaffMultiSelect";
 
 const DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => i + 1);
@@ -38,19 +39,36 @@ export default function AutomationSettingsModal({ users, onClose }: { users: Use
   });
   const isAllSitesCaller = me?.is_headquarters_site === true;
 
-  // Only fetched for a headquarters caller — a site-scoped caller can only
-  // ever manage their own site's row anyway, so there's nothing to pick.
+  // Fetched for every caller now, not just headquarters — the "Report for"
+  // site switcher below is still HQ-only, but the "Send to" recipient
+  // picker needs site labels for every candidate regardless of who's
+  // opening this modal.
   const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
     queryKey: ["organizational_structure_custom_list_types"],
     queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
-    enabled: isAllSitesCaller,
   });
   const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
   const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
     queryKey: ["org_custom_list_items", sitesListType?.id],
     queryFn: async () => (await api.get(`/organizational-structure/custom-list-types/${sitesListType!.id}/items`)).data.data,
-    enabled: isAllSitesCaller && !!sitesListType,
+    enabled: !!sitesListType,
   });
+  const siteLabelById = new Map(sites.map((s) => [String(s.id), s.label]));
+  const siteLabelByUserId: Record<string, string> = {};
+  for (const u of users) {
+    if (u.site_id != null) {
+      const label = siteLabelById.get(String(u.site_id));
+      if (label) siteLabelByUserId[u.user_id] = label;
+    }
+  }
+
+  // Monthly report recipients: only Human Resource and Executive Role staff
+  // — the people who actually need a companywide/site performance report,
+  // not every account on the system (see StaffMultiSelect, which was
+  // previously offered against the full unfiltered staff list here).
+  const reportRecipientCandidates = users.filter(
+    (u) => isHumanResourceRoleLabel(u.user_role_label) || isExecutiveRoleLabel(u.user_role_label),
+  );
 
   // tm_report_schedule now holds one row per site plus at most one
   // company-wide row (site_id null) — see docs/multi-site/
@@ -250,11 +268,15 @@ export default function AutomationSettingsModal({ users, onClose }: { users: Use
                 <div>
                   <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">Send to</label>
                   <StaffMultiSelect
-                    users={users}
+                    users={reportRecipientCandidates}
                     selectedEmails={scheduleRecipients}
                     onChange={setScheduleRecipients}
-                    placeholder="Select staff to receive the report…"
+                    placeholder="Select Human Resource or Executive staff…"
+                    siteLabelByUserId={siteLabelByUserId}
                   />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Only Human Resource and Executive Role staff are eligible — each shown with their site.
+                  </p>
                 </div>
 
                 <button

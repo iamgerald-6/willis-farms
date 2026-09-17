@@ -132,8 +132,21 @@ export function humanResourceRolePermissionActions(): PagePermissionActions {
   return out;
 }
 
+/** System Administrator — same own-scope baseline as Standard Role (own
+ * leave/appraisal/skill log/tasks, Policies/SOP view) PLUS full control of
+ * System Definitions, User Management, and the User Manual. The role's own
+ * doc comment (userRoleAccessControl.ts) says explicitly it's "deliberately
+ * narrower than full role access" — narrower in that it can't approve
+ * others' leave, sign off others' skill logs, or create tasks for others —
+ * not that it has zero access to those modules. The previous implementation
+ * granted only sys:definitions/users/user-manual and nothing else, so a
+ * System Administrator account never saw Human Capital, Task Manager,
+ * Policies & Ops, or SOPs at all. */
 export function systemAdministratorRolePermissionActions(): PagePermissionActions {
-  return defaultFullAccessActionsFor(["sys:definitions", "users", "user-manual"]);
+  return {
+    ...standardRolePermissionActions(),
+    ...defaultFullAccessActionsFor(["sys:definitions", "users", "user-manual"]),
+  };
 }
 
 /** Canonical built-in matrix for each User role (standard-tier accounts). */

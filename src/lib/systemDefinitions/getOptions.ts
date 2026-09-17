@@ -31,6 +31,31 @@ function optionLegacyKey(option: SystemOption): string {
   return option.legacy_value ?? option.label;
 }
 
+/**
+ * Guards against a built-in field's option list (e.g. "Region" -> the 16
+ * Ghana regions) silently disappearing when a DB row exists for it but its
+ * own `rules.options` is an empty array — which happens whenever an admin
+ * saves ANY edit to a git-authored select field without the edit form
+ * having options loaded into it (or explicitly clears the Options box by
+ * mistake). Since a required <select> with zero options blocks the form
+ * entirely, an empty db-side options list is never treated as "the admin
+ * meant zero options" — it falls back to git's non-empty default instead.
+ * An admin who genuinely wants fewer options still can, as long as they
+ * leave at least one.
+ */
+function preserveNonEmptyGitOptions(
+  gitRules: SystemOptionRules,
+  dbRules: SystemOptionRules,
+): SystemOptionRules {
+  const dbOptionsEmpty = Array.isArray(dbRules.options) && dbRules.options.length === 0;
+  const gitOptionsNonEmpty = Array.isArray(gitRules.options) && gitRules.options.length > 0;
+  if (dbOptionsEmpty && gitOptionsNonEmpty) {
+    const { options: _dropped, ...rest } = dbRules;
+    return rest;
+  }
+  return dbRules;
+}
+
 /** Keep built-in defaults when admins add custom DB rows — do not replace the whole list. */
 export function mergeSystemOptions(
   gitOptions: SystemOption[],
@@ -54,7 +79,7 @@ export function mergeSystemOptions(
         ? {
             ...git,
             ...db,
-            rules: { ...git.rules, ...db.rules },
+            rules: { ...git.rules, ...preserveNonEmptyGitOptions(git.rules, db.rules) },
           }
         : git,
     );
