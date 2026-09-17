@@ -51,6 +51,7 @@ import CompanyBrandingEditor from "./components/CompanyBrandingEditor";
 import ApplicationFormEditor from "./components/ApplicationFormEditor";
 import OnboardingFormEditor from "./components/OnboardingFormEditor";
 import OnboardingHrFieldsEditor from "./components/OnboardingHrFieldsEditor";
+import MedicalFormTemplateManager from "./components/MedicalFormTemplateManager";
 import PayrollTaxSettingsEditor from "./components/PayrollTaxSettingsEditor";
 import RefereeReferenceEditor from "./components/RefereeReferenceEditor";
 import AuditLogPanel from "./components/AuditLogPanel";
@@ -480,6 +481,21 @@ function getModuleSections(
             canAdd={canAdd}
             canEdit={canEdit}
           />
+        </SectionCard>
+      ),
+    });
+
+    sections.push({
+      key: "medical-form",
+      label: "Medical form",
+      icon: FileText,
+      render: () => (
+        <SectionCard
+          icon={FileText}
+          title="Occupational medical examination form"
+          description="Hospital-facing form (Parts 2–6). Part 1 referral is completed by HR in onboarding. Published changes apply to new links only — submitted examinations keep their version until HR resends."
+        >
+          <MedicalFormTemplateManager canEdit={canEdit} />
         </SectionCard>
       ),
     });

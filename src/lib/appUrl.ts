@@ -57,6 +57,10 @@ export function refereeReferenceUrl(token: string): string {
   return `${getAppBaseUrl()}/reference/${token}`;
 }
 
+export function medicalExaminationUrl(token: string): string {
+  return `${getAppBaseUrl()}/medical/${token}`;
+}
+
 export function recruitmentApplicationsUrl(): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment`;
 }

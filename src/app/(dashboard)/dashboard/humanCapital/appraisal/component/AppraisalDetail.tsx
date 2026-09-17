@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
@@ -20,6 +20,7 @@ import {
   Archive,
   ArchiveRestore,
   Loader2,
+  ClipboardList,
   CalendarClock,
 } from "lucide-react";
 import {
@@ -48,6 +49,9 @@ import {
   type StatusTone,
   type ViewerContext,
 } from "./appraisalTypes";
+import { isPipEligible, parseQuarterScore } from "@/lib/appraisal/pipInstances";
+import type { AppraisalPip } from "@/lib/appraisal/pipInstances";
+import { appraisalRatingAnchorId } from "@/lib/appraisal/pipGapChain";
 
 /** Raw item ratings are 1–5; returns the section average as a 0–100% score. */
 function sectionAvg(sectionRatings: SectionRatings): number | null {
@@ -94,14 +98,24 @@ function RatingCell({
   );
 }
 
-function CommentCell({ comment, hidden }: { comment: string; hidden: boolean }) {
+function CommentCell({
+  comment,
+  hidden,
+}: {
+  comment: string;
+  hidden: boolean;
+}) {
   if (hidden)
     return (
-      <span className="text-gray-200 text-xs font-mono select-none">••••••••</span>
+      <span className="text-gray-200 text-xs font-mono select-none">
+        ••••••••
+      </span>
     );
   if (!comment) return <span className="text-gray-300 text-xs">—</span>;
   return (
-    <span className="text-xs text-gray-500 italic block break-words">{comment}</span>
+    <span className="text-xs text-gray-500 italic block break-words">
+      {comment}
+    </span>
   );
 }
 
@@ -148,7 +162,9 @@ function ScoreDisplay({
   return (
     <div className="text-center flex-1 sm:flex-initial">
       <p className="text-[10px] sm:text-xs text-white/50 mb-1">{label}</p>
-      <p className={`text-xl sm:text-2xl font-black ${color}`}>{score.toFixed(1)}</p>
+      <p className={`text-xl sm:text-2xl font-black ${color}`}>
+        {score.toFixed(1)}
+      </p>
       <p className="text-white/30 text-[10px] sm:text-xs">%</p>
     </div>
   );
@@ -201,10 +217,16 @@ function TimelineStep({
       <div className="flex flex-col items-center">
         <span
           className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-            done ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-300"
+            done
+              ? "bg-emerald-100 text-emerald-600"
+              : "bg-gray-100 text-gray-300"
           }`}
         >
-          {done ? <Check className="w-3 h-3" /> : <CircleDot className="w-3 h-3" />}
+          {done ? (
+            <Check className="w-3 h-3" />
+          ) : (
+            <CircleDot className="w-3 h-3" />
+          )}
         </span>
         <span className="w-px flex-1 bg-gray-200 last:hidden" />
       </div>
@@ -220,9 +242,7 @@ function TimelineStep({
           {done ? formatDateTime(timestamp) : (note ?? "Pending")}
         </p>
         {done && by && (
-          <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">
-            by {by}
-          </p>
+          <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">by {by}</p>
         )}
       </div>
     </li>
@@ -235,12 +255,14 @@ export default function AppraisalDetail({
   onFillForm,
   onFinalReview,
   onSubmitJustification,
+  onOpenPip,
 }: {
   appraisal: Appraisal;
   viewer: ViewerContext;
   onFillForm: () => void;
   onFinalReview: () => void;
   onSubmitJustification: () => void;
+  onOpenPip?: () => void;
 }) {
   const bothSubmitted = appraisal.submitted_by === "both";
   const statusSummary = getStatusSummary(appraisal);
@@ -258,7 +280,10 @@ export default function AppraisalDetail({
   const employeeRatings = appraisal.employee_ratings ?? {};
   const supervisorRatings = appraisal.supervisor_ratings ?? {};
   const allSectionKeys = Array.from(
-    new Set([...Object.keys(employeeRatings), ...Object.keys(supervisorRatings)]),
+    new Set([
+      ...Object.keys(employeeRatings),
+      ...Object.keys(supervisorRatings),
+    ]),
   );
 
   const getSectionItems = (sectionKey: string): string[] => {
@@ -266,6 +291,26 @@ export default function AppraisalDetail({
     const supItems = Object.keys(supervisorRatings[sectionKey] ?? {});
     return Array.from(new Set([...empItems, ...supItems]));
   };
+
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (!hash || !hash.startsWith("appraisal-rating-")) return;
+    const el = document.getElementById(hash);
+    if (!el) return;
+    const timer = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-red-500", "ring-offset-2", "rounded-lg");
+      window.setTimeout(() => {
+        el.classList.remove(
+          "ring-2",
+          "ring-red-500",
+          "ring-offset-2",
+          "rounded-lg",
+        );
+      }, 2500);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [appraisal.id, allSectionKeys.length]);
 
   // Archiving files a record away: it stays readable but nothing can act on it.
   // Managers / Super Admins can archive; Admins only when Manage User grants
@@ -380,6 +425,22 @@ export default function AppraisalDetail({
   });
   const latestJustification = justifications?.[0] ?? null;
 
+  const pipEligible = isPipEligible(appraisal);
+  const { data: pipContext } = useQuery({
+    queryKey: ["appraisal-pip", appraisal.id],
+    enabled: pipEligible,
+    queryFn: async () => {
+      const res = await api.get(`/appraisal/${appraisal.id}/pip`);
+      return res.data.data as {
+        eligible: boolean;
+        canManage: boolean;
+        templateConfigured: boolean;
+        placementComplete?: boolean;
+        pip: AppraisalPip | null;
+      };
+    },
+  });
+
   const employeeSubmitted =
     appraisal.submitted_by === "employee" || bothSubmitted;
   const supervisorSubmitted =
@@ -458,15 +519,15 @@ export default function AppraisalDetail({
               label="Supervisor Score"
             />
             {showScoreDetails && appraisal.final_quarter_score != null && (
-                <>
-                  <div className="w-px bg-white/10" />
-                  <ScoreDisplay
-                    score={appraisal.final_quarter_score}
-                    hidden={false}
-                    label="Final Quarter Score"
-                  />
-                </>
-              )}
+              <>
+                <div className="w-px bg-white/10" />
+                <ScoreDisplay
+                  score={appraisal.final_quarter_score}
+                  hidden={false}
+                  label="Final Quarter Score"
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -572,6 +633,67 @@ export default function AppraisalDetail({
           </p>
         )}
       </div>
+
+      {pipEligible && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <ClipboardList className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-orange-900">
+                Performance Improvement Plan required
+              </p>
+              <p className="text-xs text-orange-800 mt-0.5">
+                Final score{" "}
+                {parseQuarterScore(appraisal.final_quarter_score)?.toFixed(1)}%
+                ({bandLabel(parseQuarterScore(appraisal.final_quarter_score))})
+                — below the 70% threshold.{" "}
+                {pipContext?.pip
+                  ? `A Performance Improvement Plan is in progress (status: ${pipContext.pip.status}).`
+                  : pipContext?.canManage
+                    ? "Start a Performance Improvement Plan for this employee."
+                    : "Your supervisor or HR will start the Performance Improvement Plan."}
+              </p>
+              {pipContext &&
+                !pipContext.pip &&
+                pipContext.placementComplete === false && (
+                  <p className="text-xs text-amber-800 mt-2">
+                    This employee&apos;s org placement (Site / Business unit /
+                    Department / Section / Position / Grade level) is incomplete
+                    in their profile. HR must complete it under Access control
+                    before a PIP can be started.
+                  </p>
+                )}
+              {pipContext &&
+                !pipContext.templateConfigured &&
+                !pipContext.pip &&
+                pipContext.placementComplete !== false && (
+                  <p className="text-xs text-amber-800 mt-2">
+                    No published PIP form matches this employee&apos;s position
+                    and org placement. HR must configure and publish one under
+                    Manage appraisals → PIP form setup for{" "}
+                    {appraisal.job_title || "this role"}.
+                  </p>
+                )}
+            </div>
+          </div>
+          {onOpenPip &&
+            (pipContext?.pip ||
+              (pipContext?.canManage && pipContext?.templateConfigured)) && (
+              <button
+                type="button"
+                onClick={onOpenPip}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 text-white text-xs font-semibold hover:bg-orange-700 transition shrink-0"
+              >
+                <ClipboardList className="w-4 h-4" />
+                {pipContext?.pip
+                  ? pipContext.pip.status !== "draft" || !pipContext.canManage
+                    ? "View PIP"
+                    : "Open PIP"
+                  : "Start PIP"}
+              </button>
+            )}
+        </div>
+      )}
 
       {/* ── Archive banner / control ── */}
       {(isArchived || viewerCanArchive) && (
@@ -699,7 +821,9 @@ export default function AppraisalDetail({
           </p>
           {latestJustification.reviewed_by_name && (
             <p className="text-[11px] sm:text-xs text-gray-600 mt-1">
-              <strong>Reviewed by {latestJustification.reviewed_by_name}</strong>
+              <strong>
+                Reviewed by {latestJustification.reviewed_by_name}
+              </strong>
               {latestJustification.reviewed_at
                 ? ` · ${formatDate(latestJustification.reviewed_at)}`
                 : ""}
@@ -810,7 +934,8 @@ export default function AppraisalDetail({
             label="Cycle"
             value={
               appraisal.cycle
-                ? appraisal.cycle.charAt(0).toUpperCase() + appraisal.cycle.slice(1)
+                ? appraisal.cycle.charAt(0).toUpperCase() +
+                  appraisal.cycle.slice(1)
                 : appraisal.review_quarter === "Q4"
                   ? "Annual"
                   : "Quarterly"
@@ -897,7 +1022,9 @@ export default function AppraisalDetail({
           )}
           <TimelineStep
             title="Final review meeting completed"
-            timestamp={appraisal.final_reviewed_at ?? appraisal.final_review_date}
+            timestamp={
+              appraisal.final_reviewed_at ?? appraisal.final_review_date
+            }
             done={appraisal.status === "final_reviewed"}
             by={appraisal.final_reviewed_by_name}
             note={
@@ -1026,7 +1153,8 @@ export default function AppraisalDetail({
                     return (
                       <div
                         key={item}
-                        className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4 items-start px-4 py-4 sm:py-3 hover:bg-gray-50/40 transition-colors"
+                        id={appraisalRatingAnchorId(sectionKey, item)}
+                        className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4 items-start px-4 py-4 sm:py-3 hover:bg-gray-50/40 transition-colors scroll-mt-24"
                       >
                         <span className="text-xs sm:text-sm font-medium sm:font-normal text-gray-800 sm:text-gray-700 leading-snug">
                           {item}
@@ -1130,17 +1258,18 @@ export default function AppraisalDetail({
             </div>
           )}
 
-          {appraisal.review_quarter === "Q4" && appraisal.promotion_readiness && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                Promotion Readiness Notes
-              </p>
-              <p className="text-xs sm:text-sm font-bold text-blue-800">
-                {PROMOTION_LABELS[appraisal.promotion_readiness] ??
-                  appraisal.promotion_readiness}
-              </p>
-            </div>
-          )}
+          {appraisal.review_quarter === "Q4" &&
+            appraisal.promotion_readiness && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                  Promotion Readiness Notes
+                </p>
+                <p className="text-xs sm:text-sm font-bold text-blue-800">
+                  {PROMOTION_LABELS[appraisal.promotion_readiness] ??
+                    appraisal.promotion_readiness}
+                </p>
+              </div>
+            )}
 
           {appraisal.review_quarter === "Q4" &&
             appraisal.status === "final_reviewed" && (

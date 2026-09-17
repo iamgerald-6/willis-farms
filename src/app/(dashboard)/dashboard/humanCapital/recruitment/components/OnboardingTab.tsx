@@ -25,9 +25,8 @@ import {
 import { isConsultantGrade } from "@/lib/systemDefinitions/gradeLevelsConfig";
 import type { User } from "@/types";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
-import OnboardingMedicalReportPanel from "./OnboardingMedicalReportPanel";
+import OnboardingMedicalExamPanel from "./OnboardingMedicalExamPanel";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
-import { gitFallbackRequiredMedicalReports } from "@/lib/systemDefinitions/onboardingMedicalReports";
 import {
   STATUS_LABELS,
   STATUS_STYLES,
@@ -246,7 +245,6 @@ function OnboardingDetail({
   const offerResponse = resolveOfferResponseStatus(row);
   const offerResponseAt = resolveOfferResponseAt(row);
   const offerTermsLocked = Boolean(row.hr_data?.offer_terms_saved_at?.trim());
-  const requiredMedicalReports = useMemo(() => gitFallbackRequiredMedicalReports(), []);
   const candidateSubmitted = Boolean(row.submitted_at);
   const pipelineStatus = resolveOnboardingHrPipelineStatus(row);
   const isSeniorHr = isSeniorManagement(userRole);
@@ -523,13 +521,12 @@ function OnboardingDetail({
               )}
               {app.status === "onboarding" && (
                 <div className="mb-4">
-                  <OnboardingMedicalReportPanel
-                  applicationId={row.application_id}
-                  formData={form}
-                  hrData={hrData}
-                  setHrData={setHrData}
-                  requiredReports={requiredMedicalReports}
-                  onPersist={(nextHr) => saveHr.mutate(nextHr)}
+                  <OnboardingMedicalExamPanel
+                    applicationId={row.application_id}
+                    formData={form}
+                    hrData={hrData}
+                    setHrData={setHrData}
+                    onPersist={(nextHr) => saveHr.mutate(nextHr)}
                   />
                 </div>
               )}

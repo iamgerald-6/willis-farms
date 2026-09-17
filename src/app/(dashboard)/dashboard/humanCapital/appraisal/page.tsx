@@ -5,32 +5,33 @@ import { useRouter } from "next/navigation";
 import { hasFullAppraisalAccess } from "@/lib/accessControl";
 import AppraisalLandingPage from "./component/AppraisalPageView";
 import AppraisalGradeTemplatesManager from "./component/AppraisalGradeTemplatesManager";
+import PipFormTemplateManager from "./component/PipFormTemplateManager";
+import PipListView from "./component/PipListView";
 import { useAppraisalViewer } from "./component/useAppraisalViewer";
+import { viewerCanActOnTeamAppraisals } from "@/lib/appraisal/viewerAccess";
 import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 
-// Same toggle shape as SOPHubPage: one route, "Appraisals" vs "Manage
-// appraisals" — instead of the appraisal question-set builder living under
-// System Definitions. Manage side gated by hasFullAppraisalAccess, the same
-// check already used elsewhere in AppraisalPageView for admin-only actions
-// (browse all periods, archive) — Super Admin, Executive, or HR.
+type AppraisalViewMode = "appraisals" | "pip" | "manage";
+
 const AppraisalsHomePage = () => {
   const router = useRouter();
   const { viewer } = useAppraisalViewer();
-  const [viewMode, setViewMode] = useState<"appraisals" | "manage">("appraisals");
+  const [viewMode, setViewMode] = useState<AppraisalViewMode>("appraisals");
+  const [manageTab, setManageTab] = useState<"questions" | "pip">("questions");
   const { isHeadquarters } = useIsHeadquarters();
 
-  // Manage appraisals (the grade-template question-set builder) is
-  // headquarters-only, on top of the existing role check — see
-  // isHeadquartersCaller in apiRequestAuth.ts, which the server enforces
-  // regardless of what this toggle shows.
-  const canManage = hasFullAppraisalAccess(viewer.role) && isHeadquarters;
+  const canManageTemplates = hasFullAppraisalAccess(viewer.role) && isHeadquarters;
+  const showPipManagementTab =
+    viewerCanActOnTeamAppraisals(viewer) || hasFullAppraisalAccess(viewer.role);
+  const showTopTabs = showPipManagementTab || canManageTemplates;
 
   return (
     <div>
-      {canManage && (
-        <div className="flex items-center gap-1 p-6 pb-0">
+      {showTopTabs && (
+        <div className="flex items-center gap-1 p-6 pb-0 flex-wrap">
           <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white">
             <button
+              type="button"
               onClick={() => setViewMode("appraisals")}
               className={`px-4 py-2 text-sm font-medium transition ${
                 viewMode === "appraisals"
@@ -40,30 +41,88 @@ const AppraisalsHomePage = () => {
             >
               Appraisals
             </button>
-            <button
-              onClick={() => setViewMode("manage")}
-              className={`px-4 py-2 text-sm font-medium transition ${
-                viewMode === "manage"
-                  ? "bg-red-600 text-white"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Manage appraisals
-            </button>
+            {showPipManagementTab && (
+              <button
+                type="button"
+                onClick={() => setViewMode("pip")}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  viewMode === "pip"
+                    ? "bg-red-600 text-white"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                PIP
+              </button>
+            )}
+            {canManageTemplates && (
+              <button
+                type="button"
+                onClick={() => setViewMode("manage")}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  viewMode === "manage"
+                    ? "bg-red-600 text-white"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Manage appraisals
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {canManage && viewMode === "manage" ? (
+      {viewMode === "manage" && canManageTemplates ? (
         <div className="p-6">
           <h2 className="text-xl font-bold text-gray-900">Manage appraisals</h2>
-          <p className="text-xs sm:text-sm text-gray-500 mt-0.5 mb-4">
-            Build the appraisal question set for an exact Site/Business
-            unit/Department/Section/Position/Grade level combination —
-            matched against each employee&apos;s own org placement.
-          </p>
-          <AppraisalGradeTemplatesManager canAdd canEdit />
+
+          <div className="flex items-center gap-1 mt-3 mb-4">
+            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => setManageTab("questions")}
+                className={`px-3 py-1.5 text-xs font-medium transition ${
+                  manageTab === "questions"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Appraisal question sets
+              </button>
+              <button
+                type="button"
+                onClick={() => setManageTab("pip")}
+                className={`px-3 py-1.5 text-xs font-medium transition ${
+                  manageTab === "pip" ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                PIP form setup
+              </button>
+            </div>
+          </div>
+
+          {manageTab === "questions" ? (
+            <>
+              <p className="text-xs sm:text-sm text-gray-500 mt-0.5 mb-4">
+                Build the appraisal question set for an exact Site/Business
+                unit/Department/Section/Position/Grade level combination —
+                matched against each employee&apos;s own org placement.
+              </p>
+              <AppraisalGradeTemplatesManager canAdd canEdit />
+            </>
+          ) : (
+            <>
+              <p className="text-xs sm:text-sm text-gray-500 mt-0.5 mb-4">
+                Build the PIP form for an exact Site/Business unit/
+                Department/Section/Position/Grade level combination —
+                matched against the employee&apos;s own org placement when a
+                PIP is created for them after a poor final appraisal.
+              </p>
+              <PipFormTemplateManager canAdd canEdit />
+            </>
+          )}
         </div>
+      ) : viewMode === "pip" && showPipManagementTab ? (
+        <PipListView viewer={viewer} />
       ) : (
         <AppraisalLandingPage
           viewer={viewer}

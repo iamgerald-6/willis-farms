@@ -49,6 +49,12 @@ export default function RouteAccessGuard({
   const pathname = usePathname();
   const router = useRouter();
   const redirectGuardRef = useRef<string | null>(null);
+  // Guards against calling performLogout more than once per mount — the
+  // effect below can re-run (query retries/refetches touching its deps)
+  // before the router.replace("/login") it kicks off actually finishes
+  // unmounting this tree, which would otherwise fire another signOut +
+  // redirect on top of the first one.
+  const loggedOutRef = useRef(false);
 
   const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
@@ -105,18 +111,24 @@ export default function RouteAccessGuard({
     if (!accessProfile && !profile) return;
 
     if (!profile) {
+      if (loggedOutRef.current) return;
+      loggedOutRef.current = true;
       toast.error(staffAuthBlockMessage("not_found"));
       void performLogout(router);
       return;
     }
 
     if (profile.is_disabled) {
+      if (loggedOutRef.current) return;
+      loggedOutRef.current = true;
       toast.error(staffAuthBlockMessage("disabled"));
       void performLogout(router);
       return;
     }
 
     if (!isEmailVerified(profile)) {
+      if (loggedOutRef.current) return;
+      loggedOutRef.current = true;
       toast.error(staffAuthBlockMessage("pending"));
       void performLogout(router);
       return;

@@ -22,9 +22,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // getUser() (not getSession()) on purpose — it revalidates against
+    // Supabase Auth instead of trusting whatever's cached in localStorage.
+    // A session can look "present" locally (getSession()/hasLocalSupabase
+    // Session() both say yes) while actually being stale — expired access
+    // token, or a refresh token another tab already rotated/invalidated —
+    // and the server-side checks further down the tree (RouteAccessGuard's
+    // /api/* calls) correctly 401 on it. Gating dashboard access on the
+    // unvalidated local session let that combination bounce forever
+    // between here and /login: this check would wave it through, then
+    // RouteAccessGuard would sign it back out. See verifyStaffAccount.ts.
+    supabase.auth.getUser().then(({ data, error }) => {
       if (!active) return;
-      if (!session) {
+      if (error || !data.user) {
+        void supabase.auth.signOut({ scope: "local" }).catch(() => {});
         void ignoreNavigationAbort(
           router.replace(`/login?redirect=${encodeURIComponent(pathname ?? "")}`),
         );

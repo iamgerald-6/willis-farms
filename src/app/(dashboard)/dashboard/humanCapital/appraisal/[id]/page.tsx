@@ -94,6 +94,11 @@ export default function AppraisalDetailPage() {
                   `/dashboard/humanCapital/appraisal/justifications/new?appraisal_id=${appraisal.id}`,
                 )
               }
+              onOpenPip={() =>
+                router.push(
+                  `/dashboard/humanCapital/appraisal/pipForms?id=${appraisal.id}`,
+                )
+              }
             />
           </div>
         )}

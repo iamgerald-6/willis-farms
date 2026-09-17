@@ -7,12 +7,12 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
-import api from "@/lib/api";
 import { toast } from "sonner";
 import { ignoreNavigationAbort } from "@/lib/navigation/safeNavigation";
 import { hasLocalSupabaseSession } from "@/lib/auth/hasLocalSupabaseSession";
+import { checkStaffAccountBlock } from "@/lib/auth/verifyStaffAccount";
 import PasswordInput, { inputClass } from "../components/PasswordInput";
-import { staffAuthBlockMessage, type StaffAuthBlockReason } from "@/lib/staffAccount";
+import { staffAuthBlockMessage } from "@/lib/staffAccount";
 
 const LoginSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -54,14 +54,47 @@ function LoginForm() {
     if (!hasLocalSupabaseSession()) return;
 
     let active = true;
-    supabase.auth.getSession().then(({ data: { session } }) => {
+
+    (async () => {
+      // getUser() (not getSession()) on purpose — it revalidates against
+      // Supabase Auth instead of trusting whatever's cached in localStorage.
+      // A local session can go stale (expired access token, a refresh
+      // token already rotated/invalidated by another tab, ...) while still
+      // "existing" as far as getSession()/hasLocalSupabaseSession() are
+      // concerned; redirecting to the dashboard on that alone is exactly
+      // what used to send an unusable session bouncing between here and
+      // RouteAccessGuard forever (see verifyStaffAccount.ts).
+      const { data, error } = await supabase.auth.getUser();
       if (!active) return;
-      if (session) {
-        void ignoreNavigationAbort(router.replace(redirectTo));
-      } else {
+      if (error || !data.user) {
         setScreen("guest");
+        return;
       }
-    });
+
+      // Session is genuinely valid — but a valid Supabase Auth session
+      // doesn't guarantee a usable staff account behind it (deleted/
+      // disabled/pending row). Check before trusting "logged in" here too,
+      // same as onSubmit does right after signing in.
+      try {
+        const block = await checkStaffAccountBlock();
+        if (!active) return;
+        if (block) {
+          await supabase.auth.signOut();
+          if (!active) return;
+          toast.error(staffAuthBlockMessage(block));
+          setScreen("guest");
+          return;
+        }
+      } catch {
+        // Couldn't verify (network hiccup) — fall through to the dashboard;
+        // RouteAccessGuard will re-check and handle it from there rather
+        // than stranding the user on an endless spinner.
+      }
+
+      if (!active) return;
+      void ignoreNavigationAbort(router.replace(redirectTo));
+    })();
+
     return () => {
       active = false;
     };
@@ -108,22 +141,10 @@ function LoginForm() {
     }
 
     try {
-      const res = await api.get("/me");
-      const block = res.data?.auth_block as StaffAuthBlockReason | null | undefined;
-
-      if (!res.data?.staff_account_exists) {
+      const block = await checkStaffAccountBlock();
+      if (block) {
         await supabase.auth.signOut();
-        toast.error(staffAuthBlockMessage("not_found"));
-        return;
-      }
-      if (block === "disabled" || res.data?.is_disabled) {
-        await supabase.auth.signOut();
-        toast.error(staffAuthBlockMessage("disabled"));
-        return;
-      }
-      if (block === "pending" || !res.data?.email_verified) {
-        await supabase.auth.signOut();
-        toast.error(staffAuthBlockMessage("pending"));
+        toast.error(staffAuthBlockMessage(block));
         return;
       }
     } catch {
