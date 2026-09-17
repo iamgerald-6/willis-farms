@@ -26,7 +26,6 @@ import {
 } from "@/lib/pagePermissions";
 import {
   hasSystemAccessByRoleLabel,
-  isHumanResourceRoleLabel,
   userRoleGroupKeyFromLabel,
 } from "@/lib/userRoleAccessControl";
 
@@ -359,10 +358,15 @@ export function getEffectivePermissionActions(
     return withUniversalStaffPageAccess(stored);
   }
 
-  if (tier === "delegated") {
-    return withUniversalStaffPageAccess(
-      Object.keys(stored).length > 0 ? stored : {},
-    );
+  // "delegated" tier with nothing actually stored is not a state the Manage
+  // User save flow ever produces on purpose (it rejects a save with zero
+  // modules selected — see POST /api/access-control), so this only happens
+  // from stale/seeded data. Treating it as "no access to anything" silently
+  // locks the account out of its own role's default matrix (blank sidebar,
+  // etc.) instead of surfacing the bad data — fall back to the role preset
+  // instead, same as standard tier below.
+  if (tier === "delegated" && Object.keys(stored).length === 0 && roleKey) {
+    return getBuiltInRolePermissionActions(roleKey);
   }
 
   // Standard tier — built-in role matrix is authoritative (see
@@ -397,15 +401,6 @@ export function canPerformModuleAction(
   // customization to reach what's supposed to be their default.
   if ((key === "sys:definitions" || key === "users") && hasSystemAccessByRoleLabel(role)) {
     return true;
-  }
-
-  // Human Resource never signs off skill logs — Executive / Super Admin only.
-  if (
-    isHumanResourceRoleLabel(role) &&
-    key === "hc:skillLog" &&
-    action === "approve"
-  ) {
-    return false;
   }
 
   const effective = getEffectivePermissionActions(

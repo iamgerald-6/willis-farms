@@ -42,8 +42,8 @@ export async function runScheduledMonthlyReportIfDue() {
   const siteIds = schedules.map((s) => s.site_id).filter((id): id is number => id != null);
   const siteLabelById = new Map<number, string>();
   if (siteIds.length > 0) {
-    const { data: sites } = await supabaseAdmin.from("sites").select("id, name").in("id", siteIds);
-    for (const s of sites ?? []) siteLabelById.set(s.id, s.name as string);
+    const { data: sites } = await supabaseAdmin.from("sites").select("id, label").in("id", siteIds);
+    for (const s of sites ?? []) siteLabelById.set(s.id, s.label as string);
   }
 
   const results: Array<{ site_id: number | null; skipped: boolean; reason?: string; period_start?: string; period_end?: string }> = [];

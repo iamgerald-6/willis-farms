@@ -30,6 +30,7 @@ import { PhoneNumberInput } from "@/components/PhoneNumberInput";
 import { GhanaCardInput } from "@/components/GhanaCardInput";
 import { GhanaPostGpsInput } from "@/components/GhanaPostGpsInput";
 import { SsnitNumberInput } from "@/components/SsnitNumberInput";
+import { TinNumberInput } from "@/components/TinNumberInput";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import { FormShell, usePreventBrowserBack } from "@/components/Forms/FormShell";
 import {
@@ -402,6 +403,17 @@ export default function OnboardingWizard({
       return (
         <FieldBlock key={field.id} label={field.label} required={required} half={half}>
           <SsnitNumberInput
+            value={String(value ?? "")}
+            onChange={(v) => setFieldValue(fieldKey, v)}
+          />
+        </FieldBlock>
+      );
+    }
+
+    if (fieldType === "tin") {
+      return (
+        <FieldBlock key={field.id} label={field.label} required={required} half={half}>
+          <TinNumberInput
             value={String(value ?? "")}
             onChange={(v) => setFieldValue(fieldKey, v)}
           />

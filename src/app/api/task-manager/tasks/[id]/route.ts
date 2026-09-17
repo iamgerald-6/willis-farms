@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getRequestUser } from "@/lib/taskManagerAuth";
 import { isSeniorManagement, EDITABLE_TASK_FIELDS, type EditableTaskField } from "@/lib/taskAccessControl";
 import { enrichSingleTask, fetchUserNames, writeAuditLog } from "@/lib/taskManagerData";
-import { assertTaskSiteAccess } from "@/lib/taskManagerScope";
+import { assertOwnerSiteAssignable, assertTaskSiteAccess } from "@/lib/taskManagerScope";
 
 // PATCH /api/task-manager/tasks/[id] — Senior Management can edit any task;
 // anyone else can only edit a task they personally created (created_by).
@@ -57,6 +57,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (changedFields.length === 0) {
       const userNames = await fetchUserNames([existing.owner_id]);
       return NextResponse.json({ task: await enrichSingleTask(existing, userNames) });
+    }
+
+    // Same rule as task creation — only headquarters callers may reassign
+    // a task across sites.
+    if (
+      changedFields.includes("owner_id") &&
+      !(await assertOwnerSiteAssignable(supabaseAdmin, user, updates.owner_id as string | null))
+    ) {
+      return NextResponse.json(
+        { error: "Forbidden — you can only assign tasks to people at your own site." },
+        { status: 403 },
+      );
     }
 
     // Moving a task between the Obligation Register and Monitoring

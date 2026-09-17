@@ -25,11 +25,16 @@ export default function StaffMultiSelect({
   selectedEmails,
   onChange,
   placeholder = "Select staff…",
+  siteLabelByUserId,
 }: {
   users: User[];
   selectedEmails: string[];
   onChange: (emails: string[]) => void;
   placeholder?: string;
+  /** Optional — when provided, each row (and the removable chips) shows the
+   * user's site alongside their name, e.g. for a company-wide recipient
+   * picker where it's not otherwise obvious which site someone belongs to. */
+  siteLabelByUserId?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -64,7 +69,17 @@ export default function StaffMultiSelect({
   };
 
   const nameByEmail = new Map(users.map((u) => [u.email, `${u.first_name} ${u.last_name}`.trim()]));
-  const selectedUsers = selectedEmails.map((email) => ({ email, name: nameByEmail.get(email) ?? email }));
+  const userIdByEmail = new Map(users.map((u) => [u.email, u.user_id]));
+  const siteLabelFor = (email: string): string | null => {
+    if (!siteLabelByUserId) return null;
+    const userId = userIdByEmail.get(email);
+    return (userId && siteLabelByUserId[userId]) || null;
+  };
+  const selectedUsers = selectedEmails.map((email) => ({
+    email,
+    name: nameByEmail.get(email) ?? email,
+    site: siteLabelFor(email),
+  }));
 
   const filtered = useMemo(() => {
     const sorted = [...users].sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
@@ -98,6 +113,7 @@ export default function StaffMultiSelect({
               {selectedUsers.map((u) => (
                 <span key={u.email} className="flex items-center gap-1 bg-red-50 text-red-700 text-[11px] font-medium pl-2 pr-1 py-1 rounded-full">
                   {u.name}
+                  {u.site && <span className="text-red-400 font-normal">· {u.site}</span>}
                   <button type="button" onClick={() => toggle(u.email)} className="hover:text-red-900">
                     <X className="w-3 h-3" />
                   </button>
@@ -134,8 +150,15 @@ export default function StaffMultiSelect({
                 >
                   <input type="checkbox" checked={checked} onChange={() => toggle(u.email)} className="accent-red-600 w-3.5 h-3.5 shrink-0" />
                   <span className="flex-1 min-w-0">
-                    <span className="block text-gray-800 truncate">
-                      {u.first_name} {u.last_name}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-gray-800 truncate">
+                        {u.first_name} {u.last_name}
+                      </span>
+                      {siteLabelByUserId?.[u.user_id] && (
+                        <span className="shrink-0 text-[10px] font-medium text-gray-400 bg-gray-100 rounded-full px-1.5 py-0.5">
+                          {siteLabelByUserId[u.user_id]}
+                        </span>
+                      )}
                     </span>
                     <span className="block text-[11px] text-gray-400 truncate">{u.email}</span>
                   </span>

@@ -73,11 +73,16 @@ type PdfSelection = { pages: number[]; unrestricted: boolean };
 export default function DocumentExtractionModal({
   project,
   users,
+  currentUserId,
   onClose,
   onSaved,
 }: {
   project: TMProject;
   users: User[];
+  // Defaults each proposal's owner to whoever's running the extraction,
+  // rather than leaving it unset, whenever the document didn't name someone
+  // Claude could confidently match (see matchOwnerId in extract/route.ts).
+  currentUserId: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -214,7 +219,10 @@ export default function DocumentExtractionModal({
         files: batch,
       });
       setJobId(res.data.job.id);
-      setProposals(res.data.job.extracted_tasks ?? []);
+      const extracted: ExtractedTaskProposal[] = res.data.job.extracted_tasks ?? [];
+      setProposals(
+        extracted.map((p) => (p.owner_id ? p : { ...p, owner_id: currentUserId })),
+      );
       setPendingBatch(null);
       setSelectPagesReason(null);
       setStep("review");

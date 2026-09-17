@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { getRequestUser, supabaseAdmin } from "@/lib/taskManagerAuth";
 import type { PortalDocument } from "@/types/taskManager";
 
-// GET /api/task-manager/documents — Senior Management only.
+// GET /api/task-manager/documents — any authenticated user. "From Document"
+// isn't Senior-Management-only any more (see TaskListView's canEditList —
+// a project creator or someone who supervises the creator can reach it too,
+// not just Senior Management), so this endpoint can't stay gated behind
+// requireSeniorManagement either, or "Choose Existing" would silently come
+// back empty for anyone else even though documents genuinely exist.
 // Aggregates documents already uploaded elsewhere in the portal (Policies &
 // Ops manuals, SOP library) so extraction can run against something that's
 // already there, instead of always requiring a fresh upload.
 export async function GET(req: NextRequest) {
-  const user = await requireSeniorManagement(req);
-  if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+  const user = await getRequestUser(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const documents: PortalDocument[] = [];
 

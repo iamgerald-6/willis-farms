@@ -194,6 +194,47 @@ export async function PATCH(
       );
     }
 
+    // ── Reschedule the final review meeting date ─────────────────────────
+    // Independent of a full supervisor re-submission — the supervisor only
+    // needs to move the meeting date, not redo their whole evaluation. Only
+    // meaningful once a date has actually been set (i.e. the supervisor has
+    // already submitted their evaluation, per the required reviewDate field
+    // on that form) and before the final review itself has happened.
+    if (body.reschedule_final_review_date !== undefined) {
+      if (!canActAsSupervisor) return rejectSupervisorAction();
+
+      if (existing.status === "final_reviewed") {
+        return NextResponse.json(
+          {
+            error:
+              "This appraisal's final review is already complete. It must be reopened via a justification before the meeting date can change.",
+          },
+          { status: 409 },
+        );
+      }
+
+      const newDate = body.reschedule_final_review_date;
+      if (!newDate) {
+        return NextResponse.json(
+          { error: "A new final review date is required." },
+          { status: 400 },
+        );
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("appraisals")
+        .update({ final_review_date: newDate })
+        .eq("id", appraisalId)
+        .select()
+        .single();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ data });
+    }
+
     // ── Final Review Meeting (kept per business decision — this is what
     // actually finalizes a quarter's score for the annual Final Score
     // average). Only allowed once both parties have submitted. ──────────

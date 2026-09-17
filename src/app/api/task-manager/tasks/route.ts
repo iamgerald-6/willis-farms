@@ -3,6 +3,7 @@ import { supabaseAdmin, getRequestUser, requireSeniorManagement } from "@/lib/ta
 import { enrichTasks, fetchUserNames, fetchProjectNames, fetchSubtaskTreesByTaskId, writeAuditLog } from "@/lib/taskManagerData";
 import {
   applyTaskListVisibilityFilter,
+  assertOwnerSiteAssignable,
   isProjectSiteVisible,
   isTaskSiteVisible,
   resolveTaskViewScope,
@@ -92,6 +93,15 @@ export async function POST(req: NextRequest) {
     if (targetProject && !isProjectSiteVisible(user, targetProject)) {
       return NextResponse.json(
         { error: "Forbidden — this project isn't at a site you have access to." },
+        { status: 403 },
+      );
+    }
+
+    // Only headquarters callers may assign a task across sites — everyone
+    // else is locked to assigning tasks to people at their own site.
+    if (!(await assertOwnerSiteAssignable(supabaseAdmin, user, owner_id))) {
+      return NextResponse.json(
+        { error: "Forbidden — you can only assign tasks to people at your own site." },
         { status: 403 },
       );
     }

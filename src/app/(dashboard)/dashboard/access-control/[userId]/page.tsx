@@ -129,6 +129,27 @@ export default function ManageUserAccessPage() {
     },
   });
 
+  // Which site(s) are headquarters — needed for the Executive/HR/Super
+  // Admin half of the supervisor-eligibility site rule (see
+  // isSupervisorSiteEligible in supervisorAssignment.ts). Same "sites"
+  // custom-list lookup SiteTagPicker.tsx already does; org-placement's own
+  // /options endpoint only returns id+label, not is_headquarters.
+  const { data: listTypes = [] } = useQuery<{ id: string; table_name: string }[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () => (await api.get("/organizational-structure/custom-list-types")).data.data,
+  });
+  const sitesListTypeId = listTypes.find((lt) => lt.table_name === "sites")?.id;
+  const { data: siteItems = [] } = useQuery<{ id: string; is_headquarters?: boolean | null }[]>({
+    queryKey: ["org_custom_list_items", sitesListTypeId],
+    queryFn: async () =>
+      (await api.get(`/organizational-structure/custom-list-types/${sitesListTypeId}/items`)).data.data,
+    enabled: !!sitesListTypeId,
+  });
+  const headquartersSiteIds = useMemo(
+    () => new Set(siteItems.filter((s) => s.is_headquarters).map((s) => String(s.id))),
+    [siteItems],
+  );
+
   const actor = users.find((u) => u.user_id === session?.user?.id);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const actorProfile = resolveAccessProfile(actor, sessionRole);
@@ -249,8 +270,8 @@ export default function ManageUserAccessPage() {
 
   const supervisorOptions = useMemo(() => {
     if (!target) return [];
-    return eligibleSupervisorsForEmployee(target, users);
-  }, [target, users, gradeConfig]);
+    return eligibleSupervisorsForEmployee(target, users, "manageUser", headquartersSiteIds);
+  }, [target, users, gradeConfig, headquartersSiteIds]);
 
   const assignedSupervisorName = supervisorDisplayName(
     users,

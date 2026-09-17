@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { OfferLetterContext } from "@/lib/careers/resolveOfferLetterContext";
 import { WILLS_FARMS_LOGO_MARK_DATA_URI } from "@/lib/reports/assets/offerLetterBranding";
+import { DEFAULT_COMPANY_PRIMARY_COLOR } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 // A4 page size in points, used to center the background watermark.
 const PAGE_WIDTH = 595.28;
@@ -18,7 +19,6 @@ const LETTERHEAD_LOGO_HEIGHT = 90;
 const WATERMARK_WIDTH = 320;
 const WATERMARK_HEIGHT = 320;
 
-const RED = "#991B1B";
 const DARK = "#111827";
 const GRAY = "#6B7280";
 const BORDER = "#E5E7EB";
@@ -36,7 +36,6 @@ const styles = StyleSheet.create({
   letterheadBar: {
     flexDirection: "row",
     alignItems: "center",
-    borderBottom: `2pt solid ${RED}`,
     paddingBottom: 14,
     marginBottom: 24,
   },
@@ -131,7 +130,6 @@ const styles = StyleSheet.create({
   annexTitle: {
     fontSize: 13,
     fontWeight: 700,
-    color: RED,
     marginBottom: 4,
   },
   annexSubtitle: {
@@ -206,6 +204,7 @@ function splitParagraphs(body: string): string[] {
 
 export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayload }) {
   const paragraphs = splitParagraphs(data.body);
+  const primaryColor = data.companyPrimaryColor ?? DEFAULT_COMPANY_PRIMARY_COLOR;
 
   return (
     <Document>
@@ -221,7 +220,7 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
           fixed
         />
 
-        <View style={styles.letterheadBar}>
+        <View style={[styles.letterheadBar, { borderBottom: `2pt solid ${primaryColor}` }]}>
           <Image
             src={data.companyLogoUrl || WILLS_FARMS_LOGO_MARK_DATA_URI}
             style={styles.letterheadLogo}
@@ -273,7 +272,7 @@ export default function OfferLetterDocument({ data }: { data: OfferLetterPdfPayl
            letter happens to end (same page if there's room) instead of
            always forcing a new page and leaving a gap behind it. */}
         <View style={styles.annexSeparator}>
-          <Text style={styles.annexTitle}>Annex 1 — Compensation Details</Text>
+          <Text style={[styles.annexTitle, { color: primaryColor }]}>Annex 1 — Compensation Details</Text>
           <Text style={styles.annexSubtitle}>
             {data.candidateName} · {data.roleTitle} · Ref: {data.referenceNumber}
           </Text>

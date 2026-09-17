@@ -269,6 +269,7 @@ function SkillLogFormPageContent() {
   const isConsultantSupervisor = isConsultantEmployee(
     supervisor?.grade_level,
     gradeLevelsConfig,
+    supervisor?.user_role_label,
   );
   const canFill = accessProfile
     ? canFillSkillLog(accessProfile, groupPresetData?.presets, sessionRole)

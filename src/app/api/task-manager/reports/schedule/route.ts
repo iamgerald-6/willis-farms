@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { requireSeniorManagementAtHeadquarters, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
 // GET/PUT tm_report_schedule — automatic monthly report config (on/off,
@@ -8,14 +8,14 @@ import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 // project) — see docs/multi-site/add-site-id-tm-report-schedule.sql. The
 // cron job (src/lib/reports/scheduledReportRunner.ts) reads every row.
 //
-// A caller not at headquarters can only see/manage their OWN site's row —
-// same rule enforced everywhere else in the app (docs/
-// SITE_ACCESS_ARCHITECTURE.md §2). The company-wide row is headquarters-only,
-// since it necessarily includes every other site's data too.
+// Senior Management AND headquarters placement, full stop — Sheila's
+// explicit call: a non-headquarters Senior Management account should not
+// see or manage this at all, not just be scoped to their own site's row
+// (see requireSeniorManagementAtHeadquarters in apiRequestAuth.ts).
 
 export async function GET(req: NextRequest) {
-  const user = await requireSeniorManagement(req);
-  if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+  const user = await requireSeniorManagementAtHeadquarters(req);
+  if (!user) return NextResponse.json({ error: "Forbidden — Senior Management at headquarters only" }, { status: 403 });
 
   const authorization = getAuthorizedSiteIds(user);
 
@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const user = await requireSeniorManagement(req);
-  if (!user) return NextResponse.json({ error: "Forbidden — Senior Management only" }, { status: 403 });
+  const user = await requireSeniorManagementAtHeadquarters(req);
+  if (!user) return NextResponse.json({ error: "Forbidden — Senior Management at headquarters only" }, { status: 403 });
 
   try {
     const { enabled, day_of_month, recipients, site_id } = await req.json();

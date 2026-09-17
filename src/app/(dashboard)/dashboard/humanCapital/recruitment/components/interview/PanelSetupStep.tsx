@@ -9,7 +9,11 @@ import type { InterviewFormData, PanelMember } from "@/lib/careers/types";
 import { createPanelMember } from "@/lib/careers/panelInterview";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { IOSTimePicker } from "@/components/IOSTimePicker";
-import { StageInfoBanner } from "./shared";
+import {
+  PanelMemberNameField,
+  StageInfoBanner,
+  usePanelMemberCandidates,
+} from "./shared";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type Props = {
@@ -18,6 +22,9 @@ type Props = {
   /** Used to build a meaningful topic for auto-generated Zoom meetings. */
   candidateName?: string;
   referenceNumber?: string;
+  /** This posting's site — the staff picker below only suggests HR/
+   * Supervisory/Executive staff from OTHER sites. */
+  excludeSiteId?: number | null;
   onChange: (data: InterviewFormData) => void;
   onSendStage1Invites: () => void;
   onContinueWithoutResend?: () => void;
@@ -39,6 +46,7 @@ export default function PanelSetupStep({
   formData,
   candidateName,
   referenceNumber,
+  excludeSiteId,
   onChange,
   onSendStage1Invites,
   onContinueWithoutResend,
@@ -53,6 +61,7 @@ export default function PanelSetupStep({
 }: Props) {
   const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const panelCandidates = usePanelMemberCandidates(excludeSiteId);
   // Same live Sites catalog already used for HR onboarding's "Work
   // location" dropdown — so the Onsite location list here always matches
   // whatever's configured under Organizational Structure, instead of
@@ -74,6 +83,19 @@ export default function PanelSetupStep({
     const next = members.map((m, i) =>
       i === index ? { ...m, [field]: value } : m,
     );
+    onChange({
+      ...formData,
+      setup: { ...setup, stage1_members: next },
+    });
+  };
+
+  // Sets more than one field on a row in a single update — needed when
+  // picking a staff candidate, which fills name AND email together. Two
+  // separate updateMember() calls back to back would each read the same
+  // stale `members` closure, so the second call would silently undo the
+  // first.
+  const updateMemberFields = (index: number, patch: Partial<PanelMember>) => {
+    const next = members.map((m, i) => (i === index ? { ...m, ...patch } : m));
     onChange({
       ...formData,
       setup: { ...setup, stage1_members: next },
@@ -347,13 +369,17 @@ export default function PanelSetupStep({
               }`}
             >
               <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
-                <input
-                  type="text"
-                  placeholder="Full name *"
+                <PanelMemberNameField
                   value={member.name}
+                  candidates={panelCandidates}
                   disabled={readOnly}
-                  onChange={(e) => updateMember(index, "name", e.target.value)}
-                  className={`border border-gray-200 rounded-lg px-3 py-2 text-sm ${readOnly ? "opacity-60" : ""}`}
+                  onNameChange={(name) => updateMember(index, "name", name)}
+                  onPick={(candidate) =>
+                    updateMemberFields(index, {
+                      name: candidate.name,
+                      email: candidate.email,
+                    })
+                  }
                 />
                 <input
                   type="email"

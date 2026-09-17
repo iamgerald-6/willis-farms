@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { TMProject } from "@/types/taskManager";
 import { useCurrentUser } from "../useCurrentUser";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import ProjectSelect from "../components/ProjectSelect";
 import NewProjectModal from "../components/NewProjectModal";
 import TaskListView, { LifecycleViewKey } from "../components/TaskListView";
@@ -30,6 +31,11 @@ function TaskManagerTasksPageContent() {
     allUsers,
     userId,
   } = useCurrentUser();
+  const { isHeadquarters } = useIsHeadquarters();
+  // Monthly Report, Automation, and Manage Projects are Senior Management
+  // AND headquarters-only — Sheila's explicit call. "Notify Assignees"
+  // just below is a different, per-project action not part of this rule.
+  const canManageTaskManagerAdmin = isSeniorManagement && isHeadquarters;
 
   // Supports deep-linking straight to a specific project + tab (e.g. from
   // the dashboard Overview page's Overdue Tasks card) via
@@ -138,7 +144,7 @@ function TaskManagerTasksPageContent() {
             hand.
           </p>
         </div>
-        {isSeniorManagement && (
+        {canManageTaskManagerAdmin && (
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowReport(true)}

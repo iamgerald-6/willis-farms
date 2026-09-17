@@ -87,6 +87,10 @@ export default function InterviewPanelForm({
   );
   const [candidateName, setCandidateName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
+  // The site this job posting belongs to — passed down to Panel setup so
+  // its staff picker can offer HR/Supervisory/Executive candidates from
+  // OTHER sites only (see PanelSetupStep's memberCandidates).
+  const [postingSiteId, setPostingSiteId] = useState<number | null>(null);
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
 
@@ -118,6 +122,11 @@ export default function InterviewPanelForm({
     const { application, guide: g, evaluationLabels: labels } = queryData;
     setCandidateName(application.full_name);
     setReferenceNumber(application.reference_number);
+    setPostingSiteId(
+      application.job_posting_site_id != null
+        ? Number(application.job_posting_site_id)
+        : null,
+    );
     setInterviewSubmitted(!!application.interview_submitted_at);
     setGuide(g);
     setEvaluationLabels(labels ?? DEFAULT_INTERVIEW_EVALUATION_LABELS);
@@ -505,6 +514,7 @@ export default function InterviewPanelForm({
               formData={formData}
               candidateName={candidateName}
               referenceNumber={referenceNumber}
+              excludeSiteId={postingSiteId}
               onChange={setFormData}
               onSendStage1Invites={() =>
                 saveMutation.mutate({
@@ -599,6 +609,7 @@ export default function InterviewPanelForm({
               formData={formData}
               candidateName={candidateName}
               referenceNumber={referenceNumber}
+              excludeSiteId={postingSiteId}
               onChange={setFormData}
               onSendStage2Invites={(scheduledAt, data) =>
                 saveMutation.mutate({

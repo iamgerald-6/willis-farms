@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   getApiRequestUser,
   requireSeniorManagement as requireSeniorManagementShared,
+  requireSeniorManagementAtHeadquarters as requireSeniorManagementAtHeadquartersShared,
   type ApiRequestUser,
 } from "@/lib/apiRequestAuth";
 
@@ -17,6 +18,12 @@ export async function requireSeniorManagement(
   req: NextRequest,
 ): Promise<ApiRequestUser | null> {
   return requireSeniorManagementShared(req);
+}
+
+export async function requireSeniorManagementAtHeadquarters(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  return requireSeniorManagementAtHeadquartersShared(req);
 }
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

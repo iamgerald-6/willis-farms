@@ -31,6 +31,7 @@ export type OnboardingFieldType =
   | "phone"
   | "ghana_card"
   | "ssnit"
+  | "tin"
   | "checkbox"
   | "date"
   | "select"
@@ -243,6 +244,35 @@ export function formatSsnitNumber(raw: string): string {
 
 export function isCompleteSsnitNumber(value: string): boolean {
   return SSNIT_REGEX.test(String(value ?? "").trim());
+}
+
+/**
+ * Ghana Revenue Authority Taxpayer Identification Number: 1 leading letter
+ * identifying the taxpayer type, then 10 digits (11 characters total).
+ * C = Company, G = Government, P = Person (individual — what every new
+ * hire's own TIN starts with), Q = Quasi-government/NGO, V = VAT-only.
+ */
+export const TIN_REGEX = /^[CGPQV]\d{10}$/;
+
+/** Format raw input as a TIN: a leading valid taxpayer-type letter, then up to 10 digits. */
+export function formatTinNumber(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  let letter = "";
+  let digits = "";
+
+  for (const ch of cleaned) {
+    if (!letter && /[CGPQV]/.test(ch)) {
+      letter = ch;
+    } else if (/\d/.test(ch) && digits.length < 10) {
+      digits += ch;
+    }
+  }
+
+  return letter + digits;
+}
+
+export function isCompleteTinNumber(value: string): boolean {
+  return TIN_REGEX.test(String(value ?? "").trim());
 }
 
 /** Ghana bank account numbers are typically 10–16 digits. */
@@ -776,6 +806,15 @@ export function validateOnboardingStep(
       if (!isCompleteSsnitNumber(formatSsnitNumber(str))) {
         errors.push(
           `${field.label} must be a valid SSNIT number: 1 letter followed by 12 digits (e.g. P123456789012).`,
+        );
+      }
+      continue;
+    }
+
+    if (field.rules.fieldType === "tin") {
+      if (!isCompleteTinNumber(formatTinNumber(str))) {
+        errors.push(
+          `${field.label} must be a valid Ghana TIN: 1 letter (C, G, P, Q, or V) followed by 10 digits (e.g. P1234567890).`,
         );
       }
       continue;

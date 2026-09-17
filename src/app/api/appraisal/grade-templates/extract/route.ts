@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
-import { requireSystemDefinitionsAccess } from "@/lib/apiRequestAuth";
+import { requireAppraisalGradeTemplateAccess } from "@/lib/apiRequestAuth";
 import { TASK_MANAGER_AI_MODEL } from "@/lib/taskManagerConstants";
 
 /**
@@ -78,7 +78,7 @@ const INSTRUCTIONS =
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireSystemDefinitionsAccess(req, "add");
+    const user = await requireAppraisalGradeTemplateAccess(req, "add");
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     if (!process.env.ANTHROPIC_API_KEY) {

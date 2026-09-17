@@ -20,6 +20,12 @@ export interface CompanyBrandingConfig {
   /** Free-text address/contact block, one line per array entry, rendered
    * next to the logo in the letterhead. */
   addressLines?: string[];
+  /** Accent/brand color (hex, e.g. "#991B1B") used across every generated
+   * PDF — section titles, dividers, highlight bars, the cover page rule
+   * and site badge (see ReportCoverPage.tsx). Functional status colors
+   * (overdue/amber, completed/green, etc.) are deliberately NOT tied to
+   * this — only the brand accent is. */
+  primaryColor?: string;
 }
 
 /** Matches the address block baked into the original letterhead artwork,
@@ -31,6 +37,16 @@ export const DEFAULT_COMPANY_ADDRESS_LINES: string[] = [
   "Email: info@willsfarms.com",
   "Tel: +233 205 275 722 / +233 204 247 40",
 ];
+
+/** Matches the color already baked into the original letterhead artwork —
+ * same default every PDF used before this became editable. */
+export const DEFAULT_COMPANY_PRIMARY_COLOR = "#991B1B";
+
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+export function isValidHexColor(value: string): boolean {
+  return HEX_COLOR_RE.test(value.trim());
+}
 
 function normalizeAddressLines(raw: unknown): string[] | undefined {
   if (Array.isArray(raw)) {
@@ -63,26 +79,31 @@ export function normalizeCompanyBrandingConfig(
       ? obj.logoPublicId.trim()
       : undefined;
   const addressLines = normalizeAddressLines(obj.addressLines);
+  const primaryColor =
+    typeof obj.primaryColor === "string" && isValidHexColor(obj.primaryColor)
+      ? obj.primaryColor.trim()
+      : undefined;
 
-  if (!logoUrl && !addressLines) return undefined;
-  return { logoUrl, logoPublicId, addressLines };
+  if (!logoUrl && !addressLines && !primaryColor) return undefined;
+  return { logoUrl, logoPublicId, addressLines, primaryColor };
 }
 
 /** Effective branding — HR's saved config with the original hardcoded
  * artwork's values filled in wherever HR hasn't overridden them yet. */
 export function resolveCompanyBranding(
   businessLogic?: Pick<ModuleBusinessLogic, "companyBranding"> | null,
-): { logoUrl?: string; addressLines: string[] } {
+): { logoUrl?: string; addressLines: string[]; primaryColor: string } {
   const saved = businessLogic?.companyBranding;
   return {
     logoUrl: saved?.logoUrl,
     addressLines: saved?.addressLines ?? DEFAULT_COMPANY_ADDRESS_LINES,
+    primaryColor: saved?.primaryColor ?? DEFAULT_COMPANY_PRIMARY_COLOR,
   };
 }
 
 export async function fetchCompanyBranding(
   supabase: SupabaseClient,
-): Promise<{ logoUrl?: string; addressLines: string[] }> {
+): Promise<{ logoUrl?: string; addressLines: string[]; primaryColor: string }> {
   const config = await fetchModuleConfig(supabase, RECRUITMENT_MODULE_ID);
   return resolveCompanyBranding(config.businessLogic);
 }

@@ -1,15 +1,15 @@
 import { Document, Link, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { EmployeeProfileExportData } from "@/lib/careers/loadEmployeeProfileExportData";
 import { formatDisplayDateTime } from "@/lib/formatDisplayDate";
+import { DEFAULT_COMPANY_PRIMARY_COLOR } from "@/lib/systemDefinitions/companyBrandingConfig";
 
-const RED = "#C62828";
 const DARK = "#111827";
 const GRAY = "#6B7280";
 const BORDER = "#E5E7EB";
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 9.5, color: DARK, fontFamily: "Helvetica" },
-  brand: { fontSize: 8, fontWeight: 700, color: RED, textTransform: "uppercase", letterSpacing: 0.6 },
+  brand: { fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 },
   title: { fontSize: 16, fontWeight: 700, color: DARK, marginTop: 4 },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
   metaItem: { fontSize: 8.5, color: GRAY },
@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
   fieldFull: { width: "100%" },
   fieldLabel: { fontSize: 7.5, color: GRAY, marginBottom: 2 },
   fieldValue: { fontSize: 9.5, color: DARK, lineHeight: 1.45 },
-  link: { fontSize: 9.5, color: RED, textDecoration: "none" },
+  link: { fontSize: 9.5, textDecoration: "none" },
   footer: {
     position: "absolute",
     bottom: 24,
@@ -42,8 +42,10 @@ const styles = StyleSheet.create({
 
 export default function EmployeeProfileDocument({
   data,
+  companyPrimaryColor = DEFAULT_COMPANY_PRIMARY_COLOR,
 }: {
   data: EmployeeProfileExportData;
+  companyPrimaryColor?: string;
 }) {
   const { header, groups } = data;
   const submittedLabel = formatDisplayDateTime(header.submittedAt);
@@ -52,7 +54,7 @@ export default function EmployeeProfileDocument({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.brand}>Wills Farms Ltd. — Employee profile</Text>
+        <Text style={[styles.brand, { color: companyPrimaryColor }]}>Wills Farms Ltd. — Employee profile</Text>
         <Text style={styles.title}>{header.fullName}</Text>
         <View style={styles.metaRow}>
           {header.roleTitle ? (
@@ -80,7 +82,7 @@ export default function EmployeeProfileDocument({
                 >
                   <Text style={styles.fieldLabel}>{row.label}</Text>
                   {row.href ? (
-                    <Link src={row.href} style={styles.link}>
+                    <Link src={row.href} style={[styles.link, { color: companyPrimaryColor }]}>
                       {row.value}
                     </Link>
                   ) : (

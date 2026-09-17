@@ -12,19 +12,21 @@ export function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value.trim());
 }
 
-// Letters (including accented ones), spaces, hyphens, and apostrophes —
-// covers real names like "Mary-Jane", "O'Brien", "Kwame Nkrumah" while
-// still rejecting digits, symbols, and emoji.
-const NAME_PATTERN = /^[\p{L}][\p{L}\s'-]*$/u;
+// Letters (including accented ones), spaces, hyphens, apostrophes, and
+// periods — covers real names like "Mary-Jane", "O'Brien", "Kwame Nkrumah",
+// and titles like "Dr." or "Jr." while still rejecting digits, symbols, and
+// emoji.
+const NAME_PATTERN = /^[\p{L}][\p{L}\s'.-]*$/u;
 
 export function isValidName(value: string): boolean {
   return NAME_PATTERN.test(value.trim());
 }
 
-/** Strips out anything that isn't a letter, space, hyphen, or apostrophe —
- * used to filter keystrokes as the applicant types into a name field. */
+/** Strips out anything that isn't a letter, space, hyphen, apostrophe, or
+ * period — used to filter keystrokes as the applicant types into a name
+ * field. */
 export function sanitizeNameInput(value: string): string {
-  return value.replace(/[^\p{L}\s'-]/gu, "");
+  return value.replace(/[^\p{L}\s'.-]/gu, "");
 }
 
 /** Strips non-digit characters — for account numbers, SSNIT, etc. */

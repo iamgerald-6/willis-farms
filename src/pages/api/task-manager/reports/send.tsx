@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { NextRequest } from "next/server";
-import { requireSeniorManagement, supabaseAdmin } from "@/lib/taskManagerAuth";
+import { requireSeniorManagementAtHeadquarters, supabaseAdmin } from "@/lib/taskManagerAuth";
 import { sendMonthlyReport } from "@/lib/reports/sendMonthlyReport";
 import { getAuthorizedSiteIds } from "@/lib/siteAccess";
 
@@ -40,8 +40,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const user = await requireSeniorManagement(toNextRequest(req));
-    if (!user) return res.status(403).json({ error: "Forbidden — Senior Management only" });
+    const user = await requireSeniorManagementAtHeadquarters(toNextRequest(req));
+    if (!user) return res.status(403).json({ error: "Forbidden — Senior Management at headquarters only" });
 
     const { period_start, period_end, recipients, site_id } = req.body ?? {};
     if (!period_start || !period_end || !Array.isArray(recipients) || recipients.length === 0) {
@@ -65,8 +65,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     let siteLabel: string | null = null;
     if (siteId != null) {
-      const { data: site } = await supabaseAdmin.from("sites").select("name").eq("id", siteId).maybeSingle();
-      siteLabel = (site?.name as string | undefined) ?? null;
+      const { data: site } = await supabaseAdmin.from("sites").select("label").eq("id", siteId).maybeSingle();
+      siteLabel = (site?.label as string | undefined) ?? null;
     }
 
     const result = await sendMonthlyReport({

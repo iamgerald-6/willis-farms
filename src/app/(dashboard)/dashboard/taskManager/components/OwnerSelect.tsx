@@ -20,11 +20,19 @@ export default function OwnerSelect({
       <option value="" disabled>
         Select owner…
       </option>
-      {users.map((u) => (
-        <option key={u.user_id} value={u.user_id}>
-          {u.first_name} {u.last_name}
-        </option>
-      ))}
+      {users.map((u) => {
+        // A name-only label silently renders as a blank (easy to mistake
+        // for "not in the list") whenever first_name/last_name are empty —
+        // e.g. an account created directly rather than through the normal
+        // invite flow. Falling back to the email means every option is
+        // always visibly labeled, including the viewer's own account.
+        const label = `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || u.email;
+        return (
+          <option key={u.user_id} value={u.user_id}>
+            {label}
+          </option>
+        );
+      })}
     </select>
   );
 }

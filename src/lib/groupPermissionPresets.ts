@@ -103,10 +103,18 @@ export function supervisoryRolePermissionActions(): PagePermissionActions {
     "hc:leave": { view: true, add: true, approve: true },
     "hc:appraisal": { view: true, add: true, edit: true },
     "hc:skillLog": { view: true, add: true, edit: true },
+    // View-only — same site-scoped visibility as everyone else (see
+    // siteFilterValue in siteAccess.ts: a non-headquarters caller of any
+    // role only ever sees their own site's promotions). Deciding a
+    // promotion stays reserved (no `review`), matching the existing
+    // gate in requirePromotionAccess.
+    "hc:promotion": { view: true },
   };
 }
 
-/** Human Resource — all modules except System Definitions; no skill-log sign-off. */
+/** Human Resource — all modules except System Definitions. Can sign off
+ * skill logs, same as Executive Role — see canSignOffSkillLogEffective in
+ * skillLogAccess.ts. */
 export function humanResourceRolePermissionActions(): PagePermissionActions {
   const excluded = new Set<string>(HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS);
   const out: PagePermissionActions = {};
@@ -119,12 +127,26 @@ export function humanResourceRolePermissionActions(): PagePermissionActions {
     add: true,
     edit: true,
     review: true,
+    approve: true,
   };
   return out;
 }
 
+/** System Administrator — same own-scope baseline as Standard Role (own
+ * leave/appraisal/skill log/tasks, Policies/SOP view) PLUS full control of
+ * System Definitions, User Management, and the User Manual. The role's own
+ * doc comment (userRoleAccessControl.ts) says explicitly it's "deliberately
+ * narrower than full role access" — narrower in that it can't approve
+ * others' leave, sign off others' skill logs, or create tasks for others —
+ * not that it has zero access to those modules. The previous implementation
+ * granted only sys:definitions/users/user-manual and nothing else, so a
+ * System Administrator account never saw Human Capital, Task Manager,
+ * Policies & Ops, or SOPs at all. */
 export function systemAdministratorRolePermissionActions(): PagePermissionActions {
-  return defaultFullAccessActionsFor(["sys:definitions", "users", "user-manual"]);
+  return {
+    ...standardRolePermissionActions(),
+    ...defaultFullAccessActionsFor(["sys:definitions", "users", "user-manual"]),
+  };
 }
 
 /** Canonical built-in matrix for each User role (standard-tier accounts). */

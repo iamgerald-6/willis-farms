@@ -292,6 +292,28 @@ export async function requireSeniorManagement(
 }
 
 /**
+ * Senior Management (Super Admin / Executive Role / Human Resource) PLUS
+ * headquarters placement — Sheila's explicit call for the three admin-
+ * level Task Manager surfaces (Monthly Report, Automation, Manage
+ * Projects): a Senior Management account at a non-headquarters site should
+ * not see or use these at all, not just be scoped to their own site's data.
+ * Deliberately a separate helper from requireSeniorManagement rather than
+ * adding the headquarters check there directly — plenty of other Task
+ * Manager actions (archiving/restoring/deleting an individual task or
+ * project, the documents extraction flow, notify-assignees, the per-user tm
+ * permissions matrix) still use the site-scoped requireSeniorManagement and
+ * were not part of this request.
+ */
+export async function requireSeniorManagementAtHeadquarters(
+  req: NextRequest,
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user || !isSeniorManagement(user.role)) return null;
+  if (!isHeadquartersCaller(user)) return null;
+  return user;
+}
+
+/**
  * Read org-structure catalogs (custom lists, mapping levels/nodes) for Human
  * Capital workflows. Does not grant System Definitions edit access or the
  * sys:definitions page — only GET data needed by recruitment, appraisal, etc.
@@ -505,6 +527,49 @@ export async function requireAppraisalGradeTemplateAccess(
   minimum: PermissionAction | PermissionAction[] = "view",
 ): Promise<ApiRequestUser | null> {
   return requireRecruitmentAccess(req, minimum);
+}
+
+/**
+ * Skill Log template management (Manage skill logs tab) — mirrors
+ * requireAppraisalGradeTemplateAccess's fix: these routes used to check
+ * "sys:definitions", which Human Resource is deliberately excluded from
+ * (see HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS), even though the frontend already
+ * shows "Manage skill logs" to HR via hasFullSkillLogAccess (Senior
+ * Management) + headquarters — same silent-403-reads-as-empty-list bug
+ * class as the appraisal grade templates and task-manager documents fixes.
+ * Checks "hc:skillLog" instead, and is headquarters-only (template scope
+ * applies org-wide, same as appraisal grade templates).
+ */
+export async function requireSkillLogTemplateAccess(
+  req: NextRequest,
+  // Standard Role and Supervisory Role both already get "view"/"add"/"edit"
+  // on hc:skillLog for filling out logs themselves — that's not enough to
+  // gate template management, which is Senior Management only (same tier
+  // as the frontend's canManageTemplates = hasFullSkillLogAccess check).
+  // "approve" on hc:skillLog is only ever granted to Executive/Human
+  // Resource/Super Admin (see humanResourceRolePermissionActions and
+  // defaultFullAccessActions), so it's the right minimum for every method
+  // here, not just sign-off.
+  minimum: PermissionAction | PermissionAction[] = "approve",
+): Promise<ApiRequestUser | null> {
+  const user = await getApiRequestUser(req);
+  if (!user) return null;
+
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
+  const profile = callerAccessProfile(user);
+  const actions = Array.isArray(minimum) ? minimum : [minimum];
+  const ok = actions.some((action) =>
+    canPerformModuleAction(profile, "hc:skillLog", action, user.role, presets),
+  );
+  if (!ok) return null;
+
+  if (!isHeadquartersCaller(user)) return null;
+
+  return user;
 }
 
 /** User Manual upload — permission matrix ("user-manual", "add"). System

@@ -124,7 +124,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        application: { ...applicationData, interview_form_data },
+        application: {
+          ...applicationData,
+          interview_form_data,
+          // Needed by Panel setup's staff picker (PanelSetupStep /
+          // Stage2SetupStep) to offer HR/Supervisory/Executive candidates
+          // from OTHER sites only — see the "other sites" panel-member
+          // rule in userRoleAccessControl.ts's
+          // canBeAssignedAsSupervisorAtOnboardingByRoleLabel.
+          job_posting_site_id: applicationSiteId,
+        },
         guide,
         evaluationLabels,
       },
