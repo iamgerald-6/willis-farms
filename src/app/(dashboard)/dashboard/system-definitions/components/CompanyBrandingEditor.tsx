@@ -11,10 +11,14 @@ import type { FormDefinition } from "@/lib/moduleRegistry/types";
 import type { ModuleBusinessLogic } from "@/lib/systemDefinitions";
 import {
   DEFAULT_COMPANY_ADDRESS_LINES,
+  DEFAULT_COMPANY_CONTACT_EMAIL,
   DEFAULT_COMPANY_PRIMARY_COLOR,
+  isValidContactEmail,
   isValidHexColor,
   resolveCompanyBranding,
+  syncEmailLineInAddressLines,
 } from "@/lib/systemDefinitions/companyBrandingConfig";
+import { COMPANY_CONTACT_EMAIL_QUERY_KEY } from "@/hooks/useCompanyContactEmail";
 
 async function fetchModuleConfigApi(moduleId: string) {
   const res = await api.get(
@@ -55,6 +59,7 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
   const queryKey = ["system_module_config", moduleId];
   const [uploading, setUploading] = useState(false);
   const [draftAddress, setDraftAddress] = useState("");
+  const [draftContactEmail, setDraftContactEmail] = useState(DEFAULT_COMPANY_CONTACT_EMAIL);
   const [draftColor, setDraftColor] = useState(DEFAULT_COMPANY_PRIMARY_COLOR);
 
   const { data, isLoading } = useQuery({
@@ -70,6 +75,10 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
   }, [savedAddressText]);
 
   useEffect(() => {
+    setDraftContactEmail(saved.contactEmail);
+  }, [saved.contactEmail]);
+
+  useEffect(() => {
     setDraftColor(saved.primaryColor);
     // Only re-sync when the saved value itself changes, not on every
     // keystroke in the color input below.
@@ -77,7 +86,13 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
   }, [saved.primaryColor]);
 
   const saveMutation = useMutation({
-    mutationFn: async (patch: { logoUrl?: string; logoPublicId?: string; addressLines?: string[]; primaryColor?: string }) => {
+    mutationFn: async (patch: {
+      logoUrl?: string;
+      logoPublicId?: string;
+      contactEmail?: string;
+      addressLines?: string[];
+      primaryColor?: string;
+    }) => {
       const current = data?.businessLogic ?? {};
       const currentBranding = current.companyBranding ?? {};
       return api.patch(
@@ -96,6 +111,7 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
     onSuccess: () => {
       toast.success("Company branding saved.");
       queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: [...COMPANY_CONTACT_EMAIL_QUERY_KEY] });
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
       toast.error(err?.response?.data?.error ?? "Could not save company branding.");
@@ -129,6 +145,9 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
 
   const isColorValid = isValidHexColor(draftColor);
   const isColorDirty = isColorValid && draftColor !== saved.primaryColor;
+  const isContactEmailValid = isValidContactEmail(draftContactEmail);
+  const isContactEmailDirty =
+    isContactEmailValid && draftContactEmail.trim().toLowerCase() !== saved.contactEmail;
 
   if (isLoading) {
     return (
@@ -143,11 +162,47 @@ export default function CompanyBrandingEditor({ moduleId, readOnly = false }: Pr
       <p className="text-xs text-gray-500">
         The logo below appears in the offer letter header and, at low opacity, as the
         page watermark — upload a new one any time the company logo changes and both
-        update together. The address lines appear next to the logo in the letterhead.
-        The accent color is used across every generated PDF (offer letter, employee
-        profile, interview reports, hiring summaries, and the Task Manager monthly
-        report) — section titles, dividers, and highlight bars all pick it up.
+        update together. The HR contact email is used across careers emails, the public
+        site, onboarding forms, and as the reply-to address. The address lines appear
+        next to the logo in the letterhead (the Email row stays in sync when you save
+        contact email). The accent color is used across every generated PDF.
       </p>
+
+      <div>
+        <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">
+          HR / contact email
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="email"
+            value={draftContactEmail}
+            onChange={(e) => setDraftContactEmail(e.target.value)}
+            disabled={readOnly}
+            placeholder={DEFAULT_COMPANY_CONTACT_EMAIL}
+            className="flex-1 min-w-[220px] border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-50 disabled:text-gray-500"
+          />
+          <button
+            type="button"
+            onClick={() =>
+              saveMutation.mutate({
+                contactEmail: draftContactEmail.trim().toLowerCase(),
+                addressLines: syncEmailLineInAddressLines(addressLines, draftContactEmail.trim().toLowerCase()),
+              })
+            }
+            disabled={readOnly || saveMutation.isPending || !isContactEmailDirty}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-60 transition"
+          >
+            {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+            Save email
+          </button>
+        </div>
+        {!isContactEmailValid && (
+          <p className="text-[11px] text-red-500 mt-1">Enter a valid email address.</p>
+        )}
+        <p className="text-[11px] text-gray-400 mt-1">
+          Used for careers enquiries, application confirmations, interview emails, and public contact links.
+        </p>
+      </div>
 
       <div>
         <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block mb-1.5">

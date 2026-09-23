@@ -14,6 +14,8 @@ import {
   CheckCircle,
   Home,
 } from "lucide-react";
+import { DEFAULT_COMPANY_CONTACT_EMAIL } from "@/lib/systemDefinitions/companyBrandingConfig";
+
 export type NavItem = { label: string; href: string };
 
 export const siteContent = {
@@ -39,7 +41,7 @@ export const siteContent = {
     locationAddress:
       "EG-508-0449, Yaw Densu, Nsawam-Coaltar Road, Eastern Region",
     postalAddress: "WY 2662, Kwabenya, Accra",
-    email: "info@willsfarms.com",
+    email: DEFAULT_COMPANY_CONTACT_EMAIL,
     phones: ["+233 268 379 722", "+233 204 247 407"],
     whatsappNumber: "+233268379722", // used for click-to-chat (E.164, no spaces)
   },
@@ -384,8 +386,7 @@ export const siteContent = {
     headline: "Careers",
     intro:
       "Join a professional agribusiness built on discipline, biosecurity, and measurable performance. We hire people who value quality, integrity, and continuous improvement.",
-    howToApply:
-      "Send your CV and a short cover note indicating the role you are applying for to info@willsfarms.com. Include your location and availability.",
+    howToApply: `Send your CV and a short cover note indicating the role you are applying for to ${DEFAULT_COMPANY_CONTACT_EMAIL}. Include your location and availability.`,
     openings: [
       {
         title: "Farm Operations Technician (Talent Pool)",

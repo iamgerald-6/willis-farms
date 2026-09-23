@@ -4,8 +4,10 @@ import { useEffect } from "react";
 import type { MedicalFormResponses } from "@/lib/medical/medicalFormSchema";
 import {
   calculateBmi,
+  HEARING_FAIL_NOTE_KEYS,
   HEARING_RESULT_OPTIONS,
-  VISUAL_ACUITY_CORRECTED_OPTIONS,
+  VISUAL_ACUITY_FAIL_NOTE_KEYS,
+  VISUAL_ACUITY_RESULT_OPTIONS,
 } from "@/lib/medical/medicalClinicalVitals";
 import type { PipField } from "@/lib/appraisal/pipFormSchema";
 import { medicalFieldLabel } from "@/lib/medical/medicalFormSchema";
@@ -20,9 +22,12 @@ const GROUPED_KEYS = new Set([
   "bp_diastolic",
   "visual_acuity_right",
   "visual_acuity_left",
-  "visual_acuity_corrected",
+  "visual_acuity_right_fail_note",
+  "visual_acuity_left_fail_note",
   "hearing_left",
   "hearing_right",
+  "hearing_left_fail_note",
+  "hearing_right_fail_note",
 ]);
 
 function FieldLabel({ label, required }: { label: string; required?: boolean }) {
@@ -38,8 +43,8 @@ function fieldRequired(f?: PipField): boolean {
   return !!f && f.type !== "system" && f.required === true;
 }
 
-function fieldOptions(f?: PipField): string[] | undefined {
-  return f && f.type !== "system" ? f.options : undefined;
+function isFailResult(value: string): boolean {
+  return value.trim().toLowerCase() === "fail";
 }
 
 function GroupCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -67,6 +72,29 @@ export default function ClinicalVitalsSection({
 
   const setField = (key: string, value: string) => {
     const nextFields = { ...(responses.fields ?? {}), [key]: value };
+    const bmi = calculateBmi(nextFields.height_cm, nextFields.weight_kg);
+    if (bmi) nextFields.bmi = bmi;
+    onChange({ ...responses, fields: nextFields });
+  };
+
+  const setVisualAcuityResult = (
+    eyeKey: "visual_acuity_right" | "visual_acuity_left",
+    value: string,
+  ) => {
+    const nextFields = { ...(responses.fields ?? {}), [eyeKey]: value };
+    if (!isFailResult(value)) {
+      nextFields[VISUAL_ACUITY_FAIL_NOTE_KEYS[eyeKey]] = "";
+    }
+    const bmi = calculateBmi(nextFields.height_cm, nextFields.weight_kg);
+    if (bmi) nextFields.bmi = bmi;
+    onChange({ ...responses, fields: nextFields });
+  };
+
+  const setHearingResult = (earKey: "hearing_left" | "hearing_right", value: string) => {
+    const nextFields = { ...(responses.fields ?? {}), [earKey]: value };
+    if (!isFailResult(value)) {
+      nextFields[HEARING_FAIL_NOTE_KEYS[earKey]] = "";
+    }
     const bmi = calculateBmi(nextFields.height_cm, nextFields.weight_kg);
     if (bmi) nextFields.bmi = bmi;
     onChange({ ...responses, fields: nextFields });
@@ -147,14 +175,110 @@ export default function ClinicalVitalsSection({
   const hasVisualAcuity = byKey.has("visual_acuity_right") || byKey.has("visual_acuity_left");
   const hasBp = byKey.has("bp_systolic") || byKey.has("bp_diastolic");
   const hasHearing = byKey.has("hearing_left") || byKey.has("hearing_right");
-  const correctedOptionsRaw = fieldOptions(byKey.get("visual_acuity_corrected"));
-  const correctedOptions: readonly string[] = correctedOptionsRaw?.length
-    ? correctedOptionsRaw
-    : VISUAL_ACUITY_CORRECTED_OPTIONS;
-  const hearingOptionsRaw = fieldOptions(byKey.get("hearing_left"));
-  const hearingOptions: readonly string[] = hearingOptionsRaw?.length
-    ? hearingOptionsRaw
-    : HEARING_RESULT_OPTIONS;
+
+  const renderVisualAcuityEye = (
+    eyeKey: "visual_acuity_right" | "visual_acuity_left",
+    shortLabel: string,
+  ) => {
+    const field = byKey.get(eyeKey);
+    if (!field || field.type === "system") return null;
+
+    const noteKey = VISUAL_ACUITY_FAIL_NOTE_KEYS[eyeKey];
+    const result = val(eyeKey);
+    const options =
+      field.type === "select" && field.options?.length
+        ? field.options
+        : [...VISUAL_ACUITY_RESULT_OPTIONS];
+    const useSelect = field.type === "select" || options.length > 0;
+
+    return (
+      <div key={eyeKey} className="space-y-2">
+        <div>
+          <FieldLabel label={shortLabel} required={req(eyeKey)} />
+          {useSelect ? (
+            <select
+              className={readOnly ? lockedClass : inputClass}
+              value={result}
+              disabled={readOnly}
+              onChange={(e) => setVisualAcuityResult(eyeKey, e.target.value)}
+            >
+              <option value="">Select…</option>
+              {options.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={readOnly ? lockedClass : inputClass}
+              value={result}
+              readOnly={readOnly}
+              placeholder="e.g. 6/6"
+              onChange={(e) => setField(eyeKey, e.target.value)}
+            />
+          )}
+        </div>
+        {useSelect && isFailResult(result) && (
+          <div>
+            <FieldLabel label="Reason for fail" required />
+            <textarea
+              className={`${readOnly ? lockedClass : inputClass} min-h-[72px]`}
+              value={val(noteKey)}
+              readOnly={readOnly}
+              placeholder="Brief clinical note explaining the fail result"
+              onChange={(e) => setField(noteKey, e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderHearingEar = (earKey: "hearing_left" | "hearing_right", shortLabel: string) => {
+    const field = byKey.get(earKey);
+    if (!field || field.type === "system") return null;
+
+    const noteKey = HEARING_FAIL_NOTE_KEYS[earKey];
+    const result = val(earKey);
+    const options =
+      field.type === "select" && field.options?.length
+        ? field.options
+        : [...HEARING_RESULT_OPTIONS];
+
+    return (
+      <div key={earKey} className="space-y-2">
+        <div>
+          <FieldLabel label={shortLabel} required={req(earKey)} />
+          <select
+            className={readOnly ? lockedClass : inputClass}
+            value={result}
+            disabled={readOnly}
+            onChange={(e) => setHearingResult(earKey, e.target.value)}
+          >
+            <option value="">Select…</option>
+            {options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
+        {isFailResult(result) && (
+          <div>
+            <FieldLabel label="Reason for fail" required />
+            <textarea
+              className={`${readOnly ? lockedClass : inputClass} min-h-[72px]`}
+              value={val(noteKey)}
+              readOnly={readOnly}
+              placeholder="Brief clinical note explaining the fail result"
+              onChange={(e) => setField(noteKey, e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -193,82 +317,18 @@ export default function ClinicalVitalsSection({
 
       {hasVisualAcuity && (
         <GroupCard title="Visual acuity">
-          <div className="grid sm:grid-cols-3 gap-3">
-            <div>
-              <FieldLabel label="Right eye" required={req("visual_acuity_right")} />
-              <input
-                className={readOnly ? lockedClass : inputClass}
-                value={val("visual_acuity_right")}
-                readOnly={readOnly}
-                placeholder="e.g. 6/6"
-                onChange={(e) => setField("visual_acuity_right", e.target.value)}
-              />
-            </div>
-            <div>
-              <FieldLabel label="Left eye" required={req("visual_acuity_left")} />
-              <input
-                className={readOnly ? lockedClass : inputClass}
-                value={val("visual_acuity_left")}
-                readOnly={readOnly}
-                placeholder="e.g. 6/6"
-                onChange={(e) => setField("visual_acuity_left", e.target.value)}
-              />
-            </div>
-            <div>
-              <FieldLabel label="Corrected / uncorrected" required={req("visual_acuity_corrected")} />
-              <select
-                className={readOnly ? lockedClass : inputClass}
-                value={val("visual_acuity_corrected")}
-                disabled={readOnly}
-                onChange={(e) => setField("visual_acuity_corrected", e.target.value)}
-              >
-                <option value="">Select…</option>
-                {correctedOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {renderVisualAcuityEye("visual_acuity_right", "Right eye")}
+            {renderVisualAcuityEye("visual_acuity_left", "Left eye")}
           </div>
         </GroupCard>
       )}
 
       {hasHearing && (
         <GroupCard title="Hearing">
-          <div className="grid sm:grid-cols-2 gap-3 max-w-md">
-            <div>
-              <FieldLabel label="Left ear" required={req("hearing_left")} />
-              <select
-                className={readOnly ? lockedClass : inputClass}
-                value={val("hearing_left")}
-                disabled={readOnly}
-                onChange={(e) => setField("hearing_left", e.target.value)}
-              >
-                <option value="">Select…</option>
-                {hearingOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel label="Right ear" required={req("hearing_right")} />
-              <select
-                className={readOnly ? lockedClass : inputClass}
-                value={val("hearing_right")}
-                disabled={readOnly}
-                onChange={(e) => setField("hearing_right", e.target.value)}
-              >
-                <option value="">Select…</option>
-                {hearingOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {renderHearingEar("hearing_left", "Left ear")}
+            {renderHearingEar("hearing_right", "Right ear")}
           </div>
         </GroupCard>
       )}

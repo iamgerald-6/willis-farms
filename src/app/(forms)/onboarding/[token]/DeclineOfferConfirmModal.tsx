@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import CompanyContactEmailLink from "@/components/CompanyContactEmailLink";
 
 type Props = {
   open: boolean;
@@ -43,10 +44,7 @@ export default function DeclineOfferConfirmModal({
         </p>
         <p className="text-xs text-gray-500">
           If you clicked this by mistake, choose Cancel and contact HR at{" "}
-          <a href="mailto:info@willsfarms.com" className="text-red-600 hover:underline">
-            info@willsfarms.com
-          </a>
-          .
+          <CompanyContactEmailLink className="text-red-600 hover:underline" />.
         </p>
         <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
           <button

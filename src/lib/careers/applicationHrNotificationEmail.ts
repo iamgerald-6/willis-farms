@@ -1,6 +1,5 @@
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
-
-const HR_INBOX = "info@willsfarms.com";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 
 type HrNotificationParams = {
   fullName: string;
@@ -118,15 +117,16 @@ export async function sendApplicationHrNotificationEmail(
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
   const from = getResendFromAddress("Wills Farms Careers");
+  const hrInbox = await resolveCompanyContactEmailForSend();
   const { subject, html, text } = buildApplicationHrNotificationEmail(params);
 
   const { error } = await resend.emails.send({
     from,
-    to: HR_INBOX,
+    to: hrInbox,
     subject,
     html,
     text,
-    replyTo: getReplyToEmail(),
+    replyTo: getReplyToEmail(hrInbox),
   });
 
   if (error) {

@@ -7,8 +7,8 @@ import {
 } from "@/lib/appUrl";
 import {
   getResendFromAddress,
-  getReplyToEmail,
 } from "@/lib/email/resendClient";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 import {
   buildIcsEvent,
   googleCalendarLink,
@@ -60,6 +60,7 @@ async function sendViaResend(params: {
   html: string;
   text: string;
   cc?: string[];
+  replyTo?: string;
   attachments?: EmailAttachment[];
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -78,7 +79,7 @@ async function sendViaResend(params: {
     subject: params.subject,
     html: params.html,
     text: params.text,
-    replyTo: getReplyToEmail(),
+    replyTo: params.replyTo ?? (await resolveCompanyContactEmailForSend()),
     attachments: params.attachments,
   });
 
@@ -356,7 +357,8 @@ export async function sendInterviewInvitationEmail(params: {
   meetingLink?: string;
 }): Promise<SendResult> {
   const when = formatDateTime(params.interviewStartAt);
-  const hrEmail = getReplyToEmail();
+  const contactEmail = await resolveCompanyContactEmailForSend();
+  const hrEmail = contactEmail;
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
   const loc = locationLines(params);
@@ -404,7 +406,7 @@ export async function sendInterviewInvitationEmail(params: {
     when,
     locationText,
     "",
-    `${arriveNote} If you need to reschedule or have any questions, contact info@willsfarms.com and quote your reference number.`,
+    `${arriveNote} If you need to reschedule or have any questions, contact ${contactEmail} and quote your reference number.`,
     "",
     "Add to calendar:",
     `Google Calendar: ${googleLink}`,
@@ -436,7 +438,7 @@ export async function sendInterviewInvitationEmail(params: {
       </table>
       <p style="margin:0 0 16px;font-size:15px;color:#374151;">
         Please arrive on time. If you need to reschedule or have any questions, contact
-        <a href="mailto:info@willsfarms.com" style="color:#991b1b;">info@willsfarms.com</a>
+        <a href="mailto:${escapeHtml(contactEmail)}" style="color:#991b1b;">${escapeHtml(contactEmail)}</a>
         and quote reference <strong>${escapeHtml(params.referenceNumber)}</strong>.
       </p>
       <p style="margin:0 0 20px;font-size:15px;color:#374151;">We look forward to meeting you.</p>
@@ -473,7 +475,8 @@ export async function sendStage2ScheduleEmail(params: {
   stage2Duration: string;
 }): Promise<SendResult> {
   const when = formatDateTime(params.scheduledAt);
-  const hrEmail = getReplyToEmail();
+  const contactEmail = await resolveCompanyContactEmailForSend();
+  const hrEmail = contactEmail;
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
   const loc = locationLines(params);
@@ -544,7 +547,7 @@ export async function sendStage2ScheduleEmail(params: {
     "What we expect from you on the day:",
     expectationsText,
     "",
-    "If you need to reschedule, contact info@willsfarms.com quoting your reference number.",
+    `If you need to reschedule, contact ${contactEmail} quoting your reference number.`,
     "",
     "Add to calendar:",
     `Google Calendar: ${googleLink}`,
@@ -577,7 +580,7 @@ export async function sendStage2ScheduleEmail(params: {
       <ul style="margin:0 0 20px;padding-left:20px;">${expectationsHtml}</ul>
       <p style="margin:0 0 20px;font-size:14px;color:#374151;">
         If you need to reschedule, contact
-        <a href="mailto:info@willsfarms.com" style="color:#991b1b;">info@willsfarms.com</a>
+        <a href="mailto:${escapeHtml(contactEmail)}" style="color:#991b1b;">${escapeHtml(contactEmail)}</a>
         and quote reference <strong>${escapeHtml(params.referenceNumber)}</strong>.
       </p>
       <p style="margin:0 0 8px;font-size:13px;color:#374151;"><strong>Add to calendar:</strong></p>
@@ -661,7 +664,8 @@ export async function sendHireOnboardingEmail(params: {
     original_name?: string;
   };
 }): Promise<SendResult> {
-  const hrEmail = getReplyToEmail();
+  const contactEmail = await resolveCompanyContactEmailForSend();
+  const hrEmail = contactEmail;
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
   const expiry = formatDateTime(params.expiresAt);
@@ -713,7 +717,7 @@ export async function sendHireOnboardingEmail(params: {
     "",
     "The onboarding includes personal information, medical declarations, and consent & signature. After submission, our HR team will contact you regarding any follow-up medical steps.",
     "",
-    "If you have questions, contact info@willsfarms.com quoting your reference number.",
+    `If you have questions, contact ${contactEmail} quoting your reference number.`,
     "",
     "Kind regards,",
     "Human Capital Team",
@@ -782,7 +786,7 @@ export async function sendRejectionEmail(params: {
   roleTitle: string;
   referenceNumber: string;
 }): Promise<SendResult> {
-  const hrEmail = getReplyToEmail();
+  const hrEmail = await resolveCompanyContactEmailForSend();
   const firstName =
     params.candidateName.trim().split(/\s+/)[0] || params.candidateName;
 
@@ -838,7 +842,7 @@ export async function sendOfferDeclinedToHrEmail(params: {
   referenceNumber: string;
   applicationId: string;
 }): Promise<SendResult> {
-  const hrEmail = getReplyToEmail();
+  const hrEmail = await resolveCompanyContactEmailForSend();
   const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
 
   const subject = `Offer declined — ${params.candidateName} (${params.referenceNumber})`;
@@ -892,7 +896,7 @@ export async function sendOnboardingSubmittedEmail(params: {
   referenceNumber: string;
   applicationId: string;
 }): Promise<SendResult> {
-  const hrEmail = getReplyToEmail();
+  const hrEmail = await resolveCompanyContactEmailForSend();
   const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
 
   const subject = `Onboarding submitted — ${params.candidateName} (${params.referenceNumber})`;
@@ -942,7 +946,7 @@ export async function sendOnboardingHrReviewSubmittedEmail(params: {
   applicationId: string;
   reviewedBy: string;
 }): Promise<SendResult> {
-  const hrEmail = getReplyToEmail();
+  const hrEmail = await resolveCompanyContactEmailForSend();
   const dashboardLink = `${recruitmentInterviewUrl(params.applicationId).split("?")[0]}?tab=onboarding`;
 
   const subject = `Onboarding ready for senior approval — ${params.candidateName} (${params.referenceNumber})`;

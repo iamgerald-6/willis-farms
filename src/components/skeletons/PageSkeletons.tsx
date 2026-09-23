@@ -322,3 +322,68 @@ export function ModalListSkeleton({ rows = 4 }: { rows?: number }) {
     </div>
   );
 }
+
+/** Navbar profile chip — avatar + name/site while user profile loads. */
+export function NavbarProfileSkeleton() {
+  return (
+    <div className="flex items-center gap-2">
+      <Bone className="w-9 h-9 rounded-xl shrink-0" />
+      <div className="hidden sm:block space-y-1.5 min-w-[7rem]">
+        <Bone className="h-3.5 w-24" />
+        <Bone className="h-3 w-16" />
+      </div>
+    </div>
+  );
+}
+
+/** Recruitment inbox — header, tabs, filters, and table placeholder. */
+export function RecruitmentPageSkeleton() {
+  return (
+    <div className="p-4 md:p-6 bg-gray-50 min-h-full">
+      <div className="mb-5 space-y-2">
+        <Bone className="h-7 w-40" />
+        <Bone className="h-4 w-72 max-w-full" />
+      </div>
+      <div className="flex gap-2 mb-5 overflow-hidden">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Bone key={i} className="h-9 w-24 shrink-0 rounded-lg" />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Bone key={i} className="h-9 w-36 rounded-lg" />
+        ))}
+      </div>
+      <TableSkeleton rows={8} cols={5} />
+    </div>
+  );
+}
+
+/** PIP instance editor — back link, header, and form sections. */
+export function PipFormSkeleton() {
+  return (
+    <div className="space-y-5">
+      <Bone className="h-4 w-28" />
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 space-y-4">
+        <Bone className="h-7 w-56" />
+        <Bone className="h-4 w-full max-w-lg" />
+        <div className="flex gap-2 pt-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Bone key={i} className="h-9 w-24 rounded-lg" />
+          ))}
+        </div>
+      </div>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-gray-200 bg-white p-5 space-y-3"
+        >
+          <Bone className="h-5 w-40" />
+          <Bone className="h-10 w-full" />
+          <Bone className="h-10 w-full" />
+          <Bone className="h-24 w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}

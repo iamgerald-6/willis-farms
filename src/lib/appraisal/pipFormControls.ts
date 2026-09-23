@@ -1,6 +1,11 @@
 import type { PipField, PipFieldType, PipTableColumn } from "./pipFormSchema";
 import { isSystemField } from "./pipFormSchema";
 import type { PipSection, PipTableSection } from "./pipFormSchema";
+import { PIP_EXTENSION_FREQUENCY_OPTIONS, pipExtensionFieldRole } from "./pipExtension";
+import {
+  PIP_COACHING_COLUMN_KEYS,
+  PIP_PROGRESS_RATING_OPTIONS,
+} from "./pipStages";
 import {
   detectPipSectionRole,
   isEvidenceColumn,
@@ -68,6 +73,19 @@ function looksLikeDurationLabel(label: string): boolean {
   return /\b(duration|pip period|plan length|pip length)\b/.test(l);
 }
 
+function looksLikeExtensionAmountLabel(label: string): boolean {
+  const l = label.trim();
+  return (
+    /^extension period\s*$/i.test(l) ||
+    /^pip extended by_?\s*$/i.test(l) ||
+    /^pip extended by/i.test(l)
+  );
+}
+
+function looksLikeExtensionFrequencyLabel(label: string): boolean {
+  return /extension frequency|extend.*frequency|extended.*frequency/.test(norm(label));
+}
+
 function looksLikeLongTextLabel(label: string): boolean {
   const l = norm(label);
   return /\b(comment|note|summary|description|detail|evidence|action plan|support|intervention|observation|feedback|reason|gap|objective|goal|measure)\b/.test(
@@ -92,6 +110,7 @@ export function isTaskAssignedColumn(column: { label: string }): boolean {
 /** Pick dropdown options from a column/field label when none were stored. */
 export function inferSelectOptions(label: string): string[] | null {
   const l = norm(label);
+  if (looksLikeExtensionFrequencyLabel(label)) return [...PIP_EXTENSION_FREQUENCY_OPTIONS];
   if (looksLikeDurationLabel(label)) return [...DURATION];
   if (looksLikeYesNoLabel(label)) return [...YES_NO];
   if (looksLikeOutcomeLabel(label)) return [...OUTCOME];
@@ -111,6 +130,10 @@ export function resolvePipControlFromLabelAndType(
       inputType: "signature",
       placeholder: "Type full name to acknowledge",
     };
+  }
+
+  if (looksLikeExtensionAmountLabel(label)) {
+    return { inputType: "number", placeholder: "e.g. 2" };
   }
 
   if (explicitType === "textarea" || looksLikeLongTextLabel(label)) {
@@ -151,6 +174,13 @@ export function resolvePipFieldControl(field: PipField): PipControlSpec {
   if (isSystemField(field)) {
     return { inputType: "text" };
   }
+  const extensionRole = pipExtensionFieldRole(field);
+  if (extensionRole === "extension_period") {
+    return { inputType: "number", placeholder: "e.g. 2" };
+  }
+  if (extensionRole === "extension_frequency") {
+    return { inputType: "select", options: [...PIP_EXTENSION_FREQUENCY_OPTIONS] };
+  }
   return resolvePipControlFromLabelAndType(
     field.label,
     field.type,
@@ -170,6 +200,12 @@ export function resolvePipColumnControl(column: PipTableColumn): PipControlSpec 
   }
   if (isTaskAssignedColumn(column)) {
     return { inputType: "select", options: column.options ?? [] };
+  }
+  if (
+    column.key === PIP_COACHING_COLUMN_KEYS.progressRating ||
+    /progress rating/.test(column.label.toLowerCase())
+  ) {
+    return { inputType: "select", options: [...PIP_PROGRESS_RATING_OPTIONS] };
   }
   return resolvePipControlFromLabelAndType(
     column.label,
@@ -231,13 +267,13 @@ export function pipSectionFillHint(section: PipSection): string | null {
     case "root_cause":
       return "Diagnose why for each gap with the employee (Skill, Will, or System).";
     case "support":
-      return "Support types are filled from your PIP form setup. Confirm who will provide each and by when.";
+      return "Support types are filled from your PIP form setup. Confirm who will provide each, set objectives, and choose start/end dates with coaching frequency.";
     case "objectives":
       return "Set one SMART objective per row. Anchor each target in measured data (herd records, KPIs) and use the date picker for target dates.";
     case "coaching":
-      return "Add a row after each coaching session. Use the calendar for dates and keep brief contemporaneous notes.";
+      return "Sessions are generated from the plan schedule. Record what was coached or observed, rate progress 1–5 (same scale as appraisal), and add initials for each session.";
     case "reviews":
-      return "Record each formal checkpoint. Use the status dropdown (On track / Partial / Off track) — compare progress against the baselines.";
+      return "Set the review date to match a coaching session — Progress vs Baseline compares the appraisal rating for the selected gap with that session's progress rating.";
     case "competency":
       return "Where an objective involves a practical skill, confirm improvement through observed assessment — not opinion alone.";
     case "employee_comments":

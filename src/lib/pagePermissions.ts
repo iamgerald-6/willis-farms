@@ -89,21 +89,15 @@ export function isFullRoleAccess(role: string | null | undefined): boolean {
 }
 
 /**
- * Unconditional (role-only) bypass for User Management. Super Admin and
- * Manager L5+ always get full manage rights, same as System Administrator
- * (new role) and Super Admin/Executive (new role labels). Admin is
- * deliberately NOT included here — their default is "view" on User
- * Management (see ADMIN_DEFAULT_OVERRIDES in permissionLevels.ts) and can be
- * raised to add/edit per-user via the permission matrix, but never full by
- * default.
+ * @deprecated User Management access is enforced via the permission matrix
+ * and saved group presets (canOpenUserManagement / canAddUser /
+ * canManageUserAccounts). Kept only for legacy call sites — do not use for
+ * new gates.
  */
 export function canManageAccessControl(
   role: string | null | undefined,
 ): boolean {
-  if (isSuperAdmin(role)) return true;
-  if (hasSystemAccessByRoleLabel(role)) return true;
-  if (isExecutiveRoleLabel(role)) return true;
-  return false;
+  return isSuperAdmin(role) || hasSystemAccessByRoleLabel(role);
 }
 
 export const STANDARD_EMPLOYEE_PAGES: PagePermissionKey[] = [

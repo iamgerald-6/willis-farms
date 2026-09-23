@@ -10,8 +10,8 @@ import {
 } from "@/lib/medical/medicalExamEmails";
 import type { OnboardingFormData, OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { createMedicalExamToken } from "@/lib/medical/medicalExamTokens";
-import { fetchActiveMedicalFormSchema } from "@/lib/medical/medicalTemplates";
-import { buildInitialMedicalResponses } from "@/lib/medical/medicalResponses";
+import { isMedicalFormConfiguredForCategory } from "@/lib/medical/medicalExamRequirementsMatrix";
+import type { MedicalReferralData } from "@/lib/medical/medicalFormSchema";
 
 export const maxDuration = 60;
 
@@ -51,14 +51,6 @@ export async function POST(req: NextRequest) {
 
   if (!body.application_id?.trim()) {
     return NextResponse.json({ error: "application_id is required." }, { status: 400 });
-  }
-
-  const active = await fetchActiveMedicalFormSchema(supabaseAdmin);
-  if (!active) {
-    return NextResponse.json(
-      { error: "No published medical form template. Configure one under System Definitions → Recruitment → Medical form." },
-      { status: 400 },
-    );
   }
 
   const { data: application } = await supabaseAdmin
@@ -103,41 +95,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const initialResponses = buildInitialMedicalResponses(active.schema);
-
-  if (existingExam) {
-    examinationId = existingExam.id;
-    await supabaseAdmin
-      .from("medical_examinations")
-      .update({
-        referral_data: referral,
-        form_schema: active.schema,
-        template_version_id: active.version.id,
-        form_responses: existingExam.status === "draft" ? existingExam.form_responses : initialResponses,
-        hospital_email: body.hospital_email?.trim() || existingExam.hospital_email,
-        updated_at: now,
-      })
-      .eq("id", existingExam.id);
-  } else {
-    const { data: created, error: insertError } = await supabaseAdmin
-      .from("medical_examinations")
-      .insert({
-        application_id: body.application_id,
-        template_version_id: active.version.id,
-        form_schema: active.schema,
-        referral_data: referral,
-        form_responses: initialResponses,
-        hospital_email: body.hospital_email?.trim() || null,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    if (insertError || !created) {
-      return NextResponse.json({ error: insertError?.message ?? "Failed to create examination." }, { status: 500 });
-    }
-    examinationId = created.id;
+  if (!existingExam) {
+    return NextResponse.json(
+      {
+        error:
+          "Configure the hospital form for this job category before generating the email.",
+      },
+      { status: 400 },
+    );
   }
+
+  const existingReferral = (existingExam.referral_data ?? {}) as MedicalReferralData;
+  const formConfig = existingReferral.form_config;
+
+  if (!isMedicalFormConfiguredForCategory(formConfig, referral.job_category)) {
+    return NextResponse.json(
+      {
+        error:
+          "Configure the hospital form for this job category before generating the email.",
+      },
+      { status: 400 },
+    );
+  }
+
+  examinationId = existingExam.id;
+  await supabaseAdmin
+    .from("medical_examinations")
+    .update({
+      referral_data: { ...referral, form_config: formConfig },
+      hospital_email: body.hospital_email?.trim() || existingExam.hospital_email,
+      updated_at: now,
+    })
+    .eq("id", existingExam.id);
 
   const { token } = await createMedicalExamToken(supabaseAdmin, examinationId);
   const formUrl = medicalExamFormUrl(token);

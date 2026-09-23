@@ -4,6 +4,7 @@ import { siteContent } from "@/content/siteContent";
 import { JsonLd } from "@/components/JsonLd";
 import { Analytics } from "@/components/Analytics";
 import ClientLayout from "@/components/ClientLayout";
+import QueryProvider from "@/components/QueryProvider";
 export const metadata: Metadata = {
   metadataBase: new URL(siteContent.seo.siteUrl),
   title: siteContent.seo.title,
@@ -41,7 +42,9 @@ export default function RootLayout({
         <JsonLd />
         {/* <Navbar /> */}
         <main>
-          <ClientLayout>{children}</ClientLayout>
+          <QueryProvider>
+            <ClientLayout>{children}</ClientLayout>
+          </QueryProvider>
         </main>
         {/* <Footer /> */}
       </body>

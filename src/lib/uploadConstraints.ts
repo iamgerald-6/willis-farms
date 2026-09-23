@@ -14,6 +14,8 @@ export const ACCEPT_PDF_WORD_OR_IMAGE = `${ACCEPT_PDF_OR_WORD},${ACCEPT_IMAGE_JP
 export const ACCEPT_PDF_OR_IMAGE = ACCEPT_PDF_WORD_OR_IMAGE;
 /** Passport bio page — JPEG, PNG, or PDF scan. */
 export const ACCEPT_PASSPORT_BIO = `${ACCEPT_IMAGE_JPEG_PNG},${ACCEPT_PDF}`;
+/** Medical exam — X-ray images and laboratory report scans (JPEG, PNG, or PDF). */
+export const ACCEPT_MEDICAL_EXAM_REPORTS = ACCEPT_PASSPORT_BIO;
 export const ACCEPT_CV = `${ACCEPT_PDF_OR_WORD},${ACCEPT_IMAGE_JPEG_PNG}`;
 export const ACCEPT_JD = ACCEPT_CV;
 export const ACCEPT_TASK_MANAGER_DOC = ACCEPT_PDF_WORD_OR_IMAGE;

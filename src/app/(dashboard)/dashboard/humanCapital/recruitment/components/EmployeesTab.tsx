@@ -44,6 +44,17 @@ function EmployeeDetail({
   const [selectedExit, setSelectedExit] = useState<ExitEmploymentStatus | "">("");
   const [exitReason, setExitReason] = useState("");
 
+  const { data: refereeData, isLoading: refereesLoading } = useQuery({
+    queryKey: ["hr-reference", row.application_id],
+    queryFn: async () => {
+      const res = await api.get("/careers/onboarding/hr-reference", {
+        params: { application_id: row.application_id },
+      });
+      return res.data.data as { referees: { submitted_at: string | null }[] };
+    },
+    enabled: Boolean(row.application_id),
+  });
+
   const resetForm = () => {
     setSelectedAction("");
     setSelectedExit("");
@@ -80,14 +91,36 @@ function EmployeeDetail({
   const exited = isExitEmploymentStatus(row.employment_status);
   const onProbation = row.employment_status === "probation";
 
+  const referees = refereeData?.referees ?? [];
+  const allRefereesSubmitted =
+    referees.length > 0 && referees.every((r) => Boolean(r.submitted_at));
+  const refereeBlockReason = !row.application_id
+    ? "No linked job application — referee references are required before marking permanent."
+    : refereesLoading
+      ? null
+      : referees.length === 0
+        ? "No referees with valid emails on the job application. All referee references must be submitted before marking permanent."
+        : !allRefereesSubmitted
+          ? `${referees.filter((r) => !r.submitted_at).length} referee reference${referees.filter((r) => !r.submitted_at).length === 1 ? "" : "s"} still outstanding.`
+          : null;
+
+  const canMarkPermanent = allRefereesSubmitted && !refereesLoading;
+
   const canSave =
-    selectedAction === "permanent" ||
+    (selectedAction === "permanent" && canMarkPermanent) ||
     (selectedAction === "exit" &&
       !!selectedExit &&
       exitReason.trim().length > 0);
 
   const saveChanges = () => {
     if (selectedAction === "permanent") {
+      if (!canMarkPermanent) {
+        toast.error(
+          refereeBlockReason ??
+            "All referee references must be submitted before marking permanent.",
+        );
+        return;
+      }
       updateStatus.mutate({ employment_status: "active" });
       return;
     }
@@ -108,6 +141,13 @@ function EmployeeDetail({
   };
 
   const selectAction = (action: EmploymentAction) => {
+    if (action === "permanent" && !canMarkPermanent) {
+      toast.error(
+        refereeBlockReason ??
+          "All referee references must be submitted before marking permanent.",
+      );
+      return;
+    }
     setSelectedAction(action);
     if (action !== "exit") {
       setSelectedExit("");
@@ -222,12 +262,23 @@ function EmployeeDetail({
                 </p>
               </div>
 
+              {onProbation && refereeBlockReason && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-relaxed">
+                  <strong>Permanent staff blocked:</strong> {refereeBlockReason}
+                </p>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 {onProbation && (
                   <button
                     type="button"
                     onClick={() => selectAction("permanent")}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border ${
+                    disabled={!canMarkPermanent}
+                    title={
+                      refereeBlockReason ??
+                      "All referee references must be submitted first"
+                    }
+                    className={`px-4 py-2 rounded-lg text-sm font-medium border disabled:opacity-50 disabled:cursor-not-allowed ${
                       selectedAction === "permanent"
                         ? "bg-green-700 text-white border-green-700"
                         : "bg-white text-gray-700 border-gray-200 hover:border-green-300"
@@ -249,9 +300,10 @@ function EmployeeDetail({
                 </button>
               </div>
 
-              {selectedAction === "permanent" && (
+              {selectedAction === "permanent" && canMarkPermanent && (
                 <p className="text-xs text-gray-600">
-                  Marks probation complete. The employee stays active on WillsOne.
+                  All referee references are in. Marks probation complete — the employee
+                  stays active on WillsOne.
                 </p>
               )}
 

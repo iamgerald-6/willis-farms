@@ -5,6 +5,7 @@ import type { OnboardingFlatValues } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormField } from "@/lib/careers/onboardingFormSchema";
 import type { OnboardingFormData } from "@/lib/careers/onboardingTypes";
 import { headers } from "next/headers";
+import { getCompanyContactEmailServer } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 
 type PageProps = {
   params: Promise<{ token: string }>;
@@ -32,6 +33,7 @@ export default async function OnboardingPage({ params, searchParams }: PageProps
   const { token } = await params;
   const { start } = await searchParams;
   const autoStart = start === "1";
+  const contactEmail = await getCompanyContactEmailServer();
   const res = await loadOnboarding(token);
 
   if (!res.ok) {
@@ -39,7 +41,8 @@ export default async function OnboardingPage({ params, searchParams }: PageProps
     return (
       <FormShell eyebrow="Wills Farms Ltd." title="Onboarding unavailable">
         <p className="text-sm text-gray-600 text-center py-10">
-          {json.error ?? "This link is invalid or has expired. Contact HR at info@willsfarms.com for assistance."}
+          {json.error ??
+            `This link is invalid or has expired. Contact HR at ${contactEmail} for assistance.`}
         </p>
       </FormShell>
     );

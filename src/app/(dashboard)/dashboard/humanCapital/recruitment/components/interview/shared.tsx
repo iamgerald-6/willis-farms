@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { RATING_LABELS } from "@/lib/careers/interviewFormConfigs";
-import { canBeAssignedAsSupervisorAtOnboardingByRoleLabel } from "@/lib/userRoleAccessControl";
+import { eligiblePanelMembersForPostingSite } from "@/lib/supervisorAssignment";
 
 export type PanelCandidate = {
   id: string;
@@ -15,16 +15,15 @@ export type PanelCandidate = {
 };
 
 /**
- * HR/Supervisory/Executive staff eligible to sit on an interview panel —
- * from sites OTHER than the one hiring for this posting, so the panel
- * stays independent of the hiring site's own chain of command (same three
- * roles already trusted as a line manager — see
- * canBeAssignedAsSupervisorAtOnboardingByRoleLabel). This is only a list
- * of SUGGESTIONS: HR can still type any name/email directly for a
- * panelist from outside Willis Farms — see PanelMemberNameField below.
+ * HR / Supervisory / Executive staff eligible to sit on an interview panel
+ * for a job at `postingSiteId` — same site-scoping rules as onboarding
+ * supervisor pickers (see eligiblePanelMembersForPostingSite):
+ *   - Supervisory at the posting's site
+ *   - Executive / HR at the posting's site or at headquarters
+ * Suggestions only — HR can still type any outside name/email manually.
  */
 export function usePanelMemberCandidates(
-  excludeSiteId?: number | null,
+  postingSiteId?: number | null,
 ): PanelCandidate[] {
   const { data: users } = useQuery({
     queryKey: ["get_users"],
@@ -54,7 +53,7 @@ export function usePanelMemberCandidates(
         await api.get(
           `/organizational-structure/custom-list-types/${sitesListType!.id}/items`,
         )
-      ).data.data as Array<{ id: string; label: string }>,
+      ).data.data as Array<{ id: string; label: string; is_headquarters?: boolean | null }>,
     enabled: !!sitesListType,
   });
 
@@ -62,30 +61,28 @@ export function usePanelMemberCandidates(
     const siteLabelById = new Map(
       (siteItems ?? []).map((s) => [String(s.id), s.label]),
     );
-    return (users ?? [])
-      .filter((u) =>
-        canBeAssignedAsSupervisorAtOnboardingByRoleLabel(u.user_role_label),
-      )
-      .filter((u) =>
-        excludeSiteId == null
-          ? true
-          : String(u.site_id ?? "") !== String(excludeSiteId),
-      )
+    const headquartersSiteIds = new Set(
+      (siteItems ?? []).filter((s) => s.is_headquarters).map((s) => String(s.id)),
+    );
+    return eligiblePanelMembersForPostingSite(
+      postingSiteId,
+      users ?? [],
+      headquartersSiteIds,
+    )
       .map((u) => ({
         id: u.user_id,
         name: `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
-        email: u.email,
+        email: u.email ?? "",
         role: u.user_role_label ?? "",
         siteLabel: siteLabelById.get(String(u.site_id ?? "")) ?? "Unknown site",
       }))
-      .filter((c) => c.name && c.email)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [users, siteItems, excludeSiteId]);
+      .filter((c): c is PanelCandidate => Boolean(c.name && c.email));
+  }, [users, siteItems, postingSiteId]);
 }
 
 /**
  * Panel member "Full name" field — a free-text input backed by a filtered
- * dropdown of internal staff (HR / Supervisory / Executive, other sites).
+ * dropdown of internal staff (site-scoped Supervisory / Executive / HR).
  * Typing filters the list live; picking a suggestion fills name AND email
  * together (via onPick) so the two never fall out of sync. Typing a name
  * that matches nothing is kept as-is — that's how HR adds an external

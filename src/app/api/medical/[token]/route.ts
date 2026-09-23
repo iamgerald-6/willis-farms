@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { validateMedicalExamToken } from "@/lib/medical/medicalExamTokens";
-import type { MedicalExamination, MedicalFormResponses } from "@/lib/medical/medicalFormSchema";
+import {
+  normalizeMedicalFormSchema,
+  type MedicalExamination,
+  type MedicalFormResponses,
+} from "@/lib/medical/medicalFormSchema";
+import { getDefaultMedicalFormSchema } from "@/lib/medical/medicalFormDefaults";
 import {
   ensureInvestigationsData,
   validateMedicalResponses,
   withComputedBmi,
+  withMedicalReferralPrefills,
 } from "@/lib/medical/medicalResponses";
 import {
   buildMedicalExamSubmittedEmailHtml,
@@ -45,13 +51,18 @@ export async function GET(
   }
 
   const row = exam as MedicalExamination;
-  const formResponses = withComputedBmi(ensureInvestigationsData(row.form_responses ?? {}));
+  const formResponses = withMedicalReferralPrefills(
+    withComputedBmi(ensureInvestigationsData(row.form_responses ?? {})),
+    row.referral_data ?? {},
+  );
+  const formSchema =
+    normalizeMedicalFormSchema(row.form_schema) ?? getDefaultMedicalFormSchema();
 
   return NextResponse.json({
     data: {
       examination: {
         status: row.status,
-        form_schema: row.form_schema,
+        form_schema: formSchema,
         referral_data: row.referral_data,
         form_responses: formResponses,
         submitted_at: row.submitted_at,
@@ -95,13 +106,19 @@ export async function POST(
     return NextResponse.json({ error: "This examination has already been submitted." }, { status: 403 });
   }
 
-  const responses = withComputedBmi(
-    ensureInvestigationsData(body.form_responses ?? row.form_responses ?? {}),
+  const responses = withMedicalReferralPrefills(
+    withComputedBmi(
+      ensureInvestigationsData(body.form_responses ?? row.form_responses ?? {}),
+    ),
+    row.referral_data ?? {},
   );
   const now = new Date().toISOString();
 
+  const formSchema =
+    normalizeMedicalFormSchema(row.form_schema) ?? getDefaultMedicalFormSchema();
+
   if (body.finalize) {
-    const errors = validateMedicalResponses(row.form_schema, responses);
+    const errors = validateMedicalResponses(formSchema, responses);
     if (errors.length > 0) {
       return NextResponse.json({ error: errors[0], errors }, { status: 400 });
     }

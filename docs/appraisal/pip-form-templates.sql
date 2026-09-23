@@ -8,7 +8,7 @@
 -- combination in "Manage appraisals" → "PIP form setup" (creating a blank
 -- template if none exists yet for it, same find-or-create pattern), then
 -- either clicks "Add section" to build it by hand or uploads a document
--- ("Prefill with WillsFarms Intel") to have AI fill in the sections/fields.
+-- ("Prefill with WillsOne Intel") to have AI fill in the sections/fields.
 --
 -- Deliberately NOT included in this migration (Phase 2+):
 --   - appraisal_pips (the live, per-employee PIP instance table)

@@ -32,9 +32,11 @@ import {
 import { DashboardOverviewSkeleton } from "@/components/skeletons/PageSkeletons";
 import { formatOverviewGreeting, getModuleRoute } from "@/lib/moduleRegistry";
 import { useGradeLevelsConfig } from "@/hooks/useGradeLevelsConfig";
+import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import {
   isConsultantEmployee,
 } from "@/lib/consultantPrograms";
+import type { PipListItem } from "@/lib/appraisal/pipInstances";
 import {
   DonutChart,
   CategoryBarChart,
@@ -80,6 +82,8 @@ type LeaveRecord = {
   end_date: string;
   total_days: number;
   status: "pending" | "approved" | "rejected";
+  stage?: string | null;
+  can_act?: boolean;
   created_at: string;
   users?: {
     email?: string;
@@ -113,6 +117,8 @@ type AppraisalRecord = {
   // field only collected on Q4/Annual appraisals and is legitimately blank
   // the rest of the year. Use this one for "who is my supervisor" display.
   immediate_supervisor?: string | null;
+  employee_user_id?: string | null;
+  company_id?: string;
   created_at: string;
 };
 
@@ -196,6 +202,50 @@ type StatCardProps = {
 const ROUTE_LEAVE = () => getModuleRoute("mod:leave") ?? "/dashboard/humanCapital/leave";
 const ROUTE_APPRAISAL = () =>
   getModuleRoute("mod:appraisal") ?? "/dashboard/humanCapital/appraisal";
+const ROUTE_SKILL_LOG = () =>
+  getModuleRoute("mod:skill-log") ?? "/dashboard/humanCapital/skillLog";
+
+function isOwnAppraisalRow(
+  a: AppraisalRecord,
+  viewerUserId?: string,
+  viewerCompanyId?: string,
+): boolean {
+  if (viewerUserId && a.employee_user_id === viewerUserId) return true;
+  if (viewerCompanyId && a.company_id === viewerCompanyId) return true;
+  return false;
+}
+
+function isTeamAppraisalRow(
+  a: AppraisalRecord,
+  viewerUserId: string | undefined,
+  viewerCompanyId: string | undefined,
+  reportUserIds: Set<string>,
+  reportCompanyIds: Set<string>,
+): boolean {
+  if (isOwnAppraisalRow(a, viewerUserId, viewerCompanyId)) return false;
+  if (a.employee_user_id && reportUserIds.has(a.employee_user_id)) return true;
+  if (a.company_id && reportCompanyIds.has(a.company_id)) return true;
+  return false;
+}
+
+function appraisalNeedsSupervisorAction(a: AppraisalRecord): boolean {
+  const { label, nextStep } = getStatusSummary({
+    status: a.status,
+    submitted_by: a.submitted_by,
+    locked_reason: a.locked_reason,
+    appeal_exhausted: a.appeal_exhausted,
+  });
+  return (
+    label === "Awaiting Supervisor" ||
+    label === "Both Submitted" ||
+    (label === "Reopened" && !!nextStep)
+  );
+}
+
+function teamLeaveNeedsSupervisorApproval(l: LeaveRecord): boolean {
+  const stage = l.stage ?? (l.status === "pending" ? "pending_supervisor" : l.status);
+  return stage === "pending_supervisor";
+}
 
 type AttentionItem = {
   id: string;
@@ -539,6 +589,7 @@ function ListModal({
 export default function DashboardPage() {
   const router = useRouter();
   const [showAllAttention, setShowAllAttention] = useState(false);
+  const [showAllTeamAttention, setShowAllTeamAttention] = useState(false);
   const [showAllActivity, setShowAllActivity] = useState(false);
 
   const { data: session } = useQuery({
@@ -578,19 +629,92 @@ export default function DashboardPage() {
     gradeLevelsConfig,
     profile?.user_role_label,
   );
+  const { isHeadquarters, me: meSiteScope, isLoading: meSiteLoading } =
+    useIsHeadquarters();
 
-  const { data: leaveData, isLoading: leaveLoading } = useQuery<LeaveRecord[]>({
-    queryKey: ["leave", isAdmin ? "all" : userId],
+  /** Staff visible to this caller — HQ sees everyone; site-placed Exec/HR see their site only. */
+  const siteScopedUsers = useMemo(() => {
+    if (!users?.length) return [];
+    if (isHeadquarters) return users;
+    const callerSite =
+      profile?.site_id != null
+        ? String(profile.site_id)
+        : meSiteScope?.site_id != null
+          ? String(meSiteScope.site_id)
+          : null;
+    if (!callerSite) return users;
+    return users.filter(
+      (u) => u.site_id != null && String(u.site_id) === callerSite,
+    );
+  }, [users, isHeadquarters, profile?.site_id, meSiteScope?.site_id]);
+
+  const directReports = useMemo(
+    () =>
+      siteScopedUsers.filter(
+        (u) => u.supervisor_id === userId && u.user_id !== userId,
+      ),
+    [siteScopedUsers, userId],
+  );
+  const directReportUserIds = useMemo(
+    () => new Set(directReports.map((u) => u.user_id)),
+    [directReports],
+  );
+  const directReportCompanyIds = useMemo(
+    () =>
+      new Set(
+        directReports
+          .map((u) => u.company_id)
+          .filter((id): id is string => !!id),
+      ),
+    [directReports],
+  );
+  /** Has assignees (site-scoped) — team panels for supervisors and Exec/HR alike. */
+  const showTeamPanels = !isConsultant && directReports.length > 0;
+  /** Full team dashboard for non-admin supervisors; admins keep org overview + team section. */
+  const isSupervisorOverview = showTeamPanels && !isAdmin;
+
+  const { data: personalLeaveData, isLoading: personalLeaveLoading } =
+    useQuery<LeaveRecord[]>({
+      queryKey: ["leave", "my", userId],
+      queryFn: async () => {
+        const res = await api.get(`/leave/my?user_id=${userId}`);
+        return res.data.data ?? [];
+      },
+      enabled: !!session && !!userId && !isAdmin,
+    });
+
+  const { data: adminLeaveData, isLoading: adminLeaveLoading } = useQuery<
+    LeaveRecord[]
+  >({
+    queryKey: ["leave", "all"],
     queryFn: async () => {
-      if (isAdmin) {
-        const res = await api.get("/leave/all");
-        return Array.isArray(res.data) ? res.data : (res.data.data ?? []);
-      }
-      const res = await api.get(`/leave/my?user_id=${userId}`);
+      const res = await api.get("/leave/all");
+      return Array.isArray(res.data) ? res.data : (res.data.data ?? []);
+    },
+    enabled: !!session && isAdmin,
+  });
+
+  const { data: teamLeaveData, isLoading: teamLeaveLoading } = useQuery<
+    LeaveRecord[]
+  >({
+    queryKey: ["leave", "team", userId],
+    queryFn: async () => {
+      const res = await api.get("/leave/all");
       return res.data.data ?? [];
     },
-    enabled: !!session && !!userId,
+    enabled: !!session && isSupervisorOverview,
   });
+
+  const teamLeaveFromAdmin = useMemo(
+    () =>
+      (adminLeaveData ?? []).filter((l) => directReportUserIds.has(l.user_id)),
+    [adminLeaveData, directReportUserIds],
+  );
+
+  const leaveData = isAdmin ? adminLeaveData : personalLeaveData;
+  const leaveLoading = isAdmin
+    ? adminLeaveLoading
+    : personalLeaveLoading || (isSupervisorOverview && teamLeaveLoading);
 
   const { data: appraisalData, isLoading: appraisalLoading } = useQuery<AppraisalRecord[]>({
     queryKey: ["appraisal"],
@@ -608,6 +732,15 @@ export default function DashboardPage() {
       return res.data.data ?? [];
     },
     enabled: !!session,
+  });
+
+  const { data: teamPipData } = useQuery<PipListItem[]>({
+    queryKey: ["appraisal-pips-overview"],
+    queryFn: async () => {
+      const res = await api.get("/appraisal/pips");
+      return res.data.data?.items ?? [];
+    },
+    enabled: !!session && showTeamPanels,
   });
 
   const { data: sopData, isLoading: sopLoading } = useQuery<SopRecord[]>({
@@ -711,8 +844,82 @@ export default function DashboardPage() {
   const myPendingLeave = myLeave.filter((l) => l.status === "pending").length;
   const myApprovedLeave = myLeave.filter((l) => l.status === "approved").length;
   const myRejectedLeave = myLeave.filter((l) => l.status === "rejected").length;
-  const myAppraisals = appraisalData ?? [];
+
+  const ownAppraisals = useMemo(
+    () =>
+      (appraisalData ?? []).filter((a) =>
+        isOwnAppraisalRow(a, userId, profile?.company_id),
+      ),
+    [appraisalData, userId, profile?.company_id],
+  );
+  const teamAppraisals = useMemo(
+    () =>
+      (appraisalData ?? []).filter((a) =>
+        isTeamAppraisalRow(
+          a,
+          userId,
+          profile?.company_id,
+          directReportUserIds,
+          directReportCompanyIds,
+        ),
+      ),
+    [
+      appraisalData,
+      userId,
+      profile?.company_id,
+      directReportUserIds,
+      directReportCompanyIds,
+    ],
+  );
+  const myAppraisals = isSupervisorOverview ? ownAppraisals : (appraisalData ?? []);
   const latestAppraisal = myAppraisals[0] ?? myAppraisals[myAppraisals.length - 1];
+
+  const teamLeave = useMemo(
+    () => (isAdmin ? teamLeaveFromAdmin : (teamLeaveData ?? [])),
+    [isAdmin, teamLeaveFromAdmin, teamLeaveData],
+  );
+  const teamLeavePendingApproval = teamLeave.filter(teamLeaveNeedsSupervisorApproval).length;
+  const teamLeaveSegments = useMemo(
+    () => [
+      {
+        label: "Awaiting you",
+        value: teamLeavePendingApproval,
+        color: "#fbbf24",
+      },
+      {
+        label: "Approved",
+        value: teamLeave.filter((l) => l.status === "approved").length,
+        color: "#34d399",
+      },
+      {
+        label: "Rejected",
+        value: teamLeave.filter((l) => l.status === "rejected").length,
+        color: "#f87171",
+      },
+    ],
+    [teamLeave, teamLeavePendingApproval],
+  );
+
+  const teamSkillLogs = useMemo(
+    () =>
+      (skillLogData ?? []).filter((log) => {
+        const empId =
+          (log.employee_id as string | undefined) ??
+          (log.employee as { user_id?: string } | undefined)?.user_id;
+        return empId && directReportUserIds.has(empId);
+      }),
+    [skillLogData, directReportUserIds],
+  );
+  const teamSkillLogDrafts = teamSkillLogs.filter((l) => l.status === "draft").length;
+
+  const teamPips = useMemo(
+    () =>
+      (teamPipData ?? []).filter(
+        (p) => p.employee_user_id && directReportUserIds.has(p.employee_user_id),
+      ),
+    [teamPipData, directReportUserIds],
+  );
+  const teamActivePips = teamPips.filter((p) => p.status === "active").length;
 
   // "Appraisals" KPI card should only count the period that's currently
   // open for review — not the all-time total — so it stays useful once a
@@ -733,6 +940,17 @@ export default function DashboardPage() {
         (a) => a.review_quarter === currentPeriod.quarter && a.review_year === currentPeriod.year,
       ),
     [myAppraisals, currentPeriod],
+  );
+  const teamCurrentPeriodAppraisals = useMemo(
+    () =>
+      teamAppraisals.filter(
+        (a) => a.review_quarter === currentPeriod.quarter && a.review_year === currentPeriod.year,
+      ),
+    [teamAppraisals, currentPeriod],
+  );
+  const teamAppraisalsNeedingAction = useMemo(
+    () => teamCurrentPeriodAppraisals.filter(appraisalNeedsSupervisorAction),
+    [teamCurrentPeriodAppraisals],
   );
 
   // Awaiting-approval counts, split by whether they belong to the period
@@ -800,6 +1018,29 @@ export default function DashboardPage() {
       .filter(([, { value }]) => value > 0)
       .map(([label, { value, color }]) => ({ label, value, color }));
   }, [currentPeriodAppraisals]);
+
+  const teamAppraisalStatusCounts = useMemo(() => {
+    const byLabel = new Map<string, { value: number; color: string }>();
+    APPRAISAL_STATUS_ORDER.forEach((template, i) => {
+      const { label } = getStatusSummary(template);
+      if (!byLabel.has(label)) {
+        byLabel.set(label, { value: 0, color: APPRAISAL_STATUS_CHART_COLORS[i] });
+      }
+    });
+    for (const a of teamCurrentPeriodAppraisals) {
+      const { label } = getStatusSummary({
+        status: a.status,
+        submitted_by: a.submitted_by,
+        locked_reason: a.locked_reason,
+        appeal_exhausted: a.appeal_exhausted,
+      });
+      const entry = byLabel.get(label);
+      if (entry) entry.value += 1;
+    }
+    return Array.from(byLabel.entries())
+      .filter(([, { value }]) => value > 0)
+      .map(([label, { value, color }]) => ({ label, value, color }));
+  }, [teamCurrentPeriodAppraisals]);
 
   const scoreHistory = useMemo(
     () =>
@@ -897,6 +1138,78 @@ export default function DashboardPage() {
     return items;
   }, [myLeave, latestAppraisal, isConsultant]);
 
+  const supervisorAttentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    teamLeave
+      .filter(teamLeaveNeedsSupervisorApproval)
+      .forEach((l) => {
+        items.push({
+          id: `team-leave-${l.id}`,
+          title: `${leavePersonName(l)} — ${l.leave_type} leave`,
+          subtitle: `${formatDateRange(l.start_date, l.end_date)} · awaiting your approval`,
+          href: ROUTE_LEAVE(),
+          type: "warning",
+        });
+      });
+    teamAppraisalsNeedingAction.forEach((a) => {
+      const { label } = getStatusSummary({
+        status: a.status,
+        submitted_by: a.submitted_by,
+        locked_reason: a.locked_reason,
+        appeal_exhausted: a.appeal_exhausted,
+      });
+      items.push({
+        id: `team-appraisal-${a.id}`,
+        title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
+        subtitle: label,
+        href: ROUTE_APPRAISAL(),
+        type: "info",
+      });
+    });
+    teamSkillLogs
+      .filter((l) => l.status === "draft")
+      .forEach((l) => {
+        const emp = l.employee as { first_name?: string; last_name?: string } | undefined;
+        const name = emp
+          ? [emp.first_name, emp.last_name].filter(Boolean).join(" ")
+          : "Team member";
+        items.push({
+          id: `team-skill-${l.id}`,
+          title: `${name} — skill log draft`,
+          subtitle: "Complete and submit",
+          href: ROUTE_SKILL_LOG(),
+          type: "warning",
+        });
+      });
+    teamPips
+      .filter((p) => p.status === "active")
+      .forEach((p) => {
+        items.push({
+          id: `team-pip-${p.id}`,
+          title: `${p.employee_name} — PIP in progress`,
+          subtitle: `${p.review_quarter} ${p.review_year}`,
+          href: `${ROUTE_APPRAISAL()}/${p.appraisal_id}`,
+          type: "info",
+        });
+      });
+    overdueProjects.forEach((p) => {
+      items.push({
+        id: `overdue-${p.id}`,
+        title: `${p.name} — ${p.overdue_task_count} overdue task${p.overdue_task_count === 1 ? "" : "s"}`,
+        subtitle: "Task Manager",
+        href: `/dashboard/taskManager/tasks?project=${p.id}&tab=summary`,
+        type: "warning",
+      });
+    });
+    return items;
+  }, [
+    teamLeave,
+    teamAppraisalsNeedingAction,
+    teamSkillLogs,
+    teamPips,
+    overdueProjects,
+  ]);
+
   // Recent activity's visibility follows the same admin/manager/super_admin
   // gate the rest of this page already uses for "see everyone's records"
   // (leaveData is only the full company list when isAdmin — /leave/all is
@@ -910,7 +1223,42 @@ export default function DashboardPage() {
     };
 
     if (isAdmin) {
-      leaveData?.forEach((l) => {
+      if (showTeamPanels) {
+        teamLeave.forEach((l) => {
+          add(l.created_at, {
+            id: `team-leave-${l.id}`,
+            title: `${leavePersonName(l)} — ${l.leave_type} leave`,
+            subtitle: `${l.status} · your team · ${timeAgo(l.created_at)}`,
+            href: ROUTE_LEAVE(),
+            type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+          });
+        });
+        teamAppraisals.forEach((a) => {
+          add(a.created_at, {
+            id: `team-appraisal-${a.id}`,
+            title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
+            subtitle: `your team · score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+            href: ROUTE_APPRAISAL(),
+            type: a.status === "open" ? "info" : "success",
+          });
+        });
+        teamSkillLogs.forEach((s) => {
+          const emp = s.employee as { first_name?: string; last_name?: string } | undefined;
+          const name = emp
+            ? [emp.first_name, emp.last_name].filter(Boolean).join(" ")
+            : "Team member";
+          add(s.created_at, {
+            id: `team-skill-${s.id}`,
+            title: `${name} — skill log`,
+            subtitle: `your team · ${String(s.status ?? "recorded")} · ${timeAgo(s.created_at)}`,
+            href: ROUTE_SKILL_LOG(),
+            type: s.status === "draft" ? "warning" : "success",
+          });
+        });
+      }
+      leaveData
+        ?.filter((l) => !showTeamPanels || !directReportUserIds.has(l.user_id))
+        .forEach((l) => {
         add(l.created_at, {
           id: `leave-${l.id}`,
           title: `${leavePersonName(l)} — ${l.leave_type} leave`,
@@ -919,7 +1267,19 @@ export default function DashboardPage() {
           type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
         });
       });
-      appraisalData?.forEach((a) => {
+      appraisalData
+        ?.filter(
+          (a) =>
+            !showTeamPanels ||
+            !isTeamAppraisalRow(
+              a,
+              userId,
+              profile?.company_id,
+              directReportUserIds,
+              directReportCompanyIds,
+            ),
+        )
+        .forEach((a) => {
         add(a.created_at, {
           id: `appraisal-${a.id}`,
           title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
@@ -1048,6 +1408,74 @@ export default function DashboardPage() {
           type: p.final_decision?.includes("promote") ? "success" : "info",
         });
       });
+    } else if (isSupervisorOverview) {
+      teamLeave.forEach((l) => {
+        add(l.created_at, {
+          id: `team-leave-${l.id}`,
+          title: `${leavePersonName(l)} — ${l.leave_type} leave`,
+          subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
+          href: ROUTE_LEAVE(),
+          type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+        });
+      });
+      teamAppraisals.forEach((a) => {
+        add(a.created_at, {
+          id: `team-appraisal-${a.id}`,
+          title: `${a.employee_name} — ${a.review_quarter} ${a.review_year}`,
+          subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+          href: ROUTE_APPRAISAL(),
+          type: a.status === "open" ? "info" : "success",
+        });
+      });
+      teamSkillLogs.forEach((s) => {
+        const emp = s.employee as { first_name?: string; last_name?: string } | undefined;
+        const name = emp
+          ? [emp.first_name, emp.last_name].filter(Boolean).join(" ")
+          : "Team member";
+        add(s.created_at, {
+          id: `team-skill-${s.id}`,
+          title: `${name} — skill log`,
+          subtitle: `${String(s.status ?? "recorded")} · ${timeAgo(s.created_at)}`,
+          href: ROUTE_SKILL_LOG(),
+          type: s.status === "draft" ? "warning" : "success",
+        });
+      });
+      myLeave.forEach((l) => {
+        add(l.created_at, {
+          id: `leave-${l.id}`,
+          title: `You — ${l.leave_type} leave (${l.total_days} days)`,
+          subtitle: `${l.status} · ${timeAgo(l.created_at)}`,
+          href: ROUTE_LEAVE(),
+          type: l.status === "pending" ? "warning" : l.status === "approved" ? "success" : "info",
+        });
+      });
+      if (!isConsultant) {
+        myAppraisals.forEach((a) => {
+          add(a.created_at, {
+            id: `appraisal-${a.id}`,
+            title: `You — ${a.review_quarter} ${a.review_year} appraisal`,
+            subtitle: `score ${a.employee_weighted_score ?? "pending"} · ${timeAgo(a.created_at)}`,
+            href: ROUTE_APPRAISAL(),
+            type: a.status === "open" ? "info" : "success",
+          });
+        });
+        mySkillLogs
+          .filter((s) => {
+            const empId =
+              (s.employee_id as string | undefined) ??
+              (s.employee as { user_id?: string } | undefined)?.user_id;
+            return !empId || empId === userId;
+          })
+          .forEach((s) => {
+            add(s.created_at, {
+              id: `skill-${s.id}`,
+              title: "Your skill log entry",
+              subtitle: timeAgo(s.created_at),
+              href: ROUTE_SKILL_LOG(),
+              type: "success",
+            });
+          });
+      }
     } else {
       myLeave.forEach((l) => {
         add(l.created_at, {
@@ -1112,9 +1540,19 @@ export default function DashboardPage() {
     applicationsData,
     promotionsData,
     isConsultant,
+    isSupervisorOverview,
+    showTeamPanels,
+    teamLeave,
+    teamAppraisals,
+    teamSkillLogs,
+    userId,
+    profile?.company_id,
+    directReportUserIds,
+    directReportCompanyIds,
   ]);
 
-  const coreLoading = usersLoading || leaveLoading || appraisalLoading;
+  const coreLoading =
+    usersLoading || leaveLoading || appraisalLoading || meSiteLoading;
   if (coreLoading) {
     return <DashboardOverviewSkeleton />;
   }
@@ -1122,7 +1560,7 @@ export default function DashboardPage() {
   // 6 in a 2-column preview (admin, full-width panel) vs 4 in a single
   // column (employee, half-width panel) — roughly the same visual amount
   // either way.
-  const activityPreviewCount = isAdmin ? 6 : 4;
+  const activityPreviewCount = isAdmin || showTeamPanels ? 6 : 4;
 
   const now = new Date();
   const hour = now.getHours();
@@ -1160,9 +1598,9 @@ export default function DashboardPage() {
               <StatCard
                 accent
                 label="Total Staff"
-                value={users?.length ?? "—"}
+                value={siteScopedUsers.length || "—"}
                 icon={Users}
-                sub={`${users?.filter((u) => isStandardRoleLabel(u.user_role_label)).length ?? 0} employees`}
+                sub={`${siteScopedUsers.filter((u) => isStandardRoleLabel(u.user_role_label)).length} employees${isHeadquarters ? "" : " · your site"}`}
               />
               <StatCard
                 label="Pending Leave"
@@ -1185,6 +1623,49 @@ export default function DashboardPage() {
                 sub="Active procedures"
                 loading={sopLoading}
                 href="/dashboard/sop"
+              />
+              <OverdueTasksCard
+                loading={tasksLoading}
+                overdueProjects={overdueProjects}
+                total={overdueTasks}
+              />
+            </>
+          ) : isSupervisorOverview ? (
+            <>
+              <StatCard
+                accent
+                label="Team Members"
+                value={directReports.length}
+                icon={Users}
+                sub={directReports
+                  .slice(0, 3)
+                  .map((u) => `${u.first_name} ${u.last_name}`.trim())
+                  .join("\n")}
+              />
+              <StatCard
+                label="Leave Awaiting You"
+                value={teamLeavePendingApproval}
+                icon={CalendarCheck}
+                sub={`${teamLeave.filter((l) => l.status === "approved").length} approved this period`}
+                href={ROUTE_LEAVE()}
+              />
+              <StatCard
+                label="Appraisals"
+                value={teamAppraisalsNeedingAction.length}
+                icon={Star}
+                sub={`${teamCurrentPeriodAppraisals.length} in ${currentPeriod.quarter} ${currentPeriod.year} · need your action`}
+                href={ROUTE_APPRAISAL()}
+              />
+              <StatCard
+                label="Skill Log Drafts"
+                value={teamSkillLogDrafts}
+                icon={ClipboardList}
+                sub={
+                  teamActivePips > 0
+                    ? `${teamActivePips} active PIP${teamActivePips === 1 ? "" : "s"}`
+                    : "For your team"
+                }
+                href={ROUTE_SKILL_LOG()}
               />
               <OverdueTasksCard
                 loading={tasksLoading}
@@ -1327,6 +1808,187 @@ export default function DashboardPage() {
                 onClose={() => setShowAllAttention(false)}
               />
             )}
+
+            {showTeamPanels && (
+              <>
+                <div className="pt-2">
+                  <h2 className="text-sm font-bold text-gray-800">Your team</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Direct reports assigned to you
+                    {isHeadquarters ? "" : " at your site"}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Panel title="Team leave" className="lg:col-span-1">
+                    <div className="h-full flex items-center justify-center">
+                      <DonutChart
+                        segments={teamLeaveSegments}
+                        centerLabel={String(teamLeave.length)}
+                        centerSub="requests"
+                      />
+                    </div>
+                  </Panel>
+                  <Panel
+                    title="Team appraisal progress"
+                    action={
+                      <span className="text-xs text-gray-400">
+                        {currentPeriod.quarter} {currentPeriod.year}
+                      </span>
+                    }
+                    className="lg:col-span-1"
+                  >
+                    {teamCurrentPeriodAppraisals.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-10">
+                        No team appraisals for this period yet
+                      </p>
+                    ) : (
+                      <CategoryBarChart items={teamAppraisalStatusCounts} />
+                    )}
+                  </Panel>
+                  <Panel
+                    title="Team needs attention"
+                    action={
+                      supervisorAttentionItems.length > 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllTeamAttention(true)}
+                          className="text-xs text-[#C62828] font-medium hover:underline"
+                        >
+                          View all
+                        </button>
+                      )
+                    }
+                    className="lg:col-span-1"
+                  >
+                    <AttentionPanel
+                      items={supervisorAttentionItems.slice(0, 3)}
+                      emptyText="Your team is all caught up"
+                    />
+                  </Panel>
+                </div>
+              </>
+            )}
+
+            {showAllTeamAttention && (
+              <ListModal
+                title="Your team — needs attention"
+                items={supervisorAttentionItems}
+                onClose={() => setShowAllTeamAttention(false)}
+              />
+            )}
+          </>
+        ) : isSupervisorOverview ? (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Panel title="Team leave" className="lg:col-span-1">
+                <div className="h-full flex items-center justify-center">
+                  <DonutChart
+                    segments={teamLeaveSegments}
+                    centerLabel={String(teamLeave.length)}
+                    centerSub="requests"
+                  />
+                </div>
+              </Panel>
+              <Panel
+                title="Team appraisal progress"
+                action={
+                  <span className="text-xs text-gray-400">
+                    {currentPeriod.quarter} {currentPeriod.year}
+                  </span>
+                }
+                className="lg:col-span-1"
+              >
+                {teamCurrentPeriodAppraisals.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-10">
+                    No team appraisals for this period yet
+                  </p>
+                ) : (
+                  <CategoryBarChart items={teamAppraisalStatusCounts} />
+                )}
+              </Panel>
+              <Panel
+                title="Team needs attention"
+                action={
+                  supervisorAttentionItems.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllAttention(true)}
+                      className="text-xs text-[#C62828] font-medium hover:underline"
+                    >
+                      View all
+                    </button>
+                  )
+                }
+                className="lg:col-span-1"
+              >
+                <AttentionPanel
+                  items={supervisorAttentionItems.slice(0, 3)}
+                  emptyText="Your team is all caught up"
+                />
+              </Panel>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Panel title="Your appraisal score" className="lg:col-span-1">
+                {latestAppraisal ? (
+                  <div className="flex flex-col sm:flex-row items-center gap-6">
+                    <ScoreRing score={latestAppraisal.employee_weighted_score} />
+                    <div className="flex-1 text-center sm:text-left">
+                      <p className="text-lg font-bold text-gray-900">
+                        {latestAppraisal.review_quarter} {latestAppraisal.review_year}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Supervisor:{" "}
+                        {latestAppraisal.immediate_supervisor ||
+                          latestAppraisal.reviewing_manager ||
+                          "Not assigned"}
+                      </p>
+                      <span
+                        className={`inline-flex mt-3 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          latestAppraisal.status === "open"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        {latestAppraisal.status}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 text-center py-8">No appraisals yet</p>
+                )}
+              </Panel>
+
+              <Panel title="My leave" className="lg:col-span-1">
+                <div className="pt-2 pb-4">
+                  <SegmentedBar segments={myLeaveSegments} />
+                </div>
+                <p className="text-xs text-gray-400 text-center">
+                  {myLeave.length} total request{myLeave.length !== 1 ? "s" : ""}
+                </p>
+              </Panel>
+
+              <Panel title="My snapshot" className="lg:col-span-1">
+                <AttentionPanel
+                  items={employeeAttentionItems}
+                  emptyText="You're all set — no pending actions"
+                />
+              </Panel>
+            </div>
+
+            {scoreHistory.length > 1 && (
+              <Panel title="Your score history">
+                <ScoreHistoryChart items={scoreHistory} />
+              </Panel>
+            )}
+
+            {showAllAttention && (
+              <ListModal
+                title="Team needs attention"
+                items={supervisorAttentionItems}
+                onClose={() => setShowAllAttention(false)}
+              />
+            )}
           </>
         ) : isConsultant ? (
           <>
@@ -1426,16 +2088,16 @@ export default function DashboardPage() {
                 </button>
               )
             }
-            className={isAdmin ? "lg:col-span-2" : undefined}
+            className={isAdmin || isSupervisorOverview ? "lg:col-span-2" : undefined}
           >
             <AttentionPanel
               items={activityItems.slice(0, activityPreviewCount)}
               emptyText="No recent activity"
-              columns={isAdmin ? 2 : 1}
+              columns={isAdmin || isSupervisorOverview ? 2 : 1}
             />
           </Panel>
 
-          {!isAdmin && !isConsultant && latestAppraisal && (
+          {!isAdmin && !isConsultant && !isSupervisorOverview && latestAppraisal && (
             <Panel title="Appraisal details">
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl bg-gray-50 p-4 border border-gray-100">
@@ -1471,7 +2133,7 @@ export default function DashboardPage() {
           <ListModal
             title="Recent activity"
             items={activityItems}
-            columns={isAdmin ? 2 : 1}
+            columns={isAdmin || isSupervisorOverview ? 2 : 1}
             onClose={() => setShowAllActivity(false)}
           />
         )}

@@ -65,6 +65,11 @@ export function recruitmentApplicationsUrl(): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment`;
 }
 
+/** Opens Recruitment → Onboarding tab. */
+export function recruitmentOnboardingUrl(): string {
+  return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?tab=onboarding`;
+}
+
 export function recruitmentAiRejectsUrl(): string {
   return `${getAppBaseUrl()}/dashboard/humanCapital/recruitment?tab=ai_rejects`;
 }

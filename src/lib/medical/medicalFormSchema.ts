@@ -35,7 +35,23 @@ import {
  * (treating it as junk), so we round-trip these through a temporary
  * placeholder field to keep the section alive, then strip it back to `[]`.
  */
-const CUSTOM_EMPTY_FIELDS_SECTION_KEYS = new Set(["investigations"]);
+const CUSTOM_EMPTY_FIELDS_SECTION_KEYS = new Set(["investigations", "supporting_documents"]);
+
+const REMOVED_FITNESS_FIELD_KEYS = new Set(["licence_no"]);
+
+export const SUPPORTING_DOCUMENTS_SECTION_KEY = "supporting_documents";
+
+/** Always appended at the end of the hospital form if missing from a published template. */
+export function createSupportingDocumentsSection(): PipSection {
+  return {
+    kind: "fields",
+    key: SUPPORTING_DOCUMENTS_SECTION_KEY,
+    title: "Supporting documents",
+    helpText:
+      "Attach laboratory reports, imaging, or any other documents that support this examination.",
+    fields: [],
+  } as unknown as PipSection;
+}
 
 /**
  * Medical-form-specific schema normalizer. Wraps the shared PIP normalizer
@@ -72,12 +88,28 @@ export function normalizeMedicalFormSchema(raw: unknown): PipFormSchema | null {
 
   const sanitizedInvestigationDefs = normalizeInvestigationDefs(rawInvestigationDefs);
 
-  const sections: PipSection[] = normalized.sections.map((s) => {
-    if (s.kind === "fields" && CUSTOM_EMPTY_FIELDS_SECTION_KEYS.has(s.key)) {
-      return { ...s, fields: [], investigationDefs: sanitizedInvestigationDefs } as unknown as PipSection;
-    }
-    return s;
-  });
+  const sections: PipSection[] = normalized.sections
+    .filter((s) => s.key !== SUPPORTING_DOCUMENTS_SECTION_KEY)
+    .map((s) => {
+      if (s.kind === "fields" && s.key === "investigations") {
+        const { helpText: _removed, ...rest } = s as PipSection & { helpText?: string };
+        return {
+          ...rest,
+          fields: [],
+          investigationDefs: sanitizedInvestigationDefs,
+        } as unknown as PipSection;
+      }
+      if (s.kind === "fields" && s.key === "fitness") {
+        return {
+          ...s,
+          fields: s.fields.filter((f) => !REMOVED_FITNESS_FIELD_KEYS.has(f.key)),
+        };
+      }
+      if (s.kind === "fields" && CUSTOM_EMPTY_FIELDS_SECTION_KEYS.has(s.key)) {
+        return { ...s, fields: [] } as unknown as PipSection;
+      }
+      return s;
+    });
 
   return { ...normalized, sections };
 }
@@ -107,6 +139,8 @@ export type MedicalFormResponses = {
   tables?: Record<string, Array<Record<string, string | number | null>>>;
   /** Part 4 — structured investigation results (replaces legacy investigations table). */
   investigations?: InvestigationsData;
+  /** Supporting documents uploaded at the end of the form. */
+  attachments?: import("./medicalInvestigationDefs").MedicalAttachment[];
 };
 
 export type MedicalReferralData = {
@@ -125,6 +159,8 @@ export type MedicalReferralData = {
   referral_date?: string;
   issued_by?: string;
   issued_by_name?: string;
+  /** HR-selected hospital form components for this referral (Part 1 matrix). */
+  form_config?: import("./medicalExamRequirementsMatrix").MedicalFormConfig;
 };
 
 export type MedicalExaminationStatus = "draft" | "submitted";

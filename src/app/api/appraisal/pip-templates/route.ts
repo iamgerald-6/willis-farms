@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
  * Section combination. Picking a combination either opens the existing
  * template for it, or creates a blank one (active_version_id null — no
  * versions yet) to build from with "Add section" and/or "Prefill with
- * WillsFarms Intel".
+ * WillsOne Intel".
  */
 export async function POST(req: NextRequest) {
   const caller = await requireAppraisalGradeTemplateAccess(req, "add");

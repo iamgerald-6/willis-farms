@@ -17,6 +17,7 @@ export function useGroupPresets() {
       const presets = normalizeGroupPresetsMap(rows);
       return { presets, rows };
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 }

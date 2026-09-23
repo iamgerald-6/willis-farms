@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Loader2, Save, Send } from "lucide-react";
 import type { MedicalFormResponses, MedicalFormSchema, MedicalReferralData, MedicalSection } from "@/lib/medical/medicalFormSchema";
+import { withMedicalReferralPrefills } from "@/lib/medical/medicalResponses";
 import { getInvestigationDefs, medicalFieldLabel } from "@/lib/medical/medicalFormSchema";
 import type { PipField, PipTableColumn } from "@/lib/appraisal/pipFormSchema";
 import { FormShell } from "@/components/Forms/FormShell";
@@ -233,7 +234,10 @@ export default function MedicalExamWizard({
   readOnly?: boolean;
 }) {
   const [schema] = useState(initialSchema);
-  const [responses, setResponses] = useState(initialResponses);
+  const facilityFromReferral = initialReferral.designated_facility?.trim() ?? "";
+  const [responses, setResponses] = useState(() =>
+    withMedicalReferralPrefills(initialResponses, initialReferral),
+  );
   const [readOnly, setReadOnly] = useState(initialReadOnly ?? false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -337,7 +341,6 @@ export default function MedicalExamWizard({
                   />
                 ) : section.kind === "fields" && section.key === "investigations" ? (
                   <MedicalInvestigationsSection
-                    token={token}
                     responses={responses}
                     onChange={setResponses}
                     readOnly={readOnly}
@@ -346,16 +349,26 @@ export default function MedicalExamWizard({
                 ) : section.kind === "fields" ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {section.fields.map((field) =>
-                      field.type === "system" ? null : (
+                      field.type === "system" ||
+                      (section.key === "fitness" && field.key === "licence_no") ? null : (
                         <div
                           key={field.key}
                           className={field.type === "textarea" ? "md:col-span-2" : undefined}
                         >
                           <FieldInput
                             field={field}
-                            value={String(responses.fields?.[field.key] ?? "")}
+                            value={
+                              field.key === "facility_name"
+                                ? String(
+                                    responses.fields?.[field.key] ?? facilityFromReferral ?? "",
+                                  )
+                                : String(responses.fields?.[field.key] ?? "")
+                            }
                             onChange={(v) => setFieldValue(field.key, v)}
-                            readOnly={readOnly}
+                            readOnly={
+                              readOnly ||
+                              (field.key === "facility_name" && !!facilityFromReferral)
+                            }
                             error={fieldErrors.has(field.key)}
                           />
                         </div>

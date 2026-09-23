@@ -16,11 +16,11 @@ export type PipTemplateOrgPlacement = GradeTemplateOrgPlacement;
 
 export type AppraisalPipStatus = "draft" | "active" | "completed";
 
-/** Only draft PIPs may be edited — once submitted (active/completed) the form is read-only. */
+/** Draft or active PIPs may be edited (Stage 1 vs Stage 2 is enforced separately). */
 export function isPipEditableStatus(
   status: AppraisalPipStatus | string | null | undefined,
 ): boolean {
-  return status === "draft" || status == null;
+  return status === "draft" || status === "active" || status == null;
 }
 
 /** Row shape for the appraisal PIP list tab (submitted plans only). */
@@ -61,6 +61,8 @@ export interface PipFormResponses {
   fields?: Record<string, string | number | null>;
   /** Repeating table rows keyed by PipSection.key */
   tables?: Record<string, Array<Record<string, string | number | null>>>;
+  /** Workflow metadata (plan submit, coaching gap selection). */
+  meta?: import("./pipStages").PipFormMeta;
 }
 
 /** Postgres `numeric` columns often arrive as strings from Supabase. */

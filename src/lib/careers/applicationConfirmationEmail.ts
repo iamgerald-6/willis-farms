@@ -1,4 +1,5 @@
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 
 type ApplicationConfirmationParams = {
   fullName: string;
@@ -6,6 +7,10 @@ type ApplicationConfirmationParams = {
   roleTitle: string;
   referenceNumber: string;
   submittedAt: string;
+};
+
+type ApplicationConfirmationEmailParams = ApplicationConfirmationParams & {
+  contactEmail: string;
 };
 
 function firstName(fullName: string): string {
@@ -22,7 +27,7 @@ function formatSubmittedDate(iso: string): string {
 }
 
 export function buildApplicationConfirmationEmail(
-  params: ApplicationConfirmationParams,
+  params: ApplicationConfirmationEmailParams,
 ): { subject: string; html: string; text: string } {
   const {
     fullName,
@@ -49,7 +54,7 @@ export function buildApplicationConfirmationEmail(
     "Please keep your reference number for any follow-up correspondence:",
     referenceNumber,
     "",
-    "For enquiries, contact info@willsfarms.com and quote your reference number.",
+    `For enquiries, contact ${params.contactEmail} and quote your reference number.`,
     "",
     "Kind regards,",
     "Hiring Manager",
@@ -102,7 +107,7 @@ export function buildApplicationConfirmationEmail(
               </p>
 
               <p style="margin:0 0 8px;font-size:14px;color:#374151;">
-                Enquiries: <a href="mailto:info@willsfarms.com" style="color:#991b1b;text-decoration:none;font-weight:600;">info@willsfarms.com</a>
+                Enquiries: <a href="mailto:${escapeHtml(params.contactEmail)}" style="color:#991b1b;text-decoration:none;font-weight:600;">${escapeHtml(params.contactEmail)}</a>
               </p>
 
               <p style="margin:24px 0 0;font-size:15px;color:#374151;">
@@ -149,8 +154,12 @@ export async function sendApplicationConfirmationEmail(
   const resend = new Resend(apiKey);
 
   const from = getResendFromAddress("Wills Farms Careers");
+  const contactEmail = await resolveCompanyContactEmailForSend();
 
-  const { subject, html, text } = buildApplicationConfirmationEmail(params);
+  const { subject, html, text } = buildApplicationConfirmationEmail({
+    ...params,
+    contactEmail,
+  });
 
   const { error } = await resend.emails.send({
     from,
@@ -158,7 +167,7 @@ export async function sendApplicationConfirmationEmail(
     subject,
     html,
     text,
-    replyTo: getReplyToEmail(),
+    replyTo: getReplyToEmail(contactEmail),
   });
 
   if (error) {

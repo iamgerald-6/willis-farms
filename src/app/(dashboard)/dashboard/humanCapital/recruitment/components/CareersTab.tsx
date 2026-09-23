@@ -21,6 +21,7 @@ import PostingHistoryDrawer from "./PostingHistoryDrawer";
 import Pagination, { PAGE_SIZE } from "./Pagination";
 import CreateJobPostingPanel from "./CreateJobPostingPanel";
 import type { OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import { TableSkeleton } from "@/components/skeletons/PageSkeletons";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
@@ -243,9 +244,7 @@ export default function CareersTab({ adminId }: { adminId: string }) {
       </div>
 
       {isLoading ? (
-        <div className="py-12 flex justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-        </div>
+        <TableSkeleton rows={6} cols={4} />
       ) : sorted.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-sm text-gray-500">
           No career postings yet.{canAddPosting ? " Click \"Add posting\" to create one." : ""}

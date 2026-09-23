@@ -8,9 +8,19 @@ export function calculateBmi(heightCm: string | number | null | undefined, weigh
   return bmi.toFixed(1);
 }
 
-export const VISUAL_ACUITY_CORRECTED_OPTIONS = ["Uncorrected", "Corrected", "Both documented"] as const;
+export const VISUAL_ACUITY_RESULT_OPTIONS = ["Pass", "Fail"] as const;
+
+export const VISUAL_ACUITY_FAIL_NOTE_KEYS = {
+  visual_acuity_right: "visual_acuity_right_fail_note",
+  visual_acuity_left: "visual_acuity_left_fail_note",
+} as const;
 
 export const HEARING_RESULT_OPTIONS = ["Pass", "Fail", "Not tested"] as const;
+
+export const HEARING_FAIL_NOTE_KEYS = {
+  hearing_left: "hearing_left_fail_note",
+  hearing_right: "hearing_right_fail_note",
+} as const;
 
 export const CLINICAL_VITAL_FIELD_KEYS = {
   height_cm: "height_cm",
@@ -21,7 +31,6 @@ export const CLINICAL_VITAL_FIELD_KEYS = {
   pulse: "pulse",
   visual_acuity_right: "visual_acuity_right",
   visual_acuity_left: "visual_acuity_left",
-  visual_acuity_corrected: "visual_acuity_corrected",
   hearing_left: "hearing_left",
   hearing_right: "hearing_right",
 } as const;

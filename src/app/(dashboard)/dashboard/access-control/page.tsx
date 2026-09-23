@@ -101,12 +101,23 @@ export default function UserManagementPage() {
     },
   });
 
+  const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+
   const actor = users.find((u) => u.user_id === session?.user?.id);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const actorProfile = resolveAccessProfile(actor, sessionRole);
-  const canOpen = canOpenUserManagement(actorProfile, sessionRole);
-  const canAdd = canAddUser(actorProfile, sessionRole);
-  const canManageAccounts = canManageUserAccounts(actorProfile, sessionRole);
+  const canOpen = canOpenUserManagement(
+    actorProfile,
+    sessionRole,
+    groupPresets,
+  );
+  const canAdd = canAddUser(actorProfile, sessionRole, groupPresets);
+  const canManageAccounts = canManageUserAccounts(
+    actorProfile,
+    sessionRole,
+    groupPresets,
+  );
 
   // This whole page is headquarters-only (see RouteAccessGuard's
   // HEADQUARTERS_ONLY_ROUTE_PREFIXES) — every viewer who can reach it is
@@ -131,11 +142,10 @@ export default function UserManagementPage() {
   const siteLabelForUser = (u: User) =>
     u.site_id != null ? siteLabelById[String(u.site_id)] ?? "Unknown site" : "—";
 
-  const { data: groupPresetData, isLoading: presetsLoading } = useGroupPresets();
   const activeGroupKey = groupPresetKeyFromListGroup(listGroup);
   const activeGroupActions =
-    activeGroupKey && groupPresetData?.presets
-      ? groupPresetData.presets[activeGroupKey] ?? {}
+    activeGroupKey && groupPresets
+      ? groupPresets[activeGroupKey] ?? {}
       : null;
 
   const resendInviteMutation = useMutation({

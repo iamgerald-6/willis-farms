@@ -105,8 +105,8 @@ export default function ProbationRefereesSection({
           <p className="text-sm font-semibold text-gray-900">Referee references</p>
           <p className="text-xs text-gray-600 mt-1 leading-relaxed">
             Referees from the job application. Send them a link to complete their
-            confidential reference. Mark the employee <strong>Permanent</strong> once
-            references are in and probation is complete.
+            confidential reference. <strong>All referees must submit</strong> before
+            HR can mark the employee <strong>Permanent</strong>.
           </p>
         </div>
 

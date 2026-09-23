@@ -182,7 +182,9 @@ export function detectPipSectionRole(section: PipSection): PipSectionRole {
   if (/root.?cause|diagnos.*before/.test(t)) return "root_cause";
   if (/support.*development|development.*support|support.*provided/.test(t)) return "support";
   if (/objective|smart|goal|target.*plan/.test(t)) return "objectives";
-  if (/coaching|weekly.*log|check.in/.test(t)) return "coaching";
+  if (/coaching|weekly.*log|check.?in|training.*log|session\s*log|frequency\s*log/.test(t)) {
+    return "coaching";
+  }
   if (/formal.*review|progress review|checkpoint/.test(t)) return "reviews";
   if (/competenc|re.?assess|practical.*task/.test(t)) return "competency";
   if (/hr use|hr only/.test(t)) return "hr_only";
@@ -200,7 +202,7 @@ export function pipSectionRoleLabel(role: PipSectionRole): string | null {
     case "objectives":
       return "SMART objectives";
     case "coaching":
-      return "Weekly log";
+      return "Frequency log";
     case "reviews":
       return "Formal reviews";
     case "competency":
@@ -441,12 +443,17 @@ function prefilledSupportRow(
   supportSection: PipTableSection,
   gapId: string,
   gapLabel: string,
+  supervisorName?: string,
 ): Record<string, string | number | null> {
   const defaultAction = defaultSupportActionForSection(supportSection);
   const row: Record<string, string | number | null> = { [PIP_GAP_ID_KEY]: gapId };
   for (const col of supportSection.columns) {
+    const l = col.label.toLowerCase().trim();
     if (isGapReferenceColumn(col)) row[col.key] = gapLabel;
     else if (isSupportActionColumn(col)) row[col.key] = defaultAction;
+    else if (col.key === "provided_by" || /provided by/.test(l)) {
+      row[col.key] = supervisorName?.trim() || "";
+    } else if (col.key === "frequency" || /frequency/.test(l)) row[col.key] = "Weekly";
     else row[col.key] = "";
   }
   return row;
@@ -543,17 +550,20 @@ export function prepareResponsesWithGapChain(
   responses: {
     fields?: Record<string, unknown>;
     tables?: Record<string, Array<Record<string, string | number | null>>>;
+    meta?: Record<string, string | null | undefined>;
   },
   schema: PipFormSchema,
 ): {
   fields: Record<string, string | number | null>;
   tables: Record<string, Array<Record<string, string | number | null>>>;
+  meta?: Record<string, string | null | undefined>;
 } {
   const chain = findGapChainSections(schema);
   const tables = syncGapChainTables(responses.tables ?? {}, chain);
   return {
     fields: (responses.fields ?? {}) as Record<string, string | number | null>,
     tables,
+    meta: responses.meta,
   };
 }
 

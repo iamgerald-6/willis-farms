@@ -17,6 +17,7 @@ import type { ViewerContext } from "./appraisalTypes";
  */
 export function useAppraisalViewer(): {
   viewer: ViewerContext;
+  displayName: string;
   isLoading: boolean;
 } {
   const { data: session, isLoading: sessionLoading } = useQuery({
@@ -41,6 +42,10 @@ export function useAppraisalViewer(): {
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const accessProfile = resolveAccessProfile(profile, sessionRole);
 
+  const displayName = profile
+    ? [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim()
+    : "";
+
   return {
     viewer: {
       role: accessProfile?.role ?? "Standard Role",
@@ -51,6 +56,7 @@ export function useAppraisalViewer(): {
       pagePermissionLevels: profile?.page_permission_levels ?? null,
       pagePermissionActions: profile?.page_permission_actions ?? null,
     },
+    displayName,
     isLoading: sessionLoading || usersLoading,
   };
 }

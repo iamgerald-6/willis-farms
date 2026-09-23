@@ -113,7 +113,7 @@ export default function CandidateProfileReview({
                         rel="noopener noreferrer"
                         className="font-medium text-red-700 hover:underline mt-0.5 inline-block print:text-gray-900 print:no-underline"
                       >
-                        {row.value}
+                        {row.linkLabel ?? "View"}
                       </a>
                     ) : (
                       <p className="font-medium text-gray-900 mt-0.5 whitespace-pre-wrap">

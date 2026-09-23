@@ -22,6 +22,7 @@ import {
 } from "@/lib/userRoleAccessControl";
 import type { User } from "@/types";
 import SignaturePad from "./SignaturePad";
+import { useCompanyContactEmail } from "@/hooks/useCompanyContactEmail";
 
 type SignatureImage = { secure_url: string; public_id: string; original_name: string };
 
@@ -148,6 +149,7 @@ export default function OfferLetterEditorModal({
   const [signatureHydrated, setSignatureHydrated] = useState(false);
   const [noticeRecipientIds, setNoticeRecipientIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
+  const { contactEmail } = useCompanyContactEmail();
 
   const { data: session } = useQuery({
     queryKey: ["session"],
@@ -548,14 +550,14 @@ export default function OfferLetterEditorModal({
                     Genetics-led agribusiness · Professional farm management
                   </p>
                   <p className="text-xs text-gray-400 mt-1">
-                    info@willsfarms.com · www.willsfarms.com · Ghana
+                    {contactEmail} · www.willsfarms.com · Ghana
                   </p>
                 </div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
                   Letter preview
                 </p>
                 <p className="text-sm text-gray-700 whitespace-pre-wrap min-h-[8rem]">
-                  {draft.trim() || "Generate a draft with WillsFarms Intel, then edit the text below."}
+                  {draft.trim() || "Generate a draft with WillsOne Intel, then edit the text below."}
                 </p>
               </div>
 
@@ -757,8 +759,8 @@ export default function OfferLetterEditorModal({
               {isGenerating
                 ? "Generating…"
                 : draft.trim()
-                  ? "Regenerate with WillsFarms Intel"
-                  : "Generate with WillsFarms Intel"}
+                  ? "Regenerate with WillsOne Intel"
+                  : "Generate with WillsOne Intel"}
             </button>
             {draft.trim() && (
               <a

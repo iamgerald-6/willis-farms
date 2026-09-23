@@ -6,8 +6,6 @@ import {
 } from "@/lib/permissionActions";
 import type { GroupPresetsMap } from "@/lib/groupPermissionPresets";
 import {
-  canManageAccessControl,
-  isFullRoleAccess,
   PAGE_PERMISSION_KEYS,
   STANDARD_EMPLOYEE_PAGES,
   type AccessProfile,
@@ -105,21 +103,20 @@ export function getPagePermissionLevel(
   profile: AccessProfile | null | undefined,
   key: PagePermissionKey,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): PermissionLevel | null {
   const role = profile?.role ?? sessionRole;
   if (isSuperAdmin(role)) return "edit";
 
-  const tier = (profile?.access_tier ?? "standard") as AccessTier;
-  const levels = resolvePermissionLevels(profile);
-
-  if (isFullRoleAccess(role)) return "edit";
-
-  if (tier === "delegated") {
-    return levels[key] ?? null;
-  }
-
-  // Standard tier, non-full-role (employee): default page set is view-only.
-  if (STANDARD_EMPLOYEE_PAGES.includes(key)) return "view";
+  const mod = getEffectivePermissionActions(
+    profile,
+    sessionRole,
+    groupPresets,
+  )[key];
+  if (!mod) return null;
+  if (mod.edit) return "edit";
+  if (mod.add || mod.approve || mod.review) return "add";
+  if (mod.view) return "view";
   return null;
 }
 
@@ -135,9 +132,10 @@ export function canViewPageLevel(
   profile: AccessProfile | null | undefined,
   key: PagePermissionKey,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
   return hasPermissionAtLeast(
-    getPagePermissionLevel(profile, key, sessionRole),
+    getPagePermissionLevel(profile, key, sessionRole, groupPresets),
     "view",
   );
 }
@@ -146,9 +144,10 @@ export function canAddOnPage(
   profile: AccessProfile | null | undefined,
   key: PagePermissionKey,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
   return hasPermissionAtLeast(
-    getPagePermissionLevel(profile, key, sessionRole),
+    getPagePermissionLevel(profile, key, sessionRole, groupPresets),
     "add",
   );
 }
@@ -157,9 +156,10 @@ export function canEditOnPage(
   profile: AccessProfile | null | undefined,
   key: PagePermissionKey,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
   return hasPermissionAtLeast(
-    getPagePermissionLevel(profile, key, sessionRole),
+    getPagePermissionLevel(profile, key, sessionRole, groupPresets),
     "edit",
   );
 }
@@ -167,37 +167,43 @@ export function canEditOnPage(
 export function canOpenUserManagement(
   profile: AccessProfile | null | undefined,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
-  if (
-    canManageAccessControl(profile?.role ?? sessionRole)
-  ) {
-    return true;
-  }
-  return canPerformModuleAction(profile, "users", "view", sessionRole);
+  return canPerformModuleAction(
+    profile,
+    "users",
+    "view",
+    sessionRole,
+    groupPresets,
+  );
 }
 
 export function canAddUser(
   profile: AccessProfile | null | undefined,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
-  if (
-    canManageAccessControl(profile?.role ?? sessionRole)
-  ) {
-    return true;
-  }
-  return canPerformModuleAction(profile, "users", "add", sessionRole);
+  return canPerformModuleAction(
+    profile,
+    "users",
+    "add",
+    sessionRole,
+    groupPresets,
+  );
 }
 
 export function canManageUserAccounts(
   profile: AccessProfile | null | undefined,
   sessionRole?: string | null,
+  groupPresets?: GroupPresetsMap | null,
 ): boolean {
-  if (
-    canManageAccessControl(profile?.role ?? sessionRole)
-  ) {
-    return true;
-  }
-  return canPerformModuleAction(profile, "users", "edit", sessionRole);
+  return canPerformModuleAction(
+    profile,
+    "users",
+    "edit",
+    sessionRole,
+    groupPresets,
+  );
 }
 
 /** Pre-tick checkbox matrix — reflects effective access for this user today. */

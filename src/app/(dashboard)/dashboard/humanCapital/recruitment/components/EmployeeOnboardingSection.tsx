@@ -2,12 +2,14 @@
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, FileText, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, FileText, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import type { EmployeeOnboardingRecord } from "@/lib/careers/fetchEmployeeOnboardingRecord";
 import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
+import type { MedicalExamination } from "@/lib/medical/medicalFormSchema";
 import CandidateProfileReview from "@/components/onboarding/CandidateProfileReview";
 import OnboardingHrFieldsForm from "./OnboardingHrFieldsForm";
+import MedicalExamPreviewModal from "./MedicalExamPreviewModal";
 import {
   RECRUITMENT_MODULE_ID,
 } from "@/lib/systemDefinitions/onboardingDefaults";
@@ -41,6 +43,7 @@ export default function EmployeeOnboardingSection({
   referenceNumber: string | null;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [medicalPreviewOpen, setMedicalPreviewOpen] = useState(false);
 
   const { data: record, isLoading, isError } = useQuery({
     queryKey: ["employee-onboarding", userId],
@@ -71,6 +74,19 @@ export default function EmployeeOnboardingSection({
     () => hrFieldDefs.map((f) => f.fieldKey),
     [hrFieldDefs],
   );
+
+  const resolvedApplicationId = applicationId ?? record?.application_id ?? null;
+
+  const { data: examData } = useQuery({
+    queryKey: ["medical-examination", resolvedApplicationId],
+    queryFn: async () => {
+      const res = await api.get(`/careers/medical-examination/${resolvedApplicationId}`);
+      return res.data.data as { examination: MedicalExamination | null };
+    },
+    enabled: Boolean(resolvedApplicationId),
+  });
+
+  const examination = examData?.examination ?? null;
 
   if (!applicationId && !record && !isLoading) {
     return null;
@@ -122,6 +138,25 @@ export default function EmployeeOnboardingSection({
         hideFieldHints
       />
 
+      {examination?.status === "submitted" && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-500">Medical examination form</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Submitted {formatDate(examination.submitted_at)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMedicalPreviewOpen(true)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:underline shrink-0"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            View
+          </button>
+        </div>
+      )}
+
       <div className="border border-gray-100 rounded-lg overflow-hidden">
         <button
           type="button"
@@ -158,6 +193,18 @@ export default function EmployeeOnboardingSection({
           </div>
         )}
       </div>
+
+      {medicalPreviewOpen && examination && (
+        <MedicalExamPreviewModal
+          open
+          onClose={() => setMedicalPreviewOpen(false)}
+          schema={examination.form_schema}
+          responses={examination.form_responses}
+          referral={examination.referral_data}
+          status={examination.status}
+          submittedAt={examination.submitted_at}
+        />
+      )}
     </div>
   );
 }

@@ -261,13 +261,18 @@ export async function requireUserManagementAccess(
   const user = await getApiRequestUser(req);
   if (!user) return null;
 
+  const supabaseAdmin = getAdminClient();
+  const { presets } = supabaseAdmin
+    ? await fetchGroupPresetsFromDb(supabaseAdmin)
+    : { presets: {} };
+
   const profile = callerAccessProfile(user);
   const ok =
     minimum === "view"
-      ? canOpenUserManagement(profile, user.role)
+      ? canOpenUserManagement(profile, user.role, presets)
       : minimum === "add"
-        ? canAddUser(profile, user.role)
-        : canManageUserAccounts(profile, user.role);
+        ? canAddUser(profile, user.role, presets)
+        : canManageUserAccounts(profile, user.role, presets);
   if (!ok) return null;
 
   // User Management is headquarters-only in full — see isHeadquartersCaller.

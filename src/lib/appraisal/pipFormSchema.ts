@@ -11,7 +11,7 @@
  * section titles, column headers, select options (e.g. 30/60/90-day
  * duration), and how many sections there are — either by hand ("Add
  * section") or by uploading a document to prefill them ("Prefill with
- * WillsFarms Intel"), same as the appraisal question-set builder.
+ * WillsOne Intel"), same as the appraisal question-set builder.
  *
  * One deliberate exception to "everything is editable": fields that
  * correspond to data the system already tracks (employee name, position,

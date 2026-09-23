@@ -44,6 +44,7 @@ import PostingInterviewSetup, {
   type PostingInterviewSetupHandle,
   type PostingOverviewRow,
 } from "./PostingInterviewSetup";
+import { PageHeaderSkeleton } from "@/components/skeletons/PageSkeletons";
 import {
   normalizePostingInterviewSetup,
   postingHasInterviewSetup,
@@ -737,8 +738,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
   if (sessionLoading || usersLoading) {
     return (
       <div className="p-4 md:p-6 bg-gray-50 min-h-full">
-        <div className="h-8 w-56 bg-gray-100 rounded animate-pulse mb-2" />
-        <div className="h-4 w-96 bg-gray-100 rounded animate-pulse" />
+        <PageHeaderSkeleton />
       </div>
     );
   }
@@ -1104,7 +1104,7 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
                     ) : (
                       <Sparkles className="w-4 h-4" />
                     )}
-                    {extracting ? "Reading document…" : "Auto-fill fields with WillsFarms Intel"}
+                    {extracting ? "Reading document…" : "Auto-fill fields with WillsOne Intel"}
                   </button>
                 )}
               </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { FormShell } from "@/components/Forms/FormShell";
+import CompanyContactEmailLink from "@/components/CompanyContactEmailLink";
 import DeclineOfferConfirmModal from "./DeclineOfferConfirmModal";
 
 type Props = {
@@ -115,10 +116,8 @@ export default function OnboardingOfferPageClient({ token, application }: Props)
           </p>
           <p className="text-xs text-gray-500">
             Contact{" "}
-            <a href="mailto:info@willsfarms.com" className="text-red-600 hover:underline">
-              info@willsfarms.com
-            </a>{" "}
-            if this was a mistake.
+            <CompanyContactEmailLink className="text-red-600 hover:underline" /> if this was a
+            mistake.
           </p>
         </div>
       </FormShell>

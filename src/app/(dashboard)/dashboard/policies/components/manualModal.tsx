@@ -480,7 +480,7 @@ export default function ManualModal({
                   ) : (
                     <Sparkles className="w-3.5 h-3.5" />
                   )}
-                  {extracting ? "Reading document…" : "Autofill with WillsFarms Intel"}
+                  {extracting ? "Reading document…" : "Autofill with WillsOne Intel"}
                 </button>
                 {extractError && (
                   <p className="text-red-500 text-xs mt-1">{extractError}</p>

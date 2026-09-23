@@ -1,5 +1,6 @@
-import { medicalExaminationUrl } from "@/lib/appUrl";
-import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+import { medicalExaminationUrl, recruitmentOnboardingUrl } from "@/lib/appUrl";
+import { getResendFromAddress } from "@/lib/email/resendClient";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 import {
   emailDetailsBox,
   emailPrimaryButton,
@@ -27,6 +28,7 @@ export async function sendMedicalExaminationEmail(params: {
   const resend = new Resend(apiKey);
   const from = getResendFromAddress("Wills Farms HR");
 
+  const replyTo = await resolveCompanyContactEmailForSend();
   const { error } = await resend.emails.send({
     from,
     to: params.to,
@@ -34,7 +36,7 @@ export async function sendMedicalExaminationEmail(params: {
     subject: params.subject,
     html: params.bodyHtml,
     text: params.bodyText,
-    replyTo: getReplyToEmail(),
+    replyTo,
   });
 
   if (error) {
@@ -137,4 +139,96 @@ export function buildMedicalExamSubmittedEmailHtml(params: {
 
 export function medicalExamFormUrl(token: string): string {
   return medicalExaminationUrl(token);
+}
+
+type SendResult = { sent: boolean; error?: string };
+
+function formatPerson(name: string, title?: string | null): string {
+  const trimmedTitle = title?.trim();
+  return trimmedTitle ? `${name} (${trimmedTitle})` : name;
+}
+
+/** HR receives the PDF + Intel summary; selected executives / HR colleagues are copied. */
+export async function sendMedicalExamSubmittedNoticeEmail(params: {
+  hrEmail: string;
+  ccEmails: string[];
+  submittedByName: string;
+  submittedByTitle?: string | null;
+  candidateName: string;
+  roleTitle: string;
+  referenceNumber: string;
+  pdfBuffer: Buffer;
+  pdfFilename: string;
+  summaryReport: string;
+}): Promise<SendResult> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    return { sent: false, error: "RESEND_API_KEY is not configured" };
+  }
+
+  if (!params.hrEmail.trim()) {
+    return { sent: false, error: "Your account has no email on file." };
+  }
+
+  const dashboardLink = recruitmentOnboardingUrl();
+  const submitter = formatPerson(params.submittedByName, params.submittedByTitle);
+  const cc = params.ccEmails
+    .map((e) => e.trim())
+    .filter((e) => e && e.toLowerCase() !== params.hrEmail.trim().toLowerCase());
+
+  const subject = `Medical examination submitted — ${params.candidateName} (${params.referenceNumber})`;
+
+  const summaryText = params.summaryReport.trim();
+
+  const text = [
+    `${submitter} is sharing the submitted occupational medical examination.`,
+    "",
+    `Candidate: ${params.candidateName}`,
+    `Position: ${params.roleTitle}`,
+    `Reference: ${params.referenceNumber}`,
+    "",
+    "Medical report summary:",
+    summaryText,
+    "",
+    "The full medical examination PDF is attached for your records.",
+    "",
+    `View in Recruitment: ${dashboardLink}`,
+  ].join("\n");
+
+  const inner = [
+    `<p style="margin:0 0 16px;font-size:15px;color:#374151;"><strong>${escapeHtmlForEmail(submitter)}</strong> is sharing the submitted occupational medical examination.</p>`,
+    emailDetailsBox("Candidate summary", [
+      ["Candidate", params.candidateName],
+      ["Position", params.roleTitle],
+      ["Reference", params.referenceNumber],
+    ]),
+    `<p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151;letter-spacing:0.04em;text-transform:uppercase;">Medical report summary</p>`,
+    `<div style="margin:0 0 16px;padding:16px 18px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${escapeHtmlForEmail(summaryText)}</div>`,
+    `<p style="margin:0 0 16px;font-size:14px;color:#374151;">The full medical examination PDF is attached for your awareness.</p>`,
+    emailPrimaryButton("Open Onboarding", dashboardLink),
+  ].join("");
+
+  const { Resend } = await import("resend");
+  const resend = new Resend(apiKey);
+  const from = getResendFromAddress("Wills Farms HR");
+
+  const replyTo = await resolveCompanyContactEmailForSend();
+  const { error } = await resend.emails.send({
+    from,
+    to: params.hrEmail.trim(),
+    cc: cc.length ? cc : undefined,
+    subject,
+    html: willsFarmsEmailShell("Medical examination submitted", inner),
+    text,
+    replyTo,
+    attachments: [
+      {
+        filename: params.pdfFilename,
+        content: params.pdfBuffer.toString("base64"),
+      },
+    ],
+  });
+
+  if (error) return { sent: false, error: error.message };
+  return { sent: true };
 }

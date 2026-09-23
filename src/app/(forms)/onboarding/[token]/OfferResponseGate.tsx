@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { FormShell } from "@/components/Forms/FormShell";
+import CompanyContactEmailLink from "@/components/CompanyContactEmailLink";
 import DeclineOfferConfirmModal from "./DeclineOfferConfirmModal";
 
 type Props = {
@@ -62,10 +63,8 @@ export default function OfferResponseGate({
           </p>
           <p className="text-xs text-gray-500">
             Our HR team has been notified. If this was a mistake, contact{" "}
-            <a href="mailto:info@willsfarms.com" className="text-red-600 hover:underline">
-              info@willsfarms.com
-            </a>{" "}
-            quoting your reference number.
+            <CompanyContactEmailLink className="text-red-600 hover:underline" /> quoting your
+            reference number.
           </p>
         </div>
       </FormShell>

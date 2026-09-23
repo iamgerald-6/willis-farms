@@ -87,9 +87,8 @@ export default function InterviewPanelForm({
   );
   const [candidateName, setCandidateName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
-  // The site this job posting belongs to — passed down to Panel setup so
-  // its staff picker can offer HR/Supervisory/Executive candidates from
-  // OTHER sites only (see PanelSetupStep's memberCandidates).
+  // The site this job posting belongs to — scopes panel member suggestions
+  // (Supervisory at this site; Executive/HR at this site or headquarters).
   const [postingSiteId, setPostingSiteId] = useState<number | null>(null);
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
@@ -412,10 +411,10 @@ export default function InterviewPanelForm({
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
-      toast.success("WillsFarms Intel analysis ready.");
+      toast.success("WillsOne Intel analysis ready.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "WillsFarms Intel analysis failed.");
+      toast.error(error?.response?.data?.error ?? "WillsOne Intel analysis failed.");
     },
   });
 
@@ -435,10 +434,10 @@ export default function InterviewPanelForm({
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
-      toast.success("WillsFarms Intel analysis ready.");
+      toast.success("WillsOne Intel analysis ready.");
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
-      toast.error(error?.response?.data?.error ?? "WillsFarms Intel analysis failed.");
+      toast.error(error?.response?.data?.error ?? "WillsOne Intel analysis failed.");
     },
   });
 
@@ -514,7 +513,7 @@ export default function InterviewPanelForm({
               formData={formData}
               candidateName={candidateName}
               referenceNumber={referenceNumber}
-              excludeSiteId={postingSiteId}
+              postingSiteId={postingSiteId}
               onChange={setFormData}
               onSendStage1Invites={() =>
                 saveMutation.mutate({
@@ -609,7 +608,7 @@ export default function InterviewPanelForm({
               formData={formData}
               candidateName={candidateName}
               referenceNumber={referenceNumber}
-              excludeSiteId={postingSiteId}
+              postingSiteId={postingSiteId}
               onChange={setFormData}
               onSendStage2Invites={(scheduledAt, data) =>
                 saveMutation.mutate({
@@ -703,7 +702,7 @@ export default function InterviewPanelForm({
           <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex flex-col gap-2 shrink-0">
             {!formData.summary?.ai_analysis && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                Generate the WillsFarms Intel analysis above before finishing.
+                Generate the WillsOne Intel analysis above before finishing.
               </p>
             )}
             <div className="flex flex-col sm:flex-row gap-2">

@@ -152,8 +152,15 @@ export default function ManageUserAccessPage() {
 
   const actor = users.find((u) => u.user_id === session?.user?.id);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
+  const { data: groupPresetData } = useGroupPresets();
+  const groupPresets = groupPresetData?.presets;
+
   const actorProfile = resolveAccessProfile(actor, sessionRole);
-  const canManage = canManageUserAccounts(actorProfile, sessionRole);
+  const canManage = canManageUserAccounts(
+    actorProfile,
+    sessionRole,
+    groupPresets,
+  );
 
   // Whether the acting caller (not the target being edited) can place
   // anyone at any site is headquarters-only — same rule the backend now
@@ -168,9 +175,6 @@ export default function ManageUserAccessPage() {
     enabled: !!session,
   });
   const callerIsAllSites = me?.is_headquarters_site === true;
-
-  const { data: groupPresetData } = useGroupPresets();
-  const groupPresets = groupPresetData?.presets;
 
   const { data: orgPlacementOptions } = useQuery<{
     lists: OrgPlacementList[];

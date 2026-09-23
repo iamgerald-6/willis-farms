@@ -12,6 +12,7 @@ import type { OnboardingHrData } from "@/lib/careers/onboardingTypes";
 import { updateUserWithColumnFallback } from "@/lib/supabaseUserUpdate";
 import { requireRecruitmentAccess } from "@/lib/apiRequestAuth";
 import { assertSiteAccess, siteFilterValue } from "@/lib/siteAccess";
+import { getRefereeCompletionStatus } from "@/lib/careers/sendRefereeReferenceInvites";
 
 export type { RecruitmentEmployeeRow };
 
@@ -356,6 +357,32 @@ export async function PATCH(req: NextRequest) {
       { error: "Only employee accounts can be updated here." },
       { status: 400 },
     );
+  }
+
+  if (employment_status === "active") {
+    const { applicationId } = await findOnboardingForUser(supabaseAdmin, user);
+
+    if (!applicationId) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot mark permanent — no linked job application. All referee references must be submitted first.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const refereeStatus = await getRefereeCompletionStatus(supabaseAdmin, applicationId);
+    if (!refereeStatus.allSubmitted) {
+      return NextResponse.json(
+        {
+          error:
+            refereeStatus.blockingMessage ??
+            "All referee references must be submitted before marking permanent.",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   const now = new Date().toISOString();

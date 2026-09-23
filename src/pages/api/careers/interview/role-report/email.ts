@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { normalizeRoleInterviewReport } from "@/lib/careers/types";
 import { renderRoleInterviewReportPdf } from "@/lib/reports/renderRoleInterviewReportPdf";
-import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
+import { getResendFromAddress } from "@/lib/email/resendClient";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 import { findRoleReportRow } from "@/lib/careers/roleReportLookup";
 
 // Pages Router — see src/pages/api/careers/interview/report/email.ts for why
@@ -71,11 +72,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { Resend } = await import("resend");
     const resend = new Resend(process.env.RESEND_API_KEY);
+    const replyTo = await resolveCompanyContactEmailForSend();
 
     const { error } = await resend.emails.send({
       from: getResendFromAddress("Wills Farms Careers"),
       to,
-      replyTo: getReplyToEmail(),
+      replyTo,
       subject: `Role hiring summary — ${row.role_title}`,
       html: `
         <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.5; max-width: 560px;">
@@ -84,7 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           <p>
             ${
               hasBothCopies
-                ? "Both the WillsFarms Intel-generated report and HR's edited version are attached as PDFs."
+                ? "Both the WillsOne Intel-generated report and HR's edited version are attached as PDFs."
                 : "The full hiring summary report is attached as a PDF."
             }
           </p>
@@ -92,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         </div>
       `,
       text: hasBothCopies
-        ? `Role hiring summary for ${row.role_title} is attached — both the WillsFarms Intel-generated version and HR's edited version.`
+        ? `Role hiring summary for ${row.role_title} is attached — both the WillsOne Intel-generated version and HR's edited version.`
         : `Role hiring summary for ${row.role_title} is attached.`,
       attachments,
     });

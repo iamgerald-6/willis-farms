@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, usePathname } from "next/navigation";
 import { Bell, LogOut, User, Menu, Settings2, ShieldCheck, BookOpen } from "lucide-react";
@@ -14,6 +14,8 @@ import { useGroupPresets } from "@/hooks/useGroupPresets";
 import { useIsHeadquarters } from "@/hooks/useIsHeadquarters";
 import { performLogout } from "@/lib/auth/performLogout";
 import { useAppraisalFormProgressOptional } from "@/lib/appraisal/appraisalFormProgress";
+import type { OrgCustomListItem, OrgCustomListType } from "@/lib/organizationalStructureCustomLists";
+import { NavbarProfileSkeleton } from "@/components/skeletons/PageSkeletons";
 
 // ── Page title map ────────────────────────────────────────────────────────────
 // Ordered longest-path-first so nested routes (e.g. justifications/new,
@@ -165,7 +167,7 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
   const showAppraisalProgress =
     isAppraisalForm && appraisalProgress?.completionPct != null;
 
-  const { data: session } = useQuery({
+  const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
       const { data } = await supabase.auth.getSession();
@@ -173,33 +175,60 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
     },
   });
 
-  const { data: users } = useQuery<UserType[]>({
+  const { data: users, isLoading: usersLoading } = useQuery<UserType[]>({
     queryKey: ["get_users"],
     queryFn: async () => {
       const res = await api.get("/get_user");
       return res.data;
     },
+    enabled: !!session,
   });
+
+  const profileLoading = sessionLoading || (!!session && usersLoading);
 
   const userId = session?.user?.id;
   const profile = users?.find((u) => u.user_id === userId);
   const sessionRole = session?.user?.user_metadata?.role as string | undefined;
   const displayName = profile
     ? `${profile.first_name} ${profile.last_name}`.trim()
-    : (session?.user?.email ?? "");
+    : "";
   const initials = profile
     ? `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase()
-    : (session?.user?.email?.slice(0, 2).toUpperCase() ?? "?");
+    : "?";
 
   const accessProfile = resolveAccessProfile(profile, sessionRole);
   const { data: groupPresetData } = useGroupPresets();
   const groupPresets = groupPresetData?.presets;
-  const { isHeadquarters } = useIsHeadquarters();
+  const { isHeadquarters, me } = useIsHeadquarters();
+
+  const { data: listTypes = [] } = useQuery<OrgCustomListType[]>({
+    queryKey: ["organizational_structure_custom_list_types"],
+    queryFn: async () =>
+      (await api.get("/organizational-structure/custom-list-types")).data.data,
+  });
+  const sitesListType = listTypes.find((lt) => lt.table_name === "sites");
+  const { data: sites = [] } = useQuery<OrgCustomListItem[]>({
+    queryKey: ["org_custom_list_items", sitesListType?.id],
+    queryFn: async () =>
+      (
+        await api.get(
+          `/organizational-structure/custom-list-types/${sitesListType!.id}/items`,
+        )
+      ).data.data,
+    enabled: !!sitesListType,
+  });
+  const siteLabel = useMemo(() => {
+    const siteId = profile?.site_id ?? me?.site_id;
+    if (siteId == null) return null;
+    return sites.find((s) => String(s.id) === String(siteId))?.label ?? null;
+  }, [profile?.site_id, me?.site_id, sites]);
   // Both are headquarters-only modules regardless of role — WHERE someone
   // is placed decides this, not their role (mirrors
   // HEADQUARTERS_ONLY_ROUTE_PREFIXES in RouteAccessGuard.tsx, which does
   // the actual enforcement).
-  const showUserManagement = canOpenUserManagement(accessProfile, sessionRole) && isHeadquarters;
+  const showUserManagement =
+    canOpenUserManagement(accessProfile, sessionRole, groupPresets) &&
+    isHeadquarters;
   const showSystemDefinitions =
     accessProfile &&
     canPerformModuleAction(
@@ -267,18 +296,29 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
 
         {/* Profile dropdown */}
         <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setOpen(!open)}
-            className="flex items-center gap-2 hover:opacity-80 transition"
-          >
-            <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center hover:ring-2 hover:ring-red-300 transition">
-              <span className="text-xs font-bold text-white">{initials}</span>
-            </div>
-            {/* Name — hidden on small screens */}
-            <span className="hidden sm:block text-sm font-medium text-gray-700">
-              {displayName}
-            </span>
-          </button>
+          {profileLoading ? (
+            <NavbarProfileSkeleton />
+          ) : (
+            <button
+              onClick={() => setOpen(!open)}
+              className="flex items-center gap-2 hover:opacity-80 transition"
+            >
+              <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center hover:ring-2 hover:ring-red-300 transition">
+                <span className="text-xs font-bold text-white">{initials}</span>
+              </div>
+              {/* Name + site — hidden on small screens */}
+              <div className="hidden sm:block text-left min-w-0">
+                <p className="text-sm font-medium text-gray-700 leading-tight truncate">
+                  {displayName || "Account"}
+                </p>
+                {siteLabel && (
+                  <p className="text-xs text-gray-400 leading-tight mt-0.5 truncate">
+                    {siteLabel}
+                  </p>
+                )}
+              </div>
+            </button>
+          )}
 
           {open && (
             <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-100 shadow-lg rounded-xl z-50 overflow-hidden">
@@ -286,9 +326,13 @@ export default function NavbarDashboard({ onMenuClick }: NavbarDashboardProps) {
                 <p className="text-xs font-semibold text-gray-900 truncate">
                   {displayName}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5 capitalize">
-                  {profile?.role?.replace("_", " ") ?? "Employee"}
-                </p>
+                {siteLabel ? (
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">{siteLabel}</p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-0.5 capitalize">
+                    {profile?.role?.replace("_", " ") ?? "Employee"}
+                  </p>
+                )}
               </div>
 
               <div className="py-1">

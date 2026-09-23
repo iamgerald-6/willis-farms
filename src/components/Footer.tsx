@@ -3,6 +3,7 @@ import Image from "next/image";
 import { siteContent } from "@/content/siteContent";
 import { Container } from "./Container";
 import { toTelHref } from "@/lib/utils";
+import CompanyContactEmailLink from "@/components/CompanyContactEmailLink";
 
 export function Footer() {
   const c = siteContent.contact;
@@ -28,12 +29,7 @@ export function Footer() {
             <p className="text-brand-gray">Postal: {c.postalAddress}</p>
             <p className="text-brand-gray">
               Email:{" "}
-              <a
-                className="font-medium text-brand-dark hover:underline"
-                href={`mailto:${c.email}`}
-              >
-                {c.email}
-              </a>
+              <CompanyContactEmailLink className="font-medium text-brand-dark hover:underline" />
             </p>
             <p className="text-brand-gray">
               Tel:{" "}

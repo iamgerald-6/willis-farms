@@ -131,7 +131,7 @@ function PostingInterviewSetup(
   const patchSetup = (patch: Partial<PostingInterviewSetupContent>) =>
     setSetup((prev) => ({ ...prev, ...patch }));
 
-  // "Autofill with WillsFarms Intel" — upload an existing interview guide document (Word
+  // "Autofill with WillsOne Intel" — upload an existing interview guide document (Word
   // or PDF) and have it read straight into every tab here, the same
   // way the CV screening and JD auto-fill features read a document. Local
   // state only, same as any other edit — nothing is saved until the usual
@@ -317,7 +317,7 @@ function PostingInterviewSetup(
                   <Sparkles className="w-4 h-4 text-red-600" />
                 )}
                 <span className="text-sm font-medium text-red-700">
-                  {autofilling ? "Reading document…" : "Autofill with WillsFarms Intel"}
+                  {autofilling ? "Reading document…" : "Autofill with WillsOne Intel"}
                 </span>
                 <span className="text-xs text-gray-400">
                   — upload an existing interview guide document (Word or PDF)
@@ -726,7 +726,7 @@ function PostingInterviewSetup(
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
             Weighted interview scores use a 1–5 scale. These thresholds apply
-            to this posting's own interview and are fed to WillsFarms Intel stage
+            to this posting's own interview and are fed to WillsOne Intel stage
             analysis, final recommendations, and hire validation.
           </p>
 
@@ -774,7 +774,7 @@ function PostingInterviewSetup(
 
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              WillsFarms Intel prompt preview
+              WillsOne Intel prompt preview
             </p>
             <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
               {formatInterviewBenchmarksForPrompt(setup.benchmarks)}

@@ -14,8 +14,8 @@ import {
   type AppraisalPip,
   type PipFormResponses,
   fetchEmployeeOrgPlacement,
-  isPipEditableStatus,
 } from "@/lib/appraisal/pipInstances";
+import { isPipStage1Editable } from "@/lib/appraisal/pipStages";
 import {
   findGradeTemplateForPlacement,
   hasCompleteOrgPlacement,
@@ -82,8 +82,9 @@ export async function POST(
     return NextResponse.json({ error: "PIP not found for this appraisal." }, { status: 404 });
   }
 
-  if (!isPipEditableStatus(pip.status)) {
-    return jsonForbidden("This PIP has been submitted and performance gaps can no longer be refreshed.");
+  const responses = (pip.form_responses ?? {}) as PipFormResponses;
+  if (!isPipStage1Editable(pip.status, responses)) {
+    return jsonForbidden("Performance gaps can only be refreshed before the improvement plan is submitted.");
   }
 
   const schema = pip.form_schema as PipFormSchema;

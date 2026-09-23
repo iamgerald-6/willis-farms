@@ -3,6 +3,7 @@ import { SectionHeading } from "@/components/SectionHeading";
 import { siteContent } from "@/content/siteContent";
 import { LeadForm } from "@/components/Forms/LeadForm";
 import { toTelHref, toWhatsAppHref } from "@/lib/utils";
+import { getCompanyContactEmailServer } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -21,6 +22,7 @@ export default async function ContactPage({
   );
 
   const c = siteContent.contact;
+  const contactEmail = await getCompanyContactEmailServer();
 
   return (
     <div>
@@ -77,9 +79,9 @@ export default async function ContactPage({
               <p className="text-sm font-semibold text-brand-dark">Email</p>
               <a
                 className="mt-2 inline-flex text-sm font-semibold text-brand-dark hover:underline"
-                href={`mailto:${c.email}`}
+                href={`mailto:${contactEmail}`}
               >
-                {c.email}
+                {contactEmail}
               </a>
               <p className="mt-5 text-sm font-semibold text-brand-dark">
                 Telephone

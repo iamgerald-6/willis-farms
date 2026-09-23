@@ -114,6 +114,45 @@ export async function fetchRefereeSubmissionsForApplication(
   });
 }
 
+export type RefereeCompletionStatus = {
+  total: number;
+  submitted: number;
+  allSubmitted: boolean;
+  blockingMessage: string | null;
+};
+
+/** Hard gate for probation → permanent — every listed referee must have submitted. */
+export async function getRefereeCompletionStatus(
+  supabase: SupabaseClient,
+  applicationId: string,
+): Promise<RefereeCompletionStatus> {
+  const referees = await fetchRefereeSubmissionsForApplication(supabase, applicationId);
+  const total = referees.length;
+  const submitted = referees.filter((r) => r.submitted_at).length;
+
+  if (total === 0) {
+    return {
+      total: 0,
+      submitted: 0,
+      allSubmitted: false,
+      blockingMessage:
+        "No referees with valid emails on the job application. All referee references must be submitted before marking permanent.",
+    };
+  }
+
+  if (submitted < total) {
+    const pending = total - submitted;
+    return {
+      total,
+      submitted,
+      allSubmitted: false,
+      blockingMessage: `${pending} referee reference${pending === 1 ? "" : "s"} still outstanding. All referees must submit before marking permanent.`,
+    };
+  }
+
+  return { total, submitted, allSubmitted: true, blockingMessage: null };
+}
+
 export type RefereeHrContextRow = {
   referee_index: number;
   referee_name: string;

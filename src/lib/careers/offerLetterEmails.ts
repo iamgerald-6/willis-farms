@@ -2,10 +2,8 @@ import {
   loginWithRedirectUrl,
   recruitmentOfferLetterUrl,
 } from "@/lib/appUrl";
-import {
-  getResendFromAddress,
-  getReplyToEmail,
-} from "@/lib/email/resendClient";
+import { getResendFromAddress } from "@/lib/email/resendClient";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 
 type SendResult = { sent: boolean; error?: string };
 
@@ -40,6 +38,7 @@ async function sendViaResend(params: {
   text: string;
   cc?: string[];
   attachments?: EmailAttachment[];
+  replyTo?: string;
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -57,7 +56,7 @@ async function sendViaResend(params: {
     subject: params.subject,
     html: params.html,
     text: params.text,
-    replyTo: getReplyToEmail(),
+    replyTo: params.replyTo ?? (await resolveCompanyContactEmailForSend()),
     attachments: params.attachments,
   });
 

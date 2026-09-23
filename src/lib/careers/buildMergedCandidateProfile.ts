@@ -7,6 +7,8 @@ export type ProfileReviewItem = {
   label: string;
   value: string;
   href?: string;
+  /** Link text when href is set — defaults to "View" in the profile UI. */
+  linkLabel?: string;
   fullWidth?: boolean;
 };
 
@@ -81,6 +83,7 @@ function fileItem(label: string, file: unknown): ProfileReviewItem | null {
     label,
     value: f.original_name || "Uploaded file",
     href: f.secure_url,
+    linkLabel: "View",
   };
 }
 

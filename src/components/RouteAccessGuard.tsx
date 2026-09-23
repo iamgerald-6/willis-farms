@@ -137,14 +137,14 @@ export default function RouteAccessGuard({
     if (!accessProfile) return;
 
     if (isAccessControlRoute) {
-      if (!canOpenUserManagement(accessProfile, sessionRole)) {
+      if (!canOpenUserManagement(accessProfile, sessionRole, groupPresets)) {
         toast.error("You do not have permission to open User Management.");
         router.replace("/dashboard");
         return;
       }
       if (
         isManageUserRoute &&
-        !canManageUserAccounts(accessProfile, sessionRole)
+        !canManageUserAccounts(accessProfile, sessionRole, groupPresets)
       ) {
         toast.error("Edit access is required to manage a user.");
         router.replace("/dashboard/access-control");
@@ -203,13 +203,16 @@ export default function RouteAccessGuard({
   }
 
   if (isAccessControlRoute) {
-    if (accessProfile && !canOpenUserManagement(accessProfile, sessionRole)) {
+    if (
+      accessProfile &&
+      !canOpenUserManagement(accessProfile, sessionRole, groupPresets)
+    ) {
       return null;
     }
     if (
       isManageUserRoute &&
       accessProfile &&
-      !canManageUserAccounts(accessProfile, sessionRole)
+      !canManageUserAccounts(accessProfile, sessionRole, groupPresets)
     ) {
       return null;
     }

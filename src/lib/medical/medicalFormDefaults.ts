@@ -1,5 +1,5 @@
 import type { MedicalFormSchema, MedicalSection } from "./medicalFormSchema";
-import { HEARING_RESULT_OPTIONS, VISUAL_ACUITY_CORRECTED_OPTIONS } from "./medicalClinicalVitals";
+import { HEARING_RESULT_OPTIONS, VISUAL_ACUITY_RESULT_OPTIONS } from "./medicalClinicalVitals";
 import { MEDICAL_INVESTIGATION_DEFS } from "./medicalInvestigationDefs";
 
 const YES_NO = ["Yes", "No"];
@@ -70,14 +70,19 @@ export function getDefaultMedicalFormSchema(): MedicalFormSchema {
           { key: "bp_systolic", label: "Blood pressure — systolic (mmHg)", type: "number", required: true },
           { key: "bp_diastolic", label: "Blood pressure — diastolic (mmHg)", type: "number", required: true },
           { key: "pulse", label: "Pulse (bpm)", type: "text", required: true },
-          { key: "visual_acuity_right", label: "Visual acuity — right eye", type: "text", required: true },
-          { key: "visual_acuity_left", label: "Visual acuity — left eye", type: "text", required: true },
           {
-            key: "visual_acuity_corrected",
-            label: "Visual acuity — corrected / uncorrected",
+            key: "visual_acuity_right",
+            label: "Visual acuity — right eye",
             type: "select",
             required: true,
-            options: [...VISUAL_ACUITY_CORRECTED_OPTIONS],
+            options: [...VISUAL_ACUITY_RESULT_OPTIONS],
+          },
+          {
+            key: "visual_acuity_left",
+            label: "Visual acuity — left eye",
+            type: "select",
+            required: true,
+            options: [...VISUAL_ACUITY_RESULT_OPTIONS],
           },
           {
             key: "hearing_left",
@@ -115,9 +120,6 @@ export function getDefaultMedicalFormSchema(): MedicalFormSchema {
         kind: "fields",
         key: "investigations",
         title: "Part 4 — Investigations",
-        helpText:
-          "Upload laboratory reports to prefill results where possible, then review and confirm each value. " +
-          "Simple tests use a single input; panel tests can be expanded to enter individual parameters.",
         fields: [],
         // Side-channel property (not part of the generic PIP section shape) —
         // seeds the admin-editable Part 4 test list. See getInvestigationDefs
@@ -172,7 +174,6 @@ export function getDefaultMedicalFormSchema(): MedicalFormSchema {
             type: "text",
           },
           { key: "physician_name", label: "Physician's name", type: "text", required: true },
-          { key: "licence_no", label: "Licence / registration no.", type: "text", required: true },
           { key: "facility_name", label: "Facility name", type: "text", required: true },
           { key: "examination_date", label: "Date of examination", type: "date", required: true },
           { key: "physician_signature", label: "Physician signature (type full name)", type: "text", required: true },

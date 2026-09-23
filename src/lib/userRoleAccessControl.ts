@@ -18,16 +18,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   Standard Role          - overview; own leave/appraisal/skill log; SOP/
  *                            policies view; task manager (self tasks). Default
  *                            when no User role is assigned.
- *   Executive Role          - full role access (User Management, System
- *                            Definitions, everything) — see isFullRoleAccess
- *                            in pagePermissions.ts.
+ *   Executive Role          - broad operational access (HC, recruitment,
+ *                            tasks, policies, SOPs) but not System
+ *                            Definitions or User Management by default —
+ *                            see executiveRolePermissionActions().
  *   Consultant             - same access as Standard Role. Kept as its own
  *                            label because gradeLevelsConfig.ts already
  *                            tracks "Consultant" separately for other
  *                            things (program eligibility, salary tiers) —
  *                            nothing to do with access control.
  *   Human Resource          - access to all modules except System
- *                            Definitions. Cannot sign off skill logs.
+ *                            Definitions; User Management view + add only
+ *                            (no edit permissions / Manage User by default).
  *   System Administrator   - System Definitions + User Management access.
  *                            Explicitly NOT granted appraise / approve leave
  *                            / fill skill log / create tasks for others —

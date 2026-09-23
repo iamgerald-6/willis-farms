@@ -4,152 +4,118 @@ import { X } from "lucide-react";
 import type { MedicalFormResponses, MedicalFormSchema, MedicalReferralData } from "@/lib/medical/medicalFormSchema";
 import { getInvestigationDefs, medicalFieldLabel } from "@/lib/medical/medicalFormSchema";
 import { isSystemField } from "@/lib/appraisal/pipFormSchema";
-import type {
-  InvestigationDef,
-  InvestigationEntry,
-  InvestigationsData,
+import {
+  investigationResultSummary,
+  investigationRowHasData,
+  type InvestigationDef,
+  type InvestigationEntry,
+  type InvestigationsData,
 } from "@/lib/medical/medicalInvestigationDefs";
 
 const NAVY = "#1e3a5f";
 
+function getMedicalExamAttachments(responses: MedicalFormResponses) {
+  const seen = new Set<string>();
+  const docs = [];
+  for (const doc of [
+    ...(responses.attachments ?? []),
+    ...(responses.investigations?.lab_reports ?? []),
+  ]) {
+    if (seen.has(doc.secure_url)) continue;
+    seen.add(doc.secure_url);
+    docs.push(doc);
+  }
+  return docs;
+}
+
 function InvestigationsPreview({
   data,
   defs,
+  attachments,
 }: {
   data: InvestigationsData | undefined;
   defs: InvestigationDef[];
+  attachments: ReturnType<typeof getMedicalExamAttachments>;
 }) {
-  const investigations = data ?? { tests: {}, lab_reports: [], other: [] };
-  const hasReports = (investigations.lab_reports ?? []).length > 0;
-  const hasOther = (investigations.other ?? []).some((o) => o.name?.trim() || o.result?.trim());
-  const hasTests = defs.some((def) => {
-    const entry = investigations.tests[def.id];
-    if (!entry) return false;
-    if (def.kind === "panel") {
-      return Object.values(entry.parameters ?? {}).some((p) => p.value?.trim());
-    }
-    return !!(entry.value?.trim() || entry.comment?.trim() || entry.findings?.trim() || entry.flag?.trim());
-  });
+  const investigations = data ?? { tests: {}, other: [] };
+  const otherRows = (investigations.other ?? []).filter((o) => o.name?.trim() || o.result?.trim());
+  const tableRows = [
+    ...defs.map((def) => ({
+      key: def.id,
+      label: def.label,
+      def,
+      entry: investigations.tests[def.id] ?? {},
+    })),
+    ...otherRows.map((o) => ({
+      key: o.id,
+      label: o.name || "—",
+      def: null as InvestigationDef | null,
+      entry: { value: o.result, flag: o.flag } as InvestigationEntry,
+    })),
+  ];
+  const hasData = tableRows.some((row) =>
+    row.def ? investigationRowHasData(row.def, row.entry) : !!(row.entry.value?.trim() || row.entry.flag?.trim()),
+  );
 
-  if (!hasReports && !hasTests && !hasOther) {
+  if (!hasData && attachments.length === 0) {
     return <p className="text-xs text-gray-400 italic">No investigation results recorded.</p>;
   }
 
   return (
     <div className="space-y-3">
-      {(investigations.lab_reports ?? []).length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Attached reports</p>
-          <ul className="space-y-1">
-            {(investigations.lab_reports ?? []).map((report) => (
-              <li key={report.secure_url}>
-                <a
-                  href={report.secure_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-teal-800 hover:underline"
-                >
-                  {report.original_name ?? "Lab report"}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {defs.map((def) => {
-        const entry: InvestigationEntry = investigations.tests[def.id] ?? {};
-        if (def.kind === "select" || def.kind === "text") {
-          if (!entry.value?.trim() && !entry.comment?.trim()) return null;
-          return (
-            <div key={def.id} className="border border-gray-100 rounded-lg p-2">
-              <p className="text-xs font-semibold text-gray-700">{def.label}</p>
-              {entry.value?.trim() && <p className="text-xs text-gray-800 mt-0.5">{entry.value}</p>}
-              {entry.comment?.trim() && (
-                <p className="text-[11px] text-gray-500 mt-0.5">{entry.comment}</p>
-              )}
-            </div>
-          );
-        }
-        if (def.kind === "findings_flag") {
-          if (!entry.findings?.trim() && !entry.flag?.trim()) return null;
-          return (
-            <div key={def.id} className="border border-gray-100 rounded-lg p-2">
-              <p className="text-xs font-semibold text-gray-700">{def.label}</p>
-              {entry.findings?.trim() && (
-                <p className="text-xs text-gray-800 mt-0.5 whitespace-pre-wrap">{entry.findings}</p>
-              )}
-              {entry.flag?.trim() && (
-                <p className="text-[11px] text-gray-500 mt-0.5">{entry.flag}</p>
-              )}
-            </div>
-          );
-        }
-        const params = def.parameters.filter((p) => entry.parameters?.[p.key]?.value?.trim());
-        if (params.length === 0) return null;
-        return (
-          <div key={def.id} className="border border-gray-100 rounded-lg p-2">
-            <p className="text-xs font-semibold text-gray-700 mb-1">{def.label}</p>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-400">
-                  <th className="text-left py-0.5 pr-2 font-medium">Parameter</th>
-                  <th className="text-left py-0.5 pr-2 font-medium">Result</th>
-                  <th className="text-left py-0.5 pr-2 font-medium">Unit</th>
-                  <th className="text-left py-0.5 pr-2 font-medium">Ref.</th>
-                  <th className="text-left py-0.5 font-medium">Flag</th>
-                </tr>
-              </thead>
-              <tbody>
-                {params.map((p) => {
-                  const pv = entry.parameters?.[p.key] ?? {};
-                  return (
-                    <tr key={p.key} className="border-t border-gray-50">
-                      <td className="py-0.5 pr-2 text-gray-600">{p.label}</td>
-                      <td className="py-0.5 pr-2 text-gray-800">{pv.value}</td>
-                      <td className="py-0.5 pr-2 text-gray-500">{pv.unit || p.defaultUnit || "—"}</td>
-                      <td className="py-0.5 pr-2 text-gray-500">
-                        {pv.reference_range || p.defaultReferenceRange || "—"}
-                      </td>
-                      <td className="py-0.5 text-gray-500">{pv.flag || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-
-      {hasOther && (
-        <div className="border border-gray-100 rounded-lg p-2">
-          <p className="text-xs font-semibold text-gray-700 mb-1">Other investigation</p>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-gray-400">
-                <th className="text-left py-0.5 pr-2 font-medium">Investigation</th>
-                <th className="text-left py-0.5 pr-2 font-medium">Result</th>
-                <th className="text-left py-0.5 pr-2 font-medium">Unit</th>
-                <th className="text-left py-0.5 pr-2 font-medium">Ref.</th>
-                <th className="text-left py-0.5 font-medium">Flag</th>
+    {hasData ? (
+    <div className="border border-gray-100 rounded-lg overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 text-gray-500">
+            <th className="text-left py-1.5 px-2 font-medium">Investigation</th>
+            <th className="text-left py-1.5 px-2 font-medium">Result summary</th>
+            <th className="text-left py-1.5 px-2 font-medium">Flag (N/ABN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tableRows
+            .filter((row) =>
+              row.def
+                ? investigationRowHasData(row.def, row.entry)
+                : !!(row.entry.value?.trim() || row.entry.flag?.trim()),
+            )
+            .map((row) => (
+              <tr key={row.key} className="border-t border-gray-50">
+                <td className="py-1.5 px-2 text-gray-700 font-medium">{row.label}</td>
+                <td className="py-1.5 px-2 text-gray-800 whitespace-pre-wrap">
+                  {row.def
+                    ? investigationResultSummary(row.def, row.entry) || "—"
+                    : row.entry.value?.trim() || "—"}
+                </td>
+                <td className="py-1.5 px-2 text-gray-500">{row.entry.flag?.trim() || "—"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {(investigations.other ?? [])
-                .filter((o) => o.name?.trim() || o.result?.trim())
-                .map((o) => (
-                  <tr key={o.id} className="border-t border-gray-50">
-                    <td className="py-0.5 pr-2 text-gray-600">{o.name || "—"}</td>
-                    <td className="py-0.5 pr-2 text-gray-800">{o.result || "—"}</td>
-                    <td className="py-0.5 pr-2 text-gray-500">{o.unit || "—"}</td>
-                    <td className="py-0.5 pr-2 text-gray-500">{o.reference_range || "—"}</td>
-                    <td className="py-0.5 text-gray-500">{o.flag || "—"}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+        </tbody>
+      </table>
+    </div>
+    ) : null}
+    {attachments.length > 0 ? (
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+          Uploaded test results &amp; imaging
+        </p>
+        <ul className="space-y-1">
+          {attachments.map((doc) => (
+            <li key={doc.secure_url}>
+              <a
+                href={doc.secure_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-teal-800 hover:underline"
+              >
+                {doc.original_name ?? "Document"}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null}
     </div>
   );
 }
@@ -211,11 +177,17 @@ export default function MedicalExamPreviewModal({
             </dl>
           </div>
 
-          {schema.sections.map((section) => (
+          {schema.sections
+            .filter((section) => section.key !== "supporting_documents")
+            .map((section) => (
             <div key={section.key}>
               <h3 className="font-semibold text-gray-900 mb-2">{section.title}</h3>
               {section.kind === "fields" && section.key === "investigations" ? (
-                <InvestigationsPreview data={responses.investigations} defs={investigationDefs} />
+                <InvestigationsPreview
+                  data={responses.investigations}
+                  defs={investigationDefs}
+                  attachments={getMedicalExamAttachments(responses)}
+                />
               ) : section.kind === "fields" && section.key === "clinical_vitals" ? (
                 <dl className="space-y-2">
                   {section.fields.filter((f) => !isSystemField(f)).map((field) => (
@@ -229,7 +201,9 @@ export default function MedicalExamPreviewModal({
                 </dl>
               ) : section.kind === "fields" ? (
                 <dl className="space-y-2">
-                  {section.fields.filter((f) => !isSystemField(f)).map((field) => (
+                  {section.fields
+                    .filter((f) => !isSystemField(f) && f.key !== "licence_no")
+                    .map((field) => (
                     <div key={field.key} className="grid sm:grid-cols-3 gap-1 border-b border-gray-50 pb-2">
                       <dt className="text-gray-500 text-xs">{medicalFieldLabel(field)}</dt>
                       <dd className="sm:col-span-2 text-gray-800 whitespace-pre-wrap">

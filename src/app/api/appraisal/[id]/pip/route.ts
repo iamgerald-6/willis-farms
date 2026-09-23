@@ -18,7 +18,6 @@ import {
   fetchEmployeeOrgPlacement,
   fetchHumanResourceFacilitators,
   findPipTemplateForPlacement,
-  isPipEditableStatus,
   isPipEligible,
   parseQuarterScore,
   resolvePlacementPositionLabel,
@@ -35,10 +34,25 @@ import {
   buildGapRowsFromAppraisal,
   collectTemplateReviewItems,
   findGapChainSections,
+  getGapOptions,
   prepareResponsesWithGapChain,
 } from "@/lib/appraisal/pipGapChain";
-import type { PipSystemFieldSourceKey } from "@/lib/appraisal/pipFormSchema";
+import type { PipFormSchema, PipSystemFieldSourceKey } from "@/lib/appraisal/pipFormSchema";
 import { isSystemField } from "@/lib/appraisal/pipFormSchema";
+import { ensurePipExtensionFieldsInSchema } from "@/lib/appraisal/pipExtension";
+import {
+  applyHrAdminPrefills,
+  ensureHrAdminFieldsInSchema,
+} from "@/lib/appraisal/pipHrAdmin";
+import {
+  applySupportPlanDefaults,
+  getPipFormMeta,
+  isPipPlanSubmitted,
+  normalizePipSchemaForStages,
+  stripStage1Edits,
+  syncAllCoachingLogs,
+  validateStage1Plan,
+} from "@/lib/appraisal/pipStages";
 
 async function loadAppraisalContext(supabaseAdmin: ReturnType<typeof getSupabaseAdmin>, appraisalId: string) {
   if (!supabaseAdmin) return null;
@@ -319,10 +333,13 @@ export async function POST(
     sectionSetForQuarter(quarter),
   );
 
-  const gapChain = findGapChainSections(templateMatch.form_schema);
+  const normalizedSchema = ensureHrAdminFieldsInSchema(
+    ensurePipExtensionFieldsInSchema(normalizePipSchemaForStages(templateMatch.form_schema)),
+  );
+  const gapChain = findGapChainSections(normalizedSchema);
 
   const initialResponses: PipFormResponses = { fields: {}, tables: {} };
-  for (const section of templateMatch.form_schema.sections) {
+  for (const section of normalizedSchema.sections) {
     if (section.kind === "fields") {
       for (const field of section.fields) {
         if (isSystemField(field)) continue;
@@ -345,15 +362,20 @@ export async function POST(
     }
   }
 
-  const synced = prepareResponsesWithGapChain(initialResponses, templateMatch.form_schema);
-  for (const section of templateMatch.form_schema.sections) {
+  const synced = prepareResponsesWithGapChain(initialResponses, normalizedSchema);
+  for (const section of normalizedSchema.sections) {
     if (section.kind !== "table" || !synced.tables[section.key]) continue;
     synced.tables[section.key] = applyTableRowAutoIncrement(section, synced.tables[section.key]!);
   }
   Object.assign(initialResponses, synced);
 
   const systemFields = buildSystemFieldValues(appraisal, employee);
-  for (const section of templateMatch.form_schema.sections) {
+  Object.assign(
+    initialResponses,
+    applySupportPlanDefaults(normalizedSchema, initialResponses, systemFields.supervisor),
+  );
+
+  for (const section of normalizedSchema.sections) {
     if (section.kind !== "fields") continue;
     for (const field of section.fields) {
       if (isSystemField(field)) {
@@ -362,6 +384,17 @@ export async function POST(
     }
   }
 
+  const openedAt = new Date().toISOString();
+  const hrPrefilled = applyHrAdminPrefills({
+    schema: normalizedSchema,
+    responses: initialResponses,
+    pip: { created_at: openedAt },
+    appraisalSummary: buildAppraisalSummary(appraisal),
+    appraisalId,
+    actorName: caller.name ?? null,
+  });
+  Object.assign(initialResponses, hrPrefilled);
+
   const { data: pip, error: insertError } = await supabaseAdmin
     .from("appraisal_pips")
     .insert({
@@ -369,7 +402,7 @@ export async function POST(
       employee_user_id: employee.user_id,
       pip_template_id: templateMatch.id,
       template_version_id: templateMatch.active_version_id,
-      form_schema: templateMatch.form_schema,
+      form_schema: normalizedSchema,
       form_responses: initialResponses,
       status: "draft",
       created_by: caller.id,
@@ -423,6 +456,7 @@ export async function PATCH(
   const body = (await req.json()) as {
     form_responses?: PipFormResponses;
     status?: AppraisalPip["status"];
+    submit_plan?: boolean;
   };
 
   const { data: pip, error: fetchError } = await supabaseAdmin
@@ -436,27 +470,100 @@ export async function PATCH(
   }
 
   const currentStatus = (pip.status as AppraisalPip["status"]) ?? "draft";
+  const schema = ensureHrAdminFieldsInSchema(
+    ensurePipExtensionFieldsInSchema(
+      normalizePipSchemaForStages(pip.form_schema as PipFormSchema),
+    ),
+  );
+  const baselineResponses = (pip.form_responses ?? { fields: {}, tables: {} }) as PipFormResponses;
+  const planSubmitted = isPipPlanSubmitted(baselineResponses, currentStatus);
+  const submitPlan = body.submit_plan === true || (body.status === "active" && currentStatus === "draft");
 
-  if (!isPipEditableStatus(currentStatus)) {
-    if (body.form_responses) {
-      return jsonForbidden("This PIP has been submitted and can no longer be edited.");
-    }
-    if (body.status && body.status !== currentStatus) {
-      return jsonForbidden("This PIP has been submitted and its status cannot be changed.");
+  if (currentStatus === "completed") {
+    if (body.form_responses || body.status || submitPlan) {
+      return jsonForbidden("This PIP is completed and can no longer be edited.");
     }
   }
 
+  const canEditDraft = currentStatus === "draft" && !planSubmitted;
+  const canEditTracking = currentStatus === "active" && planSubmitted;
+  const canEditForm = canEditDraft || canEditTracking;
+
+  if (body.form_responses && !canEditForm) {
+    return jsonForbidden("This PIP cannot be edited in its current state.");
+  }
+
   if (body.status && body.status !== currentStatus) {
-    if (body.status === "active" && currentStatus === "draft") {
-      // Submit — allowed together with a final form_responses save.
-    } else {
+    if (!(submitPlan && body.status === "active" && currentStatus === "draft")) {
       return jsonForbidden("Invalid PIP status change.");
     }
   }
 
+  if (submitPlan && (!canEditDraft || planSubmitted)) {
+    return jsonForbidden("The improvement plan has already been submitted.");
+  }
+
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (body.form_responses) updates.form_responses = body.form_responses;
-  if (body.status) updates.status = body.status;
+
+  let nextResponses = body.form_responses ?? baselineResponses;
+
+  if (body.form_responses) {
+    nextResponses = planSubmitted
+      ? stripStage1Edits(schema, body.form_responses, baselineResponses)
+      : prepareResponsesWithGapChain(body.form_responses, schema);
+
+    const tables = { ...(nextResponses.tables ?? {}) };
+    for (const section of schema.sections) {
+      if (section.kind === "table" && tables[section.key]) {
+        tables[section.key] = applyTableRowAutoIncrement(section, tables[section.key]!);
+      }
+    }
+    nextResponses = { ...nextResponses, tables };
+    nextResponses = applyHrAdminPrefills({
+      schema,
+      responses: nextResponses,
+      pip: { created_at: String(pip.created_at ?? "") },
+      appraisalSummary: buildAppraisalSummary(appraisal),
+      appraisalId,
+      actorName: caller.name ?? null,
+    });
+    updates.form_responses = nextResponses;
+  }
+
+  if (submitPlan) {
+    const toValidate = (updates.form_responses ?? baselineResponses) as PipFormResponses;
+    const errors = validateStage1Plan(schema, toValidate);
+    if (errors.length) {
+      return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
+    }
+
+    const gapChain = findGapChainSections(schema);
+    const firstGapId = gapChain.gaps
+      ? getGapOptions(toValidate.tables ?? {}, gapChain.gaps)[0]?.id ?? null
+      : null;
+
+    let submitted = syncAllCoachingLogs(schema, {
+      ...toValidate,
+      meta: {
+        ...getPipFormMeta(toValidate),
+        plan_submitted_at: new Date().toISOString(),
+        selected_coaching_gap_id: firstGapId,
+      },
+    });
+
+    const tables = { ...(submitted.tables ?? {}) };
+    for (const section of schema.sections) {
+      if (section.kind === "table" && tables[section.key]) {
+        tables[section.key] = applyTableRowAutoIncrement(section, tables[section.key]!);
+      }
+    }
+    submitted = { ...submitted, tables };
+
+    updates.form_responses = submitted;
+    updates.status = "active";
+  } else if (body.status) {
+    updates.status = body.status;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("appraisal_pips")

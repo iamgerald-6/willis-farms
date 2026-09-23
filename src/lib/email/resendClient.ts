@@ -1,4 +1,5 @@
 import type { SendResult } from "@/lib/email/types";
+import { DEFAULT_COMPANY_CONTACT_EMAIL } from "@/lib/systemDefinitions/companyBrandingConfig";
 
 // The one place every "who does this email come from / go to by default"
 // value lives — every Resend-sending file in the app (careers, appraisal,
@@ -29,9 +30,14 @@ export function getResendFromAddress(fallbackLabel = "Wills Farms"): string {
   );
 }
 
-/** Where a recipient's reply actually lands when they hit "Reply" — same value every sender should use. */
-export function getReplyToEmail(): string {
-  return process.env.CAREERS_REPLY_TO_EMAIL ?? "info@willsfarms.com";
+/** Where a recipient's reply actually lands when they hit "Reply".
+ * Env override wins, then Company branding contactEmail when passed in. */
+export function getReplyToEmail(contactEmail?: string): string {
+  return (
+    process.env.CAREERS_REPLY_TO_EMAIL?.trim() ||
+    contactEmail?.trim() ||
+    DEFAULT_COMPANY_CONTACT_EMAIL
+  );
 }
 
 export async function sendViaResend(params: {
@@ -40,6 +46,7 @@ export async function sendViaResend(params: {
   html: string;
   text: string;
   from?: string;
+  replyTo?: string;
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -55,7 +62,7 @@ export async function sendViaResend(params: {
       subject: params.subject,
       html: params.html,
       text: params.text,
-      replyTo: getReplyToEmail(),
+      replyTo: params.replyTo ?? getReplyToEmail(),
     });
     if (error) return { sent: false, error: error.message };
     return { sent: true };

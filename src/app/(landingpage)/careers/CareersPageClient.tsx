@@ -8,6 +8,7 @@ import { siteContent } from "@/content/siteContent";
 import type { JobPosting } from "@/lib/careers/jobPostings";
 import { formatPublicJobTitle, previewDescription } from "@/lib/careers/jobPostings";
 import Image from "next/image";
+import CompanyContactEmailLink from "@/components/CompanyContactEmailLink";
 
 function JobCard({ posting }: { posting: JobPosting }) {
   const [expanded, setExpanded] = useState(false);
@@ -93,12 +94,7 @@ export default function CareersPageClient({
             <div className="rounded-3xl border border-black/5 bg-white p-8 text-center shadow-soft">
               <p className="text-sm text-brand-gray">
                 There are no open positions at the moment. Please check back soon or email{" "}
-                <a
-                  href="mailto:info@willsfarms.com"
-                  className="font-semibold text-brand-red hover:underline"
-                >
-                  info@willsfarms.com
-                </a>{" "}
+                <CompanyContactEmailLink className="font-semibold text-brand-red hover:underline" />{" "}
                 to register your interest.
               </p>
             </div>
@@ -115,13 +111,8 @@ export default function CareersPageClient({
           <p className="text-base font-bold text-brand-dark">Questions?</p>
           <p className="mt-2 text-sm leading-relaxed text-brand-gray">
             Email{" "}
-            <a
-              href="mailto:info@willsfarms.com"
-              className="font-semibold text-brand-red hover:underline"
-            >
-              info@willsfarms.com
-            </a>{" "}
-            with your reference number if you need to follow up on an application.
+            <CompanyContactEmailLink className="font-semibold text-brand-red hover:underline" /> with
+            your reference number if you need to follow up on an application.
           </p>
         </section>
       </PageShell>

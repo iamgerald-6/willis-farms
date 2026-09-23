@@ -526,7 +526,6 @@ function OnboardingDetail({
                     formData={form}
                     hrData={hrData}
                     setHrData={setHrData}
-                    onPersist={(nextHr) => saveHr.mutate(nextHr)}
                   />
                 </div>
               )}

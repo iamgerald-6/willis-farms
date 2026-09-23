@@ -1,7 +1,6 @@
 import { getResendFromAddress, getReplyToEmail } from "@/lib/email/resendClient";
 import { recruitmentApplicationsUrl, recruitmentAiRejectsUrl } from "@/lib/appUrl";
-
-const HR_INBOX = "info@willsfarms.com";
+import { resolveCompanyContactEmailForSend } from "@/lib/systemDefinitions/resolveCompanyContactEmail";
 
 type DigestParams = {
   dateLabel: string;
@@ -38,7 +37,7 @@ export function buildAiScreeningDigestEmail(
     `Here's yesterday's careers portal summary (${dateLabel}):`,
     "",
     `Total applications: ${total}`,
-    `Shortlisted by WillsFarms Intel: ${shortlisted}`,
+    `Shortlisted by WillsOne Intel: ${shortlisted}`,
     `Sent to Rejects for review: ${underReview}`,
     pendingLine,
     "",
@@ -126,15 +125,16 @@ export async function sendAiScreeningDigestEmail(
   const { Resend } = await import("resend");
   const resend = new Resend(apiKey);
   const from = getResendFromAddress("Wills Farms Careers");
+  const hrInbox = await resolveCompanyContactEmailForSend();
   const { subject, html, text } = buildAiScreeningDigestEmail(params);
 
   const { error } = await resend.emails.send({
     from,
-    to: HR_INBOX,
+    to: hrInbox,
     subject,
     html,
     text,
-    replyTo: getReplyToEmail(),
+    replyTo: getReplyToEmail(hrInbox),
   });
 
   if (error) {

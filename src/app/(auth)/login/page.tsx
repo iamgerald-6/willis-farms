@@ -20,6 +20,25 @@ const LoginSpinner = () => (
   </div>
 );
 
+const SESSION_CHECK_TIMEOUT_MS = 10_000;
+const SESSION_CHECK_HARD_LIMIT_MS = 12_000;
+
+class SessionCheckTimeoutError extends Error {
+  constructor() {
+    super("SESSION_CHECK_TIMEOUT");
+    this.name = "SessionCheckTimeoutError";
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new SessionCheckTimeoutError()), ms);
+    }),
+  ]);
+}
+
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -55,50 +74,82 @@ function LoginForm() {
 
     let active = true;
 
-    (async () => {
-      // getUser() (not getSession()) on purpose — it revalidates against
-      // Supabase Auth instead of trusting whatever's cached in localStorage.
-      // A local session can go stale (expired access token, a refresh
-      // token already rotated/invalidated by another tab, ...) while still
-      // "existing" as far as getSession()/hasLocalSupabaseSession() are
-      // concerned; redirecting to the dashboard on that alone is exactly
-      // what used to send an unusable session bouncing between here and
-      // RouteAccessGuard forever (see verifyStaffAccount.ts).
-      const { data, error } = await supabase.auth.getUser();
-      if (!active) return;
-      if (error || !data.user) {
-        setScreen("guest");
-        return;
+    const fallBackToGuest = async (timedOut: boolean) => {
+      if (timedOut) {
+        toast.error("Session check timed out. Please sign in again.");
       }
-
-      // Session is genuinely valid — but a valid Supabase Auth session
-      // doesn't guarantee a usable staff account behind it (deleted/
-      // disabled/pending row). Check before trusting "logged in" here too,
-      // same as onSubmit does right after signing in.
       try {
-        const block = await checkStaffAccountBlock();
+        await supabase.auth.signOut();
+      } catch {
+        // Best-effort — still show the login form even if sign-out fails.
+      }
+      if (active) setScreen("guest");
+    };
+
+    (async () => {
+      try {
+        // getUser() (not getSession()) on purpose — it revalidates against
+        // Supabase Auth instead of trusting whatever's cached in localStorage.
+        const { data, error } = await withTimeout(
+          supabase.auth.getUser(),
+          SESSION_CHECK_TIMEOUT_MS,
+        );
         if (!active) return;
-        if (block) {
-          await supabase.auth.signOut();
-          if (!active) return;
-          toast.error(staffAuthBlockMessage(block));
+        if (error || !data.user) {
           setScreen("guest");
           return;
         }
-      } catch {
-        // Couldn't verify (network hiccup) — fall through to the dashboard;
-        // RouteAccessGuard will re-check and handle it from there rather
-        // than stranding the user on an endless spinner.
-      }
 
-      if (!active) return;
-      void ignoreNavigationAbort(router.replace(redirectTo));
+        try {
+          const block = await withTimeout(
+            checkStaffAccountBlock(),
+            SESSION_CHECK_TIMEOUT_MS,
+          );
+          if (!active) return;
+          if (block) {
+            await supabase.auth.signOut();
+            if (!active) return;
+            toast.error(staffAuthBlockMessage(block));
+            setScreen("guest");
+            return;
+          }
+        } catch (staffCheckError) {
+          if (staffCheckError instanceof SessionCheckTimeoutError) {
+            await fallBackToGuest(true);
+            return;
+          }
+          // Network hiccup — fall through to the dashboard; RouteAccessGuard
+          // will re-check and handle it from there.
+        }
+
+        if (!active) return;
+        void ignoreNavigationAbort(router.replace(redirectTo));
+      } catch (err) {
+        if (!active) return;
+        await fallBackToGuest(err instanceof SessionCheckTimeoutError);
+      }
     })();
 
     return () => {
       active = false;
     };
   }, [redirectTo, router, fromPasswordFlow]);
+
+  // Belt-and-braces: never leave the user on the checking spinner indefinitely.
+  useEffect(() => {
+    if (fromPasswordFlow || screen !== "checking") return;
+
+    const timer = setTimeout(() => {
+      setScreen((current) => {
+        if (current !== "checking") return current;
+        toast.error("Session check timed out. Please sign in again.");
+        void supabase.auth.signOut().catch(() => {});
+        return "guest";
+      });
+    }, SESSION_CHECK_HARD_LIMIT_MS);
+
+    return () => clearTimeout(timer);
+  }, [fromPasswordFlow, screen]);
 
   const {
     register,

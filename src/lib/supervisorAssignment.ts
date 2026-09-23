@@ -61,6 +61,57 @@ function isSupervisorSiteEligible(
   return sameSite || (supervisorSiteId != null && headquartersSiteIds.has(supervisorSiteId));
 }
 
+type PanelMemberUser = {
+  user_id: string;
+  user_role_label?: string | null;
+  site_id?: string | number | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+};
+
+/**
+ * Internal staff suggested as interview panel members for a job posting at
+ * `postingSiteId`. Uses the same site + role rules as onboarding supervisor
+ * pickers (see isSupervisorSiteEligible):
+ *   - Supervisory Role at the posting's site only
+ *   - Executive / HR at the posting's site or at headquarters
+ * Returns an empty list when the posting has no site — HR can still type
+ * external panelists manually in the UI.
+ */
+export function eligiblePanelMembersForPostingSite(
+  postingSiteId: string | number | null | undefined,
+  users: PanelMemberUser[],
+  headquartersSiteIds: ReadonlySet<string> = new Set(),
+): PanelMemberUser[] {
+  const siteId = postingSiteId != null ? String(postingSiteId) : null;
+  if (siteId == null) return [];
+
+  const posting: RoleUser & SiteUser = {
+    user_id: "",
+    user_role_label: null,
+    site_id: siteId,
+  };
+
+  return users
+    .filter((u) => {
+      const candidate: RoleUser & SiteUser = {
+        user_id: u.user_id,
+        user_role_label: u.user_role_label,
+        site_id: u.site_id != null ? String(u.site_id) : null,
+      };
+      return (
+        canBeAssignedAsSupervisorAtOnboardingByRoleLabel(u.user_role_label) &&
+        isSupervisorSiteEligible(candidate, posting, headquartersSiteIds)
+      );
+    })
+    .sort((a, b) => {
+      const nameA = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+      const nameB = `${b.first_name ?? ""} ${b.last_name ?? ""}`.trim();
+      return nameA.localeCompare(nameB);
+    });
+}
+
 export function eligibleSupervisorsForEmployee(
   employee: RoleUser & SiteUser,
   users: User[],

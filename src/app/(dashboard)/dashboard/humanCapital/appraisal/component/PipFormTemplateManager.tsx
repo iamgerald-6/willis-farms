@@ -107,8 +107,8 @@ function CommaSeparatedOptionsInput({
  * unit/Department/Section/Position/Grade level combination, picked in a
  * "Scope" step, then
  * built out in a "Form" step by adding sections by hand and/or uploading
- * the reference document to prefill them ("Prefill with WillsFarms
- * Intel") — both available as soon as the template exists, never gated
+ * the reference document to prefill them ("Prefill with WillsOne Intel") —
+ * both available as soon as the template exists, never gated
  * behind an upload.
  *
  * One deliberate difference from a generic form builder: fields that are
@@ -454,6 +454,8 @@ export default function PipFormTemplateManager({ canAdd, canEdit }: Props) {
           gradeLabel={labelForItem(itemsByTable.grade_levels, activeTemplate.grade_level_id)}
           canAdd={canAdd}
           canEdit={canEdit}
+          otherTemplates={templates.filter((t) => t.id !== activeTemplate.id)}
+          describeTemplate={(t) => `${templateName(t)} (${templateLabel(t)})`}
           onPublished={(updated) => setActiveTemplate(updated)}
         />
       )}
@@ -576,6 +578,8 @@ function FormTab({
   gradeLabel,
   canAdd,
   canEdit,
+  otherTemplates,
+  describeTemplate,
   onPublished,
 }: {
   template: PipFormTemplate;
@@ -583,6 +587,8 @@ function FormTab({
   gradeLabel: string;
   canAdd: boolean;
   canEdit: boolean;
+  otherTemplates: PipFormTemplate[];
+  describeTemplate: (t: PipFormTemplate) => string;
   onPublished: (template: PipFormTemplate) => void;
 }) {
   const queryClient = useQueryClient();
@@ -598,6 +604,8 @@ function FormTab({
   const latestVersion = versions[0] ?? null;
 
   const [uploading, setUploading] = useState(false);
+  const [reusing, setReusing] = useState(false);
+  const [reuseSelection, setReuseSelection] = useState("");
   const [draftSchema, setDraftSchema] = useState<PipFormSchema | null>(null);
   const [draftFile, setDraftFile] = useState<DraftFile>(null);
   const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
@@ -690,6 +698,33 @@ function FormTab({
         : null,
     );
     setEditingVersionId(version.id);
+  };
+
+  const handleReuse = async (sourceId: string) => {
+    setReusing(true);
+    try {
+      const res = await api.get(`/appraisal/pip-templates/${sourceId}`);
+      const detail = res.data.data as PipTemplateDetail;
+      const versions = detail.versions ?? [];
+      const activeId = detail.template.active_version_id;
+      const sourceVersion =
+        (activeId ? versions.find((v) => v.id === activeId) : null) ?? versions[0] ?? null;
+      const sections = sourceVersion?.form_schema?.sections ?? [];
+      if (!sourceVersion || sections.length === 0) {
+        toast.error("That template has no form sections to reuse.");
+        return;
+      }
+      setDraftSchema(structuredClone(sourceVersion.form_schema));
+      setDraftFile(null);
+      setEditingVersionId(null);
+      toast.success(`Reused PIP form sections from "${describeTemplate(detail.template)}".`);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      toast.error(e?.response?.data?.error ?? "Could not load that template.");
+    } finally {
+      setReusing(false);
+      setReuseSelection("");
+    }
   };
 
   const setDraft = (updater: (prev: PipFormSchema) => PipFormSchema) =>
@@ -803,6 +838,33 @@ function FormTab({
 
       {(canAdd || canEdit) && (
         <>
+          {canEdit && otherTemplates.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              {reusing ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading form…
+                </span>
+              ) : null}
+              <select
+                value={reuseSelection}
+                disabled={reusing}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setReuseSelection(id);
+                  if (id) void handleReuse(id);
+                }}
+                className="h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-600 bg-white disabled:opacity-60"
+              >
+                <option value="">Reuse PIP setup…</option>
+                {otherTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {describeTemplate(t)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* ── Prefill from upload ── */}
           <div className="rounded-lg border border-dashed border-gray-300 p-3">
             <label className="flex flex-wrap items-center gap-2 cursor-pointer">
@@ -812,7 +874,7 @@ function FormTab({
                 <Sparkles className="w-4 h-4 text-red-600" />
               )}
               <span className="text-sm font-medium text-red-700">
-                {uploading ? "Reading document…" : "Prefill with WillsFarms Intel"}
+                {uploading ? "Reading document…" : "Prefill with WillsOne Intel"}
               </span>
               <span className="text-xs text-gray-400">
                 — upload the PIP document (Word, PDF, or image) to fill in sections and fields

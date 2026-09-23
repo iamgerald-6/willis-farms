@@ -225,6 +225,11 @@ export interface OnboardingHrData {
     public_id?: string;
     original_name?: string;
   };
+  /** When HR emailed the submitted hospital examination PDF to themselves with executives copied. */
+  medical_exam_notice_sent_at?: string;
+  /** WillsOne Intel summary of the submitted examination — emailed to HR and copied colleagues. */
+  medical_exam_intel_summary?: string;
+  medical_exam_intel_summary_generated_at?: string;
   /** Editable plain-text draft used to generate the PDF offer letter. */
   offer_letter_draft?: string;
   offer_letter_generated_at?: string;

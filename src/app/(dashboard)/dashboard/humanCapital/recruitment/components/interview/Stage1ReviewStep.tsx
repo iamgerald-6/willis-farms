@@ -42,7 +42,7 @@ export default function Stage1ReviewStep({
   const ready = stage1ReadyForReview(formData);
   const reviewed = formData.stage1_review?.reviewed_at;
   const passed = formData.stage1_review?.passed;
-  // "Pass to Stage 2 setup" is withheld until WillsFarms Intel has been
+  // "Pass to Stage 2 setup" is withheld until WillsOne Intel has been
   // generated at least once — so the panel/HR always sees the AI read of
   // the scores before advancing a candidate, not just an option they can
   // skip past.
@@ -127,7 +127,7 @@ export default function Stage1ReviewStep({
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" />
-            WillsFarms Intel analysis & recommendation
+            WillsOne Intel analysis & recommendation
           </p>
           {!readOnly && ready && onGenerateAnalysis && (
             <button
@@ -155,7 +155,7 @@ export default function Stage1ReviewStep({
                     : "bg-green-100 text-green-800"
                 }`}
               >
-                WillsFarms Intel recommends:{" "}
+                WillsOne Intel recommends:{" "}
                 {formData.stage1_review.ai_recommendation === "reject"
                   ? "Reject"
                   : "Advance to Stage 2"}
@@ -176,7 +176,7 @@ export default function Stage1ReviewStep({
           </p>
         ) : (
           <p className="text-xs text-purple-700">
-            Get a quick WillsFarms Intel read of everyone&apos;s scores and notes before deciding.
+            Get a quick WillsOne Intel read of everyone&apos;s scores and notes before deciding.
           </p>
         )}
       </div>

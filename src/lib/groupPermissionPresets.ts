@@ -69,14 +69,15 @@ export function withUniversalStaffPageAccess(
   return out;
 }
 
+export const EXECUTIVE_EXCLUDED_PAGE_KEYS: PagePermissionKey[] = [
+  "sys:definitions",
+  "users",
+];
+
 export const HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS: PagePermissionKey[] = [
   "sys:definitions",
-  // User Manual upload was deliberately scoped to System Administrator /
-  // Super Admin only (Executive Role gets it too, via the unconditional
-  // isFullRoleAccess bypass in getEffectivePermissionActions) — Human
-  // Resource does not get it by default, though it can still be granted to
-  // an individual HR account via a delegated override on the Manage User
-  // permission matrix.
+  // User Manual upload is System Administrator / Super Admin by default —
+  // Executive Role gets it; HR does not unless granted individually.
   "user-manual",
 ];
 
@@ -112,9 +113,29 @@ export function supervisoryRolePermissionActions(): PagePermissionActions {
   };
 }
 
-/** Human Resource — all modules except System Definitions. Can sign off
- * skill logs, same as Executive Role — see canSignOffSkillLogEffective in
- * skillLogAccess.ts. */
+/** Executive Role — broad operational access (HC, recruitment, tasks,
+ * policies, SOPs, user manual) but not System Definitions or User
+ * Management unless HR grants those via group or individual overrides. */
+export function executiveRolePermissionActions(): PagePermissionActions {
+  const excluded = new Set<string>(EXECUTIVE_EXCLUDED_PAGE_KEYS);
+  const out: PagePermissionActions = {};
+  for (const [key, mod] of Object.entries(defaultFullAccessActions())) {
+    if (excluded.has(key)) continue;
+    out[key as PagePermissionKey] = { ...mod };
+  }
+  out["hc:skillLog"] = {
+    view: true,
+    add: true,
+    edit: true,
+    review: true,
+    approve: true,
+  };
+  return out;
+}
+
+/** Human Resource — all modules except System Definitions and User Manual.
+ * User Management: view list + add users only — not Manage User, group
+ * permissions, or individual permission overrides (those need users edit). */
 export function humanResourceRolePermissionActions(): PagePermissionActions {
   const excluded = new Set<string>(HUMAN_RESOURCE_EXCLUDED_PAGE_KEYS);
   const out: PagePermissionActions = {};
@@ -122,6 +143,7 @@ export function humanResourceRolePermissionActions(): PagePermissionActions {
     if (excluded.has(key)) continue;
     out[key as PagePermissionKey] = { ...mod };
   }
+  out["users"] = { view: true, add: true };
   out["hc:skillLog"] = {
     view: true,
     add: true,
@@ -169,6 +191,8 @@ export function getBuiltInRolePermissionActions(
       actions = systemAdministratorRolePermissionActions();
       break;
     case "executive_role":
+      actions = executiveRolePermissionActions();
+      break;
     case "super_admin":
       actions = defaultFullAccessActions();
       break;

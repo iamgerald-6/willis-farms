@@ -13,10 +13,10 @@ import {
   getBuiltInRolePermissionActions,
   standardRolePermissionActions,
   withUniversalStaffPageAccess,
+  type GroupPresetKey,
   type GroupPresetsMap,
 } from "@/lib/groupPermissionPresets";
 import {
-  isFullRoleAccess,
   PAGE_PERMISSION_KEYS,
   PAGE_PERMISSION_LABELS,
   STANDARD_EMPLOYEE_PAGES,
@@ -24,10 +24,7 @@ import {
   type AccessTier,
   type PagePermissionKey,
 } from "@/lib/pagePermissions";
-import {
-  hasSystemAccessByRoleLabel,
-  userRoleGroupKeyFromLabel,
-} from "@/lib/userRoleAccessControl";
+import { userRoleGroupKeyFromLabel } from "@/lib/userRoleAccessControl";
 
 export type { ModuleActions, PagePermissionActions, PermissionAction };
 
@@ -327,6 +324,18 @@ function mergeStoredActions(
   return {};
 }
 
+/** DB group preset for a role when loaded; otherwise the code default matrix. */
+function resolveRoleGroupPermissionActions(
+  roleKey: GroupPresetKey,
+  groupPresets?: GroupPresetsMap | null,
+): PagePermissionActions {
+  const preset = groupPresets?.[roleKey];
+  if (preset && Object.keys(preset).length > 0) {
+    return withUniversalStaffPageAccess(preset);
+  }
+  return getBuiltInRolePermissionActions(roleKey);
+}
+
 export function getEffectivePermissionActions(
   profile: AccessProfile | null | undefined,
   sessionRole?: string | null,
@@ -336,18 +345,6 @@ export function getEffectivePermissionActions(
 
   const role = profile.role ?? sessionRole;
   if (isSuperAdmin(role)) return defaultFullAccessActions();
-
-  // Executive Role (new role system) is meant to be unconditional full
-  // access — same breadth as Super Admin — regardless of any stale
-  // per-user delegated override or legacy grade-band/role-group preset
-  // left over from before the role migration. Checking this here, before
-  // those, matches System Administrator/Human Resource's unconditional
-  // bypasses in canPerformModuleAction above; checking it further down (as
-  // before) let an old grade-band group preset silently narrow an
-  // Executive Role account's access.
-  if (isFullRoleAccess(role)) {
-    return defaultFullAccessActions();
-  }
 
   const tier = (profile.access_tier ?? "standard") as AccessTier;
   const stored = mergeStoredActions(profile);
@@ -366,13 +363,13 @@ export function getEffectivePermissionActions(
   // etc.) instead of surfacing the bad data — fall back to the role preset
   // instead, same as standard tier below.
   if (tier === "delegated" && Object.keys(stored).length === 0 && roleKey) {
-    return getBuiltInRolePermissionActions(roleKey);
+    return resolveRoleGroupPermissionActions(roleKey, groupPresets);
   }
 
-  // Standard tier — built-in role matrix is authoritative (see
-  // getBuiltInRolePermissionActions in groupPermissionPresets.ts).
+  // Standard tier — saved group preset from Access Control when present,
+  // otherwise the built-in default matrix for this role.
   if (roleKey) {
-    return getBuiltInRolePermissionActions(roleKey);
+    return resolveRoleGroupPermissionActions(roleKey, groupPresets);
   }
 
   return withUniversalStaffPageAccess(defaultStandardEmployeeActions());
@@ -393,16 +390,6 @@ export function canPerformModuleAction(
   sessionRole?: string | null,
   groupPresets?: GroupPresetsMap | null,
 ): boolean {
-  const role = profile?.role ?? sessionRole;
-
-  // System Definitions + User Management: unconditional for System
-  // Administrator / Super Admin (new role system) — deliberately not routed
-  // through the matrix below, since neither role should need per-user
-  // customization to reach what's supposed to be their default.
-  if ((key === "sys:definitions" || key === "users") && hasSystemAccessByRoleLabel(role)) {
-    return true;
-  }
-
   const effective = getEffectivePermissionActions(
     profile,
     sessionRole,

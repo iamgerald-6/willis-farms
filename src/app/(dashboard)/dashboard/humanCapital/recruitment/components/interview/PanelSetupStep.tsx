@@ -22,9 +22,9 @@ type Props = {
   /** Used to build a meaningful topic for auto-generated Zoom meetings. */
   candidateName?: string;
   referenceNumber?: string;
-  /** This posting's site — the staff picker below only suggests HR/
-   * Supervisory/Executive staff from OTHER sites. */
-  excludeSiteId?: number | null;
+  /** Job posting site — panel suggestions are scoped to Supervisory staff
+   * at this site plus Executive/HR at this site or headquarters. */
+  postingSiteId?: number | null;
   onChange: (data: InterviewFormData) => void;
   onSendStage1Invites: () => void;
   onContinueWithoutResend?: () => void;
@@ -46,7 +46,7 @@ export default function PanelSetupStep({
   formData,
   candidateName,
   referenceNumber,
-  excludeSiteId,
+  postingSiteId,
   onChange,
   onSendStage1Invites,
   onContinueWithoutResend,
@@ -61,7 +61,7 @@ export default function PanelSetupStep({
 }: Props) {
   const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
-  const panelCandidates = usePanelMemberCandidates(excludeSiteId);
+  const panelCandidates = usePanelMemberCandidates(postingSiteId);
   // Same live Sites catalog already used for HR onboarding's "Work
   // location" dropdown — so the Onsite location list here always matches
   // whatever's configured under Organizational Structure, instead of

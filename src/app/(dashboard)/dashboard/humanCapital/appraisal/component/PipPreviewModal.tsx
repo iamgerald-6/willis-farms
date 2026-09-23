@@ -4,12 +4,36 @@ import { X } from "lucide-react";
 import Link from "next/link";
 import {
   buildAppraisalEvidenceHref,
+  detectPipSectionRole,
+  findGapChainSections,
   findGapEvidenceColumn,
+  getGapOptions,
   parseAppraisalRef,
   PIP_APPRAISAL_REF_KEY,
+  PIP_GAP_ID_KEY,
 } from "@/lib/appraisal/pipGapChain";
 import type { PipFormResponses } from "@/lib/appraisal/pipInstances";
+import {
+  getGapFieldValue,
+  isFinalOutcomeTableRole,
+} from "@/lib/appraisal/pipFinalOutcome";
+import { getFinalOutcomeGapOptions } from "@/lib/appraisal/pipGapLock";
+import {
+  findReviewDateColumn,
+  formatRatingDisplay,
+  getCoachingProgressRatingForDate,
+  getGapBaselineRating,
+  isBaselineRatingColumn,
+  isReviewProgressRatingColumn,
+} from "@/lib/appraisal/pipProgressReview";
 import { isPipSectionVisible, pipFieldLabel, type PipFormSchema } from "@/lib/appraisal/pipFormSchema";
+import {
+  ensureReviewsSectionColumns,
+  isCoachingSection,
+  isStage1Section,
+  isStage2Section,
+  isStage3Section,
+} from "@/lib/appraisal/pipStages";
 
 const NAVY = "#1e3a5f";
 
@@ -22,6 +46,7 @@ export default function PipPreviewModal({
   status,
   canViewHrSections,
   appraisalId,
+  previewStage = "plan",
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,18 +56,48 @@ export default function PipPreviewModal({
   status: string;
   canViewHrSections: boolean;
   appraisalId: string;
+  /** Limit preview to the current workflow stage. */
+  previewStage?: "plan" | "tracking" | "finalOutcome";
 }) {
   if (!open) return null;
 
-  const sections = schema.sections.filter((s) => isPipSectionVisible(s, canViewHrSections));
+  const sections = schema.sections.filter((s) => {
+    if (!isPipSectionVisible(s, canViewHrSections)) return false;
+    if (previewStage === "plan") return isStage1Section(s);
+    if (previewStage === "tracking") return isStage2Section(s);
+    return isStage3Section(s);
+  });
   const gapsSection = sections.find(
     (s) => s.kind === "table" && findGapEvidenceColumn(s),
   );
   const gapEvidenceKey =
     gapsSection?.kind === "table" ? findGapEvidenceColumn(gapsSection)?.key : undefined;
 
+  const gapChain = findGapChainSections(schema);
+  const coachingSection = schema.sections.find(
+    (s) => s.kind === "table" && isCoachingSection(s),
+  );
+  const trackingGapId =
+    responses.meta?.selected_coaching_gap_id?.trim() ||
+    (gapChain.gaps ? getGapOptions(responses.tables ?? {}, gapChain.gaps)[0]?.id : "") ||
+    "";
+
+  const finalOutcomeGapId =
+    responses.meta?.selected_final_outcome_gap_id?.trim() ||
+    getFinalOutcomeGapOptions(schema, responses)[0]?.id ||
+    "";
+
+  const previewGapId =
+    previewStage === "finalOutcome" ? finalOutcomeGapId : trackingGapId;
+
   const statusLabel =
     status === "active" ? "Active" : status === "completed" ? "Completed" : "Draft";
+  const stageLabel =
+    previewStage === "plan"
+      ? "Plan"
+      : previewStage === "tracking"
+        ? "Tracking"
+        : "Final outcome";
 
   return (
     <div
@@ -59,7 +114,7 @@ export default function PipPreviewModal({
         >
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50">
-              PIP preview
+              PIP preview — {stageLabel}
             </p>
             <h2 className="text-lg font-bold">{schema.title ?? "Performance Improvement Plan"}</h2>
             <p className="text-sm text-white/70 mt-0.5">{employeeName}</p>
@@ -80,7 +135,7 @@ export default function PipPreviewModal({
         </div>
 
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          {schema.intro && (
+          {previewStage === "plan" && schema.intro && (
             <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{schema.intro}</p>
           )}
 
@@ -98,60 +153,123 @@ export default function PipPreviewModal({
                       <div key={field.key}>
                         <dt className="text-xs font-medium text-gray-500">{pipFieldLabel(field)}</dt>
                         <dd className="text-sm text-gray-900 mt-0.5 break-words">
-                          {String(responses.fields?.[field.key] ?? "") || "—"}
+                          {previewStage === "finalOutcome" && finalOutcomeGapId
+                            ? getGapFieldValue(
+                                responses.fields,
+                                field.key,
+                                finalOutcomeGapId,
+                              ) || "—"
+                            : String(responses.fields?.[field.key] ?? "") || "—"}
                         </dd>
                       </div>
                     ))}
                   </dl>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[480px] text-sm border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          {section.columns.map((col) => (
-                            <th
-                              key={col.key}
-                              className="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-2 py-2"
-                            >
-                              {col.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(responses.tables?.[section.key] ?? []).map((row, rowIndex) => (
-                          <tr key={rowIndex} className="border-b border-gray-100">
-                            {section.columns.map((col) => {
-                              const isGapEvidence =
-                                gapsSection?.key === section.key &&
-                                gapEvidenceKey === col.key;
-                              const ref = isGapEvidence
-                                ? parseAppraisalRef(row[PIP_APPRAISAL_REF_KEY])
-                                : null;
-                              return (
-                                <td key={col.key} className="px-2 py-2 align-top text-gray-800">
-                                  {isGapEvidence && ref && ref.sectionKey !== "_narrative" ? (
-                                    <Link
-                                      href={buildAppraisalEvidenceHref(
-                                        ref.appraisalId ?? appraisalId,
-                                        ref.sectionKey,
-                                        ref.item,
+                  (() => {
+                    const sectionRole = detectPipSectionRole(section);
+                    const isReviewsSection = sectionRole === "reviews";
+                    const isFinalOutcomeTable = isFinalOutcomeTableRole(sectionRole);
+                    const gapScoped = isReviewsSection || isFinalOutcomeTable;
+                    const displaySection = isReviewsSection
+                      ? ensureReviewsSectionColumns(section)
+                      : section;
+                    const reviewDateCol = isReviewsSection
+                      ? findReviewDateColumn(displaySection)
+                      : undefined;
+                    const tableRows = (responses.tables?.[section.key] ?? []).filter((row) => {
+                      if (!gapScoped || !previewGapId) return true;
+                      return String(row[PIP_GAP_ID_KEY] ?? "") === previewGapId;
+                    });
+
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[480px] text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              {displaySection.columns.map((col) => (
+                                <th
+                                  key={col.key}
+                                  className="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-2 py-2"
+                                >
+                                  {col.label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tableRows.map((row, rowIndex) => (
+                              <tr key={rowIndex} className="border-b border-gray-100">
+                                {displaySection.columns.map((col) => {
+                                  const isGapEvidence =
+                                    gapsSection?.key === section.key &&
+                                    gapEvidenceKey === col.key;
+                                  const ref = isGapEvidence
+                                    ? parseAppraisalRef(row[PIP_APPRAISAL_REF_KEY])
+                                    : null;
+                                  const gapIdForRow =
+                                    previewGapId ||
+                                    String(row[PIP_GAP_ID_KEY] ?? "").trim();
+
+                                  let cellValue = String(row[col.key] ?? "") || "—";
+
+                                  if (
+                                    isReviewsSection &&
+                                    isBaselineRatingColumn(col) &&
+                                    gapIdForRow &&
+                                    gapChain.gaps
+                                  ) {
+                                    cellValue = formatRatingDisplay(
+                                      getGapBaselineRating(
+                                        gapIdForRow,
+                                        responses.tables ?? {},
+                                        gapChain.gaps,
+                                      ),
+                                    );
+                                  } else if (
+                                    isReviewsSection &&
+                                    isReviewProgressRatingColumn(col) &&
+                                    gapIdForRow &&
+                                    coachingSection?.kind === "table"
+                                  ) {
+                                    const sessionDate = reviewDateCol
+                                      ? String(row[reviewDateCol.key] ?? "")
+                                      : "";
+                                    cellValue = formatRatingDisplay(
+                                      getCoachingProgressRatingForDate(
+                                        gapIdForRow,
+                                        sessionDate,
+                                        responses.tables ?? {},
+                                        coachingSection,
+                                      ),
+                                    );
+                                  }
+
+                                  return (
+                                    <td key={col.key} className="px-2 py-2 align-top text-gray-800">
+                                      {isGapEvidence && ref && ref.sectionKey !== "_narrative" ? (
+                                        <Link
+                                          href={buildAppraisalEvidenceHref(
+                                            ref.appraisalId ?? appraisalId,
+                                            ref.sectionKey,
+                                            ref.item,
+                                          )}
+                                          className="text-xs font-semibold text-red-600 hover:text-red-700"
+                                        >
+                                          View in appraisal
+                                        </Link>
+                                      ) : (
+                                        cellValue
                                       )}
-                                      className="text-xs font-semibold text-red-600 hover:text-red-700"
-                                    >
-                                      View in appraisal
-                                    </Link>
-                                  ) : (
-                                    String(row[col.key] ?? "") || "—"
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             </div>
