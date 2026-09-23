@@ -845,8 +845,11 @@ export default function CreateJobPostingPanel({ onBack }: { onBack: () => void }
             Posting saved. Set the interview details for this specific role
             below.
           </p>
+          {/* Key only on posting id — including updated_at remounted on every tab
+              save and reset activeTab back to Overview. Fresh data on reopen is
+              handled by openInterviewSetup's refetch. */}
           <PostingInterviewSetup
-            key={`${interviewPostingId}-${editing?.updated_at ?? "new"}`}
+            key={interviewPostingId}
             ref={postingInterviewSetupRef}
             postingId={interviewPostingId}
             overview={interviewOverviewRows}

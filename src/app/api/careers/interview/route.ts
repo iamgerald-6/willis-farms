@@ -29,6 +29,7 @@ import {
   stageAverage,
 } from "@/lib/careers/panelInterview";
 import { appendStatusHistory } from "@/lib/careers/statusHistory";
+import { mergeInterviewFormDraft } from "@/lib/careers/interviewFormMerge";
 
 const INTERVIEW_STATUSES = new Set([
   "shortlisted",
@@ -242,10 +243,11 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    let merged = normalizeInterviewFormData({
-      ...normalizeInterviewFormData(application.interview_form_data),
-      ...interview_form_data,
-    });
+    const serverForm = normalizeInterviewFormData(application.interview_form_data);
+    // Always merge safely first — explicit actions layer changes on top so
+    // a partial client payload never wipes panel submissions or submitted HR
+    // stages (the root cause of Stage 1 "resetting" after Stage 2 setup).
+    let merged = mergeInterviewFormDraft(serverForm, interview_form_data);
 
     const emailWarnings: string[] = [];
     let postUpdateHireInvite: { recommendedStartDate?: string } | null = null;

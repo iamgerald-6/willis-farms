@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { InterviewGuideConfig } from "@/lib/careers/interviewFormConfigs";
 import { DEFAULT_INTERVIEW_EVALUATION_LABELS } from "@/lib/systemDefinitions/interviewEvaluationConfig";
@@ -92,6 +92,22 @@ export default function InterviewPanelForm({
   const [postingSiteId, setPostingSiteId] = useState<number | null>(null);
   const [interviewSubmitted, setInterviewSubmitted] = useState(false);
   const [manualStep, setManualStep] = useState<WorkflowStep | null>(null);
+  const queryClient = useQueryClient();
+  const autosaveEpochRef = useRef(0);
+  /** True while HR has unsaved local edits — blocks query hydration overwriting the form. */
+  const formDirtyRef = useRef(false);
+  /** Bumps on each local edit so stale autosave responses can be ignored. */
+  const localEditSeqRef = useRef(0);
+
+  const markLocalEdit = useCallback(() => {
+    formDirtyRef.current = true;
+    localEditSeqRef.current += 1;
+  }, []);
+
+  useEffect(() => {
+    formDirtyRef.current = false;
+    localEditSeqRef.current = 0;
+  }, [applicationId]);
 
   const {
     data: queryData,
@@ -105,7 +121,34 @@ export default function InterviewPanelForm({
       );
       return res.data.data;
     },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
+
+  const syncInterviewCaches = async (updated?: InterviewFormData) => {
+    formDirtyRef.current = false;
+    if (updated) {
+      queryClient.setQueryData(
+        ["interview_guide", applicationId],
+        (prev: typeof queryData | undefined) =>
+          prev
+            ? {
+                ...prev,
+                application: {
+                  ...prev.application,
+                  interview_form_data: updated,
+                },
+              }
+            : prev,
+      );
+      setFormData(updated);
+    }
+    await queryClient.invalidateQueries({
+      queryKey: ["interview_guide", applicationId],
+    });
+    await queryClient.invalidateQueries({ queryKey: ["job_applications"] });
+    await refetch();
+  };
 
   // Hydrates from whatever the query currently holds — including data
   // already cached from before this component was last unmounted (e.g.
@@ -129,8 +172,18 @@ export default function InterviewPanelForm({
     setInterviewSubmitted(!!application.interview_submitted_at);
     setGuide(g);
     setEvaluationLabels(labels ?? DEFAULT_INTERVIEW_EVALUATION_LABELS);
-    setFormData(normalizeInterviewFormData(application.interview_form_data));
+    if (!formDirtyRef.current) {
+      setFormData(normalizeInterviewFormData(application.interview_form_data));
+    }
   }, [queryData]);
+
+  const updateFormData = useCallback(
+    (next: InterviewFormData | ((prev: InterviewFormData) => InterviewFormData)) => {
+      markLocalEdit();
+      setFormData(next);
+    },
+    [markLocalEdit],
+  );
 
   const workflowStep = interviewWorkflowStepV2(formData);
   const activeStep = manualStep ?? workflowStep;
@@ -201,6 +254,7 @@ export default function InterviewPanelForm({
   );
 
   const setHrStage1 = (stage1: StageSubmissionData) => {
+    markLocalEdit();
     setFormData((prev) => ({
       ...prev,
       hr_submission: { ...prev.hr_submission, stage1 },
@@ -208,6 +262,7 @@ export default function InterviewPanelForm({
   };
 
   const setHrStage2 = (stage2: StageSubmissionData) => {
+    markLocalEdit();
     setFormData((prev) => ({
       ...prev,
       hr_submission: { ...prev.hr_submission, stage2 },
@@ -215,6 +270,9 @@ export default function InterviewPanelForm({
   };
 
   const saveMutation = useMutation({
+    onMutate: () => {
+      autosaveEpochRef.current += 1;
+    },
     mutationFn: (params: {
       action: InterviewAction;
       data?: InterviewFormData;
@@ -227,10 +285,11 @@ export default function InterviewPanelForm({
         action: params.action,
         stage2_scheduled_at: params.stage2_scheduled_at,
       }),
-    onSuccess: (res, params) => {
+    onSuccess: async (res, params) => {
       const updated = normalizeInterviewFormData(
         res.data.data.interview_form_data,
       );
+      formDirtyRef.current = false;
       setFormData(updated);
       setManualStep(null);
 
@@ -247,7 +306,7 @@ export default function InterviewPanelForm({
           "Panel forms opened — members can now access their evaluation forms.",
         );
         setManualStep("panel");
-        refetch();
+        await syncInterviewCaches(updated);
         return;
       }
       if (params.action === "open_stage2_panel_forms") {
@@ -255,7 +314,7 @@ export default function InterviewPanelForm({
           "Panel forms opened — members can now access their evaluation forms.",
         );
         setManualStep("stage2_setup");
-        refetch();
+        await syncInterviewCaches(updated);
         return;
       }
       if (params.action === "send_stage2_invites") {
@@ -265,7 +324,7 @@ export default function InterviewPanelForm({
           toast.success("Stage 2 panel invites sent.");
         }
         setManualStep("stage2_setup");
-        refetch();
+        await syncInterviewCaches(updated);
         return;
       }
 
@@ -280,7 +339,7 @@ export default function InterviewPanelForm({
           "Stage 1 reset — update the details and resend invites when ready.",
         );
         setManualStep("panel");
-        refetch();
+        await syncInterviewCaches(updated);
         return;
       }
       if (params.action === "reschedule_stage2") {
@@ -288,7 +347,7 @@ export default function InterviewPanelForm({
           "Stage 2 reset — update the details and resend invites when ready.",
         );
         setManualStep("stage2_setup");
-        refetch();
+        await syncInterviewCaches(updated);
         return;
       }
 
@@ -317,36 +376,53 @@ export default function InterviewPanelForm({
         toast.success("Draft saved.");
       }
 
-      refetch();
-      onSaved();
+      await syncInterviewCaches(updated);
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error ?? "Save failed.");
     },
   });
 
-  // Silently persists HR's in-progress work — Stage 1 / Stage 2 evaluation
-  // answers, and the Panel setup / Stage 2 setup fields (interview date,
-  // location, panel member names/emails) — a couple seconds after they
-  // stop editing, so leaving the page or the tab closing doesn't erase
-  // progress the way it would if HR had to remember to click "Save draft"
-  // or "Send invites" first. Deliberately its own mutation, separate from
-  // saveMutation — that one's onSuccess resets manualStep and calls
-  // onSaved(), which closes the whole application detail view (see the
-  // "open panel forms" fix above); an autosave firing mid-edit must never
-  // do that.
+  // Silently persists HR's in-progress work — scoped partial payloads only,
+  // merged safely server-side so panel submissions and submitted HR stages
+  // are never wiped by a later Stage 2 setup autosave.
   const [autosaveStatus, setAutosaveStatus] = useState<
     "idle" | "saving" | "saved"
   >("idle");
   const autosaveMutation = useMutation({
-    mutationFn: (data: InterviewFormData) =>
+    mutationFn: (params: {
+      epoch: number;
+      editSeq: number;
+      data: Partial<InterviewFormData>;
+    }) =>
       api.post("/careers/interview", {
         application_id: applicationId,
-        interview_form_data: data,
+        interview_form_data: params.data,
         submitted_by: adminId,
         action: "save_draft",
       }),
-    onSuccess: () => setAutosaveStatus("saved"),
+    onSuccess: (res, params) => {
+      if (params.epoch !== autosaveEpochRef.current) return;
+      if (params.editSeq !== localEditSeqRef.current) return;
+      const saved = normalizeInterviewFormData(
+        res.data.data.interview_form_data,
+      );
+      // Persist to cache only — never replace the in-progress form on screen.
+      queryClient.setQueryData(
+        ["interview_guide", applicationId],
+        (prev: typeof queryData | undefined) =>
+          prev
+            ? {
+                ...prev,
+                application: {
+                  ...prev.application,
+                  interview_form_data: saved,
+                },
+              }
+            : prev,
+      );
+      setAutosaveStatus("saved");
+    },
     onError: () => setAutosaveStatus("idle"),
   });
 
@@ -358,10 +434,13 @@ export default function InterviewPanelForm({
       return;
     }
     setAutosaveStatus("saving");
+    const epoch = autosaveEpochRef.current;
+    const editSeq = localEditSeqRef.current;
     const timer = setTimeout(() => {
       autosaveMutation.mutate({
-        ...formData,
-        hr_submission: { ...formData.hr_submission, stage1: hrStage1 },
+        epoch,
+        editSeq,
+        data: { hr_submission: { stage1: hrStage1 } },
       });
     }, 1500);
     return () => clearTimeout(timer);
@@ -376,10 +455,13 @@ export default function InterviewPanelForm({
       return;
     }
     setAutosaveStatus("saving");
+    const epoch = autosaveEpochRef.current;
+    const editSeq = localEditSeqRef.current;
     const timer = setTimeout(() => {
       autosaveMutation.mutate({
-        ...formData,
-        hr_submission: { ...formData.hr_submission, stage2: hrStage2 },
+        epoch,
+        editSeq,
+        data: { hr_submission: { stage2: hrStage2 } },
       });
     }, 1500);
     return () => clearTimeout(timer);
@@ -395,8 +477,17 @@ export default function InterviewPanelForm({
       return;
     }
     setAutosaveStatus("saving");
+    const epoch = autosaveEpochRef.current;
+    const editSeq = localEditSeqRef.current;
     const timer = setTimeout(() => {
-      autosaveMutation.mutate(formData);
+      autosaveMutation.mutate({
+        epoch,
+        editSeq,
+        data: {
+          setup: formData.setup,
+          stage2_scheduled_at: formData.stage2_scheduled_at,
+        },
+      });
     }, 1500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -408,6 +499,7 @@ export default function InterviewPanelForm({
         application_id: applicationId,
       }),
     onSuccess: (res) => {
+      formDirtyRef.current = false;
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
@@ -425,12 +517,17 @@ export default function InterviewPanelForm({
     // guaranteed to analyze exactly what's on screen, even if HR never
     // clicked "Save draft" themselves.
     mutationFn: async () => {
-      await autosaveMutation.mutateAsync(formData);
+      await autosaveMutation.mutateAsync({
+        epoch: autosaveEpochRef.current,
+        editSeq: localEditSeqRef.current,
+        data: formData,
+      });
       return api.post("/careers/interview/final-analysis", {
         application_id: applicationId,
       });
     },
     onSuccess: (res) => {
+      formDirtyRef.current = false;
       setFormData(
         normalizeInterviewFormData(res.data.data.interview_form_data),
       );
@@ -514,7 +611,7 @@ export default function InterviewPanelForm({
               candidateName={candidateName}
               referenceNumber={referenceNumber}
               postingSiteId={postingSiteId}
-              onChange={setFormData}
+              onChange={updateFormData}
               onSendStage1Invites={() =>
                 saveMutation.mutate({
                   action: "send_panel_invites",
@@ -609,7 +706,7 @@ export default function InterviewPanelForm({
               candidateName={candidateName}
               referenceNumber={referenceNumber}
               postingSiteId={postingSiteId}
-              onChange={setFormData}
+              onChange={updateFormData}
               onSendStage2Invites={(scheduledAt, data) =>
                 saveMutation.mutate({
                   action: "send_stage2_invites",
@@ -689,7 +786,7 @@ export default function InterviewPanelForm({
               guide={guide}
               formData={formData}
               scores={evaluationScores}
-              onChange={setFormData}
+              onChange={updateFormData}
               readOnly={interviewSubmitted}
               evaluationLabels={evaluationLabels}
               onGenerateAnalysis={() => finalAnalysisMutation.mutate()}
